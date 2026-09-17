@@ -559,6 +559,8 @@ struct NewGameSetupView: View {
     @State private var showLineup = false
     @State private var showScheduleConfirmation = false
     @State private var showScheduledCreated = false
+    @State private var createdGameID: UUID?
+    @State private var posterGame: StoredGame?
 
     init(scheduleForLater: Bool = false, configureScheduleNow: Bool = false) {
         _selectedTeamID = State(initialValue: nil)
@@ -947,8 +949,20 @@ struct NewGameSetupView: View {
         } message: {
             Text("只保存双方球队、主客关系和开赛时间。名单、比赛规则、棒次与守位会在开赛前设置。")
         }
+        .sheet(item: $posterGame) { stored in
+            NavigationStack {
+                GamePosterView(game: stored)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { posterGame = nil; store.returnToGameHome() }
+                                .accessibilityIdentifier("close-created-game-poster")
+                        }
+                    }
+            }
+        }
         .alert("比赛安排已保存", isPresented: $showScheduledCreated) {
             Button("返回比赛首页") { store.returnToGameHome() }
+            Button("制作宣传海报") { posterGame = store.games.first { $0.id == createdGameID } }
         } message: {
             Text("可从比赛首页的“即将进行”打开，并在开赛前补充名单和完成设置。")
         }
@@ -957,10 +971,10 @@ struct NewGameSetupView: View {
     private func saveSchedule() {
         if mode == .spectator {
             guard let away = spectatorAwayTeam, let home = spectatorHomeTeam else { return }
-            _ = store.scheduleObservedGame(awayTeam: away, homeTeam: home, scheduledAt: scheduledAt)
+            createdGameID = store.scheduleObservedGame(awayTeam: away, homeTeam: home, scheduledAt: scheduledAt)
         } else {
             guard let ourTeam = selectedTeam, let opponent = selectedOpponent else { return }
-            _ = store.scheduleGame(
+            createdGameID = store.scheduleGame(
                 ourTeam: ourTeam,
                 opponent: opponent,
                 isHome: isHome,
@@ -1621,6 +1635,8 @@ struct LineupSelectionView: View {
     @State private var showConfirmation = false
     @State private var showGame = false
     @State private var showScheduledCreated = false
+    @State private var createdGameID: UUID?
+    @State private var posterGame: StoredGame?
     @State private var historyMessage: String?
     @State private var draggingPlayerID: UUID?
 
@@ -1887,7 +1903,7 @@ struct LineupSelectionView: View {
                         lineup: assignments
                     )
                 } else {
-                    _ = store.startNewGame(
+                    createdGameID = store.startNewGame(
                         opponent: opponent,
                         isHome: isHome,
                         rules: rules,
@@ -1913,8 +1929,20 @@ struct LineupSelectionView: View {
         } message: {
             Text(historyMessage ?? "")
         }
+        .sheet(item: $posterGame) { stored in
+            NavigationStack {
+                GamePosterView(game: stored)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { posterGame = nil; store.returnToGameHome() }
+                                .accessibilityIdentifier("close-created-game-poster")
+                        }
+                    }
+            }
+        }
         .alert("比赛已创建", isPresented: $showScheduledCreated) {
             Button("返回比赛首页") { store.returnToGameHome() }
+            Button("制作宣传海报") { posterGame = store.games.first { $0.id == createdGameID } }
         } message: {
             Text("比赛将在 \(scheduledAt.formatted(date: .abbreviated, time: .shortened)) 显示于“即将进行”，届时可手动开始记录。")
         }
@@ -2012,6 +2040,8 @@ struct ObservedGameLineupView: View {
     @State private var showConfirmation = false
     @State private var showGame = false
     @State private var showScheduledCreated = false
+    @State private var createdGameID: UUID?
+    @State private var posterGame: StoredGame?
     @State private var awayAssignments: [LineupAssignment]
     @State private var homeAssignments: [LineupAssignment]
 
@@ -2113,7 +2143,7 @@ struct ObservedGameLineupView: View {
                         homeLineup: homeAssignments
                     )
                 } else {
-                    _ = store.createObservedGame(
+                    createdGameID = store.createObservedGame(
                         awayTeam: awayTeam,
                         homeTeam: homeTeam,
                         rules: rules,
@@ -2128,8 +2158,20 @@ struct ObservedGameLineupView: View {
         } message: {
             Text(confirmationSummary)
         }
+        .sheet(item: $posterGame) { stored in
+            NavigationStack {
+                GamePosterView(game: stored)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { posterGame = nil; store.returnToGameHome() }
+                                .accessibilityIdentifier("close-created-game-poster")
+                        }
+                    }
+            }
+        }
         .alert("比赛已创建", isPresented: $showScheduledCreated) {
             Button("返回比赛首页") { store.returnToGameHome() }
+            Button("制作宣传海报") { posterGame = store.games.first { $0.id == createdGameID } }
         } message: {
             Text("未来观赛已保存，可从比赛首页的“即将进行”中开始。")
         }

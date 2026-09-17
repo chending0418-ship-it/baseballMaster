@@ -390,7 +390,7 @@ struct ThirdOutTimingSheet: View {
                 } label: {
                     Label("得分在先 · 得分有效", systemImage: "checkmark.circle.fill")
                 }
-                .buttonStyle(PrimaryButtonStyle(color: BMTheme.green))
+                .buttonStyle(PrimaryButtonStyle(color: BMTheme.brandGreen))
                 .accessibilityIdentifier("third-out-run-counts")
 
                 Button {
@@ -398,7 +398,7 @@ struct ThirdOutTimingSheet: View {
                 } label: {
                     Label("出局在先 · 得分无效", systemImage: "xmark.circle.fill")
                 }
-                .buttonStyle(PrimaryButtonStyle(color: BMTheme.red))
+                .buttonStyle(PrimaryButtonStyle(color: BMTheme.brandRed))
                 .accessibilityIdentifier("third-out-run-cancelled")
 
                 Spacer()

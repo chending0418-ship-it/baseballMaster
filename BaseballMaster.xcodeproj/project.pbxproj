@@ -23,6 +23,16 @@
 		A10000000000000000000014 /* BaseballRules2022.pdf in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000014 /* BaseballRules2022.pdf */; };
 		A20000000000000000000001 /* GameStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* GameStoreTests.swift */; };
 		A30000000000000000000001 /* BaseballMasterUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000001 /* BaseballMasterUITests.swift */; };
+		A10000000000000000000015 /* Statistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000015 /* Statistics.swift */; };
+		A10000000000000000000016 /* StatisticsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000016 /* StatisticsViews.swift */; };
+		A10000000000000000000017 /* ReportPDFRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000017 /* ReportPDFRenderer.swift */; };
+		A10000000000000000000018 /* StatisticsPDFReports.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000018 /* StatisticsPDFReports.swift */; };
+		A10000000000000000000019 /* ReportPDFPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000019 /* ReportPDFPreview.swift */; };
+		A10000000000000000000020 /* LocalBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000020 /* LocalBackup.swift */; };
+		A10000000000000000000021 /* BackupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000021 /* BackupViews.swift */; };
+		A10000000000000000000022 /* PlayByPlayPDFReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000022 /* PlayByPlayPDFReport.swift */; };
+		A10000000000000000000023 /* GamePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000023 /* GamePoster.swift */; };
+		A10000000000000000000024 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000024 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,6 +72,16 @@
 		F90000000000000000000001 /* BaseballMaster.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaseballMaster.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F90000000000000000000002 /* BaseballMasterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaseballMasterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F90000000000000000000003 /* BaseballMasterUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaseballMasterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F10000000000000000000015 /* Statistics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Statistics.swift; sourceTree = "<group>"; };
+		F10000000000000000000016 /* StatisticsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsViews.swift; sourceTree = "<group>"; };
+		F10000000000000000000017 /* ReportPDFRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportPDFRenderer.swift; sourceTree = "<group>"; };
+		F10000000000000000000018 /* StatisticsPDFReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsPDFReports.swift; sourceTree = "<group>"; };
+		F10000000000000000000019 /* ReportPDFPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportPDFPreview.swift; sourceTree = "<group>"; };
+		F10000000000000000000020 /* LocalBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBackup.swift; sourceTree = "<group>"; };
+		F10000000000000000000021 /* BackupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupViews.swift; sourceTree = "<group>"; };
+		F10000000000000000000022 /* PlayByPlayPDFReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayByPlayPDFReport.swift; sourceTree = "<group>"; };
+		F10000000000000000000023 /* GamePoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamePoster.swift; sourceTree = "<group>"; };
+		F10000000000000000000024 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -106,6 +126,16 @@
 				F10000000000000000000001 /* BaseballMasterApp.swift */,
 				F10000000000000000000002 /* DesignSystem.swift */,
 				F10000000000000000000003 /* Models.swift */,
+				F10000000000000000000019 /* ReportPDFPreview.swift */,
+				F10000000000000000000024 /* PrivacyInfo.xcprivacy */,
+				F10000000000000000000023 /* GamePoster.swift */,
+				F10000000000000000000022 /* PlayByPlayPDFReport.swift */,
+				F10000000000000000000021 /* BackupViews.swift */,
+				F10000000000000000000020 /* LocalBackup.swift */,
+				F10000000000000000000018 /* StatisticsPDFReports.swift */,
+				F10000000000000000000017 /* ReportPDFRenderer.swift */,
+				F10000000000000000000016 /* StatisticsViews.swift */,
+				F10000000000000000000015 /* Statistics.swift */,
 				F10000000000000000000004 /* GameStore.swift */,
 				F10000000000000000000012 /* PersistenceController.swift */,
 				F10000000000000000000013 /* ProfileViews.swift */,
@@ -253,6 +283,7 @@
 			files = (
 				A10000000000000000000011 /* Assets.xcassets in Resources */,
 				A10000000000000000000014 /* BaseballRules2022.pdf in Resources */,
+				A10000000000000000000024 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -280,6 +311,15 @@
 				A10000000000000000000001 /* BaseballMasterApp.swift in Sources */,
 				A10000000000000000000002 /* DesignSystem.swift in Sources */,
 				A10000000000000000000003 /* Models.swift in Sources */,
+				A10000000000000000000019 /* ReportPDFPreview.swift in Sources */,
+				A10000000000000000000023 /* GamePoster.swift in Sources */,
+				A10000000000000000000022 /* PlayByPlayPDFReport.swift in Sources */,
+				A10000000000000000000021 /* BackupViews.swift in Sources */,
+				A10000000000000000000020 /* LocalBackup.swift in Sources */,
+				A10000000000000000000018 /* StatisticsPDFReports.swift in Sources */,
+				A10000000000000000000017 /* ReportPDFRenderer.swift in Sources */,
+				A10000000000000000000016 /* StatisticsViews.swift in Sources */,
+				A10000000000000000000015 /* Statistics.swift in Sources */,
 				A10000000000000000000004 /* GameStore.swift in Sources */,
 				A10000000000000000000012 /* PersistenceController.swift in Sources */,
 				A10000000000000000000013 /* ProfileViews.swift in Sources */,
@@ -366,10 +406,11 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = JUTVG7XR9H;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -377,7 +418,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -394,9 +435,10 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = JUTVG7XR9H;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -404,7 +446,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

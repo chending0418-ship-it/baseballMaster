@@ -14,13 +14,15 @@ final class GameStore: ObservableObject {
     @Published var games: [StoredGame]
     @Published var storageErrorMessage: String?
     @Published var actionErrorMessage: String?
+    @Published private(set) var requiresDataRecovery = false
     @Published var selectedTab = 0
     @Published var gameNavigationID = UUID()
 
     private var undoStack: [GameState] = []
     private var redoStack: [GameState] = []
     private var nextEventBeforeSituation: GameSituationSnapshot?
-    private let persistenceStore: CoreDataRosterStore
+    private var persistenceStore: CoreDataRosterStore
+    private let databaseURL: URL?
     private var activeGameID: UUID?
 
     convenience init() {
@@ -31,33 +33,39 @@ final class GameStore: ObservableObject {
     }
 
     init(persistenceURL: URL?, legacyJSONURL: URL? = nil) {
-        let databaseStore: CoreDataRosterStore
+        var databaseStore: CoreDataRosterStore
         var initialStorageError: String?
+        var databaseSnapshot: RosterSnapshot?
+        var openedStore: CoreDataRosterStore?
         do {
-            databaseStore = try CoreDataRosterStore(storeURL: persistenceURL)
+            let opened = try CoreDataRosterStore(storeURL: persistenceURL)
+            openedStore = opened
+            databaseSnapshot = try opened.loadSnapshot()
+            databaseStore = opened
         } catch {
+            try? openedStore?.close()
             NSLog("Unable to open the local Core Data store: %@", String(describing: error))
             databaseStore = try! CoreDataRosterStore(storeURL: nil)
-            initialStorageError = "本地数据库暂时无法打开，本次更改可能不会在重启后保留。"
+            initialStorageError = "本地数据无法完整读取，原文件已保留。请从备份恢复后继续使用。"
         }
 
         let waves = Self.makeWaves()
         let falcons = Self.makeFalcons()
         let rockets = Self.makeRockets()
         let defaultSeasons = Self.makeSeasons()
-        let databaseSnapshot: RosterSnapshot?
-        do {
-            databaseSnapshot = try databaseStore.loadSnapshot()
-        } catch {
-            databaseSnapshot = nil
-            initialStorageError = "本地数据读取失败，已使用安全的空白数据继续运行。"
-        }
-        let legacySnapshot = databaseSnapshot == nil
+        let legacySnapshot = databaseSnapshot == nil && initialStorageError == nil
             ? legacyJSONURL.flatMap(Self.loadLegacyRosterData(from:))
             : nil
+        if databaseSnapshot == nil, legacySnapshot == nil, let legacyJSONURL,
+           FileManager.default.fileExists(atPath: legacyJSONURL.path), initialStorageError == nil {
+            initialStorageError = "旧版数据文件无法读取，原文件已保留。请导入有效备份后继续。"
+        }
         let persisted = databaseSnapshot ?? legacySnapshot
         let loadedTeams = persisted?.teams.isEmpty == false ? persisted!.teams : [waves]
-        let loadedOpponentTeams = persisted?.opponentTeams.isEmpty == false ? persisted!.opponentTeams : [falcons, rockets]
+        let needsLegacyDatabaseDefaults = databaseStore.migratedLegacySchema
+            || (databaseStore.loadedSchemaVersion.map { $0 < CoreDataRosterStore.schemaVersion } ?? false)
+        let loadedOpponentTeams = needsLegacyDatabaseDefaults && persisted?.opponentTeams.isEmpty == true
+            ? [falcons, rockets] : (persisted?.opponentTeams ?? [falcons, rockets])
         let loadedCurrentTeam = loadedTeams.first(where: { $0.id == persisted?.currentTeamID }) ?? loadedTeams[0]
         let loadedSeasons = persisted?.seasons.isEmpty == false ? persisted!.seasons : defaultSeasons
         // A new formal installation starts with no fabricated box scores.
@@ -66,6 +74,7 @@ final class GameStore: ObservableObject {
         let loadedGames = persisted?.games.sorted { $0.updatedAt > $1.updatedAt } ?? []
 
         self.persistenceStore = databaseStore
+        self.databaseURL = persistenceURL
         self.teams = loadedTeams
         self.opponentTeams = loadedOpponentTeams
         self.currentTeam = loadedCurrentTeam
@@ -74,6 +83,7 @@ final class GameStore: ObservableObject {
         self.games = loadedGames
         self.storageErrorMessage = initialStorageError
         self.actionErrorMessage = nil
+        self.requiresDataRecovery = initialStorageError != nil
 
         let latestOngoing = loadedGames.first(where: { $0.status == .ongoing })
         if let latestOngoing {
@@ -92,7 +102,7 @@ final class GameStore: ObservableObject {
             self.game = GameState(homeTeam: initialHome, awayTeam: initialAway, scheduledInnings: 6)
             self.activeGameID = nil
         }
-        if databaseSnapshot == nil {
+        if (databaseSnapshot == nil || needsLegacyDatabaseDefaults) && initialStorageError == nil {
             let initialSnapshot = makeRosterSnapshot()
             do {
                 try databaseStore.replaceAll(with: initialSnapshot)
@@ -103,12 +113,8 @@ final class GameStore: ObservableObject {
                 NSLog("Unable to initialize the local Core Data store: %@", String(describing: error))
                 storageErrorMessage = "初始化本地数据库失败，本次更改可能不会在重启后保留。"
             }
-        } else if persisted?.opponentTeams.isEmpty != false {
-            persist {
-                try databaseStore.upsertTeam(falcons, sortOrder: 0, isOpponent: true)
-                try databaseStore.upsertTeam(rockets, sortOrder: 1, isOpponent: true)
-            }
         }
+        if !requiresDataRecovery { createAutomaticBackup() }
     }
 
     var canUndo: Bool { !undoStack.isEmpty }
@@ -125,6 +131,11 @@ final class GameStore: ObservableObject {
     var scheduledGames: [StoredGame] {
         games.filter { $0.status == .scheduled }.sorted { $0.effectiveScheduledAt < $1.effectiveScheduledAt }
     }
+    var activeGameRecordedAt: Date? {
+        guard let stored = games.first(where: { $0.id == activeGameID }) else { return nil }
+        return stored.startedAt ?? stored.scheduledAt ?? stored.createdAt
+    }
+    var activeStoredGame: StoredGame? { games.first { $0.id == activeGameID } }
     var activeRules: GameRules? {
         activeGameID.flatMap { id in games.first(where: { $0.id == id })?.rules }
     }
@@ -2319,7 +2330,9 @@ final class GameStore: ObservableObject {
         guard let stored = games.first(where: { $0.id == id }) else { return }
         activeGameID = nil
         game = stored.state
-        activeGameID = stored.status == .ongoing ? stored.id : nil
+        // Completed games still accept post-game reviews; keep their edits
+        // attached to the stored snapshot so season statistics refresh too.
+        activeGameID = stored.status == .scheduled ? nil : stored.id
         undoStack.removeAll()
         redoStack.removeAll()
     }
@@ -2599,10 +2612,28 @@ final class GameStore: ObservableObject {
         game.fielding[player.id, default: FieldingLine()]
     }
 
-    func gameRecords(for player: Player, seasonID: String) -> [PlayerGameRecord] {
-        playerGameRecords
-            .filter { $0.playerID == player.id && $0.seasonID == seasonID }
-            .sorted { $0.date > $1.date }
+    func gameRecords(for player: Player, seasonID: String, teamID: UUID? = nil) -> [PlayerGameRecord] {
+        let completed = completedStatisticsGames(teamID: teamID, seasonID: seasonID)
+            .filter { $0.statisticsParticipantIDs.contains(player.id) }
+        let derived = completed.map { stored in
+            let result = stored.ourScore == stored.opponentScore ? "平" : (stored.ourScore > stored.opponentScore ? "胜" : "负")
+            return PlayerGameRecord(
+                id: stored.id, playerID: player.id, seasonID: seasonID,
+                date: stored.startedAt ?? stored.scheduledAt ?? stored.createdAt,
+                opponent: stored.opponent.name,
+                result: "\(result) \(stored.ourScore):\(stored.opponentScore)",
+                batting: stored.state.batting[player.id] ?? BattingLine()
+            )
+        }
+        let gameIDs = Set(games.map(\.id))
+        // Legacy records predate full game snapshots and contain batting only.
+        let legacy = playerGameRecords.filter {
+            $0.playerID == player.id && $0.seasonID == seasonID && !gameIDs.contains($0.id)
+                && (teamID == nil || teams.first(where: { $0.id == teamID })?.players.contains(where: { $0.id == player.id }) == true)
+        }
+        return (derived + legacy).sorted {
+            $0.date == $1.date ? $0.id.uuidString < $1.id.uuidString : $0.date > $1.date
+        }
     }
 
     func battingLine(for records: [PlayerGameRecord]) -> BattingLine {
@@ -2610,10 +2641,8 @@ final class GameStore: ObservableObject {
     }
 
     func seasonBattingLine(for player: Player) -> BattingLine {
-        guard let seasonID = seasons.first?.id else { return battingLine(for: player) }
-        var line = battingLine(for: gameRecords(for: player, seasonID: seasonID))
-        line.add(battingLine(for: player))
-        return line
+        guard let seasonID = statisticsSeasons.first?.id else { return BattingLine() }
+        return battingLine(for: gameRecords(for: player, seasonID: seasonID))
     }
 
     func exitedPlayerIDs(forHomeTeam isHomeTeam: Bool) -> Set<UUID> {
@@ -3389,7 +3418,11 @@ final class GameStore: ObservableObject {
 
     private static func loadLegacyRosterData(from url: URL) -> RosterSnapshot? {
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(RosterSnapshot.self, from: data)
+        do {
+            let snapshot = try JSONDecoder().decode(RosterSnapshot.self, from: data)
+            try LocalBackup.validate(snapshot)
+            return snapshot
+        } catch { return nil }
     }
 
     private static func archiveLegacyRosterData(at url: URL) {
@@ -3410,6 +3443,96 @@ final class GameStore: ObservableObject {
             playerGameRecords: playerGameRecords,
             games: games
         )
+    }
+
+    var backupDirectory: URL? {
+        databaseURL?.deletingLastPathComponent().appendingPathComponent("Backups", isDirectory: true)
+    }
+
+    var automaticBackupURLs: [URL] {
+        guard let directory = backupDirectory else { return [] }
+        return ((try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "bmbackup" && $0.lastPathComponent.hasPrefix("automatic-") }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
+    func exportBackup() throws -> URL {
+        guard !requiresDataRecovery else { throw LocalDataError.invalid("请先恢复数据库；当前没有可导出的完整数据。") }
+        let backup = try LocalBackup(snapshot: makeRosterSnapshot())
+        let url = try ReportExportFile.url(name: "BaseballMaster-完整备份", extension: "bmbackup")
+        try backup.write(to: url)
+        return url
+    }
+
+    func createAutomaticBackup() {
+        guard !requiresDataRecovery, let directory = backupDirectory else { return }
+        do {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+            let url = directory.appendingPathComponent("automatic-\(formatter.string(from: Date())).bmbackup")
+            try LocalBackup(snapshot: makeRosterSnapshot()).write(to: url)
+            for old in automaticBackupURLs.dropFirst(3) { try FileManager.default.removeItem(at: old) }
+        } catch {
+            storageErrorMessage = "自动备份未完成：\(error.localizedDescription)"
+        }
+    }
+
+    func restoreBackup(_ backup: LocalBackup) throws {
+        let snapshot = try backup.snapshot()
+        if let databaseURL {
+            let directory = databaseURL.deletingLastPathComponent()
+            let stagingDirectory = directory.appendingPathComponent("Restore-\(UUID().uuidString)", isDirectory: true)
+            let stagingURL = stagingDirectory.appendingPathComponent("BaseballMaster.sqlite")
+            defer { try? FileManager.default.removeItem(at: stagingDirectory) }
+            let staging = try CoreDataRosterStore(storeURL: stagingURL)
+            try staging.replaceAll(with: snapshot)
+            guard try staging.loadSnapshot()?.games.count == snapshot.games.count else {
+                throw LocalDataError.invalid("恢复校验失败，原数据未修改。")
+            }
+            try staging.close()
+            // Preserve SQLite, WAL, SHM and external binary storage together.
+            let archive = directory.appendingPathComponent("Recovery/\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+            try persistenceStore.close()
+            do {
+                let stem = databaseURL.deletingPathExtension().lastPathComponent
+                for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+                    if url.lastPathComponent.hasPrefix(databaseURL.lastPathComponent) || url.lastPathComponent == ".\(stem)_SUPPORT" {
+                        try FileManager.default.copyItem(at: url, to: archive.appendingPathComponent(url.lastPathComponent))
+                    }
+                }
+                try CoreDataRosterStore.replaceDatabase(at: databaseURL, from: stagingURL)
+                persistenceStore = try CoreDataRosterStore(storeURL: databaseURL)
+            } catch {
+                persistenceStore = try CoreDataRosterStore(storeURL: nil)
+                requiresDataRecovery = true
+                storageErrorMessage = "恢复未完成，原文件保留在恢复归档中，请重新导入备份。"
+                throw error
+            }
+        } else {
+            try persistenceStore.replaceAll(with: snapshot)
+        }
+        activeGameID = nil
+        teams = snapshot.teams
+        opponentTeams = snapshot.opponentTeams
+        currentTeam = teams.first(where: { $0.id == snapshot.currentTeamID }) ?? teams[0]
+        seasons = snapshot.seasons.isEmpty ? Self.makeSeasons() : snapshot.seasons
+        playerGameRecords = snapshot.playerGameRecords
+        games = snapshot.games.sorted { $0.updatedAt > $1.updatedAt }
+        if let ongoing = games.first(where: { $0.status == .ongoing }) {
+            game = ongoing.state
+            activeGameID = ongoing.id
+        } else {
+            game = GameState(homeTeam: Self.makeFalcons(), awayTeam: Self.makeWaves())
+        }
+        undoStack.removeAll()
+        redoStack.removeAll()
+        nextEventBeforeSituation = game.situationSnapshot
+        requiresDataRecovery = false
+        storageErrorMessage = nil
+        selectedTab = 0
+        gameNavigationID = UUID()
+        createAutomaticBackup()
     }
 
     private func persist(_ operation: () throws -> Void) {
