@@ -70,6 +70,8 @@
 
 ## 已确认事项
 
+App Store 上架截图已于 2026-09-18 准备：`output/app-store/iphone-6.5-portrait/` 中 8 张简体中文 JPG，统一为 1284 × 2778 px、RGB、无透明通道，可上传至 iPhone 6.5 英寸截图区域。文件按建议顺序编号，压缩包、预览页和说明位于 `output/app-store/`；使用 App 内存示例数据直接截屏，尚未上传 App Store Connect。规格参考：[Apple 截屏规范](https://developer.apple.com/cn/help/app-store-connect/reference/app-information/screenshot-specifications)。
+
 - 项目负责人于 2026-09-17 明确确认：已取得内置《中国棒球协会棒球规则 2022 版》随 App / TestFlight 分发的授权。
 - App 保留规则资料名称、版本与来源说明，PDF 原文未改动；比赛以赛事规程和现场裁判为准。
 - 本轮不进行真机验收，按项目负责人要求直接推进模拟器验证与发布准备。

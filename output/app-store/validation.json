@@ -1,0 +1,82 @@
+[
+  {
+    "file": "01-live-scoring.jpg",
+    "width": 1284,
+    "height": 2778,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha": false,
+    "bytes": 288471,
+    "sha256": "45741d14b2aa2f0a34f15789bd29b2f8183ffc5c8cbf2bf559da4ad8aa083fc7"
+  },
+  {
+    "file": "02-season-statistics.jpg",
+    "width": 1284,
+    "height": 2778,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha": false,
+    "bytes": 255069,
+    "sha256": "1d5e305c36bbdf10aed684cd2faf284c1985af2d0d9816e9a48cb46a46560ee9"
+  },
+  {
+    "file": "03-box-score.jpg",
+    "width": 1284,
+    "height": 2778,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha": false,
+    "bytes": 234207,
+    "sha256": "49fb074a3709710a6c98d93cd03e4bb431bb4822a2fda2e449b67bbfa28fb8e7"
+  },
+  {
+    "file": "04-game-management.jpg",
+    "width": 1284,
+    "height": 2778,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha": false,
+    "bytes": 238179,
+    "sha256": "52c70409e4db6c9058c0de556f76966fbf44ea52efbcacf8996ee01ccb76c19e"
+  },
+  {
+    "file": "05-team-roster.jpg",
+    "width": 1284,
+    "height": 2778,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha": false,
+    "bytes": 247677,
+    "sha256": "afbc42f955d6466d65dbe05996d67addb273b395fa099ea751575ec11404be60"
+  },
+  {
+    "file": "06-starting-lineup.jpg",
+    "width": 1284,
+    "height": 2778,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha": false,
+    "bytes": 279300,
+    "sha256": "df78b1cbfe8ea3c0237ac0b6ba9e35fe713137372bfd04a217197d87078dd77c"
+  },
+  {
+    "file": "07-match-poster.jpg",
+    "width": 1284,
+    "height": 2778,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha": false,
+    "bytes": 327531,
+    "sha256": "221c19e7b2f223a0c7c0f8bfc0f987cd9d6b6001004dff22d1a073e2bf8a404f"
+  },
+  {
+    "file": "08-baseball-rules.jpg",
+    "width": 1284,
+    "height": 2778,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha": false,
+    "bytes": 399687,
+    "sha256": "160c45bec9b991572f445c2b95dc6182e2ea7fd2e55b6243d564eb31d45830f6"
+  }
+]
