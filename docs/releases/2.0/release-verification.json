@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "build": "1",
+  "bundleID": "com.jasonchen.baseballmaster",
+  "binarySHA256": "f647cf5ae822097a1f28558229df8127ea65b8c8de05052e662cdb4c80f0baf8",
+  "buildResult": "succeeded",
+  "codeSigningAllowed": false,
+  "previewRoutesPresent": false,
+  "functionalCodeChanged": false,
+  "functionalRegressionSource": "../1.1.1/regression-results.json",
+  "functionalSourceCommit": "31c2e956526055588d9ed107b6aed0575048db9d",
+  "uploadedByAgent": false,
+  "submission": "user will re-archive and upload"
+}

@@ -1,6 +1,6 @@
 # BaseballMaster 开发与发布 TODO
 
-**2026-09-27 最新决定：原 V1.1 与 V1.1.1 合并，以 1.1.1 正式发布，由用户自行操作 App Store，不再分发 TestFlight。** 开发和本地验收已完成，见[正式发布流程](docs/releases/1.1.1/00-正式发布流程.md)、[本轮 TODO](<update/BaseballMaster V1.1.1 TODO.md>) 和[验证记录](<update/BaseballMaster V1.1.1 开发与验证记录.md>)。文字直播仍关闭。
+**2026-09-27 最新决定：原 V1.1 与 V1.1.1 合并，正式发布号最终统一为 2.0（1），由用户自行操作 App Store，不再分发 TestFlight。** 开发和本地验收已完成，见[正式发布流程](docs/releases/2.0/00-正式发布流程.md)、[本轮 TODO](<update/BaseballMaster V1.1.1 TODO.md>) 和[验证记录](<update/BaseballMaster V1.1.1 开发与验证记录.md>)。文字直播仍关闭。
 
 以下保留此前迭代的历史记录，旧 1.6／TestFlight 目标已被上述决定替代。
 
