@@ -11,10 +11,11 @@ struct StatsOverviewView: View {
     @State private var ascending = false
     @State private var query = ""
     @State private var recordsOnly = true
+    @State private var modeFilter: GameMode?
     @ScaledMetric(relativeTo: .body) private var metricWidth = 92
 
     private var team: Team? {
-        store.teams.first { $0.id == (selectedTeamID ?? store.currentTeam.id) } ?? store.teams.first
+        store.statisticsTeams.first { $0.id == (selectedTeamID ?? store.currentTeam?.id) } ?? store.statisticsTeams.first
     }
     private var seasonID: String {
         store.statisticsSeasons.contains(where: { $0.id == selectedSeasonID })
@@ -25,8 +26,9 @@ struct StatsOverviewView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if let team {
-                    let summary = store.seasonStatistics(for: team, seasonID: seasonID)
+                    let summary = store.seasonStatistics(for: team, seasonID: seasonID, mode: modeFilter)
                     scopeSelection(team: team)
+                    GameModeFilter(selection: $modeFilter)
                     teamSummary(summary)
                     Text("仅统计已结束的本队比赛；观赛、练习和进行中比赛不计入。")
                         .font(.footnote)
@@ -43,9 +45,19 @@ struct StatsOverviewView: View {
                     .pickerStyle(.segmented)
                     .accessibilityIdentifier("stats-category")
 
-                    StatisticsMetricsGrid(category: category,
+                    if category == .pitching && modeFilter == .coachPitch { Text("教练投手模式：投手数据不适用") }
+                    else { StatisticsMetricsGrid(category: category,
                         batting: summary.batting, pitching: summary.pitching, fielding: summary.fielding
-                    )
+                    ) }
+                    if modeFilter != .coachPitch {
+                        let legacyPlayers = store.historicalPersonalPlayers(teamID: team.id)
+                        if !legacyPlayers.isEmpty {
+                            Text("旧版个人记录").font(.headline)
+                            ForEach(legacyPlayers) { player in
+                                NavigationLink(player.compactName, destination: PlayerDetailView(player: player, initialSeasonID: seasonID, statisticsTeamID: team.id))
+                            }
+                        }
+                    }
                     if summary.games.isEmpty {
                         emptyState("这个赛季还没有已结束的比赛", detail: "完成并保存比赛后，这里会自动汇总球队和球员数据。", id: "stats-no-games")
                     }
@@ -98,7 +110,7 @@ struct StatsOverviewView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if let team {
                     ReportExportButton(title: "导出 PDF", identifier: "export-team-season-pdf", previewTitle: "球队赛季报告") {
-                        try TeamSeasonPDFReport(store: store, team: team, seasonID: seasonID).write()
+                        try TeamSeasonPDFReport(store: store, team: team, seasonID: seasonID, mode: modeFilter).write()
                     }
                 }
             }
@@ -114,7 +126,7 @@ struct StatsOverviewView: View {
         BMCard {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("球队", selection: Binding(get: { team.id }, set: { selectedTeamID = $0 })) {
-                    ForEach(store.teams) { Text($0.name).tag($0.id) }
+                    ForEach(store.statisticsTeams) { Text($0.name).tag($0.id) }
                 }
                 .accessibilityIdentifier("stats-team-picker")
                 Divider()
@@ -218,11 +230,11 @@ struct StatsOverviewView: View {
                 Text(row.player.name).font(.headline)
                 Text("\(row.player.numbersText) · \(row.gamesPlayed) 场\(row.isCurrentRoster ? "" : " · 历史球员")")
                     .font(.caption).foregroundStyle(BMTheme.secondaryText)
-                Text(rowDescription(row)).font(.caption).foregroundStyle(BMTheme.secondaryText)
+                Text(category == .pitching && modeFilter == .coachPitch ? "投手数据不适用" : rowDescription(row)).font(.caption).foregroundStyle(BMTheme.secondaryText)
             }
             Spacer(minLength: 4)
             VStack(alignment: .trailing, spacing: 5) {
-                Text(metric.formattedValue(for: row)).font(.title3.bold().monospacedDigit())
+                Text(category == .pitching && modeFilter == .coachPitch ? "不适用" : metric.formattedValue(for: row)).font(.title3.bold().monospacedDigit())
                 Text(metric.rawValue).font(.caption2)
             }
             .foregroundStyle(BMTheme.green)
@@ -335,5 +347,15 @@ struct StatisticsMetricsGrid: View {
             }
         }
         .accessibilityIdentifier("stats-metrics-\(category.rawValue)")
+    }
+}
+
+struct GameModeFilter: View {
+    @Binding var selection: GameMode?
+    var body: some View {
+        Picker("比赛模式筛选", selection: $selection) {
+            Text("全部模式").tag(Optional<GameMode>.none)
+            ForEach(GameMode.allCases) { Text($0.title).tag(Optional($0)) }
+        }.pickerStyle(.segmented).accessibilityIdentifier("statistics-mode-filter")
     }
 }

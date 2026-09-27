@@ -1,0 +1,834 @@
+{
+  "unit": {
+    "total": 137,
+    "passed": 137,
+    "failed": 0,
+    "skipped": 0,
+    "tests": {
+      "BaseballMasterTests.GameStoreTests testArbitraryFielderReplacementUpdatesDefenseBattingSlotAndExitState": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testAutomaticBackupsRotateAndEmptyOpponentRosterStaysEmpty": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testAutomaticWalkRunnerAdvanceAndSubstitutionKeepEventTimelineContinuous": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testBoxScorePDFSplitsLongExtraInningsWithoutShrinkingColumns": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testClockAndPendingReviewPersistInCoreDataGamePayload": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testCompleteRecordAndProfessionalBoxScoreExports": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testCorrectionChangesCountAndBaseState": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testCorruptDatabaseIsPreservedAndCanRecoverFromBackup": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testCustomDefensiveRouteCreditsAssistAndPutout": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testCustomUmpireRulingCanCancelPreviousPlayResult": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testCustomUmpireRulingCanCreditHitRBIAndEarnedRun": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testCustomUmpireRulingHandlesBatterAndMultipleExistingRunners": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testCustomUmpireRulingOverridesHitRBIEarnedRunAndErrorResponsibility": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testDeferredLiveDoesNotReadCredentialsOrSendEvenAfterRestoreAndForeground": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testDesignatedHitterAndTwoWayRulesChangeActualParticipation": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testDroppedThirdStrikeCanPlaceBatterOnFirst": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testEndReasonFreezesClockAndSuspensionKeepsGameOngoing": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testExtraInningTiebreakIsEnabledLiveAndAutomaticRunnerRunIsUnearned": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testFinishedGameMovesFromOngoingToRecentAndPersists": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testFirstScoringActionAutomaticallyStartsFormalGameClock": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testForceThirdOutAutomaticallyCancelsRun": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testFormalDoubleSwitchReplacesTwoPlayersAndPreservesTwoDistinctPositions": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testFourBallsMovesBatterToFirstAndAdvancesOrder": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testFutureDatabaseVersionAndMalformedPayloadRequireRecovery": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testFutureGamePersistsWithoutReplacingCurrentGameAndCanStartLater": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testGameClockStartsPausesResumesAndSwitchesToCountdown": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testGeneratePlayByPlayAndPosterPresentationSamples": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testGeneratePresentationPDFSamplesFromRecordedGames": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testHistoricalSituationEditRejectsConflictWithLaterEvent": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testHitByPitchForcesLoadedBasesAndScoresRun": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testHomeLeadAfterTopOfFinalInningEndsGame": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testInfieldFlyAndTriplePlayRejectImpossibleSituations": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testInfieldFlyImmediatelyRetiresBatterButKeepsRunnerChoicesLive": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testInvalidAndFutureBackupsCannotReplaceExistingData": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLargeSeasonAggregationAndBackupPerformance": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLegacyJSONImportsIntoCoreDataOnce": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLiveCloseDuringCreatePreservesIntentAndDeletesNewlyCreatedStream": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLiveCloseSurvivesInFlightCreationFailure": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLiveConflictBlocksPublishingAndRestoreDetachesWithoutChangingLocalGame": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLiveCredentialsMustPersistBeforeNetworkAndNeverEnterBackup": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLiveExpiredOrDeletedStreamCannotBeSilentlyRecreated": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLiveHTTPProjectionAgainstLocalService": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLiveProjectionCoachAndInterruptedAppearanceDoNotInventPitcherStatsOrOut": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLiveProjectionUsesStableAppearanceIDsAndUndoRemovesEvents": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLiveRestartRetriesSameCreationIdentityAndCoalescesLatestSavedState": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testLocalBackupRoundTripPreservesGamesEventsAndRestoresOnRestart": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testMinimalFutureGameCanBeScheduledBeforeOpponentRosterExists": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testMinimalFutureGameUsesRostersAndRulesCompletedBeforeFirstPitch": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testMinimalFutureObservationCanAddBothRostersBeforeStarting": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testNonBattedPendingViolationCanBeReviewedWithoutPlayOutcome": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testObservedGameUsesTwoOpponentTeamsAndDoesNotBecomeTeamRecord": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testOngoingGameRulesLineupAndStateRecoverFromCoreData": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testOpponentTeamAndRosterPersistSeparately": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPendingErrorReviewRequiresAndCreditsDefensiveResponsibility": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPendingEventCanBeReviewedAndTimelineRemainsValid": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPendingReviewRejectsOutcomeThatConflictsWithRecordedBatterResult": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPendingSafeArrivalReviewUpdatesHitAndPitcherStatistics": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPinchHitterTakesLineupSpotAndRemovedPlayerCanReturn": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPitcherChangeUpdatesCurrentPitcher": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPitcherInningsLimitCreatesFinalInningAndLimitWarnings": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPlateAppearanceChineseRecordAggregatesEveryEventIntoOneEntry": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPlayByPlayMissingSnapshotsAndLongAppearancePaginateHonestly": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPlayByPlayPDFKeepsBallsRunnersTransitionsAndSingleAppearanceScope": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPlayerPDFHonorsSelectedGamesAndPreservesUnknownLegacyStatistics": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPlayerPitchCountsPersistAcrossPitchingChangesUndoAndRestart": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPlayerStatisticsAggregateSelectedGames": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPracticeInningUsesIndependentResettableState": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testPreviousLineupAndBenchRemainAvailable": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testReportFilesSanitizeNamesAndNeverOverwritePreviousExports": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testReportPaginationRepeatsHeadersAndPreservesLongChineseNames": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testRosterChangesPersistToCoreDataSQLite": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testRosterSchemaV1SQLiteMigratesToV2": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testRunnerActionDuringAtBatRemainsInCurrentBattersChineseRecord": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testRunnerConflictAndImpossibleFourthOutAreRejected": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testSinglePlacesBatterOnFirstAndUpdatesHit": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStatisticsAggregateRawTotalsBeforeCalculatingRatesAndInnings": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStatisticsExcludeOtherTeamsSeasonsObservationAndUnfinishedGames": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStatisticsExposeUnknownHistoricalSeasonsAndEmptyStates": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStatisticsFiltersAndSortsUndefinedRatesLastInEitherDirection": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStatisticsFinishingAndReloadingGameUpdatesOverviewAndPlayerDetails": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStatisticsKeepDeletedAndSubstitutedPlayersWithoutCountingUnusedBench": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStatisticsPlayerDetailsPreserveSelectedGamesAndLegacyBatting": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStatisticsPostGameReviewPersistsAndRefreshesTotals": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStolenBaseMovesRunnerAndUpdatesStatistic": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testStructuredScoringEventKeepsChineseLogAndSituationSnapshots": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testTagThirdOutRequiresTimingChoiceAndCanCountEarlierRun": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testTeamAndPlayerCRUDSupportsMultipleJerseyNumbers": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testTeamSeasonPDFContainsOnlySelectedTeamSeasonAndAllCategories": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testTextOnlyPlayByPlayHandlesLongDescriptionsReviewsAndEmptyRecords": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testTextOnlyPlayByPlayPreservesDescriptionsAndSingleAppearanceScope": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testThirdOutOnBatterCancelsRun": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testThreeGroundOutsSwitchHalfInning": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testThreeStrikesRecordsStrikeoutAndOut": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testTiebreakConfigurationAndPinchRunnerKeepAutomaticUnearnedStatusAcrossPitchingChange": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testTiebreakRequestsFreshAutomaticRunnerInEachHalfInning": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testUndoAndRedoRestoreSameScoringState": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testUndoRestoresPreviousCount": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111BatterReturningWithinSameAppearanceKeepsLastBatterAndRecordedPitchOwners": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111BothPitcherLimitsRemainVisibleAcrossThirdOutUndoAndReentry": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111BothTeamsReorderAnchorsCurrentAppearanceAndNextBatter": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111DoubleSwitchCanReturnBothRemovedPlayers": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111DraftSubstitutionPreservesTraditionalDHAndAutomaticRunner": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111ExplicitLegacyPitcherAndStatisticsAreNotSilentlyMoved": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111FoulBuntIsOnePitchOneStrikeoutAndOrdinaryFoulIsNotAnOut": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111LineupAndRosterSurviveRestartBackupAndFutureNewGame": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111LineupCancelInvalidStaleAndFailedSaveLeaveGameAndRostersUnchanged": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111LineupCorrectionsKeepStatsAndTextPDFExportsAttachedToSamePlayer": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111PinchRunnerAndFielderReentryKeepSlotsAndPitcherIdentity": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111PitcherPositionSwapIgnoresBenchAndReentryAccumulates": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111ProfileFailureAlsoLeavesDatabaseRosterUnchangedAndUndoCanRetry": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111ProfilesUpdateCurrentRunnerAndTeamRosterWithoutChangingIdentityOrOldText": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111SelectedStarterWinsAcrossPathsSidesNumbersAndRosterOrders": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111ThirdOutRunnerFlowOnlyNeedsOutAndPossibleScorers": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111ThirdOutSkipsDestinationsButPreservesActualOutIdentities": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111TwoWayPitcherCanKeepDHAndReturnToMoundUsingDraftOrQuickChange": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11AppearanceMigrationWriteFailureStopsNormalUseAndRetries": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11BothUnfinishedTeamsAreProtectedAndCompletedHistorySurvivesDeletion": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11CoachBoundaryFoulHBPAndFairBallNeverRecordPlayerPitching": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11CoachForbiddenRunnerEventsAndModeStatistics": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11EmptyRosterAnd00SurviveBackupAndRestart": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11FailedCompleteActionRollsBackScoreIdentityAndRevision": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11InterruptedUpgradeAtEveryStageLeavesSourceIntactAndCanRetry": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11LastFoulAndSimultaneousStrikeoutLimitCountOneOut": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11LegacyV2MigrationPreservesEveryFieldAndKeepsIndependentArchive": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11PinchHitterSharesAppearanceAndTerminalContinueReopensNextHalf": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11ReopenKeepsIdentityClockAndCountsSeasonOnlyOnce": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11RestoredLegacyBackupGetsStableIDsBeforeNextAction": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11RosterNumberOrderingUsesPrimaryAndKeepsHistoricalSnapshot": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11RunCapPreservesHomeRunAndCapsRunsRBIAndPitcherResponsibility": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11ScheduledObservationProtectsBothTeamsWithoutOwnTeam": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11StableAppearanceBeforePitchAcrossUndoRedoAndRestart": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11UnfinishedAppearanceHasNewLinkedSegmentAfterManualHalf": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV11WalkAndHBPForcedRunCreditsOnlyEffectiveRBIAtCap": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testViolationRecordsDeadBallClassification": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testViolationTapAppliesCertainResultAndKeepsCauseInChineseLog": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testWalkOffRunPromptsBeforeEnding": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      },
+      "BaseballMasterTests.GameStoreTests testV111PitcherBadgeSummarizesCurrentLimitsAndIdentifiesOtherPitchers": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small.log"
+      }
+    }
+  },
+  "large_ui": {
+    "total": 52,
+    "passed": 52,
+    "failed": 0,
+    "skipped": 0,
+    "tests": {
+      "BaseballMasterUITests.BaseballMasterUITests testBackupExportAndImportPickerAreAvailable": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testBoxScoreCanBeOpenedFromScoring": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testCustomDefensiveRouteUsesOrderedFielderTaps": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testFormalGameHomeUsesLocalEmptyStates": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testFormalSubstitutionAndComplexUmpireRulingEntrypointsExist": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testFutureGameCanBeConfiguredBeforeSaving": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testGameClockStartsPausesAndSwitchesToRemainingTime": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testGamePosterCanEditVenueAndShareImage": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testGameSetupOpensPersistentOpponentManagement": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testHomeShowsScheduledOngoingAndObservedHistory": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testLineupSupportsPositionsBenchAndDragReordering": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testLiveBroadcastStartShareAndCloseWithLocalService": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testLivePitchCountTracksCurrentPitcherAndUndo": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testManualGameEndRequiresReason": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testMultiRunnerTiebreakPlacementCompletesBeforeScoringContinues": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testObservedGameCanConfirmBothLineupsBeforeStarting": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testOfflineReleaseHidesLiveInScoringAndResultsAndDescribesLocalPrivacy": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testPendingEventCanBeOpenedAndReviewedFromCorrection": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testPendingRecordCanBeReviewedDirectlyFromGameResult": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testPlayerGameFilterCanBeOpened": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testPlayerSelectedGamePDFCanBePreviewedAndShared": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testPracticeModeStartsAndResets": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testProfessionalBoxScorePDFPreviewAndShare": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testProfileShowsRulesPracticeDataSettingsAndAbout": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testResultGroupsChineseRecordsByPlateAppearanceAndOpensSystemShare": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testRulesCategoriesAndBundledPDFCanBeOpened": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testScorekeepingCoreControlsAndOutcomeSheet": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testSetupSupportsFutureObservedGameFlow": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testSingleWithRunnerUsesSuggestedRunnerConfirmation": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testSpecialEventsAndCorrectionAreVisible": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testStatisticsCategoriesOpenPlayerWithSeasonAndGameFilter": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testStatisticsEmptySeasonHasNoFabricatedTotals": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testStatisticsLargeTextAndDarkModeKeepFiltersReachable": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testStatisticsSearchRecordFilterAndSortControls": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testStatisticsSwitchesSeasonAndTeamUsingRealCompletedGames": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testTeamListOpensRosterAndPlayerStatistics": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testTeamSeasonPDFCanBePreviewedAndShared": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testTextOnlyWholeGameAndSingleAppearancePDFCanBePreviewedAndShared": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111FoulBuntVisibleWithoutShrinkingCoreControlsAndCanUndo": {
+        "status": "passed",
+        "log": "bm111-final-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111LineupReorderProfilesBothTeamsAndCancel": {
+        "status": "passed",
+        "log": "bm111-final-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111PitcherCanReturnThroughExistingQuickSubstitution": {
+        "status": "passed",
+        "log": "bm111-final-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111ThirdOutAndTriplePlaySkipRemainingRunnerDestinations": {
+        "status": "passed",
+        "log": "bm111-final-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV11CoachLimitAndReopenFlow": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV11FullBasesContrast": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV11OptionalNamesAndDoubleZeroEditor": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV11RunLimitPromptAndManualHalfInDarkMode": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV11ScoringHidesDockAndKeepsBackNavigation": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testViolationRecordingUsesCategorizedTapFlow": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testWholeGameAndSingleAppearancePDFCanBePreviewed": {
+        "status": "passed",
+        "log": "bm111-ui-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111ForceThirdOutOnlyAsksWhichRunnerAndKeepsScoringReachable": {
+        "status": "passed",
+        "log": "bm111-final-large.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111OpponentPitcherWarningRemainsAfterThirdOutAndOpensAllDetails": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-large-verified.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111FinalInningBadgeAndLongPitcherNameKeepScoringUsable": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-large-dark.log"
+      }
+    }
+  },
+  "small_ui": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0,
+    "tests": {
+      "BaseballMasterUITests.BaseballMasterUITests testV111ForceThirdOutOnlyAsksWhichRunnerAndKeepsScoringReachable": {
+        "status": "passed",
+        "log": "bm111-final-small.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111FoulBuntVisibleWithoutShrinkingCoreControlsAndCanUndo": {
+        "status": "passed",
+        "log": "bm111-final-small.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111LineupReorderProfilesBothTeamsAndCancel": {
+        "status": "passed",
+        "log": "bm111-final-small.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111PitcherCanReturnThroughExistingQuickSubstitution": {
+        "status": "passed",
+        "log": "bm111-final-small.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111ThirdOutAndTriplePlaySkipRemainingRunnerDestinations": {
+        "status": "passed",
+        "log": "bm111-final-small.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV11CoachLimitAndReopenFlow": {
+        "status": "passed",
+        "log": "bm111-small.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV11RunLimitPromptAndManualHalfInDarkMode": {
+        "status": "passed",
+        "log": "bm111-small.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV11ScoringHidesDockAndKeepsBackNavigation": {
+        "status": "passed",
+        "log": "bm111-small.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111OpponentPitcherWarningRemainsAfterThirdOutAndOpensAllDetails": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small-verified.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testFormalGameHomeUsesLocalEmptyStates": {
+        "status": "passed",
+        "log": "bm111-final-launch-verified.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testScorekeepingCoreControlsAndOutcomeSheet": {
+        "status": "passed",
+        "log": "bm111-final-launch-verified.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testV111FinalInningBadgeAndLongPitcherNameKeepScoringUsable": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small-dark.log"
+      },
+      "BaseballMasterUITests.BaseballMasterUITests testLivePitchCountTracksCurrentPitcherAndUndo": {
+        "status": "passed",
+        "log": "bm111-final-pitcher-badge-small-verified.log"
+      }
+    }
+  }
+}

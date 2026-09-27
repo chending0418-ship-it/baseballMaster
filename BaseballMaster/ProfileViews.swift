@@ -108,7 +108,7 @@ struct ProfileView: View {
                     Text("本机记分员")
                         .font(.system(size: 21, weight: .bold))
                         .foregroundStyle(BMTheme.navy)
-                    Text("当前球队 · \(store.currentTeam.name)")
+                    Text("当前球队 · \((store.currentTeam?.name ?? "尚未创建球队"))")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(BMTheme.secondaryText)
                     Label("Core Data 本地保存", systemImage: "checkmark.shield.fill")
@@ -119,7 +119,7 @@ struct ProfileView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("本机记分员，当前球队\(store.currentTeam.name)，数据保存在本机")
+        .accessibilityLabel("本机记分员，当前球队\((store.currentTeam?.name ?? "尚未创建球队"))，数据保存在本机")
     }
 }
 
@@ -180,7 +180,7 @@ struct LocalDataManagementView: View {
                         Label("仅保存在这台设备", systemImage: "iphone.gen3")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(BMTheme.navy)
-                        Text("本队、对手球队、球员、赛季、未来比赛和现场记录都保存在 App 沙盒中的 Core Data SQLite 数据库，不需要登录，也不会上传到云端。")
+                        Text("本队、对手球队、球员、赛季、未来比赛和现场记录均保存在本机，不需要登录。记分、统计、报表和本地备份可离线使用。当前版本暂不提供文字直播，不向开发者服务器上传球队、球员、比赛记录或备份。")
                             .font(.system(size: 14))
                             .foregroundStyle(BMTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -353,7 +353,8 @@ struct AppAboutView: View {
                         Label("隐私与数据", systemImage: "lock.shield.fill")
                             .font(.system(size: 17, weight: .bold))
                             .foregroundStyle(BMTheme.navy)
-                        Text("球队、球员、赛季和逐场统计保存在本机 Core Data 数据库中，不启用 CloudKit，也不要求用户账号。")
+                        Text("球队、球员、赛季和逐场统计保存在本机，不启用 CloudKit，也不要求用户账号。当前版本暂不提供文字直播，不向开发者服务器上传比赛资料。报表与备份仅在你主动导出或分享时交给所选位置或接收方。")
+                            .accessibilityIdentifier("about-privacy-description")
                             .font(.system(size: 14))
                             .foregroundStyle(BMTheme.secondaryText)
                     }

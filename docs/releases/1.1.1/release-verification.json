@@ -1,0 +1,11 @@
+{
+  "version": "1.1.1",
+  "build": "1",
+  "bundleID": "com.jasonchen.baseballmaster",
+  "binarySHA256": "f647cf5ae822097a1f28558229df8127ea65b8c8de05052e662cdb4c80f0baf8",
+  "buildResult": "succeeded",
+  "codeSigningAllowed": false,
+  "previewRoutesPresent": false,
+  "uploaded": false,
+  "submission": "user will perform"
+}

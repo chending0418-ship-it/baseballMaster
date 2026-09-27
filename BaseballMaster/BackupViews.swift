@@ -30,6 +30,20 @@ struct BackupManagementView: View {
                         .buttonStyle(PrimaryButtonStyle())
                         .accessibilityIdentifier("export-local-backup")
                 }
+                if store.requiresDataRecovery {
+                    Button { perform { shareFile = ExportedReportFile(url: try store.exportOriginalData()) } }
+                        label: { Label("导出原始资料供恢复", systemImage: "externaldrive") }
+                        .buttonStyle(SecondaryButtonStyle())
+                    Text("原始资料包含受保护的数据库文件；导出不会替换当前资料。可在排除存储问题后重新启动 App 重试。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                }
+                ForEach(store.upgradeBackupURLs, id: \.path) { url in
+                    Button("查看升级保留备份") {
+                        perform { pendingBackup = try LocalBackup.read(url); confirmRestore = true }
+                    }.buttonStyle(SecondaryButtonStyle())
+                    Button("导出这份升级保留备份") { shareFile = ExportedReportFile(url: url) }
+                        .buttonStyle(SecondaryButtonStyle())
+                }
                 Button { importing = true } label: { Label("选择备份文件恢复", systemImage: "square.and.arrow.down") }
                     .buttonStyle(SecondaryButtonStyle())
                     .accessibilityIdentifier("import-local-backup")
@@ -43,7 +57,7 @@ struct BackupManagementView: View {
                 BMCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("备份说明").font(.headline)
-                        Text("启动和退到后台时自动保留最近 3 份完整备份。自动备份仍在 App 内，卸载 App 会一并删除。请定期导出到 App 之外保存。")
+                        Text("启动和退到后台时自动保留最近 3 份完整备份；升级保留备份独立保存，不参与轮换。自动备份仍在 App 内，卸载 App 会一并删除。请定期导出到 App 之外保存。")
                         Text("恢复会替换本机全部数据，不合并名单或比赛。文件校验通过后才可确认恢复。备份未加密，请妥善保管球员与比赛资料。")
                     }.font(.subheadline).fixedSize(horizontal: false, vertical: true)
                 }

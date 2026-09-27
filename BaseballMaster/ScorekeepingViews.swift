@@ -8,18 +8,24 @@ struct ScorekeepingView: View {
     @State private var showSpecialEventSheet = false
     @State private var showCorrectionSheet = false
     @State private var showSubstitutionSheet = false
+    @State private var showEndReasonSheet = false
+    @State private var confirmEndHalf = false
+    @State private var showLiveBroadcast = false
+    @State private var showRuleNotices = false
 
     var body: some View {
         GeometryReader { proxy in
+            let showsField = proxy.size.width >= 390 && proxy.size.height >= 620
             VStack(spacing: 7) {
                 compactScoreHeader
                 VStack(spacing: 0) {
-                    BaseballDiamondView(game: store.game, fixedHeight: nil)
-
-                    Divider()
-                        .overlay(BMTheme.line)
-
+                    if showsField {
+                        BaseballDiamondView(game: store.game, fixedHeight: nil)
+                        Divider().overlay(BMTheme.line)
+                    }
                     matchupBar
+                    if !showsField { compactBaseSummary }
+
                 }
                     .background(BMTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: BMTheme.cardRadius, style: .continuous))
@@ -27,28 +33,25 @@ struct ScorekeepingView: View {
                         RoundedRectangle(cornerRadius: BMTheme.cardRadius, style: .continuous)
                             .stroke(BMTheme.line.opacity(0.75), lineWidth: 1)
                     }
-                    .frame(maxHeight: .infinity)
-                    .overlay(alignment: .top) {
-                        TimelineView(.periodic(from: .now, by: 60)) { context in
-                            let notices = store.ruleNotices(at: context.date)
-                            if !notices.isEmpty {
-                                Label(notices.joined(separator: " · "), systemImage: "bell.badge.fill")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(BMTheme.orange)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.72)
-                                    .padding(.horizontal, 10)
-                                    .frame(height: 28)
-                                    .background(BMTheme.orangeSoft.opacity(0.96))
-                                    .clipShape(Capsule())
-                                    .padding(.top, 7)
-                                    .accessibilityIdentifier("game-rule-warning")
-                            }
-                        }
-                    }
+                    .frame(maxHeight: showsField ? .infinity : nil)
 
+                if !showsField { Spacer(minLength: 0) }
+                if store.isCoachPitch {
+                    Text("教练投手 · 本打席 \(store.game.plateAppearancePitchCount ?? 0) / \(store.coachPitchLimit) 球")
+                        .font(.caption.bold()).accessibilityIdentifier("coach-pitch-count")
+                }
                 if store.game.isFinal {
                     finalGameCard
+                } else if let decision = store.game.pendingDecision {
+                    BMCard {
+                        VStack(spacing: 12) {
+                            Text(decision.title).font(.headline)
+                            Button(decision == .runLimit ? "交换攻守" : "结束比赛") { store.resolveGameDecision(finish: true) }
+                                .buttonStyle(PrimaryButtonStyle())
+                            Button(decision == .runLimit ? "继续本半局（不再加分）" : "继续比赛") { store.resolveGameDecision(finish: false) }
+                                .buttonStyle(SecondaryButtonStyle())
+                        }
+                    }.accessibilityIdentifier("pending-game-decision")
                 } else {
                     pitchControls
 
@@ -85,11 +88,27 @@ struct ScorekeepingView: View {
                         Button {
                             showSubstitutionSheet = true
                         } label: {
-                            Label("换人", systemImage: "arrow.left.arrow.right")
+                            Label("阵容", systemImage: "person.3.fill")
                         }
                         .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green, compact: true))
                         .accessibilityIdentifier("open-substitutions")
                     }
+                    HStack(spacing: 10) {
+                        Button("结束半局") { confirmEndHalf = true }
+                            .disabled(!store.canRecordAction)
+                        Spacer(minLength: 0)
+                        if store.game.strikes == 2 {
+                            Button("触击界外出局") { store.recordFoulBuntStrikeout() }
+                                .foregroundStyle(BMTheme.orange)
+                                .frame(minHeight: 40)
+                                .accessibilityIdentifier("foul-bunt-strikeout")
+                            Spacer(minLength: 0)
+                        }
+                        Button("结束比赛") { showEndReasonSheet = true }
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: 40)
                 }
             }
             .frame(
@@ -101,14 +120,38 @@ struct ScorekeepingView: View {
             .padding(.bottom, 8)
         }
         .bmScreenBackground()
+        .alert("操作未保存", isPresented: Binding(get: { store.storageErrorMessage != nil }, set: { if !$0 { store.storageErrorMessage = nil } })) {
+            Button("知道了", role: .cancel) { store.storageErrorMessage = nil }
+        } message: { Text(store.storageErrorMessage ?? "") }
         .navigationTitle("现场记分")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .confirmationDialog("结束当前半局？", isPresented: $confirmEndHalf, titleVisibility: .visible) {
+            Button("确认交换攻守") { store.endCurrentHalf() }
+            Button("取消", role: .cancel) {}
+        }
+        .sheet(isPresented: $showRuleNotices) {
+            NavigationStack {
+                List(Array(store.ruleNotices().enumerated()), id: \.offset) { _, notice in Text(notice) }
+                    .navigationTitle("比赛规则提醒")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showRuleNotices = false } } }
+            }
+        }
+        .sheet(isPresented: $showEndReasonSheet) { GameEndReasonSheet().environmentObject(store) }
+        .sheet(isPresented: $showLiveBroadcast) {
+            if store.liveBroadcasts.isEnabled, let id = store.activeStoredGame?.id {
+                LiveBroadcastSheet(store: store, gameID: id)
+            }
+        }
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                NavigationLink(destination: BaseballRulesView()) {
-                    Image(systemName: "questionmark.circle")
+            ToolbarItem(placement: .topBarTrailing) {
+                if store.liveBroadcasts.isEnabled {
+                    Button { showLiveBroadcast = true } label: {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                    }
+                    .accessibilityLabel("文字直播与分享")
+                    .accessibilityIdentifier("open-live-broadcast")
                 }
-                .accessibilityLabel("棒球规则")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if let stored = store.activeStoredGame {
@@ -343,33 +386,91 @@ struct ScorekeepingView: View {
         .accessibilityLabel("\(value)\(label == "B" ? "坏球" : label == "S" ? "好球" : "出局")")
     }
 
+    private func ruleNoticeButton(_ notices: [String], summary: String, iconOnly: Bool) -> some View {
+        Button { showRuleNotices = true } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "bell.badge.fill")
+                if !iconOnly { Text(summary) }
+            }
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(BMTheme.orange)
+            .padding(.horizontal, 4)
+            .frame(height: 20)
+            .background(BMTheme.orangeSoft, in: Capsule())
+            .fixedSize()
+            .contentShape(Rectangle().inset(by: -10))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(notices.joined(separator: " · "))
+        .accessibilityValue(summary)
+        .accessibilityIdentifier("game-rule-warning")
+        .accessibilityHint("点按查看全部比赛规则提醒")
+    }
+
     private var matchupBar: some View {
         HStack(spacing: 0) {
-            matchupPlayer(label: "投手", player: store.currentPitcher, alignment: .leading)
+            matchupPlayer(label: store.isCoachPitch ? "P 位守备（教练投球）" : "投手", player: store.currentPitcher, alignment: .leading,
+                          pitchCount: store.isCoachPitch ? nil : store.pitchingLine(for: store.currentPitcher).pitches)
             Rectangle()
                 .fill(BMTheme.line)
                 .frame(width: 1, height: 35)
                 .padding(.horizontal, 12)
-            matchupPlayer(label: "打者", player: store.currentBatter, alignment: .trailing)
+            matchupPlayer(label: "第 \(store.currentBattingOrder) 棒 · 打者", player: store.currentBatter, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
-        .accessibilityIdentifier("current-matchup")
     }
 
-    private func matchupPlayer(label: String, player: Player, alignment: HorizontalAlignment) -> some View {
+    private func matchupPlayer(label: String, player: Player, alignment: HorizontalAlignment, pitchCount: Int? = nil) -> some View {
         VStack(alignment: alignment, spacing: 4) {
-            Text(label)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(BMTheme.secondaryText)
-            Text("#\(player.number) \(player.name)")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(BMTheme.navy)
-                .lineLimit(1)
+            HStack(spacing: 7) {
+                Text(label)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(BMTheme.secondaryText)
+                if let pitchCount {
+                    Text("已投 \(pitchCount) 球")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(BMTheme.green)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(BMTheme.green.opacity(0.12), in: Capsule())
+                        .fixedSize()
+                }
+            }
+            if alignment == .leading {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    if let summary = store.ruleNoticeSummary(at: context.date) {
+                        let notices = store.ruleNotices(at: context.date)
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 4) {
+                                matchupName(label: label, player: player, alignment: alignment, pitchCount: pitchCount).fixedSize()
+                                ruleNoticeButton(notices, summary: summary, iconOnly: false)
+                            }
+                            HStack(spacing: 4) {
+                                matchupName(label: label, player: player, alignment: alignment, pitchCount: pitchCount)
+                                ruleNoticeButton(notices, summary: summary, iconOnly: true)
+                            }
+                        }
+                    } else {
+                        matchupName(label: label, player: player, alignment: alignment, pitchCount: pitchCount)
+                    }
+                }
+            } else {
+                matchupName(label: label, player: player, alignment: alignment, pitchCount: pitchCount)
+            }
         }
         .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
+    }
+
+    private func matchupName(label: String, player: Player, alignment: HorizontalAlignment, pitchCount: Int?) -> some View {
+        Text("#\(player.numberText) \(player.name)")
+            .font(.system(size: 16, weight: .bold))
+            .foregroundStyle(BMTheme.navy)
+            .lineLimit(1)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label)，\(player.number)号，\(player.name)")
+        .accessibilityLabel("\(label)，\(player.numberText)号，\(player.name)" + (pitchCount.map { "，本场已投 \($0) 球" } ?? ""))
+        .accessibilityIdentifier(alignment == .leading ? "current-pitcher" : "current-batter")
     }
 
     private var pitchControls: some View {
@@ -421,6 +522,24 @@ struct ScorekeepingView: View {
         .accessibilityIdentifier("redo-last-play")
     }
 
+    private var compactBaseSummary: some View {
+        HStack(spacing: 8) {
+            ForEach(Base.allCases, id: \.self) { base in
+                let runner = store.game.baseRunners[base]
+                VStack(spacing: 3) {
+                    Text(base.title).font(.caption2)
+                    Text(runner.map { "#\($0.numberText) \($0.name)" } ?? "无人")
+                        .font(.caption.bold()).lineLimit(1).minimumScaleFactor(0.65)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                .foregroundStyle(runner == nil ? BMTheme.secondaryText : Color.black)
+                .background(runner == nil ? BMTheme.surface : Color(red: 0.98, green: 0.74, blue: 0.16))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityIdentifier("base-\(base.rawValue)-\(runner == nil ? "empty" : "occupied")")
+            }
+        }.padding(.horizontal, 12).padding(.bottom, 10)
+    }
+
     private var finalGameCard: some View {
         BMCard {
             VStack(spacing: 12) {
@@ -434,6 +553,7 @@ struct ScorekeepingView: View {
                         Label("查看结果", systemImage: "tablecells")
                     }
                     .buttonStyle(PrimaryButtonStyle(color: BMTheme.brandGreen))
+                    .accessibilityIdentifier("view-final-results")
                 }
             }
         }
@@ -467,6 +587,7 @@ private enum PlayFlowStage {
     case defense(ObservationCause, BatterArrival)
     case runners(ObservationCause, BatterArrival, DefensivePlay?)
     case timing(ObservationCause, BatterArrival, DefensivePlay?, [RunnerDecision])
+    case terminalOuts(ObservationCause, BatterArrival, DefensivePlay?, Int)
 }
 
 struct ScorePlayFlowSheet: View {
@@ -529,6 +650,14 @@ struct ScorePlayFlowSheet: View {
                     }
                 }
 
+            case .terminalOuts(let cause, _, let defensivePlay, let count):
+                HalfEndingOutsSheet(runners: store.suggestedRunnerEventDecisions(for: .forceOut), requiredOuts: count) { ids in
+                    if let decisions = store.halfEndingDecisions(for: cause.outcome, runnerOutIDs: ids),
+                       store.applyPlay(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) {
+                        dismiss()
+                    }
+                }
+
             case .timing(let cause, _, let defensivePlay, let decisions):
                 ThirdOutTimingSheet(title: cause.outcome.rawValue) { runCounts in
                     if store.applyPlay(
@@ -550,6 +679,14 @@ struct ScorePlayFlowSheet: View {
         arrival: BatterArrival,
         defensivePlay: DefensivePlay?
     ) {
+        if arrival == .out, let count = store.halfEndingRunnerOutCount(for: cause.outcome) {
+            if count == 0, let decisions = store.halfEndingDecisions(for: cause.outcome) {
+                if store.applyPlay(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) { dismiss() }
+            } else {
+                stage = .terminalOuts(cause, arrival, defensivePlay, count)
+            }
+            return
+        }
         let needsRunnerConfirmation = store.hasRunners
             || [.fieldersChoice, .runnerTagOut, .doublePlay, .triplePlay, .infieldFly, .sacrificeBunt, .sacrificeFly].contains(cause.outcome)
         if needsRunnerConfirmation {
@@ -902,6 +1039,24 @@ struct RunnerResolutionSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
 
+                    if decisions.filter({ $0.destination == .score }).count > 1 {
+                        BMCard {
+                            VStack(alignment: .leading) {
+                                Text("按实际回本垒顺序排列；设有上限时只计有效得分").font(.footnote)
+                                ForEach(decisions.filter { $0.destination == .score }) { scorer in
+                                    HStack {
+                                        Text(scorer.player.compactName)
+                                        Spacer()
+                                        Button("提前") {
+                                            let indices = decisions.indices.filter { decisions[$0].destination == .score }
+                                            if let current = decisions.firstIndex(where: { $0.id == scorer.id }),
+                                               let prior = indices.last(where: { $0 < current }) { decisions.swapAt(current, prior) }
+                                        }.buttonStyle(.borderless)
+                                    }
+                                }
+                            }
+                        }
+                    }
                     ForEach($decisions) { $decision in
                         BMCard {
                             VStack(alignment: .leading, spacing: 13) {
@@ -910,7 +1065,7 @@ struct RunnerResolutionSheet: View {
                                         Text(decision.origin.title)
                                             .font(.system(size: 12, weight: .bold))
                                             .foregroundStyle(BMTheme.secondaryText)
-                                        Text("#\(decision.player.number) \(decision.player.name)")
+                                        Text("#\(decision.player.numberText) \(decision.player.name)")
                                             .font(.system(size: 17, weight: .bold))
                                             .foregroundStyle(BMTheme.navy)
                                     }
@@ -986,6 +1141,11 @@ struct RunnerResolutionSheet: View {
     }
 }
 
+private struct LineupSide: Identifiable {
+    let isHome: Bool
+    var id: Bool { isHome }
+}
+
 private enum SubstitutionStage: Equatable {
     case menu
     case pitcher
@@ -1003,6 +1163,7 @@ struct SubstitutionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore
     @State private var stage: SubstitutionStage = .menu
+    @State private var lineupSide: LineupSide?
 
     var body: some View {
         NavigationStack {
@@ -1021,6 +1182,13 @@ struct SubstitutionSheet: View {
                 }
             }
         }
+        .sheet(item: $lineupSide) { side in
+            LiveLineupEditor(draft: store.lineupDraft(forHomeTeam: side.isHome),
+                             onCancel: { lineupSide = nil },
+                             onSaved: { lineupSide = nil; dismiss() })
+                .environmentObject(store)
+        }
+        .gameActionErrorAlert(store)
     }
 
     @ViewBuilder
@@ -1028,7 +1196,13 @@ struct SubstitutionSheet: View {
         switch stage {
         case .menu:
             VStack(spacing: 10) {
-                menuButton("换投手", detail: "选择新的投手", icon: "arrow.triangle.2.circlepath", id: "substitution-pitcher") { stage = .pitcher }
+                HStack(spacing: 10) {
+                    lineupButton(isHome: false)
+                    lineupButton(isHome: true)
+                }
+                Text("双方均可调整棒次、守位、姓名和号码")
+                    .font(.caption).foregroundStyle(BMTheme.secondaryText)
+                menuButton(store.isCoachPitch ? "替换 P 位守备" : "换投手", detail: store.isCoachPitch ? "选择新的 P 位守备球员" : "选择新的投手", icon: "arrow.triangle.2.circlepath", id: "substitution-pitcher") { stage = .pitcher }
                 menuButton("代打", detail: "替换当前打者", icon: "figure.baseball", id: "substitution-pinch-hitter") { stage = .pinchHitter }
                 menuButton("代跑", detail: "选择垒位和替换球员", icon: "figure.run", id: "substitution-pinch-runner") { stage = .pinchRunnerBase }
                 menuButton("守备换人", detail: "替换任意一名场上守备员", icon: "person.crop.circle.badge.plus", id: "substitution-fielder") { stage = .fielderReplacementTarget }
@@ -1038,7 +1212,7 @@ struct SubstitutionSheet: View {
 
         case .pitcher:
             playerList(
-                store.activeFielders.filter { $0.id != store.currentPitcher.id } + store.fieldingBenchPlayers
+                store.availablePitchers
             ) { player in
                 store.changePitcher(to: player)
                 dismiss()
@@ -1064,7 +1238,7 @@ struct SubstitutionSheet: View {
                                     Text(base.title)
                                         .font(.system(size: 16, weight: .bold))
                                     Spacer()
-                                    Text("#\(runner.number) \(runner.name)")
+                                    Text("#\(runner.numberText) \(runner.name)")
                                     Image(systemName: "chevron.right")
                                 }
                                 .foregroundStyle(BMTheme.navy)
@@ -1133,8 +1307,8 @@ struct SubstitutionSheet: View {
 
     private var navigationTitle: String {
         switch stage {
-        case .menu: "换人与守位"
-        case .pitcher: "选择新投手"
+        case .menu: "阵容与换人"
+        case .pitcher: store.isCoachPitch ? "选择 P 位守备球员" : "选择新投手"
         case .pinchHitter: "选择代打"
         case .pinchRunnerBase: "选择代跑垒位"
         case .pinchRunnerPlayer: "选择代跑球员"
@@ -1142,8 +1316,22 @@ struct SubstitutionSheet: View {
         case .fielderReplacementPlayer: "选择替补守备员"
         case .doubleSwitch: "双重换人"
         case .fielder: "选择守备球员"
-        case .position(let player): "#\(player.number) 调整守位"
+        case .position(let player): "#\(player.numberText) 调整守位"
         }
+    }
+
+    private func lineupButton(isHome: Bool) -> some View {
+        let team = isHome ? store.game.homeTeam : store.game.awayTeam
+        let role = store.activeStoredGame?.isObservation == true ? (isHome ? "主队" : "客队")
+            : (store.activeStoredGame?.isHome == isHome ? "本队" : "对手")
+        return Button { lineupSide = LineupSide(isHome: isHome) } label: {
+            VStack(spacing: 4) {
+                Text("\(role)阵容").font(.headline)
+                Text(team.shortName).font(.caption).lineLimit(1)
+            }.frame(maxWidth: .infinity, minHeight: 64)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier(isHome ? "edit-home-lineup" : "edit-away-lineup")
     }
 
     private func menuButton(
@@ -1185,7 +1373,7 @@ struct SubstitutionSheet: View {
                 SimpleEmptyState(
                     title: "没有可用替补",
                     systemImage: "person.crop.circle.badge.xmark",
-                    message: "场上球员不能重复替换，已经退场的球员默认不能重新上场。"
+                    message: "当前球员均已在场；换下的球员可再次上场。"
                 )
             } else {
                 ForEach(players) { player in
@@ -1254,13 +1442,13 @@ private struct DoubleSwitchEditor: View {
             Picker("退场", selection: outID) {
                 Text("请选择").tag(UUID?.none)
                 ForEach(store.activeFielders) { player in
-                    Text("#\(player.number) \(player.name)").tag(Optional(player.id))
+                    Text("#\(player.numberText) \(player.name)").tag(Optional(player.id))
                 }
             }
             Picker("替补", selection: inID) {
                 Text("请选择").tag(UUID?.none)
                 ForEach(store.fieldingBenchPlayers) { player in
-                    Text("#\(player.number) \(player.name)").tag(Optional(player.id))
+                    Text("#\(player.numberText) \(player.name)").tag(Optional(player.id))
                 }
             }
             Picker("新守位", selection: position) {
