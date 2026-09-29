@@ -1,6 +1,6 @@
 # BaseballMaster · TestFlight 发布交接
 
-2026-09-18 首次审核补充：已收到并核对用户的 1 分 53 秒录像，用户确认环境为 iPhone 16 Pro / iOS 26.6.1，画面确认 App 1.5 (3)。视频展示部分核心流程，未执行完整真机 QA 表；当前系统不符合来信的最新正式版要求。已准备无占位符的正式回复及 Notes，规则 PDF 如实说明官方来源和内置阅读，不将历史“已确认授权”作为证明。材料及核对记录见 [首次审核补充材料](output/app-store/review-response/03-guide-zh.md)。当前未发送审核回复，未执行系统升级。
+2026-09-18 首次审核补充：已收到并核对用户的 1 分 53 秒录像，用户确认环境为 iPhone 16 Pro / iOS 26.6.1，画面确认 App 1.5 (3)。视频展示部分核心流程，未执行完整真机 QA 表；当前系统不符合来信的最新正式版要求。已准备无占位符的正式回复及 Notes，规则 PDF 如实说明官方来源和内置阅读，不将历史“已确认授权”作为证明。材料及核对记录见 [首次审核补充材料](../../../output/releases/1.5-3/app-store/review-response/03-guide-zh.md)。当前未发送审核回复，未执行系统升级。
 
 日期：2026-09-17。验收以正常字号和模拟器为范围；按项目负责人的明确要求，本轮跳过真机验收。上传与 TestFlight 分发由项目负责人操作，本次未上传。
 
@@ -22,11 +22,11 @@
 
 ## 验证记录
 
-- 单元测试：最终全量 **89 / 89 通过**，覆盖本轮备份、迁移与损坏数据库处理，以及文字简版内容、范围和续页。结果：`tmp/ReviewDerivedData/Logs/Test/Test-BaseballMaster-2026.09.17_23-44-48-+0800.xcresult`。
-- 文字简版追加验证：**4 / 4 PDF UI 流程通过**，涵盖简版整场／单打席预览分享、原详细版、Box Score 和球队赛季报告；横竖页面提示分别核对。结果：`DerivedData/Logs/Test/Test-BaseballMaster-2026.09.17_23-43-55-+0800.xcresult`。普通简版样例 1 页、长描述样例 2 页均已渲染检查，无越界文字。
-- 正常字号 UI：首次回归覆盖 35 项流程，发现 2 项首次分享面板问题；修复后，备份、海报、新建比赛、记分、统计及逐打席 PDF 等 **8 项相关流程复测全部通过**。结果：`DerivedData/Logs/Test/Test-BaseballMaster-2026.09.17_23-33-18-+0800.xcresult`。该次组合运行还包含一个当时未修复的数据库单元测试失败；修复后的全量单元测试结果见本节第一项，因此不将这次组合运行写为整体通过。
-- 正常字号视觉复核：检查 21 个主要页面的深色模式截图，涵盖首页、球队／球员、比赛设置、阵容、记分、结果、统计、备份和海报。截图保存在 `tmp/release-normal/`。
-- Release 签名归档：最终源码（含文字简版）生成 `output/build/BaseballMaster.xcarchive`，Archive 成功，`codesign --verify --deep --strict` 通过；包内规则 PDF、隐私清单及版本 `1.5 (3)` 已核验。构建日志见 `/tmp/baseball-release-archive-text-pdf.log`。App Store Connect 服务端验证与上传由项目负责人继续操作。
+- 单元测试：最终全量 **89 / 89 通过**，覆盖本轮备份、迁移与损坏数据库处理，以及文字简版内容、范围和续页。结果：`output/validation/legacy/xcode-logs/legacy-review/Logs/Test/Test-BaseballMaster-2026.09.17_23-44-48-+0800.xcresult`。
+- 文字简版追加验证：**4 / 4 PDF UI 流程通过**，涵盖简版整场／单打席预览分享、原详细版、Box Score 和球队赛季报告；横竖页面提示分别核对。结果：`output/validation/legacy/xcode-logs/legacy-debug/Logs/Test/Test-BaseballMaster-2026.09.17_23-43-55-+0800.xcresult`。普通简版样例 1 页、长描述样例 2 页均已渲染检查，无越界文字。
+- 正常字号 UI：首次回归覆盖 35 项流程，发现 2 项首次分享面板问题；修复后，备份、海报、新建比赛、记分、统计及逐打席 PDF 等 **8 项相关流程复测全部通过**。结果：`output/validation/legacy/xcode-logs/legacy-debug/Logs/Test/Test-BaseballMaster-2026.09.17_23-33-18-+0800.xcresult`。该次组合运行还包含一个当时未修复的数据库单元测试失败；修复后的全量单元测试结果见本节第一项，因此不将这次组合运行写为整体通过。
+- 正常字号视觉复核：检查 21 个主要页面的深色模式截图，涵盖首页、球队／球员、比赛设置、阵容、记分、结果、统计、备份和海报。截图保存在 `output/validation/1.5-3/ui/normal/`。
+- Release 签名归档：最终源码（含文字简版）生成 `output/releases/1.5-3/archives/BaseballMaster-1.5-3.xcarchive`，Archive 成功，`codesign --verify --deep --strict` 通过；包内规则 PDF、隐私清单及版本 `1.5 (3)` 已核验。构建日志见 `/tmp/baseball-release-archive-text-pdf.log`。App Store Connect 服务端验证与上传由项目负责人继续操作。
 
 - 覆盖核心记分规则、换人、DH/TB、历史复核、统计口径、导出、迁移与备份往返。
 - 性能样本：150 场比赛、约 7,500 条逐球事件，统计聚合及完整备份往返在模拟器上的初次测量平均约 0.34 秒；此数字不是实机性能保证。
@@ -49,7 +49,7 @@
 | 开发团队 | `JUTVG7XR9H` |
 | 最低系统 | iOS 16 |
 | 构建工具 | Xcode 26.1.1 / iOS 26.1 SDK |
-| 归档位置 | `output/build/BaseballMaster.xcarchive` |
+| 归档位置 | `output/releases/1.5-3/archives/BaseballMaster-1.5-3.xcarchive` |
 | 数据库 / 备份格式 | Core Data V2 / Backup V1 |
 
 当前构建工具满足 Apple 自 2026-04-28 起的最低上传 SDK 要求，参见 [Apple 上传要求](https://developer.apple.com/news/upcoming-requirements/?id=04282026a)。
@@ -58,7 +58,7 @@
 
 ## 上传 TestFlight
 
-1. 在 Xcode 打开 `output/build/BaseballMaster.xcarchive`，进入 Organizer。
+1. 在 Xcode 打开 `output/releases/1.5-3/archives/BaseballMaster-1.5-3.xcarchive`，进入 Organizer。
 2. 选中版本 **1.5 (3)** 的归档，确认对应现有 App 的 Bundle ID。项目的 Debug / Release 均已设置 Version `1.5`、Build `3`，可在 **TARGETS → BaseballMaster → General → Identity** 核对。项目设置变更不会修改已经生成的旧归档，应使用本次重新生成的归档。
 3. 选择 **Distribute App → App Store Connect**，用你的开发者账号完成签名检查、Validate 和 Upload。若需严格保留 Build `3`，使用 **Custom → App Store Connect → Upload**，在分发选项中取消 **Manage version and build number**，避免 Xcode 自动调整构建号；提交前确认上传摘要为 `1.5 (3)`。若此构建号已经上传过，应递增 Build 并重新归档。相关说明见 [Apple 版本与构建号设置](https://help.apple.com/xcode/mac/current/en.lproj/devba7f53ad4.html)及[分发准备](https://developer.apple.com/documentation/xcode/preparing-your-app-for-distribution)。
 4. 等待 Apple 处理构建，在 App Store Connect 的 TestFlight 中填写测试说明、联系方式并选择测试组。
@@ -72,7 +72,7 @@
 
 ## 已确认事项
 
-App Store 上架截图已于 2026-09-18 准备：`output/app-store/iphone-6.5-portrait/` 中 8 张简体中文 JPG，统一为 1284 × 2778 px、RGB、无透明通道，可上传至 iPhone 6.5 英寸截图区域。文件按建议顺序编号，压缩包、预览页和说明位于 `output/app-store/`；使用 App 内存示例数据直接截屏，尚未上传 App Store Connect。规格参考：[Apple 截屏规范](https://developer.apple.com/cn/help/app-store-connect/reference/app-information/screenshot-specifications)。
+App Store 上架截图已于 2026-09-18 准备：`output/releases/1.5-3/app-store/iphone-6.5-portrait/` 中 8 张简体中文 JPG，统一为 1284 × 2778 px、RGB、无透明通道，可上传至 iPhone 6.5 英寸截图区域。文件按建议顺序编号，压缩包、预览页和说明位于 `output/releases/1.5-3/app-store/`；使用 App 内存示例数据直接截屏，尚未上传 App Store Connect。规格参考：[Apple 截屏规范](https://developer.apple.com/cn/help/app-store-connect/reference/app-information/screenshot-specifications)。
 
 - 历史记录（已由 2026-09-18 的用户澄清修正）：2026-09-17 曾记录已取得内置《中国棒球协会棒球规则 2022 版》的分发授权；最新已知依据仅为公开可查阅，App 内再分发许可尚未核实。
 - App 保留规则资料名称、版本与来源说明，PDF 原文未改动；比赛以赛事规程和现场裁判为准。

@@ -6,22 +6,22 @@
   "unitAndIntegration": {
     "passed": 161,
     "failures": 0,
-    "evidence": "output/history-complete-small.xcresult"
+    "evidence": "output/validation/2.1/corrections/history-complete-small.xcresult"
   },
   "smallScreenUI": {
     "passed": 3,
     "failures": 0,
-    "evidence": "output/history-complete-small.xcresult"
+    "evidence": "output/validation/2.1/corrections/history-complete-small.xcresult"
   },
   "largeScreenUI": {
     "passed": 3,
     "failures": 0,
-    "evidence": "output/history-release-validation.xcresult"
+    "evidence": "output/validation/2.1/corrections/history-release-validation.xcresult"
   },
   "finalCorrectionUI": {
     "passed": 2,
     "failures": 0,
-    "evidence": "output/correction-delivery-large.xcresult"
+    "evidence": "output/validation/2.1/corrections/correction-delivery-large.xcresult"
   },
   "appStoreUI": {
     "captureCases": 4,
@@ -29,22 +29,22 @@
     "finalHubCases": 1,
     "failures": 0,
     "evidence": [
-      "output/appstore-21-capture.xcresult",
-      "output/appstore-21-live.xcresult",
-      "output/appstore-21-final-hub.xcresult"
+      "output/validation/2.1/app-store/capture.xcresult",
+      "output/validation/2.1/app-store/live.xcresult",
+      "output/validation/2.1/app-store/final-hub.xcresult"
     ]
   },
   "liveService": {
     "passed": 13,
     "failures": 0,
-    "evidence": "output/correction-service-tests.log"
+    "evidence": "output/validation/2.1/corrections/correction-service-tests.log"
   },
   "releaseCompile": {
     "configuration": "Release",
     "sdk": "iphoneos",
     "signed": false,
     "result": "BUILD SUCCEEDED",
-    "evidence": "output/correction-release-delivery.log"
+    "evidence": "output/validation/2.1/corrections/correction-release-delivery.log"
   },
   "sync22": {
     "version": "2.2 (1)",
@@ -64,7 +64,7 @@
         2688
       ]
     ],
-    "evidence": "output/appstore-2.1/manifest.json",
+    "evidence": "output/releases/2.1/app-store/manifest.json",
     "publicLiveReady": false
   },
   "remainingReleaseWork": [

@@ -1,8 +1,8 @@
 # BaseballMaster 1.6（1）TestFlight TODO（沿用原 V1.1 需求编号）
 
-**最新决定（2026-09-27）：V1.1 与 V1.1.1 已完成本地开发验收，合并以正式版本 2.0（Build 1）发布，由用户本人操作 App Store。此前 TestFlight 1.6 目标已替代；后续文字直播仍保持延期。见[正式发布流程](../docs/releases/2.0/00-正式发布流程.md)。**
+**最新决定（2026-09-27）：V1.1 与 V1.1.1 已完成本地开发验收，合并以正式版本 2.0（Build 1）发布，由用户本人操作 App Store。此前 TestFlight 1.6 目标已替代；后续文字直播仍保持延期。见[正式发布流程](../../../releases/2.0/00-正式发布流程.md)。**
 
-**2026-09-27 推进约定：V1.1 原定功能开发基本完成；先完成验收和基线整理，再实施 V1.1.1 测试反馈；文字直播归入 V1.2.1。** 详见[版本推进规划](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1至V1.2.1 版本推进规划.md>)。既有勾选仅代表对应历史实现／验证，未勾选的签名、上传及真机项需结合昨天实际测试重新核对，不能自动标为完成。本轮不开始下一版功能修改。
+**2026-09-27 推进约定：V1.1 原定功能开发基本完成；先完成验收和基线整理，再实施 V1.1.1 测试反馈；文字直播归入 V1.2.1。** 详见[版本推进规划](<../VERSION-ROADMAP-1.1-1.2.1.md>)。既有勾选仅代表对应历史实现／验证，未勾选的签名、上传及真机项需结合昨天实际测试重新核对，不能自动标为完成。本轮不开始下一版功能修改。
 
 更新时间：2026-09-23，按已完成工作重新核对。分支：`BM_1.1_dev`；发布目标：**TestFlight 1.6（构建 1）**。
 
@@ -16,9 +16,9 @@
 | 09 部署资料 | 宝塔／Node／Nginx 方案和压测记录保留 | P10 延期至 V1.2.1，本次不部署 |
 | 10 发布 | 版本 1.6（1）、回归、隐私／测试资料、截图、签名归档 | 线上申报、账号／分发签名、真机验收、规则资料确认及 TestFlight 上传／分发 |
 
-最新离线候选验证：**118 项单元、4 项大屏定向 UI、3 项小屏定向 UI 全通过**。此前完整基线为 117 项单元、44 项 UI、6 项小屏 UI、11 项服务端测试全通过；未把历史完整 UI 测试写成本次重跑。详细证据见 [1.6（1）验证报告](../output/testflight/1.6-1/qa/README.md)。
+最新离线候选验证：**118 项单元、4 项大屏定向 UI、3 项小屏定向 UI 全通过**。此前完整基线为 117 项单元、44 项 UI、6 项小屏 UI、11 项服务端测试全通过；未把历史完整 UI 测试写成本次重跑。详细证据见 [1.6（1）验证报告](../../../../output/releases/1.6-1-offline/testflight/qa/README.md)。
 
-范围依据：[BaseballMaster V1.1 确认清单](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1 确认清单.md>)及用户确认“稳定打席 ID 是必要基础”“升级必须保留现有本地数据”。最新发布目标为 **TestFlight 1.6（构建 1）**，用户期望 **2026-10-01 前上线**。开发完成、提交审核与实际获批上线分别跟踪，不将计划日期视为审核完成承诺。
+范围依据：[BaseballMaster V1.1 确认清单](<CONFIRMATIONS.md>)及用户确认“稳定打席 ID 是必要基础”“升级必须保留现有本地数据”。最新发布目标为 **TestFlight 1.6（构建 1）**，用户期望 **2026-10-01 前上线**。开发完成、提交审核与实际获批上线分别跟踪，不将计划日期视为审核完成承诺。
 
 确认文件保留了原模板标题和部分旧建议。本清单以用户最新说明、章节中的“暂时不做／暂停／全部接纳”及修改后的答案为准；暂停项不因 Q01 或旧模板仍有文字而重新纳入。
 
@@ -47,7 +47,7 @@
 
 ## 01 数据基础与兼容（先行）
 
-涉及：[Models.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/Models.swift)、[GameStore.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/GameStore.swift)、[PersistenceController.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/PersistenceController.swift)、[LocalBackup.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/LocalBackup.swift)。
+涉及：[Models.swift](../../../../BaseballMaster/Models.swift)、[GameStore.swift](../../../../BaseballMaster/GameStore.swift)、[PersistenceController.swift](../../../../BaseballMaster/PersistenceController.swift)、[LocalBackup.swift](../../../../BaseballMaster/LocalBackup.swift)。
 
 - [x] **D01** 设计并定稿本轮模型变更：可空当前球队、可区分 0／00 的背号、比赛模式、半局分数上限、每打席球数、终场决定与恢复信息、打席身份、修订版本及直播发布状态。
 - [x] **D02** 将“首次未初始化／用户主动删除至空／数据损坏”分开表示；合法空球队不能触发恢复错误或重新生成 Demo。
@@ -81,7 +81,7 @@
 
 ## 02 球队、名单和 Demo
 
-涉及：[SetupAndRosterViews.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/SetupAndRosterViews.swift)、[MainViews.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/MainViews.swift)、[StatisticsViews.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/StatisticsViews.swift)、[ProfileViews.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/ProfileViews.swift)。
+涉及：[SetupAndRosterViews.swift](../../../../BaseballMaster/SetupAndRosterViews.swift)、[MainViews.swift](../../../../BaseballMaster/MainViews.swift)、[StatisticsViews.swift](../../../../BaseballMaster/StatisticsViews.swift)、[ProfileViews.swift](../../../../BaseballMaster/ProfileViews.swift)。
 
 - [x] **R01** 统一球队删除规则：按用户补充确认，存在任何未结束比赛（未开赛或进行中）时，阻止删除该比赛的双方球队，覆盖本队、对手和观赛；提示具体阻止原因及关联赛程入口。
 - [x] **R02** 对无未结束比赛关联的球队允许删除，包含最后一支本队；入口和 Store 校验一致，不能绕过页面限制。
@@ -97,7 +97,7 @@
 
 ## 03 二垒跑者可读性
 
-涉及：[Components.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/Components.swift)、[ScorekeepingViews.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/ScorekeepingViews.swift)及球场共用样式。
+涉及：[Components.swift](../../../../BaseballMaster/Components.swift)、[ScorekeepingViews.swift](../../../../BaseballMaster/ScorekeepingViews.swift)及球场共用样式。
 
 - [x] **V01** 调整跑者标识的底色、边框或形状，使二垒跑者与外野绿色背景清楚分离；占垒信息不只依靠颜色区别。
 - [x] **V02** 统一其他垒位的跑者标识，检查姓名／号码对比度和点击区域；大屏优先保证一屏记分，隐藏底部导航并保留左上角返回；小屏移除整个场地图，改用紧凑垒况条。
@@ -117,7 +117,7 @@
 
 ## 05 终场询问与恢复继续
 
-涉及：[ScorekeepingViews.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/ScorekeepingViews.swift)、[ResultsViews.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/ResultsViews.swift)、[Statistics.swift](/Users/JasonChan/Documents/BaseballMaster/BaseballMaster/Statistics.swift)。
+涉及：[ScorekeepingViews.swift](../../../../BaseballMaster/ScorekeepingViews.swift)、[ResultsViews.swift](../../../../BaseballMaster/ResultsViews.swift)、[Statistics.swift](../../../../BaseballMaster/Statistics.swift)。
 
 - [x] **E01** 在现场记分页放置明显的文字“结束比赛”入口，选择原因并确认；保留比赛中断与正式结束的区别。
 - [x] **E02** 用持久化的待终场决定替代立即结束：规定局数最后上半局主队领先、最后下半局完成、再见得分均询问结束／继续；平局允许结束为平局或延长。
@@ -182,7 +182,7 @@
 - [x] **O05** 本地 5 场／250 同时读取及 1000 打席长记录测试；过期删除与 SQLite 内容清除验证。生产容量仍以服务器实际资源／网络为准。
 **O06／P10／W08b 全部延期至 V1.2.1。** 未连接或修改生产服务器，本次 TestFlight 不以它们为前置条件。后续启用时重新核对、打包和部署。
 
-部署操作见 [live/README.md](../live/README.md)，历史部署草稿为 [BaseballMaster-live-baota.zip](../output/testflight/1.6-1/BaseballMaster-live-baota.zip)，解压自测已通过。验证细节见 [直播实现与验证](BaseballMaster%20V1.1%20直播实现与验证.md)。
+部署操作见 [live/README.md](../../../../live/README.md)，历史部署草稿为 [BaseballMaster-live-baota.zip](../../../../output/releases/1.6-1-offline/testflight/BaseballMaster-live-baota.zip)，解压自测已通过。验证细节见 [直播实现与验证](LIVE-BROADCAST-VALIDATION.md)。
 
 ## 10 发布与整体回归 · 目标 TestFlight 1.6（1）
 
@@ -195,12 +195,12 @@
 - [x] **P03** 最新离线候选 118 项单元测试通过，新增关闭直播后无凭证读写／网络请求验证；既有记分、统计、PDF、备份、迁移保护和协议回归保留。此前服务端和旧 ZIP 的 11 项测试分别通过。
 - [x] **P04** 此前 44 项大屏 UI、6 项小屏 UI 全通过；本次补做 4 项大屏、3 项小屏定向测试，验证无直播入口、隐私文案、投手球数和导航均通过。真机读屏另待验证。
 - [x] **P05a** 更新 App 本地数据／关于说明；关闭直播入口、凭证访问和同步；隐私清单收集类型为空、不跟踪，UserDefaults 理由保留。
-- [x] **P05b** 隐私／支持 HTML 改为离线版本，说明本地数据、备份、升级保护及 TestFlight 平台反馈。网站包在 `output/website/1.6-offline/`，同步至 TestFlight／app-store 目录；旧直播草稿保留。
+- [x] **P05b** 隐私／支持 HTML 改为离线版本，说明本地数据、备份、升级保护及 TestFlight 平台反馈。网站包在 `output/deployments/website/1.6-offline/`，同步至 TestFlight／app-store 目录；旧直播草稿保留。
 - [x] **P06a** TestFlight 测试内容、Beta 介绍、英文审核说明和真机清单改为本地记分流程，不要求后端或直播示例。
 - [x] **P06b** 重新生成离线候选的 8 张页面截图，保留本次大小屏 UI 截图；原直播草稿截图和旧 1.5 商店截图作为历史保留。
 - [x] **P07a** 审阅旧版审核遗留，区分规则 PDF 的公开来源与再分发许可；未把旧文档中的“已确认授权”作为有效证据。
 - [x] **P08a** 完成 Release 开发签名归档、`codesign` 校验、版本／应用身份／包内资源核验；确认本地直播测试开关和升级审计钩子不在 Release 二进制中。
-- [x] **P08b** 新离线归档保存为 `output/build/BaseballMaster-1.6-1-offline.xcarchive`；旧 1.6 直播候选标记不要上传，原 1.5（3）归档保留；更新发布交接、导出配置及交付文件校验清单。
+- [x] **P08b** 新离线归档保存为 `output/releases/1.6-1-offline/archives/BaseballMaster-1.6-1-offline.xcarchive`；旧 1.6 直播候选标记不要上传，原 1.5（3）归档保留；更新发布交接、导出配置及交付文件校验清单。
 
 ### 仍待执行的发布与验收
 
@@ -211,13 +211,13 @@
 - [ ] **P05d** 按离线候选和实际分发版本核对 Connect 隐私申报；本次 App 无自行收集数据，不沿用旧直播上传申报。核对 TestFlight 及用户主动支持信息的实际处理。
 - [ ] **P06c** 上传后核对本地记分审核流程和真实联系人；本次无需直播示例。直播相关审核验证延期至 V1.2.1。
 - [ ] **P07b** 确认规则 PDF 的再分发依据并保存证据，或确定改为官方在线入口后修改、复测并重新归档。当前候选仍保留原 PDF，许可尚未确认。
-- [ ] **P09** 在保留实际已发布旧版及代表性数据的真机上直接覆盖安装候选；离线首次启动对照、继续原比赛、重启及备份恢复验收，并保存版本／构建和证据。**不能卸载重装代替。** 具体步骤见 [真机升级清单](../output/testflight/1.6-1/physical-upgrade-checklist.md)；上次检查时配对手机未连接。
+- [ ] **P09** 在保留实际已发布旧版及代表性数据的真机上直接覆盖安装候选；离线首次启动对照、继续原比赛、重启及备份恢复验收，并保存版本／构建和证据。**不能卸载重装代替。** 具体步骤见 [真机升级清单](../../../../output/releases/1.6-1-offline/testflight/physical-upgrade-checklist.md)；上次检查时配对手机未连接。
 **P10 已延期至 V1.2.1，移至第 13 节。** 本次不部署直播，不以公网健康检查／到期示例阻塞上传。
 - [ ] **P11a** 在 Xcode 重新登录现有开发团队并取得有效分发签名；本地导出已尝试，但因账号凭据失效／缺少 Distribution 证书失败，尚无可上传 IPA。
 - [ ] **P11b** 完成 Organizer 分发签名、Validate 和上传，关闭自动调整版本／构建号，核对上传摘要为 **1.6（1）**；等待 Apple 处理完成。
 - [ ] **P11c** 填写 TestFlight 测试资料，先向负责验收的内部测试人员开放；P09 等本次验收通过后再扩大测试范围（W08b 已延期），记录实际可安装状态。如需外部测试，按 Connect 提示完成 Beta App Review。正式 App Store 上架另行跟踪。
 
-执行步骤统一见 [1.6（1）发布交接](../RELEASE_REVIEW.md)，材料见 [交付目录](../output/testflight/1.6-1/README.md)。开发签名归档成功不等于分发导出、上传、审核或发布完成。
+执行步骤统一见 [1.6（1）发布交接](../../../releases/2.0/RELEASE-HANDOFF.md)，材料见 [交付目录](../../../../output/releases/1.6-1-offline/testflight/README.md)。开发签名归档成功不等于分发导出、上传、审核或发布完成。
 
 ## 11 必须收口的细节与外部依赖
 
@@ -262,8 +262,8 @@
 - 分支：`BM_1.1_dev`；保留开始工作前已有的文档及 App Store 素材修改。
 - 关闭直播前完整基线：117 项单元测试、44 项 UI 测试及 6 项小屏复测全部通过，0 失败，涵盖原有计分／统计／PDF／备份回归及新增规则、迁移和故障测试；直播服务端 11 项测试通过。
 - 用户追加布局要求：大屏优先、一屏记分、隐藏底部导航、左上角返回，小屏移除场地图。已完成对应大小屏 UI 验证并保存截图。
-- 1.0／1.5 历史源码覆盖升级、原库哈希／设置／重启／续记／备份恢复对照通过；证据见 [发布验证报告](../output/testflight/1.6-1/qa/README.md)。
-- 1.6（1）截图与回归日志见 [交付目录](../output/testflight/1.6-1/README.md)；前期记录保留在 [01–06 实现与验证](BaseballMaster%20V1.1%2001-06%20实现与验证.md)。
+- 1.0／1.5 历史源码覆盖升级、原库哈希／设置／重启／续记／备份恢复对照通过；证据见 [发布验证报告](../../../../output/releases/1.6-1-offline/testflight/qa/README.md)。
+- 1.6（1）截图与回归日志见 [交付目录](../../../../output/releases/1.6-1-offline/testflight/README.md)；前期记录保留在 [01–06 实现与验证](IMPLEMENTATION-VALIDATION.md)。
 - 最新离线候选 118 项单元、4 项大屏 UI、3 项小屏 UI 通过，归档及校验完成；两份 HTML 已由用户确认发布，公开 URL 待独立核验。分发导出仍缺 Distribution 证书，尚未上传、送审或发布。直播部署已延期。没有将历史源码模拟器验证表述为已发布二进制真机升级通过。
 
 普通投手用球数及对应验证已并入 V04，不再作为清单外的追加事项。

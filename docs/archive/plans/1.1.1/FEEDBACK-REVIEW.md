@@ -1,10 +1,10 @@
 # BaseballMaster V1.1.1 测试反馈评估
 
-**后续执行以评审结论为准：**本报告是现状评估；具体实现、与旧设计的边界及本轮 TestFlight 步骤见[V1.1.1 TODO（待 Review）](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1.1 TODO.md>)。用户 review 前不启动修改，冲突时先暂停确认。
+**后续执行以评审结论为准：**本报告是现状评估；具体实现、与旧设计的边界及本轮 TestFlight 步骤见[V1.1.1 TODO（待 Review）](<TODO.md>)。用户 review 前不启动修改，冲突时先暂停确认。
 
 评估日期：2026-09-27。状态：需求与缺陷评估，尚未实施修复。
 
-**执行前置：先完成 V1.1 基线验收，再实施本报告的 V1.1.1 修改；其后 V1.2.1 完成文字直播。** 见[版本推进规划](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1至V1.2.1 版本推进规划.md>)。
+**执行前置：先完成 V1.1 基线验收，再实施本报告的 V1.1.1 修改；其后 V1.2.1 完成文字直播。** 见[版本推进规划](<../VERSION-ROADMAP-1.1-1.2.1.md>)。
 
 本轮按用户指定称为 **V1.1.1**。代码基线是当前 `BM_1.1_dev` 工作区（包含已有未提交改动），工程 App 版本仍为 **1.6（1）**；历史资料将 V1.1 作为需求编号。本报告没有调整版本号，也没有把当前源码验证等同于昨天所用安装包的真机复现。
 
@@ -90,7 +90,7 @@
 | 封杀第三出局同时回本垒 | 不计得分并换边 |
 | 非封杀第三出局、得分在先 | 需要先后判断；有效得分保留并换边 |
 
-证据：[执行摘要](/Users/JasonChan/Documents/BaseballMaster/output/v1.1.1-assessment/assessment-results.txt)、[仅用于临时项目的评估探针](/Users/JasonChan/Documents/BaseballMaster/output/v1.1.1-assessment/assessment-probes.swift)。首次探针曾因把同一球队重复放入本队与对手名单而触发完整性校验；只更正探针数据后重跑，未更改 App 实现。
+证据：[执行摘要](../../../../output/validation/1.1.1/assessment/assessment-results.txt)、[仅用于临时项目的评估探针](../../../../output/validation/1.1.1/assessment/assessment-probes.swift)。首次探针曾因把同一球队重复放入本队与对手名单而触发完整性校验；只更正探针数据后重跑，未更改 App 实现。
 
 页面入口、棒次显示和多余跑者确认分支通过源码核对；本轮未做完整 UI 回归，也未获取昨天的安装包及实际比赛数据。
 

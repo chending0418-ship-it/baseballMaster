@@ -21,7 +21,7 @@
 
 证书 SHA-256 指纹：`AF:E4:F9:C9:DF:D4:90:B5:65:31:78:29:82:3F:07:9E:97:22:05:1F:05:71:49:65:EB:EF:69:FB:2C:F8:00:1D`。
 
-验证记录：`output/website/baseballmaster-home/ssl-deploy/verification.json`。服务器端安装暂存、原配置和校验记录：`/root/baseballmaster-deploy/20260928-ssl/`，仅 root 可访问。
+验证记录：`output/deployments/website/baseballmaster-home/ssl-deploy/verification.json`。服务器端安装暂存、原配置和校验记录：`/root/baseballmaster-deploy/20260928-ssl/`，仅 root 可访问。
 
 ## 后续换证
 

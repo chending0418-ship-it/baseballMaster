@@ -3,9 +3,10 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 tmp/
-# Generated reports, screenshots, archives and test results stay local.
-# Files already tracked under output/ remain versioned.
-/output/
+# Generated artifacts stay local; the directory guide is versioned.
+# Existing tracked samples and historical deliverables remain versioned.
+/output/*
+!/output/README.md
 
 live/data/
 live/node_modules/

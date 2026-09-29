@@ -1,11 +1,15 @@
 # BaseballMaster iOS App
 
+[文档索引](docs/README.md) · [项目目录说明](docs/PROJECT-STRUCTURE.md) · [输出文件入口](output/README.md)
+
+**发布计划与随手补充入口：[打开 2.1 发布功能计划](<2.1 发布功能计划.md>)。**
+
 **当前分支：2.1 维护版（Build 1）。** 用户于 2026-09-29 明确记分纠错继续放在 2.1，重点是漏记换人、换守位、局面和失误；其他新增功能进入 2.2，继续允许问题修复、回归和发布准备。当前成果提交为 2.1 基线；2.2 在独立工作目录开发。文字直播仍关闭，生产部署与真机验收继续按待办推进。详见 [版本分支与工作目录](docs/BRANCHES.md)。
 
-- [2.1 记分纠错 TODO](<update/BaseballMaster 2.1 记分纠错 TODO.md>)（漏换人／换守位／局面／失误，已实现并完成本地回归）
+- [2.1 记分纠错 TODO](<docs/releases/2.1/CORRECTION-TODO.md>)（漏换人／换守位／局面／失误，已实现并完成本地回归）
 - [正式发布流程](docs/releases/2.0/00-正式发布流程.md)
 - [版本更新说明](docs/releases/2.0/01-版本更新说明.txt) · [英文审核备注](docs/releases/2.0/02-审核备注英文.txt)
-- [开发与验证记录](<update/BaseballMaster V1.1.1 开发与验证记录.md>) · [需求与完成清单](<update/BaseballMaster V1.1.1 TODO.md>)
+- [开发与验证记录](<docs/archive/plans/1.1.1/VALIDATION.md>) · [需求与完成清单](<docs/archive/plans/1.1.1/TODO.md>)
 
 工程 Version 为 **2.1**，Build 为 **1**。本次为 Git 维护基线整理，尚未归档、上传或发布；上方 2.0 发布流程与材料保留为历史参考。既有 2.1 本地回归记录见下方文字直播章节，真实设备和生产环境的未完成事项仍需验证。
 
@@ -92,16 +96,16 @@ xcodebuild \
 - 比赛结果页“预览与分享 Box Score”：导出逐局比分、得分过程、双方打击／投手／守备与球队合计。进行中的比赛和待确认记录会明确标注。
 - 比赛结果“记录”页：每个打席都可选择“详细版”或“文字简版”；页面底部“导出与分享”可导出整场两种版本。详细版保留局面图与事件表；文字简版只保留局次、打者、打席文字与待确认／未完成标注，多打席连续排版，长描述自动续页。“全部导出并分享”包含两版逐打席 PDF、Box Score 和完整 TXT。
 - 报告使用可搜索的中文文本与固定浅色打印配色。每次导出生成独立文件，避免后续导出覆盖已打开的预览或分享。
-- `output/pdf/team-season-report.pdf`、`output/pdf/player-report.pdf`、`output/pdf/game-box-score.pdf` 为内存示例比赛生成的展示样例，不包含真实用户数据。
+- `output/samples/pdf/team-season-report.pdf`、`output/samples/pdf/player-report.pdf`、`output/samples/pdf/game-box-score.pdf` 为内存示例比赛生成的展示样例，不包含真实用户数据。
 - `testGeneratePresentationPDFSamplesFromRecordedGames` 可重新生成三份样例，文件位于测试 App 沙盒的 `Documents/PDFValidation/`。
-- 文字简版样例为 `output/pdf/play-by-play-text-report.pdf`，同样使用内存示例比赛生成。
+- 文字简版样例为 `output/samples/pdf/play-by-play-text-report.pdf`，同样使用内存示例比赛生成。
 
 ## 比赛宣传海报
 
 - 最简未来比赛保存成功后，选择“制作宣传海报”；已有未来比赛从详情页进入，当前比赛从现场记分右上角图片按钮进入。
 - 主客双方和开赛时间读取已保存的比赛。宣传标题、场地和通知备注只用于当前海报，不改写比赛信息。
 - 采用米白、黑、朱红的日式赛事排版，队名占据主要版面，输出 1080 × 1440 PNG。系统分享可以保存到“文件”或交给已安装的分享 App；发送对象由用户选择。
-- 展示样例：`output/images/match-notice-poster.png`；逐打席样例：`output/pdf/play-by-play-report.pdf`。均使用内存示例数据。
+- 展示样例：`output/samples/images/match-notice-poster.png`；逐打席样例：`output/samples/pdf/play-by-play-report.pdf`。均使用内存示例数据。
 
 ## 本地数据与备份
 
@@ -110,29 +114,19 @@ xcodebuild \
 - 备份包含球队、对手名单、赛季、历史个人记录、全部比赛和逐球事件；不包含 App 外观偏好。使用 SHA-256 检查文件完整性，文件本身未加密。
 - 启动和退到后台时自动保存最近 3 份完整备份。自动备份在 App 沙盒中，卸载 App 会一并删除，应定期把备份导出到 App 之外。
 - 数据库无法完整读取时停止正常编辑、保留原文件并显示恢复入口；不静默创建新数据覆盖原记录。恢复前先建立并验证新数据库，旧 SQLite、WAL、SHM 与外部存储另存于 `Recovery/`。
-- 数据库版本为 V3，备份格式版本为 V1。支持现有 JSON／V1／V2 SQLite 的迁移，拒绝无法识别的未来版本；未来新增 Schema 仍需要对应的迁移实现与测试。
+- 2.1 数据库兼容版本标记为 4，备份格式版本为 3（可读取格式 1–3）。支持现有 JSON／V1／V2 SQLite 的迁移，拒绝无法识别的未来版本；未来新增 Schema 仍需要对应的迁移实现与测试。
 
 ## 页面截图
 
-- `Screenshots/01-home.png`
-- `Screenshots/02-scorekeeping.png`
-- `Screenshots/03-boxscore.png`
-- `Screenshots/04-outcomes.png`
-- `Screenshots/05-runners.png`
-- `Screenshots/06-scorekeeping-compact.png`
-- `Screenshots/07-home-dark.png`
-- `Screenshots/08-scorekeeping-full-field.png`
-- `Screenshots/09-scorekeeping-full-field-compact.png`
-- `Screenshots/10-novice-scorekeeping.png`
-- `Screenshots/11-observation-first.png`
-- `Screenshots/12-statistics.png`
-
+- [2.1 App Store 七张宣传图总览](output/releases/2.1/app-store/index.html)
+- [2.1 记分纠错实际截图](docs/releases/2.1/screenshots/index.html)
+- [早期界面截图归档](docs/archive/screenshots/initial-ui/)（保留供历史对照）
 
 ## 2.1 文字直播（生产开关仍关闭）
 
 当前 2.1 维护基线不显示直播按钮、不读写发布凭证、不发出直播请求。以下为保留的直播方案：启用后，可在现场记分和结果页开启文字直播、分享链接／二维码、查看状态和关闭直播；仅主动开播后上传该场观赛资料。
 
-2026-09-28 已补齐直播打者棒次并完成基于 2.0 的本地同步回归，顶部比分／局面已改为紧凑布局。另修正结果页、TXT 与 PDF 的打席编号：主客队分别从 1 累计并跨局继续。最新 145 项 App 单元、3 项结果／PDF UI 回归通过；此前直播 2 项相关 UI、13 项服务端测试及 4 组 WebKit 视口／配色检查通过。详见 [功能与验证记录](<update/BaseballMaster 2.1 功能补齐与同步回归.md>)；部署与真机公网验收仍待后续。
+2026-09-28 已补齐直播打者棒次并完成基于 2.0 的本地同步回归，顶部比分／局面已改为紧凑布局。另修正结果页、TXT 与 PDF 的打席编号：主客队分别从 1 累计并跨局继续。当时的 145 项 App 单元、3 项结果／PDF UI 回归通过；此前直播 2 项相关 UI、13 项服务端测试及 4 组 WebKit 视口／配色检查通过。详见 [功能与验证记录](<docs/releases/2.1/SYNC-REGRESSION.md>)；部署与真机公网验收仍待后续。
 
 观赛地址为 `https://baseballmaster.cc/livestreaming/novideo/<串码>`，网页每 10 秒刷新。终场一小时后自动删除云端资料，不保留回放；设备连续一小时未同步也会关闭。本地比赛与备份保留。
 

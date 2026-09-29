@@ -1,8 +1,8 @@
 # BaseballMaster V1.1 → V1.1.1 → V1.2.1 版本推进规划
 
-**最新决定（2026-09-27）：V1.1 与 V1.1.1 已完成本地开发验收，合并以正式版本 2.0（Build 1）发布，由用户本人操作 App Store。此前 TestFlight 1.6 目标已替代；后续文字直播仍保持延期。见[正式发布流程](../docs/releases/2.0/00-正式发布流程.md)。**
+**最新决定（2026-09-27）：V1.1 与 V1.1.1 已完成本地开发验收，合并以正式版本 2.0（Build 1）发布，由用户本人操作 App Store。此前 TestFlight 1.6 目标已替代；后续文字直播仍保持延期。见[正式发布流程](../../releases/2.0/00-正式发布流程.md)。**
 
-**最新执行要求：**用户指定 V1.1.1 先提交 TODO review，再按需要实施，目标为今天完成后发布 TestFlight。具体清单及需要定稿的行为见[V1.1.1 TODO（待 Review）](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1.1 TODO.md>)；发现与旧设计或效果冲突必须先暂停确认。当前未开始功能修改。
+**最新执行要求：**用户指定 V1.1.1 先提交 TODO review，再按需要实施，目标为今天完成后发布 TestFlight。具体清单及需要定稿的行为见[V1.1.1 TODO（待 Review）](<1.1.1/TODO.md>)；发现与旧设计或效果冲突必须先暂停确认。当前未开始功能修改。
 
 更新：2026-09-27。依据：用户明确要求先确认并完成 V1.1，再处理 V1.1.1；文字直播安排在 V1.2.1。
 
@@ -26,7 +26,7 @@
 | 发布及真机 | 9 月 23 日记录存在签名／上传和真机覆盖验收待办；用户已说明 9 月 26 日进行了测试 | **待补齐最新实际状态**，不凭旧记录推断现在仍未上传，也不凭现场测试推断升级已验收 |
 | 文字直播 | App／网页／服务端成果保留，Release 开关为关闭 | 不属于 V1.1 收尾条件；完整交付安排在 V1.2.1 |
 
-证据：[V1.1 TODO](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1 TODO.md>)、[离线 QA 记录](/Users/JasonChan/Documents/BaseballMaster/output/testflight/1.6-1/qa/README.md)、[反馈评估](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1.1 测试反馈评估.md>)。
+证据：[V1.1 TODO](<1.1/TODO.md>)、[离线 QA 记录](../../../output/releases/1.6-1-offline/testflight/qa/README.md)、[反馈评估](<1.1.1/FEEDBACK-REVIEW.md>)。
 
 ## 第一阶段：完成 V1.1 收尾
 
@@ -44,7 +44,7 @@
 
 ## 第二阶段：V1.1.1 现场记分修复
 
-目标：解决昨天现场测试的反馈，让记分员能在比赛中持续修正双方阵容，避免记错人和多余操作。详情以[测试反馈评估](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1.1 测试反馈评估.md>)为准。
+目标：解决昨天现场测试的反馈，让记分员能在比赛中持续修正双方阵容，避免记错人和多余操作。详情以[测试反馈评估](<1.1.1/FEEDBACK-REVIEW.md>)为准。
 
 | 顺序 | 工作包 | 交付及验收重点 |
 | --- | --- | --- |

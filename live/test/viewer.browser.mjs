@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 const modulePath = process.env.PLAYWRIGHT_MODULE || 'playwright';
 const { webkit } = require(modulePath);
 const { expect } = require(modulePath + '/test');
-const output = resolve(process.env.LIVE_QA_OUTPUT || '../output/v2.1/browser');
+const output = resolve(process.env.LIVE_QA_OUTPUT || '../output/validation/2.1/live-browser');
 mkdirSync(output, { recursive: true });
 const app = createLiveServer();
 await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));

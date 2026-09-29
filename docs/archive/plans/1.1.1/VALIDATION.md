@@ -28,7 +28,7 @@
 - 小屏：`unit-and-small.xcresult`、`final-unit-small.xcresult`、`final-unit-warning.xcresult`、`final-launch-verified.xcresult`。首轮两项测试场景／标识错误均已复跑通过。
 - 最终投手提示增量：`final-pitcher-badge-{small,large}-verified.xcresult` 与 `final-pitcher-badge-{small,large}-dark.xcresult` 全部通过，覆盖短提示、长姓名缩为图标、展开详情、换边、撤销、主要按钮触达及累计球数。
 - Debug 与 Release 编译通过，`git diff --check` 通过；Release 编译不包含开发预览路由。
-- 日志、逐项结果、截图：`output/v1.1.1/`、`regression-results.json`。
+- 日志、逐项结果、截图：`output/validation/1.1.1/regression/`、`regression-results.json`。
 
 **布局冲突已按用户决定关闭。** 发现大屏提醒横幅遮挡原“守备球队／垒上人数”标签后先暂停并询问。用户明确改为投手显示旁的小图示／短提示，现已实现。最终大小屏浅深色截图均核对；不再有顶部提醒横幅，场地图、原标签与主要按钮尺寸保留。图标的点击区域扩展 10 pt，首轮 UI 断言误把扩展的点击区域当作可见图形边界；截图确认后修正断言并复跑。深色测试最初使用了未生效的系统参数，后改用项目既有 `-appAppearance dark`，重新执行并核对真实深色截图。
 
@@ -50,8 +50,8 @@
 
 用户自行操作 App Store，不再分发 TestFlight。原 1.1.1（1）上传校验失败，Apple 明确此前批准版本为 1.5。用户随后决定统一为 **Version 2.0、Build 1**，后续正常递增。工程 Debug／Release、正式发布流程和英文审核备注已同步；Bundle ID／Team 和功能实现不变。用户需要重新 Archive，旧归档不会随工程设置自动更新。
 
-已交付[2.0 正式发布流程](../docs/releases/2.0/00-正式发布流程.md)、[中文更新说明](../docs/releases/2.0/01-版本更新说明.txt)和[英文审核备注](../docs/releases/2.0/02-审核备注英文.txt)。本次仅调整版本配置与文档；原 137 单元、52 大屏 UI、13 小屏 UI 的功能验证仍保留，2.0（1）Release 编译及二进制版本核验已通过，证据见 `docs/releases/2.0/release-verification.json`。关闭签名的编译产物不是分发归档。新包尚未由代理上传、提交审核或上线。
+已交付[2.0 正式发布流程](../../../releases/2.0/00-正式发布流程.md)、[中文更新说明](../../../releases/2.0/01-版本更新说明.txt)和[英文审核备注](../../../releases/2.0/02-审核备注英文.txt)。本次仅调整版本配置与文档；原 137 单元、52 大屏 UI、13 小屏 UI 的功能验证仍保留，2.0（1）Release 编译及二进制版本核验已通过，证据见 `docs/releases/2.0/release-verification.json`。关闭签名的编译产物不是分发归档。新包尚未由代理上传、提交审核或上线。
 
 ## 可追溯基线
 
-开工前完整源码、工作区状态和文件哈希保存在 `output/build/v1.1.1-baseline/`。原分支为 `BM_1.1_dev`，基线提交为 `354f705`；已有未提交修改全部保留。此前功能交付源码快照为 `output/v1.1.1/source-final.tar.gz`，文件哈希见 `source-final-manifest.json`，对开工快照的源码差异见 `implementation.diff`；此前待确认 UI 的快照另行保留。不把旧候选归档当成本轮构建。
+开工前完整源码、工作区状态和文件哈希保存在 `output/backups/1.1.1/baseline/`。原分支为 `BM_1.1_dev`，基线提交为 `354f705`；已有未提交修改全部保留。此前功能交付源码快照为 `output/backups/1.1.1/source-checkpoints/source-final.tar.gz`，文件哈希见 `source-final-manifest.json`，对开工快照的源码差异见 `implementation.diff`；此前待确认 UI 的快照另行保留。不把旧候选归档当成本轮构建。

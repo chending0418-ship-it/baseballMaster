@@ -47,7 +47,7 @@ python3 -m http.server 8321 --bind 127.0.0.1 --directory website/public
 python3 website/scripts/package.py
 ```
 
-输出 `output/website/baseballmaster-home/baseballmaster-home.zip`，ZIP 根目录只包含 `public/` 的可公开文件。上传时不需要开发依赖或构建。
+输出 `output/deployments/website/baseballmaster-home/baseballmaster-home.zip`，ZIP 根目录只包含 `public/` 的可公开文件。上传时不需要开发依赖或构建。
 
 ## 本地验证（2026-09-28）
 
@@ -55,8 +55,8 @@ python3 website/scripts/package.py
 
 隐私与技术支持页使用与首页一致的品牌导航、颜色和阅读布局。网站图标从 App 原始图标生成 256 px 网页版本，减少首次加载体积；App 原图保持不变。
 
-本地验证记录和截图位于 `output/website/baseballmaster-home/qa/`，不进入公开部署包。服务器上的 `nginx -t`、HTTPS 和实际公网访问已在此次上线时验证，结果见 [上线记录](deploy/2026-09-28-https-deployment.md)。
+本地验证记录和截图位于 `output/deployments/website/baseballmaster-home/qa/`，不进入公开部署包。服务器上的 `nginx -t`、HTTPS 和实际公网访问已在此次上线时验证，结果见 [上线记录](deploy/2026-09-28-https-deployment.md)。
 
-六项特点更新后，重新检查 1440、768、390、320 px 宽度，卡片与页面均无横向溢出。七张特色截图的弹窗、循环切换、键盘关闭与焦点恢复通过；统计和比赛报告页签均加载新截图。全部公开资源和图片链接均做本地 HTTP 检查，旧版三张 JPEG 已从公开目录移除。此次补充检查记录见 `output/website/baseballmaster-home/qa/features-2.0.json`。
+六项特点更新后，重新检查 1440、768、390、320 px 宽度，卡片与页面均无横向溢出。七张特色截图的弹窗、循环切换、键盘关闭与焦点恢复通过；统计和比赛报告页签均加载新截图。全部公开资源和图片链接均做本地 HTTP 检查，旧版三张 JPEG 已从公开目录移除。此次补充检查记录见 `output/deployments/website/baseballmaster-home/qa/features-2.0.json`。
 
 2026-09-28 导航调整：移除“界面一览”入口和对应整块展示区；首屏“探索 App”跳转至紧邻的六项功能区。已更新线上首页和部署包，并验证实际滚动位置。
