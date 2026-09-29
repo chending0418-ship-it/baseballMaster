@@ -8,6 +8,9 @@
 .legal-hero .intro, .legal-hero .meta { margin-top: 22px; color: #c5d6c9; font-size: 15px; line-height: 1.8; }
 .legal-content { padding-block: 54px 66px; font-size: 16px; line-height: 1.9; }
 .legal-content section { margin-block: 36px; }
+.legal-content section[id] { scroll-margin-top: 110px; }
+.legal-content .version-note { padding: 18px 20px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px; }
+.legal-nav { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-block: 24px 36px; padding-bottom: 24px; border-bottom: 1px solid var(--line); font-size: 14px; }
 .legal-content section:first-child { margin-top: 0; }
 .legal-content h2 { font-size: 22px; line-height: 1.5; letter-spacing: -.02em; margin-bottom: 16px; }
 .legal-content h3 { font-size: 17px; line-height: 1.6; font-weight: 600; margin-bottom: 9px; }
