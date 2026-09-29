@@ -8,6 +8,7 @@ struct BoxScoreView: View {
     @State private var confirmLegacyReopen = false
     @State private var showShareSheet = false
     @State private var showLiveBroadcast = false
+    @State private var showHistoryCorrection = false
     @State private var shareURLs: [URL] = []
     @State private var exportErrorMessage: String?
     private let sections = ["打击", "投手", "守备", "记录"]
@@ -17,6 +18,11 @@ struct BoxScoreView: View {
             VStack(spacing: 16) {
                 ScoreboardCard(game: store.game)
                 LineScoreTable(game: store.game)
+                Button { showHistoryCorrection = true } label: { Label("纠正记录", systemImage: "clock.arrow.circlepath") }
+                    .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-history-correction")
+                if store.game.statisticsIncomplete == true {
+                    Text("过程或责任待确认 · 统计可能不完整").font(.subheadline.bold()).foregroundStyle(BMTheme.orange)
+                }
 
                 Picker("数据分类", selection: $selectedSection) {
                     ForEach(sections.indices, id: \.self) { index in
@@ -68,6 +74,7 @@ struct BoxScoreView: View {
                 }
             }
         }
+        .sheet(isPresented: $showHistoryCorrection) { HistoryCorrectionView().environmentObject(store) }
         .sheet(isPresented: $showLiveBroadcast) {
             if store.liveBroadcasts.isEnabled, let id = store.activeStoredGame?.id { LiveBroadcastSheet(store: store, gameID: id) }
         }
@@ -546,6 +553,8 @@ struct GameExportService {
     func completeRecordText() -> String {
         var lines: [String] = []
         lines.append("BaseballMaster 完整比赛记录")
+        if game.statisticsIncomplete == true { lines.append("过程或责任待确认 · 统计可能不完整") }
+        if let count = game.correctionRevisions?.count, count > 0 { lines.append("历史更正：\(count) 次，当前数据为已保存修订") }
         lines.append("\(game.awayTeam.name) vs \(game.homeTeam.name)")
         lines.append("比分：\(game.awayTeam.shortName) \(game.awayScore) - \(game.homeScore) \(game.homeTeam.shortName)")
         lines.append("状态：\(game.isFinal ? (game.endReason?.rawValue ?? "比赛结束") : "记录中")")

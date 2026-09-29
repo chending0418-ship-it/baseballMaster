@@ -37,6 +37,8 @@
 		A10000000000000000000026 /* LiveBroadcast.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000026 /* LiveBroadcast.swift */; };
 		A10000000000000000000027 /* LiveBroadcastViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000027 /* LiveBroadcastViews.swift */; };
 		A10000000000000000000028 /* LiveLineupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000028 /* LiveLineupViews.swift */; };
+		A10000000000000000000029 /* HistoryCorrection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000029 /* HistoryCorrection.swift */; };
+		A10000000000000000000030 /* HistoryCorrectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000030 /* HistoryCorrectionViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -90,6 +92,8 @@
 		F10000000000000000000026 /* LiveBroadcast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveBroadcast.swift; sourceTree = "<group>"; };
 		F10000000000000000000027 /* LiveBroadcastViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveBroadcastViews.swift; sourceTree = "<group>"; };
 		F10000000000000000000028 /* LiveLineupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveLineupViews.swift; sourceTree = "<group>"; };
+		F10000000000000000000029 /* HistoryCorrection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryCorrection.swift; sourceTree = "<group>"; };
+		F10000000000000000000030 /* HistoryCorrectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryCorrectionViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -149,6 +153,8 @@
 				F10000000000000000000025 /* UpgradeProtection.swift */,
 				F10000000000000000000027 /* LiveBroadcastViews.swift */,
 				F10000000000000000000028 /* LiveLineupViews.swift */,
+				F10000000000000000000030 /* HistoryCorrectionViews.swift */,
+				F10000000000000000000029 /* HistoryCorrection.swift */,
 				F10000000000000000000026 /* LiveBroadcast.swift */,
 				F10000000000000000000013 /* ProfileViews.swift */,
 				F10000000000000000000014 /* BaseballRules2022.pdf */,
@@ -337,6 +343,8 @@
 				A10000000000000000000025 /* UpgradeProtection.swift in Sources */,
 				A10000000000000000000027 /* LiveBroadcastViews.swift in Sources */,
 				A10000000000000000000028 /* LiveLineupViews.swift in Sources */,
+				A10000000000000000000030 /* HistoryCorrectionViews.swift in Sources */,
+				A10000000000000000000029 /* HistoryCorrection.swift in Sources */,
 				A10000000000000000000026 /* LiveBroadcast.swift in Sources */,
 				A10000000000000000000013 /* ProfileViews.swift in Sources */,
 				A10000000000000000000005 /* Components.swift in Sources */,
