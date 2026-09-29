@@ -1,0 +1,43 @@
+{
+  "version": "1.6 (1)",
+  "device": "iPhone 14 Plus",
+  "resolution": [
+    1284,
+    2778
+  ],
+  "source": "Actual simulator screenshot, in-memory synthetic fixtures; no image alteration",
+  "screens": [
+    [
+      "01-scoring",
+      "--v11-bases-preview"
+    ],
+    [
+      "02-coach-pitch",
+      "--v11-coach-preview"
+    ],
+    [
+      "03-game-setup",
+      "--setup-preview"
+    ],
+    [
+      "04-team-roster",
+      "--team-detail-preview"
+    ],
+    [
+      "05-season-statistics",
+      "--statistics-preview"
+    ],
+    [
+      "06-box-score",
+      "--boxscore-preview"
+    ],
+    [
+      "07-backup",
+      "--backup-preview"
+    ],
+    [
+      "08-game-management",
+      "--home-with-games-preview"
+    ]
+  ]
+}

@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /livestreaming/novideo/
+
+Sitemap: https://baseballmaster.cc/sitemap.xml

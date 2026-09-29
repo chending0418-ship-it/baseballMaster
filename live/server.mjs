@@ -5,7 +5,7 @@ import { readFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const BASE = '/baseballmaster/live';
+export const BASE = '/livestreaming/novideo';
 export const HOUR = 3_600_000;
 const CODE = /^[A-F0-9]{24}$/;
 const assets = new Map([
@@ -22,7 +22,7 @@ const person = p => p === null || (p && str(p.id, 50) && str(p.name) && str(p.nu
 const keys = (obj, allowed) => obj && Object.keys(obj).every(k => allowed.includes(k));
 // Strict, versioned public projection: never accept an entire local game/roster as a snapshot.
 export function validateSnapshot(s) {
-  reject(keys(s, ['schema', 'gameID', 'revision', 'mode', 'isFinal', 'endedAt', 'inning', 'isTop', 'balls', 'strikes', 'outs', 'home', 'away', 'batter', 'pitcher', 'pitchCount', 'appearancePitchCount', 'pitchLimit', 'bases', 'currentAppearanceID', 'notice', 'entries']));
+  reject(keys(s, ['schema', 'gameID', 'revision', 'mode', 'isFinal', 'endedAt', 'inning', 'isTop', 'balls', 'strikes', 'outs', 'home', 'away', 'batter', 'batterOrder', 'pitcher', 'pitchCount', 'appearancePitchCount', 'pitchLimit', 'bases', 'currentAppearanceID', 'notice', 'entries']));
   reject(s.schema === 1 && str(s.gameID, 50) && int(s.revision) && ['standard', 'coachPitch'].includes(s.mode));
   reject(typeof s.isFinal === 'boolean' && typeof s.isTop === 'boolean' && int(s.inning, 1, 999));
   reject(int(s.balls, 0, 20) && int(s.strikes, 0, 3) && int(s.outs, 0, 3));
@@ -34,6 +34,8 @@ export function validateSnapshot(s) {
     reject(t.runs === t.innings.reduce((a, b) => a + b, 0));
   }
   for (const p of [s.batter, s.pitcher]) reject(person(p) && (p === null || keys(p, ['id', 'name', 'number'])));
+  // Additive v1 field: older development snapshots may omit the batting-order label.
+  reject(s.batterOrder === undefined || s.batterOrder === null || (int(s.batterOrder, 1, 999) && s.batter !== null && !s.isFinal));
   reject(s.pitchCount === null || int(s.pitchCount));
   reject(int(s.appearancePitchCount) && (s.pitchLimit === null || int(s.pitchLimit, 1, 20)));
   reject(s.currentAppearanceID === null || str(s.currentAppearanceID, 50));

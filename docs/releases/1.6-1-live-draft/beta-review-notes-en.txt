@@ -1,0 +1,17 @@
+BaseballMaster 1.6 (1)
+
+No account, login credentials, subscription, or purchase is required. Core scoring, rosters, statistics, report generation, and backups work offline. Existing local records are retained on upgrade.
+
+Review workflow:
+1. On a fresh installation, use the sample teams provided by the app. From 比赛 (Games), create a game, select the opponent and starting lineup, and start scoring. On an existing installation, create a separate test game to preserve the user's records.
+2. Record balls, strikes, hits, runner movements, and substitutions. The standard pitching mode displays the current pitcher's game pitch count. Coach-pitch mode and the half-inning run limit are selectable when configuring a new game.
+3. Tap the antenna icon in the scoring screen to open 文字直播 (Text Live). Tap 开启文字直播 (Start). Use the share button or QR code to open the generated HTTPS link on another device. The viewer needs no account or app and refreshes every 10 seconds while visible.
+4. Score an additional play or undo a play to verify that the website follows the saved game state. Keep the scoring app in the foreground; continuous uploading while locked or suspended is not guaranteed by iOS.
+5. Close the live session from the app to invalidate the link. Local records remain. Alternatively, a finished session expires one hour after the final timestamp. A session also expires after one hour without device synchronization. There is no archived cloud replay.
+6. Finish the test game, view its statistics, and try the PDF reports. A finished game can be reopened to continue recording.
+
+Each live URL is a temporary session, so there is no permanent review match or reusable review password. The steps above create a fresh review session. The service is hosted at https://jingsen.cc/baseballmaster/live/ and must be available during review.
+
+Only the selected live game's viewing data is uploaded after the user explicitly starts broadcasting. The full local database and backup files are not uploaded. Anyone holding a viewing URL may access it; publishing credentials are separate and kept in the original device's Keychain.
+
+The app currently includes an offline copy of the Chinese Baseball Association's 2022 rulebook. Its source is the Association's public release page: http://baseball.sport.org.cn/jsgz/guize/2023/0404/565442.html . Public availability alone is not presented as evidence of redistribution permission. The app also contains simplified rule explanations for convenient reference; actual decisions follow the event rules and umpire.

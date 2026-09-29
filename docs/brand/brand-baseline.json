@@ -1,0 +1,37 @@
+{
+  "status": "User-approved brand baseline",
+  "approvedOn": "2026-09-28",
+  "reference": "docs/brand/approved-logo-wordmark-2026-09-28.png",
+  "assets": {
+    "docs/brand/approved-logo-wordmark-2026-09-28.png": "e3e6f64f63e50cc2170c79a7f320d5afac7c9d51a76d559a23fc8e23de7acde9",
+    "BaseballMaster/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png": "d16c7a2a96ac3ca93fa254fab06327184c6605364d759fb8a8f38029bfcd0255",
+    "website/public/assets/app-icon.png": "26cd1716a8f86fcd82b124be9e9f2869f43f7fccb02f24737a0390566fb3cc4c"
+  },
+  "wordmark": {
+    "text": "BASEBALLMASTER",
+    "fontFamily": "Arial, -apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+    "baseFontSize": "17px",
+    "letterSpacing": "-0.045em",
+    "BASEBALLWeight": 800,
+    "MASTERWeight": 400,
+    "color": "#ffffff"
+  },
+  "subtitle": {
+    "text": "棒球比赛记录大师",
+    "fontFamily": "-apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+    "fontSize": "11px",
+    "fontWeight": 450,
+    "letterSpacing": "0.2em",
+    "marginTop": "5px",
+    "color": "#c6d5cc"
+  },
+  "layout": {
+    "direction": "icon left; English above Chinese on right",
+    "alignItems": "center",
+    "gap": "12px",
+    "iconSize": "42px",
+    "iconBorderRadius": "10px",
+    "background": "#092a2a"
+  },
+  "responsivePolicy": "Reuse existing responsive and footer sizes while preserving the composition, wordmark weight contrast, subtitle and colors."
+}

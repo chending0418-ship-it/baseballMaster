@@ -4,7 +4,7 @@ export function snapshot(revision = 1) {
     inning: 2, isTop: true, balls: 1, strikes: 2, outs: 1,
     away: { name: '青岛海浪', runs: 2, hits: 3, errors: 0, innings: [1, 1, 0, 0, 0, 0] },
     home: { name: '济南猎鹰', runs: 1, hits: 2, errors: 1, innings: [1, 0, 0, 0, 0, 0] },
-    batter, pitcher: { id: 'pitcher-1', name: '赵一鸣', number: '17' }, pitchCount: 28,
+    batter, batterOrder: 4, pitcher: { id: 'pitcher-1', name: '赵一鸣', number: '17' }, pitchCount: 28,
     appearancePitchCount: 3, pitchLimit: null, bases: [{ base: 2, player: { id: 'runner-1', name: '周子墨', number: '7' } }], currentAppearanceID: 'pa-8', notice: '',
     entries: [
       { id: 'pa-1', appearanceID: 'pa-1', inning: 1, isTop: true, kind: 'appearance', label: '1B', summary: '陈昊：中外野一垒安打，上一垒。', player: batter, status: 'completed', details: [{ id: 'event-1', text: '陈昊：一垒安打（1B）' }] },

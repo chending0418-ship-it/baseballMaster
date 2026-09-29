@@ -48,9 +48,35 @@ test('idempotency, out-of-order requests and atomic undo remove original records
   const read = (await a.request('GET', path)).data.snapshot;
   assert.equal(read.entries.length, 3); assert.equal(read.balls, 0); assert.equal(read.revision, 2);
 });
+test('batting order follows corrected snapshots, undo and v1 snapshots without the optional field', async t => {
+  const a = await setup(t); const c = await a.create(); const path = '/api/sessions/' + c.data.code;
+  assert.equal((await a.request('GET', path)).data.snapshot.batterOrder, 4);
+  const corrected = snapshot(2); corrected.batterOrder = 7; corrected.batter.name = '更正打者'; corrected.batter.number = '00/0';
+  assert.equal((await a.request('PUT', path, corrected)).status, 200);
+  assert.deepEqual((await a.request('GET', path)).data.snapshot, corrected);
+  assert.equal((await a.request('PUT', path, snapshot(3))).status, 200);
+  assert.equal((await a.request('GET', path)).data.snapshot.batterOrder, 4);
+  const legacy = snapshot(4); delete legacy.batterOrder;
+  assert.equal((await a.request('PUT', path, legacy)).status, 200);
+  assert.deepEqual((await a.request('GET', path)).data.snapshot, legacy);
+  const unknown = snapshot(5); unknown.batterOrder = null;
+  assert.equal((await a.request('PUT', path, unknown)).status, 200);
+});
+test('invalid batting orders cannot replace the last valid public snapshot', async t => {
+  const a = await setup(t); const c = await a.create(); const path = '/api/sessions/' + c.data.code;
+  for (const value of [0, -1, 1.5, '4', true, 1000]) {
+    assert.equal((await a.request('PUT', path, { ...snapshot(2), batterOrder: value })).status, 400);
+  }
+  assert.equal((await a.request('PUT', path, { ...snapshot(2), batter: null })).status, 400);
+  assert.equal((await a.request('PUT', path, { ...snapshot(2), isFinal: true, endedAt: a.now() })).status, 400);
+  assert.deepEqual((await a.request('GET', path)).data.snapshot, snapshot());
+  const final = { ...snapshot(2), isFinal: true, endedAt: a.now(), batterOrder: null };
+  assert.equal((await a.request('PUT', path, final)).status, 200);
+  assert.equal((await a.request('GET', path)).data.snapshot.batterOrder, null);
+});
 test('completion expires exactly one hour after end, revisions/heartbeats cannot extend it or resurrect it', async t => {
   const a = await setup(t); const c = await a.create(); const path = '/api/sessions/' + c.data.code;
-  const final = snapshot(2); final.isFinal = true; final.endedAt = a.now() - 10000;
+  const final = snapshot(2); final.isFinal = true; final.batterOrder = null; final.endedAt = a.now() - 10000;
   const end = await a.request('PUT', path, final); const expiry = end.data.expiresAt;
   a.advance(20000); final.revision = 3; final.endedAt = a.now();
   assert.equal((await a.request('PUT', path, final)).data.expiresAt, expiry);
@@ -63,13 +89,13 @@ test('completion expires exactly one hour after end, revisions/heartbeats cannot
 });
 test('reopening within one hour retains URL; offline idle session expires without client cooperation', async t => {
   const a = await setup(t); const c = await a.create(); const path = '/api/sessions/' + c.data.code;
-  const final = snapshot(2); final.isFinal = true; final.endedAt = a.now(); await a.request('PUT', path, final);
+  const final = snapshot(2); final.isFinal = true; final.batterOrder = null; final.endedAt = a.now(); await a.request('PUT', path, final);
   a.advance(120000); assert.equal((await a.request('PUT', path, snapshot(3))).data.expiresAt, a.now() + HOUR);
   a.advance(HOUR); a.sweep(); assert.equal(a.count(), 0); assert.equal((await a.request('GET', path)).status, 404);
 });
 test('late terminal upload immediately deletes; manual deletion including lost creation response is idempotent', async t => {
   const a = await setup(t); const requestID = randomUUID(); const c = await a.create(snapshot(), { requestID }); const path = '/api/sessions/' + c.data.code;
-  const final = snapshot(2); final.isFinal = true; final.endedAt = a.now() - HOUR;
+  const final = snapshot(2); final.isFinal = true; final.batterOrder = null; final.endedAt = a.now() - HOUR;
   assert.equal((await a.request('PUT', path, final)).status, 410); assert.equal(a.count(), 0);
   await a.create(snapshot(), { requestID: randomUUID() });
   const lostID = randomUUID(); const lost = await a.create(snapshot(), { requestID: lostID });

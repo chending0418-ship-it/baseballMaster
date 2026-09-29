@@ -4,6 +4,74 @@ import PDFKit
 import SQLite3
 @testable import BaseballMaster
 
+private struct LiveReadEnvelope: Decodable { var snapshot: LiveSnapshot }
+
+extension GameStoreTests {
+    func testV21AppearanceNumbersAreSeparateForEachTeamAndContinueAcrossInnings() throws {
+        let store = freshStore()
+        for _ in 0..<18 { XCTAssertTrue(store.applyPlay(.groundOut)) }
+        XCTAssertEqual(store.game.inning, 4); XCTAssertTrue(store.game.isTop)
+        let saved = store.game
+        let records = store.plateAppearanceRecords()
+        XCTAssertEqual(records.filter(\.isTop).map(\.sequence), Array(1...10))
+        XCTAssertEqual(records.filter { !$0.isTop }.map(\.sequence), Array(1...9))
+        XCTAssertEqual(records[3].sequenceLabel, "主队第 1 打席")
+        XCTAssertEqual(records[6].sequenceLabel, "客队第 4 打席")
+        XCTAssertEqual(records.last?.sequenceLabel, "客队第 10 打席")
+        XCTAssertEqual(store.currentBattingOrder, 1, "Team appearance numbers keep increasing when batting order wraps")
+        XCTAssertEqual(Set(records.map(\.accessibilityKey)).count, records.count)
+        XCTAssertEqual(records.map(\.id), store.game.plateAppearances?.map(\.id))
+        XCTAssertEqual(store.game, saved, "Display numbering must not rewrite saved events or PA/AB statistics")
+    }
+
+    func testV21TeamAppearanceNumbersPreserveIdentityThroughReentryUndoAndBackup() throws {
+        let store = v111Store(rules: GameRules())
+        for _ in 0..<3 { XCTAssertTrue(store.applyPlay(.groundOut)) }
+        let batter = store.currentBatter
+        let substitute = try XCTUnwrap(store.battingBenchPlayers.first)
+        let homeID = try XCTUnwrap(store.game.currentPlateAppearanceID)
+        store.recordPitch(.ball)
+        store.replaceCurrentBatter(with: substitute); store.replaceCurrentBatter(with: batter)
+        XCTAssertEqual(store.plateAppearanceRecords().last?.id, homeID)
+        XCTAssertEqual(store.plateAppearanceRecords().last?.sequenceLabel, "主队第 1 打席")
+        XCTAssertTrue(store.applyPlay(.single))
+        let afterHit = store.plateAppearanceRecords()
+        XCTAssertEqual(afterHit.filter { !$0.isTop }.map(\.sequence), [1, 2])
+        store.undo()
+        XCTAssertEqual(store.plateAppearanceRecords().last?.id, homeID)
+        XCTAssertEqual(store.plateAppearanceRecords().last?.sequence, 1)
+        store.redo()
+        XCTAssertEqual(store.plateAppearanceRecords(), afterHit)
+        let restored = GameStore(persistenceURL: nil)
+        try restored.restoreBackup(LocalBackup.read(store.exportBackup()))
+        XCTAssertEqual(restored.plateAppearanceRecords(), afterHit)
+        XCTAssertEqual(restored.game.batting, store.game.batting)
+    }
+
+    func testV21TeamAppearanceNumbersMatchTextAndPDFWithoutConfusingSingleExports() throws {
+        let store = freshStore()
+        for _ in 0..<3 { XCTAssertTrue(store.applyPlay(.groundOut)) }
+        store.recordPitch(.ball)
+        let appearances = store.plateAppearanceRecords()
+        let away = try XCTUnwrap(appearances.first), home = try XCTUnwrap(appearances.last)
+        XCTAssertEqual(away.sequence, 1); XCTAssertEqual(home.sequence, 1); XCTAssertNotEqual(away.id, home.id)
+        let exporter = GameExportService(game: store.game, rules: store.activeRules, plateAppearances: appearances, gameEvents: store.nonPlateAppearanceGameEvents())
+        let text = exporter.completeRecordText()
+        XCTAssertTrue(text.contains("第1局上，客队第 1 打席"))
+        XCTAssertTrue(text.contains("第1局下，主队第 1 打席"))
+        let report = PlayByPlayPDFReport(game: store.game, appearances: appearances, playedAt: nil)
+        for style in [PlayByPlayPDFStyle.detailed, .textOnly] {
+            let full = try reportText(report.pdfData(style: style), portrait: style == .textOnly)
+            XCTAssertTrue(full.contains("客队第 1 打席")); XCTAssertTrue(full.contains("主队第 1 打席"))
+            XCTAssertFalse(full.contains("第 4 打席"))
+            let homeOnly = try reportText(report.pdfData(appearanceID: home.id, style: style), portrait: style == .textOnly)
+            XCTAssertTrue(homeOnly.contains("主队第 1 打席")); XCTAssertFalse(homeOnly.contains("客队第 1 打席"))
+            let awayOnly = try reportText(report.pdfData(appearanceID: away.id, style: style), portrait: style == .textOnly)
+            XCTAssertTrue(awayOnly.contains("客队第 1 打席")); XCTAssertFalse(awayOnly.contains("主队第 1 打席"))
+        }
+    }
+}
+
 @MainActor
 final class GameStoreTests: XCTestCase {
     func testLocalBackupRoundTripPreservesGamesEventsAndRestoresOnRestart() throws {
@@ -152,8 +220,10 @@ final class GameStoreTests: XCTestCase {
         for expected in ["第1局上", "第1局下", "保送", "偷垒", "二垒安打", "界外", "打席未完成"] {
             XCTAssertTrue(text.contains(expected), expected)
         }
-        let first = try XCTUnwrap(text.range(of: "第 1 打席"))
-        let last = try XCTUnwrap(text.range(of: "第 6 打席"))
+        let first = try XCTUnwrap(text.range(of: "客队第 1 打席"))
+        let last = try XCTUnwrap(text.range(of: "主队第 1 打席"))
+        XCTAssertTrue(text.contains("客队第 5 打席"))
+        XCTAssertFalse(text.contains("第 6 打席"))
         XCTAssertLessThan(first.lowerBound, last.lowerBound)
         for excluded in ["打席索引", "打席前", "B/S/O", "事件后垒况", "事件过程"] {
             XCTAssertFalse(text.contains(excluded), excluded)
@@ -2652,7 +2722,7 @@ extension GameStoreTests {
     }
 
     func testLiveHTTPProjectionAgainstLocalService() async throws {
-        let base = URL(string: "http://127.0.0.1:18088/baseballmaster/live")!
+        let base = URL(string: "http://127.0.0.1:18088/livestreaming/novideo")!
         do { _ = try await URLSession.shared.data(from: base.appendingPathComponent("health")) }
         catch { throw XCTSkip("Run the local integration server on port 18088 for this test") }
         let store = v11Store(); let vault = LiveTestVault()
@@ -2679,6 +2749,228 @@ extension GameStoreTests {
         let (_, deleted) = try await URLSession.shared.data(from: readURL)
         XCTAssertEqual((deleted as? HTTPURLResponse)?.statusCode, 404)
         XCTAssertEqual(store.games.count, 1)
+    }
+}
+
+// 2.1: exercise actual saved App actions through HTTP, including automatic publish triggers.
+extension GameStoreTests {
+    private func startV21Live(_ store: GameStore) async throws {
+        let base = URL(string: "http://127.0.0.1:18088/livestreaming/novideo")!
+        do { _ = try await URLSession.shared.data(from: base.appendingPathComponent("health")) }
+        catch { throw XCTSkip("Run the local integration server on port 18088 for live regression") }
+        store.liveBroadcasts = LiveBroadcastManager(store: store, vault: LiveTestVault(), transport: LiveHTTPClient(baseURL: base), enabled: true, viewBaseURL: base)
+        let id = try XCTUnwrap(store.activeStoredGame?.id)
+        store.liveBroadcasts.start(id)
+        await store.liveBroadcasts.waitForPendingSync()
+        let code = try XCTUnwrap(store.liveBroadcasts.binding(for: id)?.code, store.liveBroadcasts.messages[id] ?? "")
+        XCTAssertEqual(store.liveBroadcasts.url(for: id)?.path, "/livestreaming/novideo/\(code)")
+    }
+
+    @discardableResult
+    private func readV21Live(_ store: GameStore, file: StaticString = #filePath, line: UInt = #line) async throws -> LiveSnapshot {
+        await store.liveBroadcasts.waitForPendingSync()
+        let saved = try XCTUnwrap(store.activeStoredGame, file: file, line: line)
+        let binding = try XCTUnwrap(store.liveBroadcasts.binding(for: saved.id), file: file, line: line)
+        XCTAssertEqual(binding.ackRevision, saved.revision, store.liveBroadcasts.messages[saved.id] ?? "", file: file, line: line)
+        let code = try XCTUnwrap(binding.code, file: file, line: line)
+        let url = URL(string: "http://127.0.0.1:18088/livestreaming/novideo/api/sessions/\(code)")!
+        let (data, response) = try await URLSession.shared.data(from: url)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200, file: file, line: line)
+        let published = try JSONDecoder().decode(LiveReadEnvelope.self, from: data).snapshot
+        XCTAssertEqual(published, LiveSnapshot(saved), file: file, line: line)
+        XCTAssertEqual(Set(published.entries.map(\.id)).count, published.entries.count, file: file, line: line)
+        return published
+    }
+
+    private func closeV21Live(_ store: GameStore) async throws {
+        store.liveBroadcasts.close(try XCTUnwrap(store.activeStoredGame?.id))
+        await store.liveBroadcasts.waitForPendingSync()
+        XCTAssertTrue(store.liveBroadcasts.bindings.isEmpty)
+    }
+
+    func testV21LiveBothLineupsReorderAndDefenseChangePublishCurrentOrder() async throws {
+        for mode in [GameMode.standard, .coachPitch] {
+            let store = v11Store(mode: mode)
+            try await startV21Live(store)
+            let first = try await readV21Live(store)
+            XCTAssertEqual(first.batterOrder, 1)
+            store.recordPitch(.ball); store.recordPitch(.calledStrike)
+            let batter = store.currentBatter.id, appearance = store.game.currentPlateAppearanceID
+            var attack = store.lineupDraft(forHomeTeam: false)
+            attack.moveBatter(from: 0, to: 3)
+            let next = attack.battingOrderIDs[4]
+            XCTAssertTrue(store.saveLineup(attack), store.actionErrorMessage ?? "")
+            let reordered = try await readV21Live(store)
+            XCTAssertEqual(reordered.batterOrder, 4); XCTAssertEqual(reordered.batter?.id, batter.uuidString)
+            XCTAssertEqual(reordered.currentAppearanceID, appearance?.uuidString)
+            XCTAssertEqual(reordered.balls, mode == .coachPitch ? 0 : 1); XCTAssertEqual(reordered.strikes, 1)
+            XCTAssertEqual(reordered.appearancePitchCount, 2)
+            XCTAssertGreaterThan(reordered.revision, first.revision)
+            let opposingBatter = store.game.homeBattingOrderIDs[store.game.homeBatterIndex]
+            var defense = store.lineupDraft(forHomeTeam: true)
+            defense.moveBatter(from: 0, to: 5)
+            XCTAssertTrue(store.saveLineup(defense), store.actionErrorMessage ?? "")
+            let fielder = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .shortstop })
+            store.changeFieldingPosition(for: store.currentPitcher, to: .shortstop)
+            let changed = try await readV21Live(store)
+            XCTAssertEqual(changed.pitcher?.id, fielder.id.uuidString)
+            XCTAssertEqual(changed.pitchCount, mode == .coachPitch ? nil : 0)
+            XCTAssertEqual(changed.batterOrder, 4)
+            XCTAssertTrue(store.applyPlay(.groundOut))
+            let advanced = try await readV21Live(store)
+            XCTAssertEqual(advanced.batter?.id, next.uuidString); XCTAssertEqual(advanced.batterOrder, 5)
+            store.endCurrentHalf()
+            let switched = try await readV21Live(store)
+            XCTAssertFalse(switched.isTop); XCTAssertEqual(switched.batter?.id, opposingBatter.uuidString)
+            XCTAssertEqual(switched.batterOrder, 6)
+            try await closeV21Live(store)
+        }
+    }
+
+    func testV21LiveRepeatedBatterAndPitcherReentryKeepsIDsCountsAndUndo() async throws {
+        let store = v111Store(rules: GameRules())
+        try await startV21Live(store)
+        let batter = store.currentBatter, pitcher = store.currentPitcher
+        let substitute = try XCTUnwrap(store.battingBenchPlayers.first)
+        let relief = try XCTUnwrap(store.fieldingBenchPlayers.first)
+        let appearance = try XCTUnwrap(store.game.currentPlateAppearanceID).uuidString
+        store.recordPitch(.ball)
+        store.replaceCurrentBatter(with: substitute); store.changePitcher(to: relief)
+        store.recordPitch(.calledStrike)
+        let replaced = try await readV21Live(store)
+        XCTAssertEqual(replaced.batter?.id, substitute.id.uuidString); XCTAssertEqual(replaced.batterOrder, 1)
+        XCTAssertEqual(replaced.pitcher?.id, relief.id.uuidString); XCTAssertEqual(replaced.pitchCount, 1)
+        XCTAssertEqual(replaced.entries.first { $0.id == appearance }?.player?.id, substitute.id.uuidString)
+        store.replaceCurrentBatter(with: batter); store.changePitcher(to: pitcher)
+        store.recordPitch(.foul)
+        let returned = try await readV21Live(store)
+        XCTAssertEqual(returned.batter?.id, batter.id.uuidString); XCTAssertEqual(returned.batterOrder, 1)
+        XCTAssertEqual(returned.pitcher?.id, pitcher.id.uuidString); XCTAssertEqual(returned.pitchCount, 2)
+        XCTAssertEqual(returned.balls, 1); XCTAssertEqual(returned.strikes, 2)
+        XCTAssertEqual(returned.currentAppearanceID, appearance)
+        XCTAssertEqual(returned.entries.first { $0.id == appearance }?.player?.id, batter.id.uuidString)
+        XCTAssertTrue(store.applyPlay(.single))
+        let hit = try await readV21Live(store)
+        XCTAssertEqual(hit.batterOrder, 2); XCTAssertEqual(hit.away.hits, 1)
+        XCTAssertEqual(hit.bases.first?.player.id, batter.id.uuidString)
+        XCTAssertEqual(hit.entries.first { $0.id == appearance }?.status, "completed")
+        store.undo()
+        let undone = try await readV21Live(store)
+        XCTAssertEqual(undone.batterOrder, 1); XCTAssertEqual(undone.currentAppearanceID, appearance)
+        XCTAssertEqual(undone.away.hits, 0); XCTAssertTrue(undone.bases.isEmpty)
+        XCTAssertEqual(undone.entries.first { $0.id == appearance }?.details, returned.entries.first { $0.id == appearance }?.details)
+        XCTAssertGreaterThan(undone.revision, hit.revision)
+        store.redo()
+        let redone = try await readV21Live(store)
+        XCTAssertEqual(redone.entries, hit.entries); XCTAssertEqual(redone.batterOrder, 2)
+        try await closeV21Live(store)
+    }
+
+    func testV21LiveProfileCorrectionsUpdatePeopleButRetainRecordedHistory() async throws {
+        for isHome in [false, true] {
+            let store = freshStore()
+            if isHome { store.endCurrentHalf() }
+            let runner = store.currentBatter
+            XCTAssertTrue(store.applyPlay(.single))
+            try await startV21Live(store)
+            let before = try await readV21Live(store)
+            let historical = try XCTUnwrap(before.entries.first { $0.player?.id == runner.id.uuidString && $0.kind == "appearance" })
+            let batter = store.currentBatter, pitcher = store.currentPitcher
+            var offense = store.lineupDraft(forHomeTeam: isHome)
+            XCTAssertTrue(offense.updateProfile(playerID: runner.id, chineseName: "更正跑者", englishName: "", numberTexts: ["00", "0", "87"]))
+            XCTAssertTrue(offense.updateProfile(playerID: batter.id, chineseName: "更正打者", englishName: "", numberTexts: ["99"]))
+            XCTAssertTrue(store.saveLineup(offense), store.actionErrorMessage ?? "")
+            let corrected = try await readV21Live(store)
+            XCTAssertEqual(corrected.batter?.name, "更正打者"); XCTAssertEqual(corrected.batter?.number, "99")
+            XCTAssertEqual(corrected.bases.first?.player.name, "更正跑者")
+            XCTAssertEqual(corrected.bases.first?.player.number, store.game.baseRunners[.first]?.numberText)
+            let updatedHistory = try XCTUnwrap(corrected.entries.first { $0.id == historical.id })
+            XCTAssertEqual(updatedHistory.player?.name, "更正跑者")
+            XCTAssertEqual(updatedHistory.details, historical.details); XCTAssertEqual(updatedHistory.summary, historical.summary)
+            XCTAssertEqual(corrected.away, before.away); XCTAssertEqual(corrected.home, before.home)
+            XCTAssertEqual(corrected.batterOrder, before.batterOrder)
+            store.undo()
+            let undone = try await readV21Live(store)
+            XCTAssertEqual(undone.batter, before.batter); XCTAssertEqual(undone.bases, before.bases)
+            store.redo()
+            let redone = try await readV21Live(store)
+            XCTAssertEqual(redone.entries, corrected.entries); XCTAssertEqual(redone.bases, corrected.bases)
+            var defense = store.lineupDraft(forHomeTeam: !isHome)
+            XCTAssertTrue(defense.updateProfile(playerID: pitcher.id, chineseName: "更正投手", englishName: "", numberTexts: ["00"]))
+            XCTAssertTrue(store.saveLineup(defense), store.actionErrorMessage ?? "")
+            let pitcherCorrected = try await readV21Live(store)
+            XCTAssertEqual(pitcherCorrected.pitcher?.id, pitcher.id.uuidString)
+            XCTAssertEqual(pitcherCorrected.pitcher?.name, "更正投手"); XCTAssertEqual(pitcherCorrected.pitcher?.number, "00")
+            try await closeV21Live(store)
+        }
+    }
+
+    func testV21LiveThirdOutFoulBuntSwitchesBothModesAndFinishClearsOrder() async throws {
+        for mode in [GameMode.standard, .coachPitch] {
+            let store = v11Store(mode: mode)
+            XCTAssertTrue(store.applyPlay(.groundOut)); XCTAssertTrue(store.applyPlay(.groundOut))
+            try await startV21Live(store)
+            let batter = store.currentBatter.id
+            let appearance = try XCTUnwrap(store.game.currentPlateAppearanceID).uuidString
+            store.recordPitch(.foul); store.recordPitch(.foul); store.recordPitch(.foul)
+            let before = try await readV21Live(store)
+            XCTAssertEqual(before.outs, 2); XCTAssertEqual(before.strikes, 2); XCTAssertEqual(before.batterOrder, 3)
+            store.recordFoulBuntStrikeout()
+            let switched = try await readV21Live(store)
+            XCTAssertFalse(switched.isTop); XCTAssertEqual(switched.outs, 0)
+            XCTAssertEqual(switched.balls, 0); XCTAssertEqual(switched.strikes, 0); XCTAssertEqual(switched.batterOrder, 1)
+            XCTAssertNotEqual(switched.batter?.id, batter.uuidString)
+            let completed = try XCTUnwrap(switched.entries.first { $0.id == appearance })
+            XCTAssertEqual(completed.status, "completed"); XCTAssertTrue(completed.summary.contains("触击"))
+            XCTAssertEqual(switched.pitchCount, mode == .coachPitch ? nil : 0)
+            store.undo()
+            let undone = try await readV21Live(store)
+            XCTAssertTrue(undone.isTop); XCTAssertEqual(undone.outs, 2); XCTAssertEqual(undone.batterOrder, 3)
+            XCTAssertEqual(undone.entries, before.entries); XCTAssertEqual(undone.pitchCount, before.pitchCount)
+            store.redo()
+            let redone = try await readV21Live(store)
+            XCTAssertEqual(redone.entries, switched.entries); XCTAssertEqual(redone.batterOrder, 1)
+            store.finishGame()
+            let final = try await readV21Live(store)
+            XCTAssertTrue(final.isFinal); XCTAssertNil(final.batterOrder)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: final.data()) as? [String: Any])
+            XCTAssertTrue(object["batterOrder"] is NSNull)
+            var legacy = object; legacy.removeValue(forKey: "batterOrder")
+            XCTAssertNil(try JSONDecoder().decode(LiveSnapshot.self, from: JSONSerialization.data(withJSONObject: legacy)).batterOrder)
+            try await closeV21Live(store)
+        }
+    }
+
+    func testV21LiveFailedSaveNeverPublishesAndRestartSendsLatestCorrection() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("V21Live-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("BaseballMaster.sqlite")
+        let store = v11Store(url: url), vault = LiveTestVault(), network = LiveTestTransport()
+        store.liveBroadcasts = LiveBroadcastManager(store: store, vault: vault, transport: network, enabled: true)
+        let id = try XCTUnwrap(store.activeStoredGame?.id)
+        store.liveBroadcasts.start(id); await store.liveBroadcasts.waitForPendingSync()
+        let calls = network.calls.count, revision = store.activeStoredGame?.revision
+        var draft = store.lineupDraft(forHomeTeam: false)
+        draft.moveBatter(from: 0, to: 4)
+        XCTAssertTrue(draft.updateProfile(playerID: store.currentBatter.id, chineseName: "重启后更正", englishName: "", numberTexts: ["00"]))
+        CoreDataRosterStore.writeFault = { throw CocoaError(.fileWriteOutOfSpace) }
+        defer { CoreDataRosterStore.writeFault = nil }
+        XCTAssertFalse(store.saveLineup(draft))
+        await store.liveBroadcasts.waitForPendingSync()
+        XCTAssertEqual(network.calls.count, calls); XCTAssertEqual(store.activeStoredGame?.revision, revision)
+        CoreDataRosterStore.writeFault = nil
+        network.failure = URLError(.networkConnectionLost)
+        XCTAssertTrue(store.saveLineup(draft), store.actionErrorMessage ?? "")
+        await store.liveBroadcasts.waitForPendingSync()
+        XCTAssertEqual(vault.bindings.first?.ackRevision, revision)
+        let reopened = GameStore(persistenceURL: url)
+        reopened.liveBroadcasts = LiveBroadcastManager(store: reopened, vault: vault, transport: network, enabled: true)
+        reopened.liveBroadcasts.requestSync(); await reopened.liveBroadcasts.waitForPendingSync()
+        let payload = try JSONDecoder().decode(LiveSnapshot.self, from: XCTUnwrap(network.calls.last { $0.method == "PUT" }?.body))
+        XCTAssertEqual(payload.batterOrder, 5); XCTAssertEqual(payload.batter?.name, "重启后更正")
+        XCTAssertEqual(payload.batter?.number, "00")
+        XCTAssertEqual(payload, LiveSnapshot(try XCTUnwrap(reopened.activeStoredGame)))
+        XCTAssertEqual(reopened.liveBroadcasts.binding(for: id)?.ackRevision, reopened.activeStoredGame?.revision)
     }
 }
 

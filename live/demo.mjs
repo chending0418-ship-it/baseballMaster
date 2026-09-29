@@ -2,7 +2,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { snapshot } from './test/fixture.mjs';
-const base = (process.env.LIVE_BASE || 'http://127.0.0.1:8088/baseballmaster/live').replace(/\/$/, '');
+const base = (process.env.LIVE_BASE || 'http://127.0.0.1:8088/livestreaming/novideo').replace(/\/$/, '');
 const token = randomBytes(32).toString('hex');
 let state = snapshot(), code, timer;
 async function send(method, payload, suffix = code ? '/' + code : '') {
@@ -20,7 +20,7 @@ try {
     const read = await (await fetch(base + '/api/sessions/' + code)).json();
     if (read.snapshot.balls !== 2) throw new Error('Update was not visible');
     state.balls = 1; await publish();
-    state.isFinal = true; state.endedAt = Date.now(); await publish();
+    state.isFinal = true; state.batterOrder = null; state.endedAt = Date.now(); await publish();
     await close();
     if ((await fetch(base + '/api/sessions/' + code)).status !== 404) throw new Error('Deletion failed');
     console.log('PASS: create → read → update → undo → finish → delete');
@@ -34,8 +34,8 @@ try {
       if (command === 'quit') { await close(); input.close(); break; }
       if (command === 'ball') { state.balls = 2; state.entries.at(-1).summary = '陈昊：坏球（2 坏 2 好）'; }
       else if (command === 'undo') { state.balls = 1; state.entries.at(-1).summary = '陈昊：界外球（1 坏 2 好）'; }
-      else if (command === 'finish' || command === 'expire') { state.isFinal = true; state.endedAt = Date.now() - (command === 'expire' ? 3_585_000 : 0); }
-      else if (command === 'reopen') { state.isFinal = false; state.endedAt = null; }
+      else if (command === 'finish' || command === 'expire') { state.isFinal = true; state.batterOrder = null; state.endedAt = Date.now() - (command === 'expire' ? 3_585_000 : 0); }
+      else if (command === 'reopen') { state.isFinal = false; state.batterOrder = 4; state.endedAt = null; }
       else continue;
       await publish(); console.log('示例已更新');
     }

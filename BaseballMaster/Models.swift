@@ -1065,6 +1065,7 @@ struct ScoringEventRecord: Identifiable, Equatable, Codable {
 
 struct PlateAppearanceRecord: Identifiable, Equatable {
     let id: UUID
+    /// Display number within this team's recorded appearances; not a global ID or batting statistic.
     let sequence: Int
     let inning: Int
     let isTop: Bool
@@ -1073,11 +1074,14 @@ struct PlateAppearanceRecord: Identifiable, Equatable {
     let isComplete: Bool
 
     var needsReview: Bool { events.contains(where: \.needsReview) }
+    var teamLabel: String { isTop ? "客队" : "主队" }
+    var sequenceLabel: String { "\(teamLabel)第 \(sequence) 打席" }
+    var accessibilityKey: String { "\(isTop ? "away" : "home")-\(sequence)" }
     var inningLabel: String { "第\(inning)局\(isTop ? "上" : "下")" }
     var resultText: String { events.last?.title ?? "打席进行中" }
     var chineseRecord: String {
         let details = events.map(\.title).joined(separator: "；")
-        return "\(inningLabel)，第\(sequence)打席，#\(batter.numberText) \(batter.name)：\(details)"
+        return "\(inningLabel)，\(sequenceLabel)，#\(batter.numberText) \(batter.name)：\(details)"
     }
 }
 
@@ -1193,6 +1197,10 @@ struct GameState: Equatable, Codable {
             battingTeam.players.first(where: { $0.id == id })
         }
         return players.isEmpty ? battingTeam.players : players
+    }
+    var currentBattingOrder: Int {
+        let index = isTop ? awayBatterIndex : homeBatterIndex
+        return index % max(1, battingOrderIDs.count) + 1
     }
     var currentBatter: Player {
         let lineup = battingOrderPlayers

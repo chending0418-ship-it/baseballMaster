@@ -22,7 +22,7 @@ final class GameStore: ObservableObject {
     lazy var liveBroadcasts: LiveBroadcastManager = {
         #if DEBUG
         if sourceDatabaseURL == nil && ProcessInfo.processInfo.arguments.contains("--live-local-test") {
-            let base = URL(string: "http://127.0.0.1:18088/baseballmaster/live")!
+            let base = URL(string: "http://127.0.0.1:18088/livestreaming/novideo")!
             return LiveBroadcastManager(store: self, vault: LivePreviewCredentials(), transport: LiveHTTPClient(baseURL: base), enabled: true, viewBaseURL: base)
         }
         #endif
@@ -2806,10 +2806,7 @@ final class GameStore: ObservableObject {
             .lineup
     }
 
-    var currentBattingOrder: Int {
-        let index = game.isTop ? game.awayBatterIndex : game.homeBatterIndex
-        return index % max(1, game.battingOrderIDs.count) + 1
-    }
+    var currentBattingOrder: Int { game.currentBattingOrder }
 
     private struct RuleNotice {
         let summary: String
@@ -2892,10 +2889,13 @@ final class GameStore: ObservableObject {
     }
 
     func plateAppearanceRecords() -> [PlateAppearanceRecord] {
-        (game.plateAppearances ?? []).enumerated().compactMap { offset, identity in
+        var teamSequences: [Bool: Int] = [:]
+        return (game.plateAppearances ?? []).compactMap { identity in
+            let sequence = teamSequences[identity.isTop, default: 0] + 1
+            teamSequences[identity.isTop] = sequence
             let team = identity.isTop ? game.awayTeam : game.homeTeam
             guard let batter = team.players.first(where: { $0.id == identity.batterIDs.last }) else { return nil }
-            return PlateAppearanceRecord(id: identity.id, sequence: offset + 1, inning: identity.inning,
+            return PlateAppearanceRecord(id: identity.id, sequence: sequence, inning: identity.inning,
                 isTop: identity.isTop, batter: batter,
                 events: (game.scoringEvents ?? []).filter { $0.plateAppearanceID == identity.id },
                 isComplete: identity.completed)

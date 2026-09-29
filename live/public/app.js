@@ -1,5 +1,5 @@
 'use strict';
-const BASE = '/baseballmaster/live';
+const BASE = '/livestreaming/novideo';
 const $ = id => document.getElementById(id);
 const code = location.pathname.split('/').filter(Boolean)[2]?.toUpperCase();
 let snapshot, metadata, pending, revision, timer, stopped = false, visibleHalves = 4, clockOffset = 0, inFlight = false, networkFailed = false;
@@ -27,6 +27,7 @@ function render(s) {
   text('count', `B ${s.balls}　S ${s.strikes}　O ${s.outs}`);
   for (let b = 1; b <= 3; b++) { const runner = s.bases.find(r => r.base === b); $('base-' + b).classList.toggle('occupied', !!runner); $('base-' + b).setAttribute('aria-label', `${b} 垒${runner ? runner.player.name : '无人'}`); }
   text('runners', s.bases.length ? s.bases.map(b => `${b.base} 垒 ${b.player.name}`).join(' / ') : '垒上无人');
+  text('batter-label', !s.isFinal && s.batter && Number.isInteger(s.batterOrder) && s.batterOrder > 0 ? `第 ${s.batterOrder} 棒 · 打者` : '打者');
   text('batter', s.isFinal ? '—' : player(s.batter)); text('pitcher-label', s.mode === 'coachPitch' ? 'P 位守备' : '投手');
   text('pitcher', player(s.pitcher)); text('pitch-count', s.mode === 'coachPitch' ? `本打席 ${s.appearancePitchCount} / ${s.pitchLimit} 球` : `本场已投 ${s.pitchCount ?? 0} 球`);
   text('notice', s.notice); $('notice').hidden = !s.notice;

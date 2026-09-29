@@ -3,7 +3,9 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 tmp/
-output/build/
+# Generated reports, screenshots, archives and test results stay local.
+# Files already tracked under output/ remain versioned.
+/output/
 
 live/data/
 live/node_modules/
