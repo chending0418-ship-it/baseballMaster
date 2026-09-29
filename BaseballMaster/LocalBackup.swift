@@ -18,14 +18,14 @@ struct LocalBackup: Codable {
     init(snapshot: RosterSnapshot, date: Date = Date()) throws {
         try Self.validate(snapshot)
         format = "BaseballMaster Backup"
-        version = 2
+        version = 3
         createdAt = date
         payload = try JSONEncoder().encode(snapshot)
         checksum = Self.digest(payload)
     }
 
     func snapshot() throws -> RosterSnapshot {
-        guard format == "BaseballMaster Backup", (1...2).contains(version) else {
+        guard format == "BaseballMaster Backup", (1...3).contains(version) else {
             throw LocalDataError.invalid("备份格式或版本不受支持，请使用兼容的 App 版本。")
         }
         guard checksum == Self.digest(payload) else {
@@ -84,6 +84,18 @@ struct LocalBackup: Codable {
             let game = stored.state
             if let cap = stored.rules.halfInningRunLimit { try require((1...99).contains(cap), "半局得分上限无效") }
             if let limit = stored.rules.coachPitchLimit { try require((1...20).contains(limit), "教练投手球数上限无效") }
+            for journal in ([game.historyJournal].compactMap { $0 } + (game.correctionRevisions ?? []).map(\.previousJournal)) {
+                try require(journal.version == 1, "纠错记录版本不受支持")
+                try require(unique(journal.operations.map(\.id)), "纠错操作编号重复")
+                let checkpoint = try JSONDecoder().decode(GameState.self, from: journal.checkpoint)
+                try require(checkpoint.historyJournal == nil && checkpoint.correctionRevisions == nil, "检查点包含递归历史")
+                try require(checkpoint.homeTeam.id == game.homeTeam.id && checkpoint.awayTeam.id == game.awayTeam.id, "检查点比赛双方不符")
+                try require((1...10_000).contains(checkpoint.inning) && (0...4).contains(checkpoint.balls) && (0...3).contains(checkpoint.strikes) && (0...3).contains(checkpoint.outs), "检查点局面无效")
+                for (team, order) in [(checkpoint.homeTeam, checkpoint.homeBattingOrderIDs), (checkpoint.awayTeam, checkpoint.awayBattingOrderIDs)] {
+                    try require(!order.isEmpty && unique(order) && Set(order).isSubset(of: Set(team.players.map(\.id))), "检查点阵容无效")
+                }
+                try require(checkpoint.homeRunsByInning.count >= checkpoint.inning && checkpoint.awayRunsByInning.count >= checkpoint.inning, "检查点逐局比分缺失")
+            }
             if let appearances = game.plateAppearances {
                 try require(unique(appearances.map(\.id)), "打席标识重复")
                 let ids = Set(appearances.map(\.id))

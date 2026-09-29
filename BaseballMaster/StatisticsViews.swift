@@ -143,6 +143,9 @@ struct StatsOverviewView: View {
     private func teamSummary(_ summary: TeamSeasonStatistics) -> some View {
         BMCard {
             VStack(alignment: .leading, spacing: 14) {
+                if summary.games.contains(where: { $0.state.statisticsIncomplete == true }) {
+                    Text("含过程或责任待确认的比赛 · 统计可能不完整").font(.caption.bold()).foregroundStyle(BMTheme.orange)
+                }
                 Text("\(summary.games.count) 场比赛 · \(summary.wins)胜\(summary.losses)负\(summary.ties)平")
                     .font(.title3.bold())
                     .foregroundStyle(BMTheme.navy)

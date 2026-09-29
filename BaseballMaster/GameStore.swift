@@ -23,12 +23,18 @@ final class GameStore: ObservableObject {
         #if DEBUG
         if sourceDatabaseURL == nil && ProcessInfo.processInfo.arguments.contains("--live-local-test") {
             let base = URL(string: "http://127.0.0.1:18088/livestreaming/novideo")!
-            return LiveBroadcastManager(store: self, vault: LivePreviewCredentials(), transport: LiveHTTPClient(baseURL: base), enabled: true, viewBaseURL: base)
+            // Release artwork uses the configured public URL while all demo traffic remains local.
+            let viewBase = ProcessInfo.processInfo.arguments.contains("--live-release-preview") ? LiveHTTPClient.baseURL : base
+            return LiveBroadcastManager(store: self, vault: LivePreviewCredentials(), transport: LiveHTTPClient(baseURL: base), enabled: true, viewBaseURL: viewBase)
         }
         #endif
         return LiveBroadcastManager(store: self, enabled: AppFeatureAvailability.liveBroadcast && sourceDatabaseURL != nil)
     }()
 
+    var isHistoryReplay = false
+    var historyReplayDate: Date?
+    var historyPendingCommand: HistoryCommand?
+    var historySuppressCapture = false
     private var actionDepth = 0
     private var actionOriginal: GameState?
     private var actionOriginalGames: [StoredGame] = []
@@ -37,12 +43,33 @@ final class GameStore: ObservableObject {
     private var actionRedo: [GameState] = []
     private var actionEffectiveScorers: [UUID]?
     private var undoStack: [GameState] = []
+    var historyPreviousActionState: GameState? { undoStack.last }
+    func remapHistoryUndoIdentities(events: [UUID: UUID], logs: [UUID: UUID], appearances: [UUID: UUID]) {
+        guard isHistoryReplay else { return }
+        for i in undoStack.indices {
+            for j in undoStack[i].playLog.indices { undoStack[i].playLog[j].id = logs[undoStack[i].playLog[j].id] ?? undoStack[i].playLog[j].id }
+            for j in undoStack[i].scoringEvents?.indices ?? 0..<0 {
+                let old = undoStack[i].scoringEvents![j]
+                undoStack[i].scoringEvents?[j].id = events[old.id] ?? old.id
+                if let id = old.logEntryID { undoStack[i].scoringEvents?[j].logEntryID = logs[id] ?? id }
+                if let id = old.plateAppearanceID { undoStack[i].scoringEvents?[j].plateAppearanceID = appearances[id] ?? id }
+            }
+            for j in undoStack[i].plateAppearances?.indices ?? 0..<0 {
+                let old = undoStack[i].plateAppearances![j]
+                undoStack[i].plateAppearances?[j].id = appearances[old.id] ?? old.id
+                if let id = old.previousSegmentID { undoStack[i].plateAppearances?[j].previousSegmentID = appearances[id] ?? id }
+            }
+            if let id = undoStack[i].currentPlateAppearanceID { undoStack[i].currentPlateAppearanceID = appearances[id] ?? id }
+            if let id = undoStack[i].homeInterruptedAppearanceID { undoStack[i].homeInterruptedAppearanceID = appearances[id] ?? id }
+            if let id = undoStack[i].awayInterruptedAppearanceID { undoStack[i].awayInterruptedAppearanceID = appearances[id] ?? id }
+        }
+    }
     private var redoStack: [GameState] = []
-    private var nextEventBeforeSituation: GameSituationSnapshot?
+    var nextEventBeforeSituation: GameSituationSnapshot?
     private var persistenceStore: CoreDataRosterStore
     private var databaseURL: URL?
     private let sourceDatabaseURL: URL?
-    private var activeGameID: UUID?
+    var activeGameID: UUID?
 
     convenience init() {
         self.init(
@@ -311,7 +338,10 @@ final class GameStore: ObservableObject {
     }
 
     func startGameClock(at date: Date = Date()) {
+        let date = historyReplayDate ?? date
         beginAtomicAction()
+        recordHistoryCommand(.clock("start", date))
+
         defer { commitAtomicAction() }
         guard !game.isFinal, game.clockRunningSince == nil else { return }
         finalizeLatestEventSituation()
@@ -336,6 +366,8 @@ final class GameStore: ObservableObject {
 
     func pauseGameClock(at date: Date = Date()) {
         beginAtomicAction()
+        recordHistoryCommand(.clock("pause", date))
+
         defer { commitAtomicAction() }
         guard let runningSince = game.clockRunningSince else { return }
         finalizeLatestEventSituation()
@@ -348,6 +380,8 @@ final class GameStore: ObservableObject {
 
     func toggleGameClockDisplayMode() {
         beginAtomicAction()
+        recordHistoryCommand(.clock("display", Date()))
+
         defer { commitAtomicAction() }
         guard canShowRemainingGameTime else {
             game.clockDisplayMode = .elapsed
@@ -868,6 +902,8 @@ final class GameStore: ObservableObject {
     func recordPitch(_ action: PitchAction) {
         guard canRecordAction else { return }
         beginAtomicAction()
+        recordHistoryCommand(.pitch(action))
+
         defer { commitAtomicAction() }
         pushUndo(startsClock: true)
         guard canRecordAction else { return }
@@ -1149,6 +1185,8 @@ final class GameStore: ObservableObject {
         timingRunCounts: Bool? = nil
     ) -> Bool {
         beginAtomicAction()
+        recordHistoryCommand(.play(outcome, defensivePlay, decisions ?? suggestedRunnerDecisions(for: outcome), timingRunCounts))
+
         defer { commitAtomicAction() }
         guard canRecordAction else { return false }
         actionErrorMessage = nil
@@ -1196,7 +1234,18 @@ final class GameStore: ObservableObject {
         }
 
         let automaticRunnerRuns = automaticRunnerRunCount(in: finalDecisions)
-        var resolution = resolveRunners(finalDecisions)
+        var resolution = resolveRunners(finalDecisions, unearnedBatter: outcome == .error)
+        // A batter reaching on a fielder's choice can replace an inherited
+        // runner in the preceding pitcher's responsibility chain (9.16(g)).
+        if outcome == .fieldersChoice,
+           finalDecisions.contains(where: { $0.origin == .batter && $0.destination != .out }),
+           let replaced = finalDecisions.first(where: { if case .base = $0.origin { return $0.destination == .out }; return false }),
+           let owner = game.runnerPitcherIDs?[replaced.player.id] {
+            game.runnerPitcherIDs?[batter.id] = owner
+            if (game.unearnedRunnerIDs ?? []).contains(replaced.player.id) {
+                game.unearnedRunnerIDs = Array(Set(game.unearnedRunnerIDs ?? []).union([batter.id])).sorted { $0.uuidString < $1.uuidString }
+            }
+        }
         let batterIsOut = finalDecisions.contains { decision in
             if case .batter = decision.origin, decision.destination == .out { return true }
             return false
@@ -1215,13 +1264,10 @@ final class GameStore: ObservableObject {
             actionEffectiveScorers = []
         }
         battingLine.runsBattedIn += [.error, .pendingOut, .pending, .other].contains(outcome) ? 0 : resolution.runs
-        pitchingLine.runs += resolution.runs
-        pitchingLine.earnedRuns += [.error, .pendingOut, .pending].contains(outcome)
-            ? 0
-            : max(0, resolution.runs - automaticRunnerRuns)
         pitchingLine.outsRecorded += resolution.outs
         game.batting[batter.id] = battingLine
         if !isCoachPitch { game.pitching[pitcher.id] = pitchingLine }
+        chargePitcherRuns(resolution.scorers, fallback: pitcher.id, earned: ![.error, .pendingOut, .pending].contains(outcome))
 
         for scorer in resolution.scorers {
             updateBatter(scorer.id) { $0.runs += 1 }
@@ -1250,6 +1296,8 @@ final class GameStore: ObservableObject {
 
     func recordSubstitution(_ text: String) {
         beginAtomicAction()
+        recordHistoryCommand(.note(text))
+
         defer { commitAtomicAction() }
         pushUndo()
         addLog(text, category: .substitution)
@@ -1258,6 +1306,8 @@ final class GameStore: ObservableObject {
     func recordHitByPitch() {
         guard canRecordAction else { return }
         beginAtomicAction()
+        recordHistoryCommand(.hitByPitch)
+
         defer { commitAtomicAction() }
         pushUndo(startsClock: true)
         guard canRecordAction else { return }
@@ -1303,23 +1353,26 @@ final class GameStore: ObservableObject {
 
     func recordIntentionalWalk() {
         beginAtomicAction()
+        recordHistoryCommand(.intentionalWalk)
+
         defer { commitAtomicAction() }
         guard canRecordAction, !isCoachPitch else { actionErrorMessage = "教练投手模式不适用故意保送。"; return }
         pushUndo(startsClock: true)
         let batter = game.currentBatter
         let pitcher = game.currentPitcher
+        let owner = game.walkResponsiblePitcherID ?? pitcher.id
         updateBatter(batter.id) {
             $0.plateAppearances += 1
             $0.walks += 1
         }
-        updatePitcher(pitcher.id) {
+        updatePitcher(owner) {
             $0.battersFaced += 1
             $0.walks += 1
         }
 
         let decisions = forcedAdvanceDecisions(for: batter)
         let automaticRunnerRuns = automaticRunnerRunCount(in: decisions)
-        let resolution = resolveRunners(decisions)
+        let resolution = resolveRunners(decisions, batterResponsiblePitcherID: owner)
         updateBatter(batter.id) { $0.runsBattedIn += resolution.runs }
         addRunsAndPitcherResponsibility(
             resolution,
@@ -1343,6 +1396,8 @@ final class GameStore: ObservableObject {
     func recordDroppedThirdStrike(decisions: [RunnerDecision]) -> Bool {
         guard canRecordAction else { return false }
         beginAtomicAction()
+        recordHistoryCommand(.droppedThirdStrike(decisions))
+
         defer { commitAtomicAction() }
         actionErrorMessage = nil
         guard canReachOnDroppedThirdStrike else {
@@ -1356,7 +1411,7 @@ final class GameStore: ObservableObject {
         pushUndo(startsClock: true)
         let batter = game.currentBatter
         let pitcher = game.currentPitcher
-        updateBatter(batter.id) {
+        updateBatter(game.strikeoutResponsibleBatterID ?? batter.id) {
             $0.plateAppearances += 1
             $0.atBats += 1
             $0.strikeouts += 1
@@ -1426,6 +1481,8 @@ final class GameStore: ObservableObject {
         timingRunCounts: Bool? = nil
     ) -> Bool {
         beginAtomicAction()
+        recordHistoryCommand(.runner(kind, decisions, timingRunCounts))
+
         defer { commitAtomicAction() }
         guard canRecordAction, allowedRunnerEvents.contains(kind) else { actionErrorMessage = "教练投手模式不适用此跑垒事件。"; return false }
         actionErrorMessage = nil
@@ -1547,6 +1604,7 @@ final class GameStore: ObservableObject {
     func recordViolation(_ violation: ViolationKind, decisions: [RunnerDecision] = []) -> Bool {
         guard canRecordAction, !isCoachPitch || violation.category != .pitcher else { actionErrorMessage = "此模式不适用投手犯规。"; return false }
         beginAtomicAction()
+        recordHistoryCommand(.violation(violation, decisions.isEmpty ? suggestedViolationDecisions(for: violation) : decisions))
         defer { commitAtomicAction() }
         actionErrorMessage = nil
         let batter = game.currentBatter
@@ -1683,6 +1741,7 @@ final class GameStore: ObservableObject {
     func recordViolation(_ violation: ViolationKind, adjudication: ViolationAdjudication) -> Bool {
         guard canRecordAction, !isCoachPitch || violation.category != .pitcher else { actionErrorMessage = "此模式不适用投手犯规。"; return false }
         beginAtomicAction()
+        recordHistoryCommand(.adjudication(violation, adjudication))
         defer { commitAtomicAction() }
         actionErrorMessage = nil
         finalizeLatestEventSituation()
@@ -1841,6 +1900,8 @@ final class GameStore: ObservableObject {
     func recordFoulBuntStrikeout() {
         guard canRecordAction else { return }
         beginAtomicAction()
+        recordHistoryCommand(.foulBunt)
+
         defer { commitAtomicAction() }
         guard game.strikes == 2 else { return }
         pushUndo(startsClock: true)
@@ -1850,7 +1911,7 @@ final class GameStore: ObservableObject {
             $0.pitches += 1
             $0.strikes += 1
         }
-        updateBatter(batter.id) {
+        updateBatter(game.strikeoutResponsibleBatterID ?? batter.id) {
             $0.plateAppearances += 1
             $0.atBats += 1
             $0.strikeouts += 1
@@ -1919,6 +1980,12 @@ final class GameStore: ObservableObject {
                 return false
             }
         }
+        var historySituation = HistorySituation(game)
+        historySituation.inning = inning; historySituation.isTop = isTop
+        historySituation.balls = balls; historySituation.strikes = strikes; historySituation.outs = outs
+        historySituation.awayScore = awayScore; historySituation.homeScore = homeScore
+        historySituation.batterIndex = batterIndex; historySituation.pitcherID = pitcherID; historySituation.runners = baseRunners
+        recordHistoryCommand(.situation(historySituation))
         pushUndo()
         game.inning = max(1, inning)
         game.isTop = isTop
@@ -1938,7 +2005,8 @@ final class GameStore: ObservableObject {
             game.homeBatterIndex = min(max(0, batterIndex), lineupCount - 1)
             game.activeAwayPitcherID = pitcherID
         }
-        addLog("现场状态已人工修正并通过合法性检查", category: .correction, notation: "COR")
+        game.statisticsIncomplete = true
+        addLog("现场状态已人工修正；缺失过程与统计待确认", incomplete: true, category: .correction, notation: "COR")
         return true
     }
 
@@ -1960,6 +2028,7 @@ final class GameStore: ObservableObject {
         note: String
     ) -> Bool {
         beginAtomicAction()
+        recordHistoryCommand(.review(HistoryEventReview(id: id, title: title, category: category, notation: notation, primaryPlayerID: primaryPlayerID, secondaryPlayerID: secondaryPlayerID, ballStatus: ballStatus, resolvedOutcome: resolvedOutcome, note: note)))
         defer { commitAtomicAction() }
         actionErrorMessage = nil
         finalizeLatestEventSituation()
@@ -2038,7 +2107,7 @@ final class GameStore: ObservableObject {
         events[eventIndex].resolvedOutcome = resolvedOutcome
         events[eventIndex].needsReview = false
         events[eventIndex].reviewNote = cleanNote
-        events[eventIndex].reviewedAt = Date()
+        events[eventIndex].reviewedAt = historyReplayDate ?? Date()
         game.scoringEvents = events
 
         if let logIndex = matchingLogIndex(for: oldEvent) {
@@ -2123,9 +2192,15 @@ final class GameStore: ObservableObject {
         if outcome != .error {
             updateBatter(batterID) { $0.runsBattedIn += runs }
             if let pitcherID {
-                let unearnedAutomaticRuns = event.automaticRunnerRuns ?? 0
-                updatePitcher(pitcherID) {
-                    $0.earnedRuns += max(0, runs - unearnedAutomaticRuns)
+                let scorers = event.effectiveScorerIDs ?? event.runnerMovements.filter { $0.destination == RunnerDestination.score.title }.map(\.playerID)
+                if let owners = event.beforeSituation?.runnerPitcherIDs {
+                    let unearned = Set(event.beforeSituation?.unearnedRunnerIDs ?? [])
+                    for id in scorers.prefix(runs) where !unearned.contains(id) {
+                        updatePitcher(owners[id] ?? pitcherID) { $0.earnedRuns += 1 }
+                    }
+                } else {
+                    let unearnedAutomaticRuns = event.automaticRunnerRuns ?? 0
+                    updatePitcher(pitcherID) { $0.earnedRuns += max(0, runs - unearnedAutomaticRuns) }
                 }
             }
         }
@@ -2192,6 +2267,8 @@ final class GameStore: ObservableObject {
     func changePitcher(to player: Player) {
         guard canRecordAction else { return }
         beginAtomicAction()
+        recordHistoryCommand(.pitcher(player.id))
+
         defer { commitAtomicAction() }
         let isHomeTeam = game.isTop
         let activeIDs = activeFieldingPlayerIDs(forHomeTeam: isHomeTeam)
@@ -2200,6 +2277,12 @@ final class GameStore: ObservableObject {
         pushUndo()
         var team = game.fieldingTeam
         let previous = game.currentPitcher
+        var responsibility = game.runnerPitcherIDs ?? [:]
+        for runner in game.baseRunners.values where responsibility[runner.id] == nil { responsibility[runner.id] = previous.id }
+        game.runnerPitcherIDs = responsibility
+        if game.balls >= 3 || (game.balls == 2 && game.strikes < 2) {
+            game.walkResponsiblePitcherID = game.walkResponsiblePitcherID ?? previous.id
+        } else { game.walkResponsiblePitcherID = nil }
         let designatedHitterID = isHomeTeam ? game.homeDesignatedHitterID : game.awayDesignatedHitterID
         let twoWayPitcherContinuesAsDH = activeRulesOrDefault.twoWayPlayerEnabled
             && designatedHitterID == previous.id
@@ -2247,6 +2330,8 @@ final class GameStore: ObservableObject {
     func replaceFielder(_ previous: Player, with replacement: Player) -> Bool {
         guard canRecordAction else { return false }
         beginAtomicAction()
+        recordHistoryCommand(.fielder(previous.id, replacement.id))
+
         defer { commitAtomicAction() }
         actionErrorMessage = nil
         let isHomeTeam = game.isTop
@@ -2298,6 +2383,7 @@ final class GameStore: ObservableObject {
         secondPosition: FieldPosition
     ) -> Bool {
         beginAtomicAction()
+        recordHistoryCommand(.doubleSwitch(firstOut.id, firstIn.id, firstPosition, secondOut.id, secondIn.id, secondPosition))
         defer { commitAtomicAction() }
         actionErrorMessage = nil
         let isHomeTeam = game.isTop
@@ -2361,12 +2447,16 @@ final class GameStore: ObservableObject {
     func replaceRunner(on base: Base, with player: Player) {
         guard canRecordAction else { return }
         beginAtomicAction()
+        recordHistoryCommand(.pinchRunner(base, player.id))
+
         defer { commitAtomicAction() }
         let isHomeTeam = !game.isTop
         guard let previous = game.baseRunners[base],
               battingBenchPlayers.contains(where: { $0.id == player.id }) else { return }
         pushUndo()
         game.baseRunners[base] = player
+        if let owner = game.runnerPitcherIDs?[previous.id] { game.runnerPitcherIDs?[player.id] = owner }
+        if (game.unearnedRunnerIDs ?? []).contains(previous.id) { game.unearnedRunnerIDs = (game.unearnedRunnerIDs ?? []) + [player.id] }
         replaceLineupPlayer(previous.id, with: player.id, forHomeTeam: isHomeTeam)
         if activeFieldingPlayerIDs(forHomeTeam: isHomeTeam).contains(previous.id) {
             replaceFieldingPlayer(previous.id, with: player.id, forHomeTeam: isHomeTeam)
@@ -2390,6 +2480,8 @@ final class GameStore: ObservableObject {
     func replaceCurrentBatter(with player: Player) {
         guard canRecordAction else { return }
         beginAtomicAction()
+        recordHistoryCommand(.batter(player.id))
+
         defer { commitAtomicAction() }
         let team = game.battingTeam
         let currentIndex = game.isTop ? game.awayBatterIndex : game.homeBatterIndex
@@ -2400,6 +2492,7 @@ final class GameStore: ObservableObject {
               !battingOrder.isEmpty else { return }
 
         pushUndo()
+        if game.strikes == 2 { game.strikeoutResponsibleBatterID = game.strikeoutResponsibleBatterID ?? game.currentBatter.id }
         let previousID = battingOrder[lineupIndex]
         let previous = team.players.first(where: { $0.id == previousID }) ?? game.currentBatter
         battingOrder[lineupIndex] = player.id
@@ -2425,6 +2518,8 @@ final class GameStore: ObservableObject {
     func changeFieldingPosition(for player: Player, to position: FieldPosition) {
         guard canRecordAction else { return }
         beginAtomicAction()
+        recordHistoryCommand(.position(player.id, position))
+
         defer { commitAtomicAction() }
         var team = game.fieldingTeam
         let isHomeTeam = game.isTop
@@ -2469,6 +2564,8 @@ final class GameStore: ObservableObject {
         if let issue = draft.validationMessage { actionErrorMessage = issue; return false }
         guard draft.hasChanges else { return true }
         beginAtomicAction()
+        recordHistoryCommand(.lineup(HistoryLineup(draft)))
+
         actionErrorMessage = nil
         pushUndo()
         let isHomeTeam = draft.isHomeTeam
@@ -2501,6 +2598,8 @@ final class GameStore: ObservableObject {
 
     func confirmExtraInning(useTiebreak: Bool, runnerBases: [Base] = [.second]) {
         beginAtomicAction()
+        recordHistoryCommand(.extraInning(useTiebreak, runnerBases))
+
         defer { commitAtomicAction() }
         guard canConfirmExtraInning else { return }
         pushUndo()
@@ -2520,6 +2619,8 @@ final class GameStore: ObservableObject {
 
     func enableTiebreakFromCurrentInning(runnerBases: [Base] = [.second]) {
         beginAtomicAction()
+        recordHistoryCommand(.enableTB(runnerBases))
+
         defer { commitAtomicAction() }
         guard canEnableTiebreak else { return }
         pushUndo()
@@ -2535,6 +2636,8 @@ final class GameStore: ObservableObject {
 
     func placeTiebreakRunner(_ player: Player, on requestedBase: Base? = nil) {
         beginAtomicAction()
+        recordHistoryCommand(.placeTB(player.id, requestedBase))
+
         defer { commitAtomicAction() }
         let targetBase = requestedBase ?? nextTiebreakRunnerBase
         guard requiresTiebreakRunnerPlacement,
@@ -2560,6 +2663,8 @@ final class GameStore: ObservableObject {
 
     func skipTiebreakRunnerForCurrentHalf() {
         beginAtomicAction()
+        recordHistoryCommand(.skipTB)
+
         defer { commitAtomicAction() }
         guard requiresTiebreakRunnerPlacement else { return }
         pushUndo()
@@ -2578,8 +2683,13 @@ final class GameStore: ObservableObject {
 
     func undo() {
         beginAtomicAction()
+        historySuppressCapture = true; actionErrorMessage = nil
         defer { commitAtomicAction() }
         finalizeLatestEventSituation()
+        guard let pending = undoStack.last else { return }
+        guard pending.correctionRevisions == game.correctionRevisions else {
+            actionErrorMessage = "请从纠正记录 → 更正历史撤回更正，以保留审计记录和后续记分。"; return
+        }
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(game)
         if redoStack.count > 30 { redoStack.removeFirst() }
@@ -2589,6 +2699,7 @@ final class GameStore: ObservableObject {
 
     func redo() {
         beginAtomicAction()
+        historySuppressCapture = true; actionErrorMessage = nil
         defer { commitAtomicAction() }
         finalizeLatestEventSituation()
         guard let restored = redoStack.popLast() else { return }
@@ -2600,6 +2711,8 @@ final class GameStore: ObservableObject {
 
     func finishGame(reason: GameEndReason = .scorerDecision, at date: Date = Date()) {
         beginAtomicAction()
+        recordHistoryCommand(.finish(reason, date))
+
         defer { commitAtomicAction() }
         pushUndo()
         if !reason.isCompletedResult {
@@ -3174,25 +3287,22 @@ final class GameStore: ObservableObject {
     private func applyWalkWithoutUndo() {
         let batter = game.currentBatter
         let pitcher = game.currentPitcher
+        let responsible = game.walkResponsiblePitcherID ?? pitcher.id
         var line = game.batting[batter.id, default: BattingLine()]
         line.plateAppearances += 1
         line.walks += 1
         game.batting[batter.id] = line
-        updatePitcher(pitcher.id) {
+        updatePitcher(responsible) {
             $0.battersFaced += 1
             $0.walks += 1
         }
 
         var decisions = forcedAdvanceDecisions(for: batter)
-        let automaticRunnerRuns = automaticRunnerRunCount(in: decisions)
-        let resolution = resolveRunners(decisions)
+        let resolution = resolveRunners(decisions, batterResponsiblePitcherID: responsible)
         updateBatter(batter.id) { $0.runsBattedIn += resolution.runs }
         addRuns(resolution.runs)
         for scorer in resolution.scorers { updateBatter(scorer.id) { $0.runs += 1 } }
-        updatePitcher(pitcher.id) {
-            $0.runs += resolution.runs
-            $0.earnedRuns += max(0, resolution.runs - automaticRunnerRuns)
-        }
+        chargePitcherRuns(resolution.scorers, fallback: responsible, earned: true)
         addLog(
             "\(batter.name) 四坏球保送上一垒\(resolution.runs > 0 ? "，挤回 \(resolution.runs) 分" : "")",
             category: .battedBall,
@@ -3209,7 +3319,7 @@ final class GameStore: ObservableObject {
     private func applyStrikeoutWithoutUndo(swinging: Bool) {
         let batter = game.currentBatter
         let pitcher = game.currentPitcher
-        updateBatter(batter.id) {
+        updateBatter(game.strikeoutResponsibleBatterID ?? batter.id) {
             $0.plateAppearances += 1
             $0.atBats += 1
             $0.strikeouts += 1
@@ -3282,13 +3392,22 @@ final class GameStore: ObservableObject {
         }
     }
 
-    private func resolveRunners(_ decisions: [RunnerDecision]) -> (runs: Int, outs: Int, scorers: [Player]) {
+    private func resolveRunners(_ decisions: [RunnerDecision], batterResponsiblePitcherID: UUID? = nil, unearnedBatter: Bool = false) -> (runs: Int, outs: Int, scorers: [Player]) {
         var newBases: [Base: Player] = [:]
         var scorers: [Player] = []
         var outs = 0
         var automaticRunnerIDs = Set(game.automaticRunnerIDs ?? [])
 
+        var responsibility = game.runnerPitcherIDs ?? [:]
+        var unearned = Set(game.unearnedRunnerIDs ?? [])
+        unearned.formUnion(automaticRunnerIDs)
+        for runner in game.baseRunners.values where responsibility[runner.id] == nil { responsibility[runner.id] = game.currentPitcher.id }
         for decision in decisions {
+            if case .batter = decision.origin {
+                responsibility[decision.player.id] = batterResponsiblePitcherID ?? game.currentPitcher.id
+                unearned.remove(decision.player.id)
+                if unearnedBatter { unearned.insert(decision.player.id) }
+            }
             switch decision.destination {
             case .hold:
                 if case .base(let base) = decision.origin { newBases[base] = decision.player }
@@ -3302,6 +3421,8 @@ final class GameStore: ObservableObject {
                 automaticRunnerIDs.remove(decision.player.id)
             }
         }
+        game.runnerPitcherIDs = responsibility
+        game.unearnedRunnerIDs = Array(unearned).sorted { $0.uuidString < $1.uuidString }
         game.baseRunners = newBases
         game.automaticRunnerIDs = Array(automaticRunnerIDs)
         scorers = Array(scorers.prefix(remainingHalfRuns))
@@ -3368,6 +3489,7 @@ final class GameStore: ObservableObject {
     }
 
     private func markGameFinal(reason: GameEndReason, at date: Date = Date()) {
+        let date = historyReplayDate ?? date
         freezeGameClock(at: date)
         game.isFinal = true
         game.endedAt = date
@@ -3377,6 +3499,8 @@ final class GameStore: ObservableObject {
     }
 
     private func advanceBatter() {
+        game.walkResponsiblePitcherID = nil
+        game.strikeoutResponsibleBatterID = nil
         closeAppearance(completed: true)
         let lineupCount = max(1, game.battingOrderIDs.count)
         if game.isTop {
@@ -3398,6 +3522,17 @@ final class GameStore: ObservableObject {
         }
     }
 
+    private func chargePitcherRuns(_ scorers: [Player], fallback: UUID, earned: Bool) {
+        let unearned = Set(game.unearnedRunnerIDs ?? [])
+        for scorer in scorers {
+            let owner = game.runnerPitcherIDs?[scorer.id] ?? fallback
+            updatePitcher(owner) { line in
+                line.runs += 1
+                if earned && !unearned.contains(scorer.id) { line.earnedRuns += 1 }
+            }
+        }
+    }
+
     private func addRunsAndPitcherResponsibility(
         _ resolution: (runs: Int, outs: Int, scorers: [Player]),
         pitcherID: UUID,
@@ -3408,10 +3543,7 @@ final class GameStore: ObservableObject {
         for scorer in resolution.scorers {
             updateBatter(scorer.id) { $0.runs += 1 }
         }
-        updatePitcher(pitcherID) {
-            $0.runs += resolution.runs
-            if earned { $0.earnedRuns += max(0, resolution.runs - automaticRunnerRuns) }
-        }
+        chargePitcherRuns(resolution.scorers, fallback: pitcherID, earned: earned)
     }
 
     private func setScore(_ target: Int, forHomeTeam: Bool) {
@@ -3570,7 +3702,7 @@ final class GameStore: ObservableObject {
         return nil
     }
 
-    private func applySituationSnapshot(_ snapshot: GameSituationSnapshot, to state: inout GameState) -> Bool {
+    func applySituationSnapshot(_ snapshot: GameSituationSnapshot, to state: inout GameState) -> Bool {
         let battingTeam = snapshot.isTop ? state.awayTeam : state.homeTeam
         var runners: [Base: Player] = [:]
         for occupancy in snapshot.baseRunners {
@@ -3590,12 +3722,14 @@ final class GameStore: ObservableObject {
         state.homeBatterIndex = snapshot.homeBatterIndex
         state.awayBatterIndex = snapshot.awayBatterIndex
         state.baseRunners = runners
+        state.runnerPitcherIDs = snapshot.runnerPitcherIDs
+        state.unearnedRunnerIDs = snapshot.unearnedRunnerIDs
         state.activeHomePitcherID = snapshot.activeHomePitcherID
         state.activeAwayPitcherID = snapshot.activeAwayPitcherID
         return true
     }
 
-    private func pushUndo(startsClock: Bool = false) {
+    func pushUndo(startsClock: Bool = false) {
         ensureCurrentAppearance()
         finalizeLatestEventSituation()
         if startsClock, activeGameID != nil, !hasStartedGameClock {
@@ -3607,7 +3741,7 @@ final class GameStore: ObservableObject {
         nextEventBeforeSituation = game.situationSnapshot
     }
 
-    private func addLog(
+    func addLog(
         _ text: String,
         incomplete: Bool = false,
         category: ScoringEventCategory = .game,
@@ -3619,7 +3753,7 @@ final class GameStore: ObservableObject {
         resolvedOutcome: PlayOutcome? = nil,
         automaticRunnerRuns: Int? = nil
     ) {
-        let timestamp = Date()
+        let timestamp = historyReplayDate ?? Date()
         let logEntry = PlayLogEntry(
             inning: game.inning,
             isTop: game.isTop,
@@ -3694,7 +3828,7 @@ final class GameStore: ObservableObject {
     }
 
     private func persistActiveStoredGameMetadata() {
-        guard actionDepth == 0, !requiresDataRecovery else { return }
+        guard !isHistoryReplay, actionDepth == 0, !requiresDataRecovery else { return }
         guard let activeGameID,
               let index = games.firstIndex(where: { $0.id == activeGameID }) else { return }
         games[index].state = game
@@ -3718,8 +3852,9 @@ final class GameStore: ObservableObject {
         }
     }
 
-    private func beginAtomicAction() {
+    func beginAtomicAction() {
         if actionDepth == 0 {
+            historyPendingCommand = nil; historySuppressCapture = false; actionErrorMessage = nil
             actionOriginal = game
             actionOriginalGames = games
             actionOriginalActiveID = activeGameID
@@ -3729,13 +3864,31 @@ final class GameStore: ObservableObject {
         actionDepth += 1
     }
 
-    private func commitAtomicAction() {
+    func commitAtomicAction() {
         guard actionDepth > 0 else { return }
         if actionDepth > 1 { actionDepth -= 1; return }
-        defer { actionDepth = 0; actionOriginal = nil; actionOriginalGames = []; actionUndo = []; actionRedo = [] }
+        defer { actionDepth = 0; actionOriginal = nil; actionOriginalGames = []; actionUndo = []; actionRedo = []; historyPendingCommand = nil; historySuppressCapture = false }
         guard let original = actionOriginal else { return }
         if requiresDataRecovery { game = original; return }
         guard game != original || games != actionOriginalGames else { return }
+        if !historySuppressCapture, original.inning == game.inning, original.isTop == game.isTop {
+            if original.currentPitcher.id != game.currentPitcher.id {
+                var owners = game.runnerPitcherIDs ?? [:]
+                for runner in original.baseRunners.values where owners[runner.id] == nil { owners[runner.id] = original.currentPitcher.id }
+                game.runnerPitcherIDs = owners
+                game.walkResponsiblePitcherID = original.balls >= 3 || (original.balls == 2 && original.strikes < 2)
+                    ? original.walkResponsiblePitcherID ?? original.currentPitcher.id : nil
+            }
+            if case .lineup = historyPendingCommand {
+                for base in Base.allCases {
+                    if let old = original.baseRunners[base], let new = game.baseRunners[base], old.id != new.id {
+                        var owners = game.runnerPitcherIDs ?? [:]; owners[new.id] = original.runnerPitcherIDs?[old.id] ?? original.currentPitcher.id; game.runnerPitcherIDs = owners
+                        if (original.unearnedRunnerIDs ?? []).contains(old.id) { game.unearnedRunnerIDs = Array(Set(game.unearnedRunnerIDs ?? []).union([new.id])).sorted { $0.uuidString < $1.uuidString } }
+                    }
+                }
+                if original.strikes == 2, original.currentBatter.id != game.currentBatter.id { game.strikeoutResponsibleBatterID = original.strikeoutResponsibleBatterID ?? original.currentBatter.id }
+            }
+        }
         finalizeLatestEventSituation()
         if !game.isFinal, game.pendingDecision == nil,
            game.inning == original.inning, game.isTop == original.isTop,
@@ -3744,6 +3897,13 @@ final class GameStore: ObservableObject {
             game.pendingDecision = .runLimit
         }
         if !game.isFinal, game.halfEndedAwaitingDecision != true { ensureCurrentAppearance() }
+        if isHistoryReplay { return }
+        captureHistoryOperation(from: original)
+        guard actionErrorMessage == nil else {
+            game = original; games = actionOriginalGames; undoStack = actionUndo; redoStack = actionRedo
+            nextEventBeforeSituation = original.situationSnapshot
+            return
+        }
         guard let id = activeGameID, let index = games.firstIndex(where: { $0.id == id }) else { return }
         games[index].state = game
         games[index].status = game.isFinal ? .completed : .ongoing
@@ -3806,7 +3966,7 @@ final class GameStore: ObservableObject {
         commitAtomicAction()
     }
 
-    private func ensureCurrentAppearance() {
+    func ensureCurrentAppearance() {
         guard !game.isFinal, game.halfEndedAwaitingDecision != true, !game.battingOrderPlayers.isEmpty else { return }
         if let id = game.currentPlateAppearanceID,
            let index = game.plateAppearances?.firstIndex(where: { $0.id == id }),
@@ -3896,6 +4056,8 @@ final class GameStore: ObservableObject {
     private func switchHalfWithoutUndo() {
         game.outs = 0; game.balls = 0; game.strikes = 0
         game.baseRunners = [:]; game.automaticRunnerIDs = []
+        game.runnerPitcherIDs = nil; game.unearnedRunnerIDs = nil
+        game.walkResponsiblePitcherID = nil; game.strikeoutResponsibleBatterID = nil
         game.pendingDecision = nil; game.halfEndedAwaitingDecision = nil
         if game.isTop { game.isTop = false }
         else { game.isTop = true; game.inning += 1; ensureInningCapacity() }
@@ -3906,14 +4068,18 @@ final class GameStore: ObservableObject {
 
     func endCurrentHalf() {
         guard canRecordAction else { return }
-        beginAtomicAction(); defer { commitAtomicAction() }
+        beginAtomicAction()
+        recordHistoryCommand(.endHalf)
+        defer { commitAtomicAction() }
         pushUndo()
         endHalfWithoutUndo(reason: "记录员结束半局")
     }
 
     func resolveGameDecision(finish: Bool) {
         guard let decision = game.pendingDecision, !requiresDataRecovery else { return }
-        beginAtomicAction(); defer { commitAtomicAction() }
+        beginAtomicAction()
+        recordHistoryCommand(.decision(finish))
+        defer { commitAtomicAction() }
         pushUndo()
         game.pendingDecision = nil
         switch decision {
@@ -3937,7 +4103,9 @@ final class GameStore: ObservableObject {
             actionErrorMessage = "旧比赛缺少恢复阶段，请先核对局次、棒次及垒况，再确认恢复。"
             return false
         }
-        beginAtomicAction(); defer { commitAtomicAction() }
+        beginAtomicAction()
+        recordHistoryCommand(.reopen(confirmedLegacySituation))
+        defer { commitAtomicAction() }
         pushUndo()
         game.isFinal = false; game.endedAt = nil; game.endReason = nil
         game.clockRunningSince = nil; game.pendingDecision = nil
@@ -4122,7 +4290,7 @@ final class GameStore: ObservableObject {
     }
 
     private func persistCurrentGameIfNeeded() {
-        guard actionDepth == 0, !requiresDataRecovery else { return }
+        guard !isHistoryReplay, actionDepth == 0, !requiresDataRecovery else { return }
         guard let activeGameID,
               let index = games.firstIndex(where: { $0.id == activeGameID }) else { return }
         let original = games[index]

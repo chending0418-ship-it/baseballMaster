@@ -83,6 +83,7 @@ struct TeamSeasonPDFReport {
     func pdfData(generatedAt: Date = Date()) -> Data {
         ReportPDFCanvas.render(kind: "SEASON REPORT / 球队赛季报告", title: team.name,
                                subtitle: "\(seasonName) · 完整球队赛季数据 · \(summary.games.count) 场已结束比赛", generatedAt: generatedAt) { canvas in
+            if summary.games.contains(where: { $0.state.statisticsIncomplete == true }) { canvas.paragraph("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold: true) }
             canvas.metrics([("比赛", "\(summary.games.count)"), ("胜 / 负 / 平", "\(summary.wins) / \(summary.losses) / \(summary.ties)"),
                             ("得分", "\(summary.runs)"), ("失分", "\(summary.runsAllowed)"),
                             ("打率 AVG", ReportStatisticsTables.rate(summary.batting.average, available: summary.batting.atBats > 0)),
@@ -140,6 +141,7 @@ struct PlayerStatisticsPDFReport {
     func pdfData(generatedAt: Date = Date()) -> Data {
         ReportPDFCanvas.render(kind: "PLAYER REPORT / 球员个人报告", title: player.name,
                                subtitle: "\(player.englishName) · \(player.numbersText) · \(teamName) · \(seasonName)\n范围：已选 \(records.count) / \(seasonGameCount) 场比赛", generatedAt: generatedAt) { canvas in
+            if games.contains(where: { $0.state.statisticsIncomplete == true }) { canvas.paragraph("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold: true) }
             canvas.metrics([("已选比赛", "\(records.count)"), ("打率 AVG", ReportStatisticsTables.rate(summary.batting.average, available: summary.batting.atBats > 0)),
                             ("安打 H", "\(summary.batting.hits)"), ("打点 RBI", "\(summary.batting.runsBattedIn)"),
                             ("投球局数 IP", summary.pitching.inningsText), ("刺杀 + 助杀", "\(summary.fielding.putouts + summary.fielding.assists)")])
@@ -197,6 +199,7 @@ struct GameBoxScorePDFReport {
     func pdfData(generatedAt: Date = Date()) -> Data {
         ReportPDFCanvas.render(kind: "BOX SCORE / 单场比赛战报", title: "\(game.awayTeam.name) vs \(game.homeTeam.name)",
                                subtitle: "比赛时间：\(playedAt.map { ReportPDFCanvas.dateText($0, includesTime: true) } ?? "未记录") · \(game.isFinal ? "已结束" : "进行中 / 非最终数据") · 规定 \(rules?.scheduledInnings ?? game.scheduledInnings) 局", generatedAt: generatedAt) { canvas in
+            if game.statisticsIncomplete == true { canvas.paragraph("过程或责任待确认 · 统计可能不完整", bold: true) }
             canvas.metrics([("客队 · \(String(game.awayTeam.shortName.prefix(14)))", "\(game.awayScore)"),
                             ("主队 · \(String(game.homeTeam.shortName.prefix(14)))", "\(game.homeScore)"),
                             ("安打 H（客 / 主）", "\(game.awayHits) / \(game.homeHits)"),

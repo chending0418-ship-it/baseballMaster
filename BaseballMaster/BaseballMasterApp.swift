@@ -61,6 +61,8 @@ struct LaunchRouterView: View {
         Group {
             if store.requiresDataRecovery {
                 NavigationStack { BackupManagementView() }
+            } else if arguments.contains("--correction-preview") {
+                HistoryCorrectionFixture()
             } else if arguments.contains("--v11-coach-preview") {
                 V11ScorekeepingFixture(mode: .coachPitch)
             } else if arguments.contains("--v11-cap-preview") {

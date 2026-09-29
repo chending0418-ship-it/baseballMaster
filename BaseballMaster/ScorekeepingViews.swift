@@ -12,6 +12,7 @@ struct ScorekeepingView: View {
     @State private var confirmEndHalf = false
     @State private var showLiveBroadcast = false
     @State private var showRuleNotices = false
+    @State private var showHistoryCorrection = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -143,7 +144,12 @@ struct ScorekeepingView: View {
                 LiveBroadcastSheet(store: store, gameID: id)
             }
         }
+        .sheet(isPresented: $showHistoryCorrection) { HistoryCorrectionView().environmentObject(store) }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showHistoryCorrection = true } label: { Image(systemName: "clock.arrow.circlepath") }
+                    .accessibilityLabel("纠正记录").accessibilityIdentifier("open-history-correction")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 if store.liveBroadcasts.isEnabled {
                     Button { showLiveBroadcast = true } label: {
