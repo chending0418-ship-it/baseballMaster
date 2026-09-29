@@ -1,0 +1,77 @@
+{
+  "date": "2026-09-29",
+  "version": "2.1 (1)",
+  "sourceCommit": "4fa2b2b",
+  "syncedTo22Commit": "90ce911",
+  "unitAndIntegration": {
+    "passed": 161,
+    "failures": 0,
+    "evidence": "output/history-complete-small.xcresult"
+  },
+  "smallScreenUI": {
+    "passed": 3,
+    "failures": 0,
+    "evidence": "output/history-complete-small.xcresult"
+  },
+  "largeScreenUI": {
+    "passed": 3,
+    "failures": 0,
+    "evidence": "output/history-release-validation.xcresult"
+  },
+  "finalCorrectionUI": {
+    "passed": 2,
+    "failures": 0,
+    "evidence": "output/correction-delivery-large.xcresult"
+  },
+  "appStoreUI": {
+    "captureCases": 4,
+    "liveShareCases": 1,
+    "finalHubCases": 1,
+    "failures": 0,
+    "evidence": [
+      "output/appstore-21-capture.xcresult",
+      "output/appstore-21-live.xcresult",
+      "output/appstore-21-final-hub.xcresult"
+    ]
+  },
+  "liveService": {
+    "passed": 13,
+    "failures": 0,
+    "evidence": "output/correction-service-tests.log"
+  },
+  "releaseCompile": {
+    "configuration": "Release",
+    "sdk": "iphoneos",
+    "signed": false,
+    "result": "BUILD SUCCEEDED",
+    "evidence": "output/correction-release-delivery.log"
+  },
+  "sync22": {
+    "version": "2.2 (1)",
+    "passed": 161,
+    "failures": 0,
+    "evidence": "/Users/JasonChan/Documents/BaseballMaster-2.2/output/correction-sync-2.2.xcresult"
+  },
+  "marketing": {
+    "screens": 7,
+    "sizes": [
+      [
+        1320,
+        2868
+      ],
+      [
+        1242,
+        2688
+      ]
+    ],
+    "evidence": "output/appstore-2.1/manifest.json",
+    "publicLiveReady": false
+  },
+  "remainingReleaseWork": [
+    "Enable and deploy production live broadcast",
+    "Privacy and App Store Connect declarations",
+    "Physical-device public-network and upgrade acceptance",
+    "Signed archive and App Store upload"
+  ],
+  "notes": "Evidence under ignored output/ is local to the recorded workspace. Simulator and unsigned Release builds do not constitute App Store publication."
+}

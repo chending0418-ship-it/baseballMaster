@@ -3,6 +3,7 @@
 **当前分支：2.2 开发版（Build 1）。** 从 2.1 维护基线 `b814101` 建立，新增功能在本目录开发；2.1 保留在原目录维护。成人慢垒、自由人、超过 10 人的打序与自定义初始球数目前仅完成规划，业务代码尚未实现。详见 [版本分支与工作目录](docs/BRANCHES.md)。
 
 - [2.2 版本规划：成人慢垒、10 人守备、可扩展打序与初始球数](<update/BaseballMaster 2.2 成人慢垒与初始球数规划.md>)
+- [2.1 记分纠错 TODO](<update/BaseballMaster 2.1 记分纠错 TODO.md>)（漏换人／换守位／局面／失误，已实现并完成本地回归）
 - [正式发布流程](docs/releases/2.0/00-正式发布流程.md)
 - [版本更新说明](docs/releases/2.0/01-版本更新说明.txt) · [英文审核备注](docs/releases/2.0/02-审核备注英文.txt)
 - [开发与验证记录](<update/BaseballMaster V1.1.1 开发与验证记录.md>) · [需求与完成清单](<update/BaseballMaster V1.1.1 TODO.md>)
@@ -145,3 +146,7 @@ xcodebuild \
 `website/public/` 是 `baseballmaster.cc` 首页及隐私／支持页的独立公开目录。使用现有 App 图标与示例截图，提供功能介绍、可切换界面展示、常见问题与 App Store 下载；文字直播标注为 2.1 计划。支持桌面与手机，不依赖构建工具或第三方网页脚本。
 
 官网已于 2026-09-28 上线至 [baseballmaster.cc](https://baseballmaster.cc/)，独立目录、SSL 证书和 HTTP → HTTPS 均已验证；证书有效至 2026-12-27，当前未配置自动续期。预览、打包和维护见 [官网说明](website/README.md) 与 [上线记录](website/deploy/2026-09-28-https-deployment.md)。直播服务准备好后再添加相应代理路径；不得将仓库根目录作为公开目录。
+
+2.1 记分纠错已实现并同步到本分支：详见 [功能说明与实际截图](docs/releases/2.1/CORRECTIONS.md)。
+
+[2.1 App Store 七张宣传图说明](docs/releases/2.1/APPSTORE-ARTWORK.md)：包含更新记分页、文字直播、直播分享、四类纠错、影响预览、阵容调整及数据战报；直播素材待生产上线验收后使用。
