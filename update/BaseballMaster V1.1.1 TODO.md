@@ -4,7 +4,7 @@
 
 目标：完成已提出的 V1.1.1 开发与本地回归，交付合并 V1.1 的正式发布流程和文案。必须先通过本清单评审；遇到与原设计、显示效果或数据行为的冲突，立即暂停相关实现，向用户说明并确认。不得为赶今天的目标删减范围、跳过验证或把未解决问题标为通过。
 
-范围依据：[测试反馈评估](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1.1 测试反馈评估.md>)、[版本推进规划](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1至V1.2.1 版本推进规划.md>)。文字直播仍归 **V1.2.1**，本版保持关闭，不部署服务。
+范围依据：[测试反馈评估](</Users/JasonChan/Documents/BaseballMaster/docs/archive/plans/1.1.1/FEEDBACK-REVIEW.md>)、[版本推进规划](</Users/JasonChan/Documents/BaseballMaster/docs/archive/plans/VERSION-ROADMAP-1.1-1.2.1.md>)。文字直播仍归 **V1.2.1**，本版保持关闭，不部署服务。
 
 ## 01 Review 时需要明确的行为
 

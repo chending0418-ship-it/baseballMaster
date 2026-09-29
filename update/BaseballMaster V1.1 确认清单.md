@@ -2,7 +2,7 @@
 
 整理日期：2026-09-23。状态：待产品负责人填写。
 
-依据：[完整需求评估](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1 需求评估与方案.md>)、[按打席文字直播方案](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1 按打席文字直播方案.md>)及本次讨论。
+依据：[完整需求评估](</Users/JasonChan/Documents/BaseballMaster/docs/archive/plans/1.1/REQUIREMENTS-REVIEW.md>)、[按打席文字直播方案](</Users/JasonChan/Documents/BaseballMaster/docs/archive/plans/1.1/LIVE-BROADCAST-PLAN.md>)及本次讨论。
 
 ## 填写方式
 

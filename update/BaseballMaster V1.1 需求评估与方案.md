@@ -1,6 +1,6 @@
 # BaseballMaster V1.1 需求评估与方案
 
-> 范围更新（2026-09-23）：以下为前期评估记录。开发范围已由用户填写的 [确认清单](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1 确认清单.md>)收口，执行以 [V1.1 TODO](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1 TODO.md>)为准。球队分享、历史修改扩展暂缓；文字直播纳入；背号区分 0／00；半局超额分不计；教练规则已补充，举手杀无需额外处理。
+> 范围更新（2026-09-23）：以下为前期评估记录。开发范围已由用户填写的 [确认清单](</Users/JasonChan/Documents/BaseballMaster/docs/archive/plans/1.1/CONFIRMATIONS.md>)收口，执行以 [V1.1 TODO](</Users/JasonChan/Documents/BaseballMaster/docs/archive/plans/1.1/TODO.md>)为准。球队分享、历史修改扩展暂缓；文字直播纳入；背号区分 0／00；半局超额分不计；教练规则已补充，举手杀无需额外处理。
 
 评估日期：2026-09-23。依据：同目录《BaseballMaster V1.1 修改需求.md》、当前 Swift 源码及文末所引用的官方资料。本轮交付为需求评估和设计建议，尚未修改业务代码，也未执行构建或测试。
 
@@ -268,7 +268,7 @@ GameChanger 官方明确 GameStream 提供比赛过程、比分和统计，独�
 
 Apple 相关工作集中在联网数据隐私、用户提交内容的处置及可用审核入口。球队名称／姓名／记录上传后，原先“仅本机保存”的声明需更新；如果引入账号创建，需要 App 内发起账号删除。参见 [App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/)、[审核指南](https://developer.apple.com/app-store/review/guidelines/)、[账号删除](https://developer.apple.com/support/offering-account-deletion-in-your-app/)。
 
-具体页面结构、事件归属、同步协议、费用模型和验收要求见 [按打席文字直播方案](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1 按打席文字直播方案.md>)。
+具体页面结构、事件归属、同步协议、费用模型和验收要求见 [按打席文字直播方案](</Users/JasonChan/Documents/BaseballMaster/docs/archive/plans/1.1/LIVE-BROADCAST-PLAN.md>)。
 
 ## 9. 技术依赖与实施顺序
 
