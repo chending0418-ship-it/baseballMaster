@@ -1,0 +1,35 @@
+[Unit]
+Description=BaseballMaster text live service
+After=network.target www-server-baseballmaster\x2dlive\x2ddata.mount
+Requires=www-server-baseballmaster\x2dlive\x2ddata.mount
+BindsTo=www-server-baseballmaster\x2dlive\x2ddata.mount
+
+[Service]
+Type=simple
+User=baseballmaster-live
+Group=baseballmaster-live
+WorkingDirectory=/www/server/baseballmaster-live/current
+ExecStart=/www/server/baseballmaster-node/node-v24.21.0-linux-x64/bin/node server.mjs
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=18088
+Environment=TRUST_PROXY=1
+Environment=LIVE_DB=/www/server/baseballmaster-live-data/live.sqlite
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+LimitCORE=0
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/www/server/baseballmaster-live-data
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=2G
+MemorySwapMax=0
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

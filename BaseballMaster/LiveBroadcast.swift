@@ -4,8 +4,8 @@ import Foundation
 import Security
 
 enum AppFeatureAvailability {
-    // Text live is planned for 2.1 after deployment and release validation. Not a remote setting.
-    static let liveBroadcast = false
+    // 2.1 uses the deployed HTTPS service. This is a build setting, not remote configuration.
+    static let liveBroadcast = true
 }
 
 /// This projection is the complete public allow-list. Local rosters, backups and publisher credentials stay on device.
@@ -317,6 +317,18 @@ final class LiveBroadcastManager: ObservableObject {
 }
 
 #if DEBUG
+// Controlled network failures for the isolated simulator integration only.
+// Healthy requests still use the production HTTPS client; excluded from Release builds.
+@MainActor
+final class LiveIntegrationTransport: LiveTransport {
+    static let shared = LiveIntegrationTransport()
+    var offline = false
+    func send(method: String, code: String?, token: String, body: Data?) async throws -> LiveResponse? {
+        if offline { throw URLError(.notConnectedToInternet) }
+        return try await LiveHTTPClient().send(method: method, code: code, token: token, body: body)
+    }
+}
+
 /// Isolated in-memory credentials for opt-in local UI integration; never reads production Keychain items.
 final class LivePreviewCredentials: LiveCredentialStorage {
     private var values: [LiveBinding] = []

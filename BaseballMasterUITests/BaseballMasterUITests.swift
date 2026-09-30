@@ -899,6 +899,128 @@ extension BaseballMasterUITests {
 }
 
 extension BaseballMasterUITests {
+    private func publicLiveSnapshot(_ code: String) throws -> [String: Any] {
+        let url = URL(string: "https://baseballmaster.cc/livestreaming/novideo/api/sessions/\(code)")!
+        let done = expectation(description: "Read public live projection")
+        var received: Data?; var status: Int?; var failure: Error?
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            received = data; status = (response as? HTTPURLResponse)?.statusCode; failure = error; done.fulfill()
+        }.resume()
+        wait(for: [done], timeout: 15)
+        if let failure { throw failure }
+        XCTAssertEqual(status, 200)
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(received)) as? [String: Any])
+        return try XCTUnwrap(envelope["snapshot"] as? [String: Any])
+    }
+
+    private func waitForPublicLive(_ code: String, matching condition: ([String: Any]) -> Bool) throws -> [String: Any] {
+        let deadline = Date().addingTimeInterval(30)
+        repeat {
+            let state = try publicLiveSnapshot(code)
+            if condition(state) { return state }
+            Thread.sleep(forTimeInterval: 0.4)
+        } while Date() < deadline
+        XCTFail("The public HTTPS projection did not reach the expected state")
+        return try publicLiveSnapshot(code)
+    }
+
+    func testLiveProductionHTTPSScoringCorrectionShareRelaunchAndDelete() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--live-production-persistent-test", "--live-integration-store=\(UUID().uuidString)", "-appAppearance", "light"]
+        app.launch()
+        let open = app.buttons["open-live-broadcast"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10)); open.tap()
+        let start = app.buttons["start-live-broadcast"]
+        if start.waitForExistence(timeout: 2) { start.tap() }
+        XCTAssertTrue(app.buttons["share-live-link"].waitForExistence(timeout: 20), app.debugDescription)
+        let code = app.staticTexts["live-view-code"].label
+        XCTAssertEqual(code.count, 24)
+        XCTAssertEqual(app.staticTexts["live-view-url"].label, "https://baseballmaster.cc/livestreaming/novideo/\(code)")
+        let initial = try publicLiveSnapshot(code)
+        let initialBalls = try XCTUnwrap(initial["balls"] as? Int)
+        let initialRevision = try XCTUnwrap(initial["revision"] as? Int)
+        captureHistory(app, name: "公网直播-分享二维码")
+        app.buttons["share-live-link"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
+        if app.buttons["Close"].exists { app.buttons["Close"].tap() }
+        else if app.buttons["关闭"].exists { app.buttons["关闭"].tap() }
+        else { app.swipeDown() }
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.otherElements["ActivityListView"])
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
+        app.buttons["完成"].tap()
+        app.buttons["pitch-坏球"].tap()
+        _ = try waitForPublicLive(code) { ($0["revision"] as? Int ?? 0) > initialRevision && $0["balls"] as? Int == initialBalls + 1 }
+        app.buttons["undo-last-play"].tap()
+        _ = try waitForPublicLive(code) { $0["balls"] as? Int == initialBalls }
+        app.buttons["redo-last-play"].tap()
+        _ = try waitForPublicLive(code) { $0["balls"] as? Int == initialBalls + 1 }
+
+        let beforeOffline = try publicLiveSnapshot(code)
+        open.tap()
+        let network = app.buttons["live-integration-network"]
+        revealStatisticsControl(network, in: app); network.tap()
+        app.buttons["完成"].tap()
+        app.buttons["pitch-坏球"].tap()
+        open.tap()
+        let pending = app.staticTexts["live-sync-status"]
+        XCTAssertTrue(pending.waitForExistence(timeout: 5))
+        XCTAssertTrue(pending.label.contains("待同步"))
+        XCTAssertEqual(try publicLiveSnapshot(code)["revision"] as? Int, beforeOffline["revision"] as? Int)
+        captureHistory(app, name: "公网直播-断网本地记分待补传")
+        revealStatisticsControl(network, in: app); network.tap()
+        _ = try waitForPublicLive(code) { $0["balls"] as? Int == initialBalls + 2 }
+        app.buttons["完成"].tap()
+        app.buttons["undo-last-play"].tap()
+        _ = try waitForPublicLive(code) { $0["balls"] as? Int == initialBalls + 1 }
+
+        // Correct the latest recorded ball to a called strike. Drafts must stay local.
+        let beforeCorrection = try publicLiveSnapshot(code)
+        app.buttons["open-history-correction"].tap()
+        app.buttons["history-kind-漏记局面"].tap()
+        let edit = app.buttons["修改此条"].firstMatch
+        revealStatisticsControl(edit, in: app); edit.tap()
+        let pitch = app.buttons["history-pitch"]
+        XCTAssertTrue(pitch.waitForExistence(timeout: 5)); pitch.tap()
+        app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "看振", "pitch-看振")).firstMatch.tap()
+        app.buttons["history-add-draft"].tap()
+        app.buttons["history-preview"].tap()
+        XCTAssertTrue(app.buttons["history-save"].waitForExistence(timeout: 5))
+        XCTAssertEqual(try publicLiveSnapshot(code)["revision"] as? Int, beforeCorrection["revision"] as? Int)
+        app.buttons["history-save"].tap()
+        _ = try waitForPublicLive(code) { ($0["revision"] as? Int ?? 0) > (beforeCorrection["revision"] as? Int ?? 0) && ($0["strikes"] as? Int ?? 0) > 0 }
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+
+        app.terminate(); app.launch()
+        XCTAssertTrue(open.waitForExistence(timeout: 10)); open.tap()
+        XCTAssertTrue(app.buttons["share-live-link"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["live-view-code"].label, code)
+        _ = try publicLiveSnapshot(code)
+        app.buttons["完成"].tap()
+        app.buttons["结束比赛"].tap()
+        XCTAssertTrue(app.buttons["finish-reason-记录员结束记录"].waitForExistence(timeout: 5))
+        app.buttons["finish-reason-记录员结束记录"].tap(); app.buttons["确认保存"].tap()
+        _ = try waitForPublicLive(code) { $0["isFinal"] as? Bool == true && $0["batterOrder"] is NSNull }
+        app.buttons["open-box-score"].tap()
+        let reopen = app.buttons["reopen-game"]
+        revealStatisticsControl(reopen, in: app); reopen.tap()
+        _ = try waitForPublicLive(code) { $0["isFinal"] as? Bool == false }
+        open.tap()
+        XCTAssertTrue(app.buttons["share-live-link"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["live-view-code"].label, code)
+        let close = app.buttons["close-live-broadcast"]
+        revealStatisticsControl(close, in: app); close.tap(); app.buttons["关闭直播"].tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 15))
+        let gone = expectation(description: "Public live content deleted")
+        URLSession.shared.dataTask(with: URL(string: "https://baseballmaster.cc/livestreaming/novideo/api/sessions/\(code)")!) { _, response, _ in
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 404); gone.fulfill()
+        }.resume()
+        wait(for: [gone], timeout: 15)
+        app.buttons["完成"].tap()
+        app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        captureHistory(app, name: "公网直播-关闭后保留本地比赛")
+    }
+
     func testLiveBroadcastStartShareAndCloseWithLocalService() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--v11-bases-preview", "--live-local-test"]
@@ -931,13 +1053,14 @@ extension BaseballMasterUITests {
 
 
 extension BaseballMasterUITests {
-    func testOfflineReleaseHidesLiveInScoringAndResultsAndDescribesLocalPrivacy() {
+    func testV21PrivacyDescribesOptionalLiveAndLinksPolicyAndSupport() {
         let app = XCUIApplication()
         app.launchArguments = ["--v11-navigation-preview"]
         app.launch()
         let game = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
         XCTAssertTrue(game.waitForExistence(timeout: 5)); game.tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        // In-memory preview stores cannot publish unless a live test is explicitly requested.
         XCTAssertFalse(app.buttons["open-live-broadcast"].exists)
         let scoring = XCTAttachment(screenshot: app.screenshot()); scoring.name = "离线记分"; scoring.lifetime = .keepAlways; add(scoring)
         app.buttons["open-box-score"].tap()
@@ -948,8 +1071,12 @@ extension BaseballMasterUITests {
         revealStatisticsControl(about, in: app); about.tap()
         let description = app.staticTexts["about-privacy-description"]
         XCTAssertTrue(description.waitForExistence(timeout: 5))
-        XCTAssertTrue(description.label.contains("当前版本暂不提供文字直播"))
-        let privacy = XCTAttachment(screenshot: app.screenshot()); privacy.name = "离线隐私说明"; privacy.lifetime = .keepAlways; add(privacy)
+        XCTAssertTrue(description.label.contains("只有你主动开启文字直播"))
+        XCTAssertTrue(description.label.contains("本地比赛保留"))
+        revealStatisticsControl(app.buttons["about-privacy-policy"], in: app)
+        XCTAssertTrue(app.buttons["about-privacy-policy"].exists)
+        XCTAssertTrue(app.buttons["about-support"].exists)
+        let privacy = XCTAttachment(screenshot: app.screenshot()); privacy.name = "2.1 隐私说明"; privacy.lifetime = .keepAlways; add(privacy)
     }
 }
 

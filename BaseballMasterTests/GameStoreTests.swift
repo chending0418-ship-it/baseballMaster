@@ -2996,12 +2996,12 @@ extension GameStoreTests {
 
 
 extension GameStoreTests {
-    func testDeferredLiveDoesNotReadCredentialsOrSendEvenAfterRestoreAndForeground() async throws {
+    func testDisabledLiveDoesNotReadCredentialsOrSendEvenAfterRestoreAndForeground() async throws {
         let store = v11Store(); let vault = LiveTestVault(); let network = LiveTestTransport()
         let id = try XCTUnwrap(store.activeStoredGame?.id)
         let saved = LiveBinding(gameID: id, token: "synthetic-test-token", code: "1234567890ABCDEF12345678", expiresAt: Date().addingTimeInterval(3600))
         vault.bindings = [saved]
-        let manager = LiveBroadcastManager(store: store, vault: vault, transport: network)
+        let manager = LiveBroadcastManager(store: store, vault: vault, transport: network, enabled: false)
         XCTAssertFalse(manager.isEnabled)
         XCTAssertFalse(store.liveBroadcasts.isEnabled)
         manager.start(id); manager.setForeground(true); manager.requestSync(); manager.retry(id)

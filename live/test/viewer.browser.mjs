@@ -14,9 +14,9 @@ const { webkit } = require(modulePath);
 const { expect } = require(modulePath + '/test');
 const output = resolve(process.env.LIVE_QA_OUTPUT || '../output/validation/2.1/live-browser');
 mkdirSync(output, { recursive: true });
-const app = createLiveServer();
-await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
-const origin = `http://127.0.0.1:${app.server.address().port}`;
+const app = process.env.LIVE_BROWSER_ORIGIN ? null : createLiveServer();
+if (app) await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+const origin = process.env.LIVE_BROWSER_ORIGIN || `http://127.0.0.1:${app.server.address().port}`;
 const browser = await webkit.launch();
 const results = [];
 try {
@@ -110,5 +110,5 @@ try {
   writeFileSync(`${output}/results.json`, JSON.stringify(results, null, 2) + '\n');
 } finally {
   await browser.close();
-  await new Promise(resolve => app.server.close(resolve));
+  if (app) await new Promise(resolve => app.server.close(resolve));
 }

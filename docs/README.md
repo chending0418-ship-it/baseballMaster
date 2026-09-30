@@ -6,7 +6,8 @@
 | --- | --- |
 | [PROJECT-STRUCTURE.md](PROJECT-STRUCTURE.md) | 项目目录、命名和输出位置约定 |
 | [BRANCHES.md](BRANCHES.md) | 2.1／2.2 工作区与同步方式 |
-| [releases/2.1/](releases/2.1/) | 当前 2.1 功能、验证、截图及宣传材料说明 |
+| [releases/2.1/](releases/2.1/) | 当前 2.1 功能、验证、截图、宣传材料及隐私申报草稿 |
+| [正式直播部署](../live/deploy/2026-09-30-production.md) | 公网服务、模拟器联调、运维与回滚 |
 | [releases/2.2/](releases/2.2/) | 成人慢垒与初始球数的后续开发方案，当前尚未实现 |
 | [releases/2.0/](releases/2.0/) | 2.0 发布流程与交接记录 |
 | `releases/<旧版本>/` | 其他版本的发布与验收记录，按版本保留 |
