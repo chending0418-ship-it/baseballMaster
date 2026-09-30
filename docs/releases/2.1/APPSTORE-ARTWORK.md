@@ -28,12 +28,14 @@
 
 ## 直播发布状态
 
-当前生产文字直播开关关闭，公网直播服务尚未部署。02、03 以及包含直播入口的 01 是为 2.1 直播发布准备的素材，需完成公网部署、隐私申报、直播启用及真机验收后，与对应发布构建一起提交。其余图片对应已实现的本地功能。
+2026-09-30：正式文字直播 Web／API 已部署，2.1 生产开关已启用，公网与模拟器联调通过。用户要求直接复用 9 月 29 日这组素材，本次不重新采集或渲染七张设备截图。提交时仍需核对最终签名构建、真机验收和 Connect 隐私问卷，见 [提交交接](REVIEW-HANDOFF.md)。
 
 界面来自真实运行的开发版与本地 HTTP 直播服务，使用合成球队和球员资料。分享截图的发布地址采用已配置的正式域名，二维码中的示例场次未在公网发布，不是可用观赛邀请。没有重绘或替换 App 内的界面内容。
 
-## 重新生成
+## 来源与复现（本次不执行）
 
 使用 Node.js、Playwright、Sharp 和本机 Chrome。设置 `CODEX_ARTIFACT_NODE_MODULES` 为依赖模块目录后，在交付目录运行 `node source/render.cjs`；也可在项目根目录运行 `node output/releases/2.1/app-store/source/render.cjs`。渲染器会检查图片完整加载、画布尺寸、透明通道和设备框底部边界，并写入每张图片的 SHA-256。
 
 UI 原图通过 `BaseballMasterUITests` 的 AppStore／History 截图用例重新获取；网页图通过本地服务和 `source/capture-live.cjs` 获取。网页采集脚本从自身位置自动查找项目根目录，不依赖当前工作目录；本地服务需监听 `127.0.0.1:18088`。2026-09-29 在移动后的验证副本中重新生成 14 张图片，校验值全部与原交付一致，详见 [目录整理与回归记录](../../maintenance/2026-09-29-directory-cleanup.md)。
+
+官网只使用原图生成轻量网页副本，原图及两套 App Store 图片不变。新增 1440 × 1920 更新宣传海报另存 `output/marketing/2.1/release-poster/`，不用于替换设备截图；可复现模板及脚本为 `website/templates/release-2.1-poster.html` 和 `website/scripts/render-release-poster.cjs`。

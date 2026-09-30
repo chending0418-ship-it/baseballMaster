@@ -1,0 +1,26 @@
+App: 棒球比赛记录大师 (BaseballMaster)
+Version: 2.1
+Bundle ID: com.jasonchen.baseballmaster
+
+No login or review account is required. No subscriptions, in-app purchases, ads, or third-party analytics SDKs. Core scoring, teams, corrections, statistics, reports, and backups work offline. Editable sample teams are included. The UI is in Simplified Chinese.
+
+New: optional TEXT live broadcasting, link/QR sharing, four historical scoring corrections, and an impact preview. Adult slow-pitch is only a future 2.2 website preview; it is not in this binary.
+
+Review steps:
+1. In 比赛 (Games), create a 本队比赛 (Team Game) or 观赛记录 (Spectator Record), select teams/rules, confirm both lineups, and start recording. Use sample or fictional players. Tap Play Ball and record pitches or plays. Ordinary scoring supports undo/redo.
+2. Open 纠正记录 (Correct Records), the clock/circular-arrow icon at the top right. Choose 漏记换人 (missed substitution), 漏记换守位 (defensive position), 漏记局面 (situation/event), or 漏记失误 (fielding error). Select the actual event, prepare a draft, tap 预览后续影响 (Preview Impact), resolve conflicts, then 保存更正 (Save). Unsaved drafts do not change the official game or live page. 更正历史 (Correction History) retains revisions; reverting the latest correction also requires preview/save.
+3. In an ongoing formal game, open 文字直播与分享 (Text Live and Sharing), the top-right broadcast/antenna icon. Read the disclosure and tap 开启文字直播 (Start Text Live). Keep the app in the foreground and online. Share the viewing link or scan its QR code on another device. The HTTPS page needs no login or app installation.
+4. Record another pitch and wait for successful sync. The viewer checks every 10 seconds while in the foreground. Saved corrections also sync while the link is valid. Offline scoring continues; reconnect and reopen the app to sync before expiry.
+5. Tap 关闭直播并删除云端资料 (Close Live and Delete Cloud Data) and wait for confirmation: the old link stops working. Alternatively end the game and wait for final sync. Live data expires one hour after the recorded finish, or one hour without a publisher update/heartbeat. Local records remain. Please create a temporary session during review; no permanent demo/replay link is provided.
+6. End a test game to inspect results and PDF/text reports, or reopen it. Completed Team Games count toward team-season totals; spectator, practice, and ongoing games do not. 我的 (Profile) → 关于 (About) has privacy/support links. 本地数据 / 备份与恢复 (Local Data / Backup and Restore) exports local backups; restoring replaces local records after confirmation.
+
+Production viewer: https://baseballmaster.cc/livestreaming/novideo/
+Only the selected game's public projection is uploaded: team/player names, jersey numbers, player/game/event IDs, scores, situations, and play-by-play text. No audio/video, full database, other games, PDFs, or backups are uploaded. Anyone holding the link can READ but cannot edit. The publishing credential is separate in device Keychain, never in viewing links or backups. Server interruptions may expire links early; live is not a cloud backup.
+
+No public directory, feed, chat, or comments. The viewer footer has 反馈直播内容 (Report Live Content): https://baseballmaster.cc/support.html#live-report . Reports are reviewed and public access can be disabled.
+
+Privacy: https://baseballmaster.cc/privacy.html
+Support: https://baseballmaster.cc/support.html
+Contact: chending0418@gmail.com
+
+The existing offline Chinese Baseball Association 2022 rulebook has source attribution and no separate download/export/share action. Game-report exports are separate. Source: http://baseball.sport.org.cn/jsgz/guize/2023/0404/565442.html . Source attribution is not a claim of redistribution permission.

@@ -24,9 +24,10 @@
 
 ## 仍待发布时执行
 
+- 当前公开版本仍为 2.0。隐私标签是 App 级资料，点击发布会影响公开产品页；按 Apple 当前可用版本口径协调 2.1 提交和上线时的更新，不把 2.1 草稿直接当成现有 2.0 的处理行为。见 [Apple 管理 App 隐私](https://developer.apple.com/help/app-store-connect/manage-app-information/manage-app-privacy)。
 - 在 App Store Connect 核对并填写上述实际收集类型、关联性、用途与追踪选项；检查网络安全临时处理信息的问卷口径及邮件／微信支持渠道的实际范围。
 - 隐私政策 URL 填 `https://baseballmaster.cc/privacy.html`，支持 URL 填 `https://baseballmaster.cc/support.html`。
 - 审核说明写明：无需账号；进行中的比赛可主动开播，网页仅只读，终场或失联一小时到期；关闭成功立即删除，手机原比赛保留。审核测试应现场生成临时直播，不提供永久回放链接。
-- 完成真机、旧数据升级和签名归档；按用户后续安排提交。不得将隐私清单和此草稿视为已完成商店问卷。
+- 完成真机、旧数据升级和签名归档；2026-09-30 用户决定自行归档上传并提交，所需资料见 [审核交接](REVIEW-HANDOFF.md)。不得将隐私清单和此草稿视为已完成商店问卷。
 
 依据：[Apple App 隐私详情](https://developer.apple.com/app-store/app-privacy-details/)、[隐私清单数据类型](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacycollecteddatatypes/nsprivacycollecteddatatype)、[清单用途](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacycollecteddatatypes/nsprivacycollecteddatatypepurposes)。

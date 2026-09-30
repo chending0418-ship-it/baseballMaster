@@ -17,6 +17,6 @@
 | [archive/screenshots/](archive/screenshots/) | 早期界面截图，不作为当前版本截图 |
 | [maintenance/](maintenance/) | 仓库整理等维护记录 |
 
-2.1 常用文件：[纠错功能](releases/2.1/CORRECTIONS.md)、[纠错任务清单](releases/2.1/CORRECTION-TODO.md)、[同步回归记录](releases/2.1/SYNC-REGRESSION.md)、[验证摘要](releases/2.1/validation.json)、[宣传图说明](releases/2.1/APPSTORE-ARTWORK.md)。
+2.1 常用文件：[审核提交交接](releases/2.1/REVIEW-HANDOFF.md)、[商店字段与可复制文案](releases/2.1/APPSTORE-METADATA.md)、[隐私申报](releases/2.1/APP-PRIVACY.md)、[纠错功能](releases/2.1/CORRECTIONS.md)、[纠错任务清单](releases/2.1/CORRECTION-TODO.md)、[同步回归记录](releases/2.1/SYNC-REGRESSION.md)、[验证摘要](releases/2.1/validation.json)、[宣传图说明](releases/2.1/APPSTORE-ARTWORK.md)。
 
 归档中的旧版本安排、测试数量、未完成事项和文件名仅用于追溯；以当前发布计划和最新验收记录判断状态。
