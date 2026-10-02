@@ -186,11 +186,12 @@ extension GameStore {
         return result
     }
 
-    func completedStatisticsGames(teamID: UUID? = nil, seasonID: String, mode: GameMode? = nil) -> [StoredGame] {
+    func completedStatisticsGames(teamID: UUID? = nil, seasonID: String, mode: GameMode? = nil, gameIDs: Set<UUID>? = nil) -> [StoredGame] {
         games.filter {
             $0.status == .completed && !$0.isObservation && $0.ourTeamID != nil
                 && (teamID == nil || $0.ourTeamID == teamID) && $0.seasonID == seasonID
                 && (mode == nil || $0.rules.gameMode == mode)
+                && (gameIDs == nil || gameIDs!.contains($0.id))
         }.sorted {
             let lhsDate = $0.startedAt ?? $0.scheduledAt ?? $0.createdAt
             let rhsDate = $1.startedAt ?? $1.scheduledAt ?? $1.createdAt
@@ -198,8 +199,8 @@ extension GameStore {
         }
     }
 
-    func seasonStatistics(for team: Team, seasonID: String, mode: GameMode? = nil) -> TeamSeasonStatistics {
-        let completed = completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: mode)
+    func seasonStatistics(for team: Team, seasonID: String, mode: GameMode? = nil, gameIDs: Set<UUID>? = nil) -> TeamSeasonStatistics {
+        let completed = completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: mode, gameIDs: gameIDs)
         var players = Dictionary(uniqueKeysWithValues: team.players.map {
             ($0.id, PlayerSeasonStatistics(player: $0))
         })

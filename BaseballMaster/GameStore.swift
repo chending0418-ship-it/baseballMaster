@@ -2684,6 +2684,44 @@ final class GameStore: ObservableObject {
         )
     }
 
+    var canSwapOpeningSides: Bool {
+        let isFresh = isHistoryReplay || activeStoredGame?.openingPitchRecorded == false
+        return isFresh && !game.isFinal && game.inning == 1 && game.isTop
+            && game.balls == 0 && game.strikes == 0 && game.outs == 0
+            && game.homeScore == 0 && game.awayScore == 0 && game.baseRunners.isEmpty
+            && game.pendingDecision == nil && game.halfEndedAwaitingDecision != true
+            && game.pitching.values.allSatisfy { $0.pitches == 0 && $0.battersFaced == 0 }
+            && game.batting.values.allSatisfy { $0.plateAppearances == 0 }
+    }
+
+    @discardableResult
+    func swapOpeningSides() -> Bool {
+        guard canSwapOpeningSides else {
+            actionErrorMessage = "仅能在比赛首球前互换先攻／后攻；已记首球的比赛撤销后也不能互换。"
+            return false
+        }
+        beginAtomicAction()
+        recordHistoryCommand(.swapOpeningSides)
+        pushUndo()
+        (game.homeTeam, game.awayTeam) = (game.awayTeam, game.homeTeam)
+        (game.homeBattingOrderIDs, game.awayBattingOrderIDs) = (game.awayBattingOrderIDs, game.homeBattingOrderIDs)
+        (game.homeFieldingPlayerIDs, game.awayFieldingPlayerIDs) = (game.awayFieldingPlayerIDs, game.homeFieldingPlayerIDs)
+        (game.homeDesignatedHitterID, game.awayDesignatedHitterID) = (game.awayDesignatedHitterID, game.homeDesignatedHitterID)
+        (game.activeHomePitcherID, game.activeAwayPitcherID) = (game.activeAwayPitcherID, game.activeHomePitcherID)
+        (game.homeExitedPlayerIDs, game.awayExitedPlayerIDs) = (game.awayExitedPlayerIDs, game.homeExitedPlayerIDs)
+        (game.homeBatterIndex, game.awayBatterIndex) = (game.awayBatterIndex, game.homeBatterIndex)
+        (game.homeRunsByInning, game.awayRunsByInning) = (game.awayRunsByInning, game.homeRunsByInning)
+        (game.homeHits, game.awayHits) = (game.awayHits, game.homeHits)
+        (game.homeErrors, game.awayErrors) = (game.awayErrors, game.homeErrors)
+        (game.homeInterruptedAppearanceID, game.awayInterruptedAppearanceID) = (game.awayInterruptedAppearanceID, game.homeInterruptedAppearanceID)
+        // Start a separate appearance for the new opening batter; pregame administrative logs remain intact.
+        game.currentPlateAppearanceID = nil
+        game.plateAppearancePitchCount = 0
+        addLog("互换先攻／后攻：\(game.awayTeam.shortName) 先攻，\(game.homeTeam.shortName) 后攻", category: .game)
+        commitAtomicAction()
+        return actionErrorMessage == nil
+    }
+
     func undo() {
         beginAtomicAction()
         historySuppressCapture = true; actionErrorMessage = nil
@@ -2747,6 +2785,7 @@ final class GameStore: ObservableObject {
         beginAtomicAction()
         activeGameID = nil
         games[index].status = .ongoing
+        games[index].openingPitchRecorded = false
         games[index].startedAt = nil
         games[index].updatedAt = Date()
         games[index].state.playLog.append(
@@ -2820,6 +2859,7 @@ final class GameStore: ObservableObject {
         games[index].lineup = orderedLineup
         games[index].secondaryLineup = nil
         games[index].status = .ongoing
+        games[index].openingPitchRecorded = false
         games[index].startedAt = nil
         games[index].updatedAt = Date()
         games[index].state = state
@@ -2890,6 +2930,7 @@ final class GameStore: ObservableObject {
         games[index].lineup = awayLineup
         games[index].secondaryLineup = homeLineup
         games[index].status = .ongoing
+        games[index].openingPitchRecorded = false
         games[index].startedAt = nil
         games[index].updatedAt = Date()
         games[index].state = state
@@ -3908,6 +3949,21 @@ final class GameStore: ObservableObject {
             return
         }
         guard let id = activeGameID, let index = games.firstIndex(where: { $0.id == id }) else { return }
+        if games[index].openingPitchRecorded == false,
+           historyPendingCommand?.recordsOpeningPitch == true
+            || game.historyJournal?.operations.contains(where: { $0.command.recordsOpeningPitch }) == true {
+            games[index].openingPitchRecorded = true
+        }
+        if activeGameID == actionOriginalActiveID,
+           original.homeTeam.id == game.awayTeam.id && original.awayTeam.id == game.homeTeam.id {
+            if games[index].isObservation {
+                let previous = games[index].lineup
+                games[index].lineup = games[index].secondaryLineup ?? []
+                games[index].secondaryLineup = previous
+            } else if let teamID = games[index].ourTeamID {
+                games[index].isHome = game.homeTeam.id == teamID
+            }
+        }
         games[index].state = game
         games[index].status = game.isFinal ? .completed : .ongoing
         games[index].updatedAt = Date()
@@ -4290,6 +4346,17 @@ final class GameStore: ObservableObject {
             NSLog("Unable to save the local Core Data store: %@", String(describing: error))
             storageErrorMessage = "本地数据保存失败，请保留当前页面并稍后重试。"
         }
+    }
+
+    func advanceLiveProjectionRevision(for id: UUID, matching revision: Int) throws -> StoredGame {
+        guard !requiresDataRecovery, let index = games.firstIndex(where: { $0.id == id }), (games[index].revision ?? 0) == revision else {
+            throw LiveError.message("直播资料升级暂未保存，请重试。")
+        }
+        var next = games[index]
+        next.revision = revision + 1
+        try persistenceStore.upsertGame(next)
+        games[index] = next
+        return next
     }
 
     private func persistCurrentGameIfNeeded() {

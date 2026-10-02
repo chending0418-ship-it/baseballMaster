@@ -12,6 +12,8 @@ struct StatsOverviewView: View {
     @State private var query = ""
     @State private var recordsOnly = true
     @State private var modeFilter: GameMode?
+    @State private var selectedGameIDs: Set<UUID>?
+    @State private var showGameFilter = false
     @ScaledMetric(relativeTo: .body) private var metricWidth = 92
 
     private var team: Team? {
@@ -22,11 +24,18 @@ struct StatsOverviewView: View {
             ? selectedSeasonID : (store.statisticsSeasons.first?.id ?? "")
     }
 
+    private var eligibleGames: [StoredGame] {
+        guard let team else { return [] }
+        return store.completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: modeFilter)
+    }
+    private var eligibleIDs: Set<UUID> { Set(eligibleGames.map(\.id)) }
+    private var effectiveGameIDs: Set<UUID>? { selectedGameIDs.map { $0.intersection(eligibleIDs) } }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if let team {
-                    let summary = store.seasonStatistics(for: team, seasonID: seasonID, mode: modeFilter)
+                    let summary = store.seasonStatistics(for: team, seasonID: seasonID, mode: modeFilter, gameIDs: effectiveGameIDs)
                     scopeSelection(team: team)
                     GameModeFilter(selection: $modeFilter)
                     teamSummary(summary)
@@ -49,7 +58,7 @@ struct StatsOverviewView: View {
                     else { StatisticsMetricsGrid(category: category,
                         batting: summary.batting, pitching: summary.pitching, fielding: summary.fielding
                     ) }
-                    if modeFilter != .coachPitch {
+                    if modeFilter != .coachPitch && selectedGameIDs == nil {
                         let legacyPlayers = store.historicalPersonalPlayers(teamID: team.id)
                         if !legacyPlayers.isEmpty {
                             Text("旧版个人记录").font(.headline)
@@ -59,7 +68,7 @@ struct StatsOverviewView: View {
                         }
                     }
                     if summary.games.isEmpty {
-                        emptyState("这个赛季还没有已结束的比赛", detail: "完成并保存比赛后，这里会自动汇总球队和球员数据。", id: "stats-no-games")
+                        emptyState(selectedGameIDs == nil ? "这个赛季还没有已结束的比赛" : "当前筛选范围没有比赛", detail: "可重新选择比赛；完成并保存比赛后会自动加入可选范围。", id: "stats-no-games")
                     }
                     playerControls
                     let rows = summary.filteredPlayers(
@@ -80,7 +89,7 @@ struct StatsOverviewView: View {
                             ForEach(rows) { row in
                                 NavigationLink(destination: PlayerDetailView(
                                     player: row.player, initialSeasonID: seasonID,
-                                    statisticsTeamID: team.id, initialCategory: category
+                                    statisticsTeamID: team.id, initialCategory: category, initialGameIDs: effectiveGameIDs ?? eligibleIDs, initialMode: modeFilter
                                 )) {
                                     playerRow(row)
                                 }
@@ -110,10 +119,22 @@ struct StatsOverviewView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if let team {
                     ReportExportButton(title: "导出 PDF", identifier: "export-team-season-pdf", previewTitle: "球队赛季报告") {
-                        try TeamSeasonPDFReport(store: store, team: team, seasonID: seasonID, mode: modeFilter).write()
+                        try TeamSeasonPDFReport(store: store, team: team, seasonID: seasonID, mode: modeFilter, gameIDs: effectiveGameIDs).write()
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showGameFilter) {
+            GameFilterSheet(games: eligibleGames, initialSelection: effectiveGameIDs ?? eligibleIDs) { selection in
+                let valid = selection.intersection(eligibleIDs)
+                selectedGameIDs = valid.isEmpty ? [] : (valid == eligibleIDs ? nil : valid)
+            }
+        }
+        .onChange(of: selectedTeamID) { _ in selectedGameIDs = nil }
+        .onChange(of: selectedSeasonID) { _ in selectedGameIDs = nil }
+        .onChange(of: modeFilter) { _ in selectedGameIDs = nil }
+        .onChange(of: eligibleIDs) { ids in
+            if let selection = selectedGameIDs { selectedGameIDs = selection.intersection(ids) }
         }
         .onChange(of: category) { value in
             metric = value.metrics[0]
@@ -134,6 +155,19 @@ struct StatsOverviewView: View {
                     ForEach(store.statisticsSeasons) { Text($0.name).tag($0.id) }
                 }
                 .accessibilityIdentifier("stats-season-picker")
+                Divider()
+                HStack {
+                    Button { showGameFilter = true } label: {
+                        Label("筛选比赛", systemImage: "line.3.horizontal.decrease.circle")
+                    }.accessibilityIdentifier("stats-open-game-filter")
+                    Spacer()
+                    Text("已选 \(effectiveGameIDs?.count ?? eligibleGames.count) / \(eligibleGames.count) 场")
+                        .font(.caption).accessibilityIdentifier("stats-game-scope")
+                }
+                if selectedGameIDs != nil {
+                    Button("恢复全部比赛") { selectedGameIDs = nil }
+                        .accessibilityIdentifier("stats-reset-games")
+                }
             }
             .pickerStyle(.menu)
             .tint(BMTheme.green)

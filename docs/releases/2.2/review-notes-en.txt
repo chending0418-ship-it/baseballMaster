@@ -1,0 +1,25 @@
+App: 棒球比赛记录大师 (BaseballMaster)
+Version: 2.2
+Bundle ID: com.jasonchen.baseballmaster
+
+No login or review account is required. No subscriptions, in-app purchases, ads, or third-party analytics. The UI is Simplified Chinese. Core scoring, teams, corrections, statistics, reports and backups work offline; editable sample teams are included.
+
+This update improves existing scoring, lineup editing, reports, statistics and the optional TEXT live viewer. It fixes navigation after manually ending a game. Slow-pitch rules and a home-screen widget are not included.
+
+Review steps:
+1. In 比赛 (Games), create a 本队比赛 (Team Game), choose teams and rules, confirm both lineups, and open scoring. Use sample/fictional players. Before recording the first pitch, the side-swap control can be used repeatedly; it disappears after the first pitch, including after undo. Starting the game clock alone does not lock it.
+2. Open the lineup adjustment control, choose either team, and long-press a row's reorder handle to move it. Save an edit: the editor remains open for further changes. Use 完成 (Done) and 返回比赛 (Return to Game) to leave it.
+3. Record pitches/plays, then manually end the game. 返回首页 (Return Home) opens the Games page; tabs and the saved results remain usable. In results, 预览与分享 Box Score (Preview and Share Box Score) is green when enabled. A text-simple play-by-play PDF identifies the pitcher at each appearance and changes within an appearance when recorded.
+4. In 统计 (Statistics), choose a team/season, open the game-selection control, select specific completed Team Games and apply. Totals, player details and PDF exports follow this selection. Spectator/practice/ongoing games are excluded from team-season totals.
+5. For live viewing, create an ongoing formal game and open 文字直播与分享 (Text Live and Sharing), the broadcast icon at the top right. Read the disclosure and tap 开启文字直播 (Start Text Live). Keep the app foreground and online. Open the viewing link in Safari or scan its QR code on another device. No viewer login or app installation is needed.
+6. Record a pitch and wait for successful sync. The webpage polls every 10 seconds in the foreground. It shows inning scores, rules/time, batter versus pitcher, next batters, live appearances and recorded base situations. 查看双方阵容 (View Both Lineups) shows current batting orders and field positions; return to live viewing using the back control. The title includes both team names. Legacy records with missing fields are labeled as unrecorded.
+7. Close the broadcast with 关闭直播并删除云端资料 (Close Live and Delete Cloud Data) and wait for confirmation. The old link becomes unavailable; local records remain usable. Please create a temporary session during review. Live data expires one hour after the recorded finish or one hour without a publisher update/heartbeat; there is no permanent replay/demo link.
+
+Production viewer: https://baseballmaster.cc/livestreaming/novideo/
+Only the selected game's public projection is uploaded, including team/player names, jersey numbers, current lineups/positions, scores, rules/time, batting/pitching counts and play-by-play situations. No audio/video, full database, other games, PDFs or backups are uploaded. Anyone holding the link can read but cannot edit. Publishing authorization is separate in device Keychain, never in viewing links or backups. Saved historical corrections sync while a session is valid; drafts stay local.
+
+There is no public directory, feed, chat or comments. 反馈直播内容 (Report Live Content) in the viewer footer links to https://baseballmaster.cc/support.html#live-report . Reports can be reviewed and public access disabled.
+
+Privacy: https://baseballmaster.cc/privacy.html
+Support: https://baseballmaster.cc/support.html
+Contact: chending0418@gmail.com

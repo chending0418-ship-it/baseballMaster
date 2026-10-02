@@ -2,6 +2,8 @@ import SwiftUI
 import UIKit
 
 struct ScorekeepingView: View {
+    var showsGameHomeButton = false
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore
     @State private var showPlayFlowSheet = false
     @State private var showRunnerEventSheet = false
@@ -54,6 +56,12 @@ struct ScorekeepingView: View {
                         }
                     }.accessibilityIdentifier("pending-game-decision")
                 } else {
+                    if store.canSwapOpeningSides {
+                        Button { store.swapOpeningSides() } label: {
+                            Label("互换先攻／后攻", systemImage: "arrow.left.arrow.right")
+                                .font(.caption.bold()).frame(maxWidth: .infinity, minHeight: 32)
+                        }.tint(BMTheme.green).accessibilityIdentifier("swap-opening-sides")
+                    }
                     pitchControls
 
                     HStack(spacing: 10) {
@@ -126,6 +134,7 @@ struct ScorekeepingView: View {
         } message: { Text(store.storageErrorMessage ?? "") }
         .navigationTitle("现场记分")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(showsGameHomeButton)
         .toolbar(.hidden, for: .tabBar)
         .confirmationDialog("结束当前半局？", isPresented: $confirmEndHalf, titleVisibility: .visible) {
             Button("确认交换攻守") { store.endCurrentHalf() }
@@ -146,6 +155,14 @@ struct ScorekeepingView: View {
         }
         .sheet(isPresented: $showHistoryCorrection) { HistoryCorrectionView().environmentObject(store) }
         .toolbar {
+            if showsGameHomeButton {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { store.returnToGameHome() } label: {
+                        Label("比赛首页", systemImage: "chevron.left")
+                    }
+                    .accessibilityIdentifier("return-game-home")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showHistoryCorrection = true } label: { Image(systemName: "clock.arrow.circlepath") }
                     .accessibilityLabel("纠正记录").accessibilityIdentifier("open-history-correction")
@@ -555,11 +572,14 @@ struct ScorekeepingView: View {
                 HStack(spacing: 10) {
                     undoButton
                     redoButton
-                    NavigationLink(destination: BoxScoreView()) {
-                        Label("查看结果", systemImage: "tablecells")
+                    Button {
+                        if store.activeStoredGame == nil { dismiss() }
+                        else { store.returnToGameHome() }
+                    } label: {
+                        Label(store.activeStoredGame == nil ? "返回练习" : "返回首页", systemImage: "house")
                     }
-                    .buttonStyle(PrimaryButtonStyle(color: BMTheme.brandGreen))
-                    .accessibilityIdentifier("view-final-results")
+                    .buttonStyle(ScoreActionButtonStyle(color: BMTheme.brandGreen, filled: true, compact: true))
+                    .accessibilityIdentifier("return-final-game-home")
                 }
             }
         }
@@ -1170,6 +1190,7 @@ struct SubstitutionSheet: View {
     @EnvironmentObject private var store: GameStore
     @State private var stage: SubstitutionStage = .menu
     @State private var lineupSide: LineupSide?
+    @State private var savedMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -1182,7 +1203,7 @@ struct SubstitutionSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(stage == .menu ? "取消" : "返回") {
+                    Button(stage == .menu ? "返回比赛" : "返回") {
                         if stage == .menu { dismiss() } else { stage = .menu }
                     }
                 }
@@ -1191,7 +1212,7 @@ struct SubstitutionSheet: View {
         .sheet(item: $lineupSide) { side in
             LiveLineupEditor(draft: store.lineupDraft(forHomeTeam: side.isHome),
                              onCancel: { lineupSide = nil },
-                             onSaved: { lineupSide = nil; dismiss() })
+                             onSaved: { savedMessage = "阵容已保存，可继续调整" })
                 .environmentObject(store)
         }
         .gameActionErrorAlert(store)
@@ -1202,6 +1223,8 @@ struct SubstitutionSheet: View {
         switch stage {
         case .menu:
             VStack(spacing: 10) {
+                if let savedMessage { Label(savedMessage, systemImage: "checkmark.circle.fill")
+                    .font(.footnote).foregroundStyle(BMTheme.green) }
                 HStack(spacing: 10) {
                     lineupButton(isHome: false)
                     lineupButton(isHome: true)
@@ -1221,13 +1244,13 @@ struct SubstitutionSheet: View {
                 store.availablePitchers
             ) { player in
                 store.changePitcher(to: player)
-                dismiss()
+                adjustmentSaved()
             }
 
         case .pinchHitter:
             playerList(store.battingBenchPlayers) { player in
                 store.replaceCurrentBatter(with: player)
-                dismiss()
+                adjustmentSaved()
             }
 
         case .pinchRunnerBase:
@@ -1262,7 +1285,7 @@ struct SubstitutionSheet: View {
         case .pinchRunnerPlayer(let base):
             playerList(store.battingBenchPlayers) { player in
                 store.replaceRunner(on: base, with: player)
-                dismiss()
+                adjustmentSaved()
             }
 
         case .fielderReplacementTarget:
@@ -1272,11 +1295,11 @@ struct SubstitutionSheet: View {
 
         case .fielderReplacementPlayer(let previous):
             playerList(store.fieldingBenchPlayers) { replacement in
-                if store.replaceFielder(previous, with: replacement) { dismiss() }
+                if store.replaceFielder(previous, with: replacement) { adjustmentSaved() }
             }
 
         case .doubleSwitch:
-            DoubleSwitchEditor(onComplete: { dismiss() })
+            DoubleSwitchEditor(onComplete: { adjustmentSaved() })
                 .environmentObject(store)
 
         case .fielder:
@@ -1289,7 +1312,7 @@ struct SubstitutionSheet: View {
                 ForEach(FieldPosition.allCases) { position in
                     Button {
                         store.changeFieldingPosition(for: player, to: position)
-                        dismiss()
+                        adjustmentSaved()
                     } label: {
                         VStack(spacing: 6) {
                             Text(position.shortName)
@@ -1309,6 +1332,12 @@ struct SubstitutionSheet: View {
                 }
             }
         }
+    }
+
+    private func adjustmentSaved() {
+        guard store.actionErrorMessage == nil else { return }
+        savedMessage = "调整已保存，可继续调整或返回比赛"
+        stage = .menu
     }
 
     private var navigationTitle: String {

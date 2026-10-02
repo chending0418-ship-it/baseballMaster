@@ -4,6 +4,7 @@ import CryptoKit
 /// Commands are recorded at the outer transaction boundary. Preview executes the
 /// same GameStore operations in an isolated, non-persisting store.
 enum HistoryCommand: Equatable, Codable {
+    case swapOpeningSides
     case pitch(PitchAction)
     case play(PlayOutcome, DefensivePlay?, [RunnerDecision], Bool?)
     case runner(RunnerEventKind, [RunnerDecision], Bool?)
@@ -35,6 +36,7 @@ enum HistoryCommand: Equatable, Codable {
 
     var title: String {
         switch self {
+        case .swapOpeningSides: "互换先攻／后攻"
         case .pitch(let p): p.rawValue
         case .play(let p, _, _, _): p.rawValue
         case .runner(let p, _, _): p.rawValue
@@ -61,6 +63,17 @@ enum HistoryCommand: Equatable, Codable {
         case .review: "复核待确认记录"
         case .doubleSwitch: "双重换人"
         case .unavailable(let text, _, _): text
+        }
+    }
+
+    /// Kept outside undoable state: removing a recorded pitch cannot reopen the pregame choice.
+    var recordsOpeningPitch: Bool {
+        switch self {
+        case .pitch, .play, .hitByPitch, .foulBunt, .droppedThirdStrike: return true
+        case .runner(let kind, _, _): return [.wildPitch, .passedBall, .uncertainLooseBall].contains(kind)
+        case .violation(let kind, _), .adjudication(let kind, _):
+            return [.quickPitch, .illegalPitch, .batterOutOfBox, .batterInterference, .illegalBat, .catcherInterference].contains(kind)
+        default: return false
         }
     }
 
@@ -499,6 +512,7 @@ extension GameStore {
         let before = game
         var result = true
         switch command {
+        case .swapOpeningSides: result = swapOpeningSides()
         case .pitch(let action):
             guard canRecordAction else { throw HistoryCorrectionError.invalid("当前需要先确认换边或结束决定。") }
             recordPitch(action)

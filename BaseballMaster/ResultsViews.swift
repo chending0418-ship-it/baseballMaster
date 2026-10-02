@@ -324,7 +324,7 @@ struct BoxScoreView: View {
                     ReportExportButton(title: "预览与分享 Box Score", identifier: "share-box-score", previewTitle: "比赛战报") {
                         try gameExporter.writeBoxScorePDF()
                     }
-                    .buttonStyle(SecondaryButtonStyle(color: BMTheme.navy))
+                    .buttonStyle(SecondaryButtonStyle(color: BMTheme.green))
 
                     ReportExportButton(title: "逐打席速报 · 详细版", identifier: "share-play-by-play", previewTitle: "逐打席速报") {
                         try playByPlayReport.write()
@@ -355,7 +355,8 @@ struct BoxScoreView: View {
     }
 
     private var playByPlayReport: PlayByPlayPDFReport {
-        PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: store.activeGameRecordedAt)
+        PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: store.activeGameRecordedAt,
+                           gameMode: store.activeRules?.gameMode ?? .standard)
     }
 
     private func prepareShare(_ selection: GameExportSelection) {
@@ -704,15 +705,18 @@ struct PlayerDetailView: View {
     @State private var category: StatisticsCategory
     @State private var preparedSelection = false
     @State private var selectedSeasonID: String
+    @State private var inheritedGameIDs: Set<UUID>?
     @State private var selectedGameIDs = Set<UUID>()
     @State private var showGameFilter = false
     @State private var modeFilter: GameMode?
 
     init(
         player: Player, initialSeasonID: String = "", statisticsTeamID: UUID? = nil,
-        initialCategory: StatisticsCategory = .batting
+        initialCategory: StatisticsCategory = .batting, initialGameIDs: Set<UUID>? = nil, initialMode: GameMode? = nil
     ) {
         self.player = player
+        _inheritedGameIDs = State(initialValue: initialGameIDs)
+        _modeFilter = State(initialValue: initialMode)
         self.statisticsTeamID = statisticsTeamID
         _selectedSeasonID = State(initialValue: initialSeasonID)
         _category = State(initialValue: initialCategory)
@@ -720,7 +724,8 @@ struct PlayerDetailView: View {
 
     private var seasonGames: [PlayerGameRecord] {
         store.gameRecords(for: player, seasonID: selectedSeasonID, teamID: statisticsTeamID).filter { record in
-            modeFilter == nil || (store.games.first { $0.id == record.id }?.rules.gameMode ?? .standard) == modeFilter
+            (inheritedGameIDs == nil || inheritedGameIDs!.contains(record.id)) &&
+                (modeFilter == nil || (store.games.first { $0.id == record.id }?.rules.gameMode ?? .standard) == modeFilter)
         }
     }
 
@@ -844,9 +849,9 @@ struct PlayerDetailView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         SectionHeader(title: "表现总结", subtitle: selectedSeasonName)
-                        performanceSummary(title: "近 3 场", records: Array(seasonGames.prefix(3)))
-                        performanceSummary(title: "近 10 场", records: Array(seasonGames.prefix(10)))
-                        performanceSummary(title: "本赛季", records: seasonGames)
+                        performanceSummary(title: "近 3 场", records: Array(selectedGames.prefix(3)))
+                        performanceSummary(title: "近 10 场", records: Array(selectedGames.prefix(10)))
+                        performanceSummary(title: inheritedGameIDs == nil && selectedGames.count == seasonGames.count ? "本赛季" : "当前筛选", records: selectedGames)
                     }
 
                 } else if modeFilter == .coachPitch && category == .pitching {
@@ -883,12 +888,13 @@ struct PlayerDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 ReportExportButton(title: "导出 PDF", identifier: "export-player-pdf", previewTitle: "球员个人报告") {
                     try PlayerStatisticsPDFReport(store: store, player: player, seasonID: selectedSeasonID,
-                                                  teamID: statisticsTeamID, gameIDs: selectedGameIDs).write()
+                                                  teamID: statisticsTeamID, gameIDs: selectedGameIDs, scopeGameIDs: Set(seasonGames.map(\.id))).write()
                 }
             }
         }
         .onAppear(perform: prepareInitialSelection)
         .onChange(of: selectedSeasonID) { _ in
+            inheritedGameIDs = nil
             selectedGameIDs = Set(seasonGames.map(\.id))
         }
         .sheet(isPresented: $showGameFilter) {
@@ -994,9 +1000,17 @@ struct PlayerDetailView: View {
     }
 }
 
-private struct GameFilterSheet: View {
+struct StatisticsGameChoice: Identifiable {
+    let id: UUID
+    let opponent: String
+    let date: Date
+    let result: String
+    let value: String
+}
+
+struct GameFilterSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let games: [PlayerGameRecord]
+    let games: [StatisticsGameChoice]
     let onApply: (Set<UUID>) -> Void
     @State private var selection: Set<UUID>
 
@@ -1005,7 +1019,18 @@ private struct GameFilterSheet: View {
         initialSelection: Set<UUID>,
         onApply: @escaping (Set<UUID>) -> Void
     ) {
-        self.games = games
+        self.games = games.map { StatisticsGameChoice(id: $0.id, opponent: $0.opponent, date: $0.date, result: $0.result, value: "\($0.batting.hits)-\($0.batting.atBats)") }
+        self.onApply = onApply
+        _selection = State(initialValue: initialSelection)
+    }
+
+    init(games: [StoredGame], initialSelection: Set<UUID>, onApply: @escaping (Set<UUID>) -> Void) {
+        self.games = games.map { game in
+            StatisticsGameChoice(id: game.id, opponent: game.opponent.name,
+                date: game.startedAt ?? game.scheduledAt ?? game.createdAt,
+                result: "\(game.ourScore):\(game.opponentScore) · \(game.rules.gameMode.title)",
+                value: game.ourScore == game.opponentScore ? "平" : (game.ourScore > game.opponentScore ? "胜" : "负"))
+        }
         self.onApply = onApply
         _selection = State(initialValue: initialSelection)
     }
@@ -1049,6 +1074,7 @@ private struct GameFilterSheet: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: selection.contains(game.id) ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(selection.contains(game.id) ? BMTheme.green : BMTheme.secondaryText)
+                                        .contentTransition(.identity)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text("对 \(game.opponent)")
                                             .font(.system(size: 15, weight: .bold))
@@ -1058,12 +1084,14 @@ private struct GameFilterSheet: View {
                                             .foregroundStyle(BMTheme.secondaryText)
                                     }
                                     Spacer()
-                                    Text("\(game.batting.hits)-\(game.batting.atBats)")
+                                    Text(game.value)
                                         .font(.system(size: 14, weight: .black, design: .rounded))
                                         .foregroundStyle(BMTheme.navy)
                                 }
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("stats-select-game-\(game.id)")
+                            .accessibilityValue(selection.contains(game.id) ? "已选择" : "未选择")
                         }
                     }
                 }
@@ -1080,6 +1108,7 @@ private struct GameFilterSheet: View {
                         dismiss()
                     }
                     .fontWeight(.bold)
+                    .accessibilityIdentifier("stats-apply-game-filter")
                 }
             }
         }

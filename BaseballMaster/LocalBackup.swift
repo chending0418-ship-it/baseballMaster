@@ -89,7 +89,11 @@ struct LocalBackup: Codable {
                 try require(unique(journal.operations.map(\.id)), "纠错操作编号重复")
                 let checkpoint = try JSONDecoder().decode(GameState.self, from: journal.checkpoint)
                 try require(checkpoint.historyJournal == nil && checkpoint.correctionRevisions == nil, "检查点包含递归历史")
-                try require(checkpoint.homeTeam.id == game.homeTeam.id && checkpoint.awayTeam.id == game.awayTeam.id, "检查点比赛双方不符")
+                let sameRoles = checkpoint.homeTeam.id == game.homeTeam.id && checkpoint.awayTeam.id == game.awayTeam.id
+                let swappedRoles = checkpoint.homeTeam.id == game.awayTeam.id && checkpoint.awayTeam.id == game.homeTeam.id
+                let hasOpeningSwap = ([game.historyJournal].compactMap { $0 } + (game.correctionRevisions ?? []).map(\.previousJournal))
+                    .contains { $0.operations.contains { if case .swapOpeningSides = $0.command { return true }; return false } }
+                try require(sameRoles || (swappedRoles && hasOpeningSwap), "检查点比赛双方不符")
                 try require((1...10_000).contains(checkpoint.inning) && (0...4).contains(checkpoint.balls) && (0...3).contains(checkpoint.strikes) && (0...3).contains(checkpoint.outs), "检查点局面无效")
                 for (team, order) in [(checkpoint.homeTeam, checkpoint.homeBattingOrderIDs), (checkpoint.awayTeam, checkpoint.awayBattingOrderIDs)] {
                     try require(!order.isEmpty && unique(order) && Set(order).isSubset(of: Set(team.players.map(\.id))), "检查点阵容无效")
