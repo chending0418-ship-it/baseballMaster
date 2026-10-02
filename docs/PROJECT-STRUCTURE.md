@@ -1,11 +1,11 @@
 # 目录与命名约定
 
-2026-09-29 整理。适用于 `/Users/JasonChan/Documents/BaseballMaster/`。
+2026-09-29 整理。现适用于 `/Users/JasonChan/Documents/BaseballMaster-2.2/`；2026-10-03 已完成单目录收拢。
 
 ## 根目录保留什么
 
 ```text
-BaseballMaster/
+BaseballMaster-2.2/
 ├── 2.1 发布功能计划.md       2.1 维护与发布计划
 ├── 2.2 发布功能计划.md       2.2 现有功能优化计划
 ├── 2.3 发布功能计划.md       单份后续需求，2.2 完成后在同一项目目录继续
@@ -22,7 +22,7 @@ BaseballMaster/
 └── output/                  本机生成文件
 ```
 
-App 源码目录、工程名、资源引用、Bundle ID 和品牌名称沿用既有结构。用户最新要求顺序开发：2.3 只留单份后续需求，不建立专属目录；2.2 完成后按 [R05](releases/2.2/DEVELOPMENT-TODO.md#9-发布准备) 收拢为唯一的 `BaseballMaster-2.2` 项目目录，再原地继续后续版本。
+App 源码目录、工程名、资源引用、Bundle ID 和品牌名称沿用既有结构。用户最新要求顺序开发：2.3 只留单份后续需求，不建立专属目录；2.2 已按 [R05](releases/2.2/DEVELOPMENT-TODO.md#9-发布准备) 收拢为唯一的 `BaseballMaster-2.2` 项目目录，后续原地继续开发。
 
 ## 文档规则
 
@@ -53,7 +53,7 @@ App 源码目录、工程名、资源引用、Bundle ID 和品牌名称沿用既
 
 发布归档、测试证据、源码备份和交付图片分别保留。缓存可以按需重建，但缓存中的旧测试日志若仍用于验收，应先归档再删除。不能因某份结果是失败尝试就直接抹去验证历史。
 
-普通文档整理不改 Git 元数据与已有分支；2.2 完成后的 R05 会迁移完整仓库并解除旧目录依赖，保留提交与分支历史，核验后再清理旧项目目录。新生成文件由 `.gitignore` 排除，已有跟踪文件迁移后继续受版本控制。原始日志、结果包、归档中的旧路径不改写，使用维护记录的迁移表追溯。
+普通文档整理不改 Git 元数据与已有分支；R05 已迁移完整仓库并解除旧目录依赖，保留提交与分支历史，核验后再清理旧项目目录。新生成文件由 `.gitignore` 排除，已有跟踪文件迁移后继续受版本控制。原始日志、结果包、归档中的旧路径不改写，使用维护记录的迁移表追溯。
 
 ## 常用操作
 
@@ -64,7 +64,7 @@ App 源码目录、工程名、资源引用、Bundle ID 和品牌名称沿用既
 xcodebuild -project BaseballMaster.xcodeproj -scheme BaseballMaster \
   -configuration Debug -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' \
-  -derivedDataPath output/cache/xcode/2.1-debug \
+  -derivedDataPath output/cache/xcode/2.2-debug \
   CODE_SIGNING_ALLOWED=NO build
 
 # 官网打包，自动输出到 output/deployments/website/
