@@ -10,6 +10,7 @@
   const original = document.getElementById('gallery-original');
   let active = 0;
   let previousOverflow = '';
+  let openingLink = null;
   function show(index) {
     active = (index + links.length) % links.length;
     const link = links[active];
@@ -24,6 +25,7 @@
     link.addEventListener('click', event => {
       if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
+      openingLink = link;
       show(index);
       previousOverflow = document.documentElement.style.overflow;
       document.documentElement.style.overflow = 'hidden';
@@ -42,5 +44,8 @@
     const bounds = dialog.getBoundingClientRect();
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
   });
-  dialog.addEventListener('close', () => { document.documentElement.style.overflow = previousOverflow; });
+  dialog.addEventListener('close', () => {
+    document.documentElement.style.overflow = previousOverflow;
+    openingLink?.focus({ preventScroll: true });
+  });
 })();

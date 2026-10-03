@@ -6,18 +6,16 @@
 
 **2026-09-28 已上线：** 根域名解析、独立目录、SSL 证书、HTTP → HTTPS 和公网访问验证完成。当前证书有效至 2026-12-27 10:59:59（北京时间），未配置自动续期。实际配置路径、换证和宝塔管理说明见 [上线记录](deploy/2026-09-28-https-deployment.md)。
 
-## 页面与内容
+## 页面与内容（2026-10-03）
 
-- 首页面向 2.1 发布准备：现场记分页，以及文字直播、链接／二维码分享、四类记分纠错、更正影响预览四项新更新。
-- 2.1 图片直接复用 9 月 29 日已完成素材的原始界面，只生成轻量网页副本；七张 App Store 图片及原图不变，见 [截图说明](../docs/releases/2.1/APPSTORE-ARTWORK.md)。
-- 保留六项 2.0 既有特点，不将阵容调整或数据／PDF 战报误写为 2.1 新增。
-- 2.2 成人慢垒单独标注“规划中，不属于 2.1”：10 人守备、自由人、超过 10 人的打序及自定义初始球数。
-- 正式观赛入口 `/livestreaming/novideo/` 已可用；App Store 当前公开版本为 2.0，官网写明 2.1 即将上线，可下载版本以商店为准，不宣称已经发布。
-- 隐私／支持页说明本地记录、可选上传范围、公开分享、保留与删除、纠错、备份及联系渠道；新增 `support.html#live-report`，观赛页提供内容反馈链接。
-- 图标、品牌文字与深绿配色沿用已确认基准，放大图库按图片显示 2.0／2.1，支持键盘与关闭后焦点恢复。
-- App Store 地址 `https://apps.apple.com/cn/app/id6802063886`，不猜测价格、评分或下载人数。
+- 官网首页展示 2.2：紧凑文字直播、投打对决、双方当前阵容、长按与连续阵容调整、指定比赛统计；补充首球前互换、文字简版投手信息与终场导航修复。
+- 本版截图来自 2.2 实际 App／部署后的文字观赛网页，合成球队与球员。原始来源与两套商店图片见 [2.2 素材说明](../docs/releases/2.2/APPSTORE-ARTWORK.md)；旧版图片继续作为既有功能展示，标注其来源版本。
+- 新增 2.2 更新海报，可在首页放大或下载；首页分享元信息使用同一海报。
+- 慢垒、Free／Illegal、扩展打序及比赛预告桌面小组件均在 2.3 规划，不包含在 2.2 中。
+- 文字直播 Web／API 已正式上线，支持已发布的 2.1 App 和新版 2.2 投影。2026-10-03 查询 Apple 中国区商店仍为 2.1，因此首页使用“2.2 App 正在发布中”，以 App Store 实际可下载版本为准。
+- 支持与隐私页覆盖当前功能及直播公开范围。所有页面沿用既定图标、BASEBALL 粗体／MASTER 常规字重、中文副标题及深绿配色；图库支持键盘切换、关闭和焦点恢复。
 
-本次部署与页面验收见 [2.1 发布准备记录](deploy/2026-09-30-release-preparation-2.1.md)。历史页面和截图来源见 [SCREENSHOTS.md](SCREENSHOTS.md)。
+最新内容、海报来源与部署记录见 [2.2 官网及传播素材更新](deploy/2026-10-03-website-marketing-2.2.md)。历史截图来源见 [SCREENSHOTS.md](SCREENSHOTS.md)。
 
 `public/` 是唯一公开目录。部署包不包含本文件、TODO、源码、验证记录或旧域名。
 
@@ -67,3 +65,9 @@ python3 website/scripts/package.py
 ## 更新宣传海报
 
 模板 `templates/release-2.1-poster.html`，运行 `node website/scripts/render-release-poster.cjs`。需要本机 Chrome、Playwright 和 Sharp（可设置 `CODEX_ARTIFACT_NODE_MODULES` 指向模块目录）。产物仅存 `output/marketing/2.1/release-poster/`，1440 × 1920 RGB PNG；品牌原图和已确认实际截图直接嵌入，不修改原图。不要把此海报当作新设备截图上传。
+
+## 2.2 更新宣传海报
+
+沿用 2.1 的 1440 × 1920 竖版、三张实际界面与四项更新卡片。模板 `templates/release-2.2-poster.html`，执行 `node website/scripts/render-release-2.2-poster.cjs`；可设置 `CODEX_ARTIFACT_NODE_MODULES`，使用本机 Chrome、Playwright 与 Sharp 元数据检查。
+
+成图位于 `output/marketing/2.2/release-poster/baseballmaster-2.2-update.png`，HTML 与原图哈希／布局检查 manifest 同目录保存；公开副本为 `public/assets/baseballmaster-2.2-update.png`。原始截图直接嵌入，未修改界面内容，App Store 两套截图不变。标题为“2.2 · 版本更新”，不预写 App 已审核通过或正式上架。

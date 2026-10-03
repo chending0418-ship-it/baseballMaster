@@ -41,3 +41,9 @@ xcodebuild -project BaseballMaster.xcodeproj -scheme BaseballMaster \
 采集后已关闭临时服务；发布的仅是静态 PNG，未部署直播 API、开放观赛入口或启用 App 直播功能。官网与放大弹窗均标注开发版／2.1 预览。
 
 原始截图、导航和页面预览、来源文件哈希、响应式检查记录位于 `output/deployments/website/baseballmaster-home/live-preview/`，不进入公开部署包。
+
+## 2.2 官网与传播海报
+
+2026-10-03：首页使用 `scoring-2.2.jpg`、`live-viewer-2.2.jpg`、`live-lineups-2.2.jpg`、`lineup-2.2.jpg`、`statistics-filter-2.2.jpg`；来源为本版 iPhone 17 Pro Max App 和正式 HTTPS 观赛网页，详见 [2.2 素材说明](../docs/releases/2.2/APPSTORE-ARTWORK.md)。
+
+传播海报采用 `output/releases/2.2/app-store/raw/02.png`（文字直播）、`04.png`（连续调整阵容）、`05.png`（指定比赛统计）及原始 App 图标，直接作为 HTML 图片嵌入；PNG 内容未改写。布局由浏览器生成 1440 × 1920 RGB PNG，三张界面和标题基线齐平，manifest 保留所有来源 SHA-256。成图可从首页海报区下载，不是 App Store 设备截图。
