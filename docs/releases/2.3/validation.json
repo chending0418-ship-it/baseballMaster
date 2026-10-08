@@ -348,7 +348,12 @@
     }
   },
   "appStoreUploadPerformed": false,
-  "gitPush": "pending final execution",
+  "gitPush": {
+    "verified": true,
+    "sourceCommit": "8e54f23e8c0f75905abefe3e28b0fe07a7c7d613",
+    "branch": "origin/main",
+    "separatePlanningEditsPreserved": true
+  },
   "sources": {
     "BaseballMaster/BackupViews.swift": "efa3872ae6f083c514a38c536e00239c9481b7af8e5a806808726ad165a269a3",
     "BaseballMaster/BaseballMasterApp.swift": "2a5914b5f276c23596e068dd87ff81fff818a3813b97df8170d5056dc4706ed2",
