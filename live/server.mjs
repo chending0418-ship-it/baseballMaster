@@ -38,7 +38,7 @@ const situation = s => keys(s, ['balls', 'strikes', 'outs', 'bases', 'halfEnded'
 // Strict, versioned public projection: never accept an entire local game/roster as a snapshot.
 export function validateSnapshot(s) {
   reject(keys(s, ['schema', 'gameID', 'revision', 'mode', 'isFinal', 'endedAt', 'inning', 'isTop', 'balls', 'strikes', 'outs', 'home', 'away', 'batter', 'batterOrder', 'pitcher', 'pitchCount', 'appearancePitchCount', 'pitchLimit', 'bases', 'currentAppearanceID', 'notice', 'entries', 'hasStarted', 'rules', 'clock', 'batterStats', 'nextBatters']));
-  reject(s.schema === 1 && str(s.gameID, 50) && int(s.revision) && ['standard', 'coachPitch'].includes(s.mode));
+  reject(s.schema === 1 && str(s.gameID, 50) && int(s.revision) && ['standard', 'coachPitch', 'slowPitch'].includes(s.mode));
   reject(typeof s.isFinal === 'boolean' && typeof s.isTop === 'boolean' && int(s.inning, 1, 999));
   reject(int(s.balls, 0, 20) && int(s.strikes, 0, 3) && int(s.outs, 0, 3));
   reject(s.endedAt === null || (Number.isFinite(s.endedAt) && s.endedAt > 0));
@@ -60,8 +60,13 @@ export function validateSnapshot(s) {
   reject(s.currentAppearanceID === null || str(s.currentAppearanceID, 50));
   reject(str(s.notice, 500));
   reject(optional(s.hasStarted, v => typeof v === 'boolean'));
-  reject(optional(s.rules, r => keys(r, ['scheduledInnings', 'halfInningRunLimit', 'timeLimitMinutes']) && int(r.scheduledInnings, 1, 999)
-    && optional(r.halfInningRunLimit, v => int(v, 1, 100000)) && optional(r.timeLimitMinutes, v => int(v, 1, 100000))));
+  reject(optional(s.rules, r => keys(r, ['scheduledInnings', 'halfInningRunLimit', 'timeLimitMinutes', 'competitionFormat', 'inningsLimit', 'initialBalls', 'initialStrikes', 'twoStrikeFoulPolicy', 'fieldersCount', 'rulesVersion', 'extraFoulUsed']) && int(r.scheduledInnings, 1, 999)
+    && optional(r.halfInningRunLimit, v => int(v, 1, 100000)) && optional(r.timeLimitMinutes, v => int(v, 1, 100000))
+    && optional(r.competitionFormat, v => ['timed', 'innings'].includes(v)) && optional(r.inningsLimit, v => int(v, 1, 999))
+    && optional(r.initialBalls, v => int(v, 0, 3)) && optional(r.initialStrikes, v => int(v, 0, 2))
+    && optional(r.twoStrikeFoulPolicy, v => ['outImmediately', 'oneExtraFoul'].includes(v))
+    && optional(r.fieldersCount, v => int(v, 1, 10)) && optional(r.rulesVersion, v => int(v, 1, 99))
+    && optional(r.extraFoulUsed, v => typeof v === 'boolean')));
   reject(optional(s.clock, c => keys(c, ['startedAt', 'runningSince', 'elapsedSeconds'])
     && optional(c.startedAt, v => Number.isFinite(v) && v > 0) && optional(c.runningSince, v => Number.isFinite(v) && v > 0)
     && Number.isFinite(c.elapsedSeconds) && c.elapsedSeconds >= 0));

@@ -107,6 +107,9 @@ struct BoxScoreView: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach([store.game.awayTeam, store.game.homeTeam]) { team in
                 SectionHeader(title: "\(team.shortName)打击", subtitle: "本场正式数据")
+                if store.isSlowPitch {
+                    Text(store.game.lineupSummary(for: team.id)).font(.caption).foregroundStyle(BMTheme.secondaryText)
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(spacing: 0) {
                         tableHeader(["球员", "PA", "AB", "R", "H", "RBI", "BB", "SO", "AVG"])
@@ -129,7 +132,11 @@ struct BoxScoreView: View {
     private var pitchingTable: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach([store.game.awayTeam, store.game.homeTeam]) { team in
-                SectionHeader(title: "\(team.shortName)投手", subtitle: "本场数据")
+                SectionHeader(title: "\(team.shortName)投手", subtitle: "本场数据 · ERA 按 7 局计算")
+                if store.game.pitchingOutsReviewRequired == true {
+                    Text("旧比赛历史不完整，投手局数保留原始值，需核对实际出局记录。")
+                        .font(.footnote).foregroundStyle(BMTheme.orange)
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(spacing: 0) {
                         tableHeader(["投手", "IP", "BF", "H", "R", "ER", "BB", "SO", "P-S", "ERA"])
@@ -560,7 +567,7 @@ struct GameExportService {
         lines.append("比分：\(game.awayTeam.shortName) \(game.awayScore) - \(game.homeScore) \(game.homeTeam.shortName)")
         lines.append("状态：\(game.isFinal ? (game.endReason?.rawValue ?? "比赛结束") : "记录中")")
         if let rules {
-            var ruleParts = ["规定 \(rules.scheduledInnings) 局", "\(rules.fieldersCount) 人守备"]
+            var ruleParts = rules.isSlowPitch ? [rules.summary] : ["规定 \(rules.scheduledInnings) 局", "\(rules.fieldersCount) 人守备"]
             if let minutes = rules.timeLimitMinutes { ruleParts.append("限时 \(minutes) 分钟") }
             if let pitches = rules.pitchLimit { ruleParts.append("单投手 \(pitches) 球") }
             if let innings = rules.pitcherInningsLimit { ruleParts.append("单投手 \(innings) 局") }
@@ -577,6 +584,10 @@ struct GameExportService {
 
         for team in [game.awayTeam, game.homeTeam] {
             lines.append("")
+            if rules?.isSlowPitch == true {
+                lines.append("【\(team.shortName)完整打序与守备】")
+                lines.append(game.lineupSummary(for: team.id))
+            }
             lines.append("【\(team.shortName)打击】")
             lines.append("球员\tPA\tAB\tR\tH\t2B\t3B\tHR\tRBI\tBB\tSO\tAVG")
             for player in battingPlayers(for: team) {
@@ -615,13 +626,14 @@ struct GameExportService {
 
         lines.append("")
         lines.append("【比赛进程】")
-        for event in gameEvents {
+        for event in gameEvents where !event.isPregameLineupAdjustment {
             lines.append("第\(event.inning)局\(event.isTop ? "上" : "下")：\(event.title)\(event.needsReview ? "【待确认】" : "")")
         }
 
         lines.append("")
         lines.append("【结构化事件附录】")
-        for (index, event) in (game.scoringEvents ?? []).enumerated() {
+        let events = (game.scoringEvents ?? []).filter { !$0.isPregameLineupAdjustment }
+        for (index, event) in events.enumerated() {
             let notation = event.notation.map { " [\($0)]" } ?? ""
             let ballStatus = event.ballStatus.map { " · \($0.rawValue)" } ?? ""
             let movements = event.runnerMovements.isEmpty

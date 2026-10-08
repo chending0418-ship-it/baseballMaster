@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="BaseballMaster 2.2 技术支持：漏记换人、守位、局面和失误的纠正，文字直播与二维码分享、同步和到期说明，以及备份、PDF 和问题反馈。">
+  <meta name="description" content="BaseballMaster 2.3 技术支持：漏记换人、守位、局面和失误的纠正，文字直播与二维码分享、同步和到期说明，以及备份、PDF 和问题反馈。">
   <meta name="theme-color" content="#092a2a">
   <title>技术支持 · 棒球比赛记录大师 BaseballMaster</title>
   <link rel="stylesheet" href="/assets/site.css">
@@ -17,11 +17,11 @@
   <div class="legal-hero"><div class="wrap"><p class="eyebrow">HERE TO HELP</p>
     <h1>技术支持</h1>
     <p class="intro">补回漏记，分享赛况，保留每一场记录。<br>这里提供 2.2 功能指南、常见问题和开发者联系方式。</p>
-    <p class="meta">更新日期：2026 年 10 月 3 日</p>
+    <p class="meta">更新日期：2026 年 10 月 8 日</p>
   </div></div>
   <main id="main" class="wrap legal-content">
-    <p class="version-note"><strong>2.2 使用指南：</strong>本页覆盖 2.2 的直播界面、连续阵容调整、首球前互换、指定比赛统计、报告导出，以及既有历史纠错。直播服务已开放，App 可下载版本以 <a href="https://apps.apple.com/cn/app/id6802063886" target="_blank" rel="noopener noreferrer">App Store</a> 为准。没有直播入口时，请先检查版本，无需删除或重装 App。2.2 聚焦现有功能优化；成人慢垒及桌面小组件留在 2.3 规划，不包含在本版中。</p>
-    <nav class="legal-nav" aria-label="技术支持目录"><a href="#improvements">2.2 优化</a><a href="#corrections">记分纠错</a><a href="#live">直播与分享</a><a href="#data">数据与备份</a><a href="#reports">报表导出</a><a href="#live-report">直播内容反馈</a><a href="#contact">联系开发者</a></nav>
+    <p class="version-note"><strong>2.3 使用指南：</strong>覆盖成人慢垒、10 / Free、扩展打序、初始球数、界外规则、Illegal、时间赛及赛前双方阵容。2.3 App 已完成开发与模拟器验收，准备发布；可下载版本以 <a href="https://apps.apple.com/cn/app/id6802063886" target="_blank" rel="noopener noreferrer">App Store</a> 为准。核心记分、统计与导出离线可用，文字直播需联网。小组件留在后续待办，不包含在 2.3 中。</p>
+    <nav class="legal-nav" aria-label="技术支持目录"><a href="#slow-pitch">2.3 慢垒与阵容</a><a href="#improvements">2.2 优化</a><a href="#corrections">记分纠错</a><a href="#live">直播与分享</a><a href="#data">数据与备份</a><a href="#reports">报表导出</a><a href="#live-report">直播内容反馈</a><a href="#contact">联系开发者</a></nav>
     <section id="contact" class="contact" aria-labelledby="contact-heading">
       <h2 id="contact-heading">联系开发者</h2>
       <address>Jason Chen<br><a class="email" href="mailto:chending0418@gmail.com?subject=BaseballMaster%20Support">chending0418@gmail.com</a><br>微信号：<strong>p18616870148</strong></address>
@@ -37,6 +37,13 @@
       </ul>
       <p class="note">发送前请遮盖不必要的球员个人资料，避免在公开评论区贴观赛链接。首次反馈无需发送完整数据库或备份；不要提供设备密码或直播发布凭证。</p>
     </section>
+    <section id="slow-pitch"><h2>2.3 成人慢垒与赛前阵容</h2>
+<article><h3>怎样创建慢垒比赛？</h3><p>新比赛选择“成人慢垒”，填写比赛时长或选择按局数比赛，设置初始好坏球数并明确选择两好后的界外策略。双方各安排 10 个不同守位，包含自由人（Free）；打序可多于 10 人，额外打者标记为暂不守备。</p></article>
+<article><h3>什么时候确认双方阵容？</h3><p>创建比赛时先设置双方阵容；进入记分后、Play Ball 前还能再次调整，保存后确认开赛。赛中继续支持双方调整，棒次长度保持开赛时设置。未来比赛保存双方选择，不在开赛时覆盖为默认名单。</p></article>
+<article><h3>赛前调整会进入战报吗？</h3><p>赛前调整作为初始阵容保存，不进入全场或单打席导出的打席明细。开赛后的阵容调整、换人和换投继续按发生位置记录。</p></article>
+<article><h3>两好后界外与 Illegal 怎么记录？</h3><p>可选择界外直接出局，或额外允许一次界外；后者首次用掉机会，下一次界外出局，中间出现坏球不会返还机会。Illegal 单独记录裁判宣告、最终结果和是否实际投出；未投出的罚球不增加实际投球数。特殊结果依裁判最终决定记录。</p></article>
+<article><h3>时间到了会自动结束吗？</h3><p>不会自动截断打席。记录员按裁判决定继续或确认结束。未设局数上限的时间赛可继续记录实际局次；投手球数和局数提醒可在赛前按需开启，默认关闭。</p></article>
+<article><h3>投手三个出局怎样显示？</h3><p>三个实际出局为 1.0 局，两个实际出局为 0.2 局；手动结束不会补出局。旧记录仅在完整历史可重放并核对一致时校正；资料不足时保留原统计并提示核对。</p></article></section>
     <section id="improvements">
       <h2>2.2 操作优化</h2>
       <article><h3>结束比赛后怎样返回首页？</h3><p>点击终场卡片中的“返回首页”。结果仍可从右上角或首页最近比赛打开；结束后可继续切换球队、统计和我的页面。</p></article>
@@ -132,7 +139,7 @@
       <p>点击链接只会打开邮件草稿，由你核对后发送；也可通过微信号 p18616870148 联系。发布者请先在 App 关闭直播并确认成功；其他观众请停止转发，避免扩大传播。</p>
       <p>上传范围、持链接可看、保留期限和删除方式见<a href="/privacy.html">《棒球比赛记录大师隐私政策》</a>。</p>
     </section>
-    <section id="devices"><h2>设备与版本</h2><p>App 面向 iPhone，最低支持 iOS 16。手机与电脑浏览器均可观看直播。记分、统计和备份仍在原设备保存；遇到问题先确认 App 和 iOS 版本，再按上方信息联系支持。</p><p>成人慢垒、10 人守备、自由人、多于 10 人的打序、初始球数设置及比赛预告桌面小组件仍在 2.3 规划中，具体进展见<a href="/#next">官网预告</a>。</p></section>
+    <section id="devices"><h2>设备与版本</h2><p>App 面向 iPhone，最低支持 iOS 16。手机与电脑浏览器均可观看直播。记分、统计和备份仍在原设备保存；遇到问题先确认 App 和 iOS 版本，再按上方信息联系支持。</p><p>2.3 新增成人慢垒及相关记录能力，App 可下载版本以商店页面为准；比赛预告桌面小组件继续留在后续待办，具体进展见<a href="/#next">官网预告</a>。</p></section>
   </main>
   <footer class="site-footer"><div class="container footer-top"><a class="brand footer-brand" href="/"><img src="/assets/app-icon.png" width="36" height="36" alt=""><span>BASEBALL<span class="brand-light">MASTER</span><small>棒球比赛记录大师</small></span></a><nav aria-label="页脚导航"><a href="/privacy.html">隐私政策</a><a href="/support.html">技术支持</a><a href="mailto:chending0418@gmail.com">联系我们</a></nav></div><div class="container footer-bottom"><span>© 2026 BaseballMaster. All rights reserved.</span><span>为每一场热爱，认真记录。</span></div></footer>
 </body>

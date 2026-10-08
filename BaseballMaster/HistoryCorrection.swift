@@ -6,6 +6,7 @@ import CryptoKit
 enum HistoryCommand: Equatable, Codable {
     case swapOpeningSides
     case pitch(PitchAction)
+    case illegalPitch(PitchAction?, Bool, PlayOutcome?, DefensivePlay?, [RunnerDecision]?, Bool?, Bool? = nil)
     case play(PlayOutcome, DefensivePlay?, [RunnerDecision], Bool?)
     case runner(RunnerEventKind, [RunnerDecision], Bool?)
     case hitByPitch, intentionalWalk, foulBunt
@@ -38,6 +39,7 @@ enum HistoryCommand: Equatable, Codable {
         switch self {
         case .swapOpeningSides: "互换先攻／后攻"
         case .pitch(let p): p.rawValue
+        case .illegalPitch: "Illegal／非法投球"
         case .play(let p, _, _, _): p.rawValue
         case .runner(let p, _, _): p.rawValue
         case .hitByPitch: "触身球"
@@ -69,6 +71,7 @@ enum HistoryCommand: Equatable, Codable {
     /// Kept outside undoable state: removing a recorded pitch cannot reopen the pregame choice.
     var recordsOpeningPitch: Bool {
         switch self {
+        case .illegalPitch(_, let thrown, _, _, _, _, _): return thrown
         case .pitch, .play, .hitByPitch, .foulBunt, .droppedThirdStrike: return true
         case .runner(let kind, _, _): return [.wildPitch, .passedBall, .uncertainLooseBall].contains(kind)
         case .violation(let kind, _), .adjudication(let kind, _):
@@ -79,7 +82,7 @@ enum HistoryCommand: Equatable, Codable {
 
     var checksBatter: Bool {
         switch self {
-        case .pitch, .play, .hitByPitch, .intentionalWalk, .foulBunt, .droppedThirdStrike, .batter: true
+        case .illegalPitch, .pitch, .play, .hitByPitch, .intentionalWalk, .foulBunt, .droppedThirdStrike, .batter: true
         default: false
         }
     }
@@ -352,12 +355,19 @@ extension GameStore {
                     let directlyChanged = originalOperation.map { $0.command != op.command || $0.errors != op.errors || $0.statisticsRuling != op.statisticsRuling || op.acceptsNewContext } ?? (op.edited || op.inserted)
                     if directlyChanged { output.changes.append("\(op.location) · \(op.command.title)\(op.inserted ? "（补录）" : "（更正）")") }
                 } catch {
-                    output.game = worker.game; output.conflictID = op.id
+                    output.game = worker.game
+                    output.game.pitchingOutsAccountingVersion = game.pitchingOutsAccountingVersion
+                    output.game.pitchingOutsReviewRequired = game.pitchingOutsReviewRequired
+                    output.game.pitchingOutsBeforeRepair = game.pitchingOutsBeforeRepair
+                    output.conflictID = op.id
                     output.conflict = "\(op.location) · \(op.title)：\(error.localizedDescription)"
                     return output
                 }
             }
             output.game = worker.game
+            output.game.pitchingOutsAccountingVersion = game.pitchingOutsAccountingVersion
+            output.game.pitchingOutsReviewRequired = game.pitchingOutsReviewRequired
+            output.game.pitchingOutsBeforeRepair = game.pitchingOutsBeforeRepair
             output.game.statisticsIncomplete = initial.statisticsIncomplete == true || (output.game.scoringEvents ?? []).contains { $0.needsReview && ($0.category == .correction || $0.reviewNote?.contains("责任待确认") == true) } ? true : nil
             output.game.clockRunningSince = game.clockRunningSince
             output.game.clockElapsedSeconds = game.clockElapsedSeconds
@@ -516,6 +526,9 @@ extension GameStore {
         case .pitch(let action):
             guard canRecordAction else { throw HistoryCorrectionError.invalid("当前需要先确认换边或结束决定。") }
             recordPitch(action)
+        case .illegalPitch(let action, let thrown, let outcome, let defense, let moves, let timing, let penalty):
+            result = recordIllegalPitch(action, wasThrown: thrown, outcome: outcome, defensivePlay: defense,
+                                       decisions: try moves.map { try decisions($0) }, timingRunCounts: timing, penaltyApplied: penalty)
         case .play(let outcome, let defense, let moves, let timing):
             result = applyPlay(outcome, defensivePlay: defense, decisions: try decisions(moves), timingRunCounts: timing)
         case .runner(let kind, let moves, let timing):
@@ -714,8 +727,8 @@ extension GameStore {
             if home { initial.homeBattingOrderIDs = ids; initial.homeFieldingPlayerIDs = ids }
             else { initial.awayBattingOrderIDs = ids; initial.awayFieldingPlayerIDs = ids }
             for item in sorted {
-                if home, let i = initial.homeTeam.players.firstIndex(where: { $0.id == item.playerID }) { initial.homeTeam.players[i].primaryPosition = item.position }
-                if !home, let i = initial.awayTeam.players.firstIndex(where: { $0.id == item.playerID }) { initial.awayTeam.players[i].primaryPosition = item.position }
+                if home, let i = initial.homeTeam.players.firstIndex(where: { $0.id == item.playerID }) { if let position = item.position { initial.homeTeam.players[i].primaryPosition = position } }
+                if !home, let i = initial.awayTeam.players.firstIndex(where: { $0.id == item.playerID }) { if let position = item.position { initial.awayTeam.players[i].primaryPosition = position } }
             }
         }
         apply(homeAssignments, home: true); apply(awayAssignments, home: false)
@@ -793,6 +806,70 @@ extension GameStore {
             else if let base = Base.allCases.first(where: { "到\($0.title)" == movement.destination }) { destination = .base(base) }
             else { throw HistoryCorrectionError.invalid("旧记录的跑者去向无法确认。") }
             return RunnerDecision(player: player, origin: origin, destination: destination)
+        }
+    }
+}
+
+@MainActor
+extension GameStore {
+    /// Reconcile only complete command histories whose checkpoint predates all
+    /// play. Partial/legacy notes are never used to guess additional outs.
+    func reconcileLegacyPitcherOuts() throws {
+        guard games.contains(where: { $0.status != .scheduled && ($0.state.pitchingOutsAccountingVersion ?? 0) == 0 }) else { return }
+        try withSuspendedCurrentPersistence {
+        let originalGames = games, originalGame = game, originalActiveID = activeGameID
+        var changed = false
+        defer {
+            activeGameID = originalActiveID
+            game = originalActiveID.flatMap { id in games.first { $0.id == id }?.state } ?? originalGame
+        }
+        for index in games.indices where games[index].status != .scheduled && (games[index].state.pitchingOutsAccountingVersion ?? 0) == 0 {
+            let original = games[index].state
+            if games[index].rules.gameMode == .coachPitch {
+                games[index].state.pitchingOutsAccountingVersion = 2; changed = true; continue
+            }
+            @MainActor func markForReview() {
+                games[index].state.pitchingOutsAccountingVersion = 1
+                games[index].state.pitchingOutsReviewRequired = true
+                changed = true
+            }
+            guard let journal = original.historyJournal, !journal.legacyPrefix,
+                  !journal.operations.contains(where: { if case .unavailable = $0.command { return true }; return false }),
+                  let checkpoint = try? JSONDecoder().decode(GameState.self, from: journal.checkpoint),
+                  checkpoint.inning == 1, checkpoint.isTop, checkpoint.outs == 0,
+                  checkpoint.pitching.values.allSatisfy({ $0.outsRecorded == 0 && $0.pitches == 0 }),
+                  checkpoint.batting.values.allSatisfy({ $0.plateAppearances == 0 }) else { markForReview(); continue }
+            activeGameID = games[index].id; game = original
+            guard let draft = try? makeCorrectionDraft() else { markForReview(); continue }
+            let preview = previewCorrection(draft)
+            let computed = preview.game
+            guard preview.canSave, computed.inning == original.inning, computed.isTop == original.isTop,
+                  computed.outs == original.outs, computed.balls == original.balls, computed.strikes == original.strikes,
+                  computed.homeRunsByInning == original.homeRunsByInning,
+                  computed.awayRunsByInning == original.awayRunsByInning else { markForReview(); continue }
+            let ids = Set(original.pitching.keys).union(computed.pitching.keys)
+            guard ids.allSatisfy({ id in
+                var old = original.pitching[id, default: PitchingLine()], new = computed.pitching[id, default: PitchingLine()]
+                old.outsRecorded = 0; new.outsRecorded = 0
+                return old == new
+            }) else { markForReview(); continue }
+            let oldOuts = original.pitching.mapValues(\.outsRecorded)
+            for id in ids {
+                games[index].state.pitching[id, default: PitchingLine()].outsRecorded = computed.pitching[id]?.outsRecorded ?? 0
+            }
+            games[index].state.pitchingOutsAccountingVersion = 2
+            games[index].state.pitchingOutsReviewRequired = false
+            if games[index].state.pitching.mapValues(\.outsRecorded) != oldOuts {
+                games[index].state.pitchingOutsBeforeRepair = oldOuts
+                games[index].revision = (games[index].revision ?? 0) + 1
+                if games[index].publicationState == "publishing" { games[index].pendingPublicationRevisions = [games[index].revision!] }
+            }
+            changed = true
+        }
+        if changed {
+            do { try persistenceStore.replaceAll(with: makeRosterSnapshot()) }
+            catch { games = originalGames; throw error }
+        }
         }
     }
 }

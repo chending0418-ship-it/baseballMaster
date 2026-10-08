@@ -4,6 +4,8 @@
 
 最终目录：`/Users/JasonChan/Documents/BaseballMaster-2.2`，当前分支 main。旧 `/Users/JasonChan/Documents/BaseballMaster` 已清理；没有创建 2.3 项目或工作区。
 
+随后用户要求去掉文件夹版本号，以上保留仓库已原地改名为 `/Users/JasonChan/Documents/BaseballMaster`。本页记录原收拢过程，当前名称及改名核验见 [目录改名记录](2026-10-03-project-folder-rename.md)。
+
 ## 执行与验证
 
 1. 2.2 功能、文案与站点提交 `433373b`，推送开发分支，快进合入并推送 main；远端两个引用与本地提交核对相同。

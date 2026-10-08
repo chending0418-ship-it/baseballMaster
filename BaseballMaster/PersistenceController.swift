@@ -46,7 +46,7 @@ struct RosterSnapshot: Codable, Equatable {
 
 @MainActor
 final class CoreDataRosterStore {
-    static let schemaVersion = 4
+    static let schemaVersion = 5
     static var writeFault: (() throws -> Void)?
     private(set) var loadedSchemaVersion: Int?
     private(set) var migratedLegacySchema = false

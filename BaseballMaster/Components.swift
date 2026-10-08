@@ -154,7 +154,7 @@ struct BaseballDiamondView: View {
 
                 mound(in: size)
 
-                ForEach(FieldPosition.allCases) { position in
+                ForEach(game.rulesSnapshot?.positions ?? FieldPosition.allCases.filter { $0 != .free }) { position in
                     if let player = position == .pitcher
                         ? Optional(game.currentPitcher)
                         : game.fieldingTeam.players.first(where: {
@@ -200,7 +200,7 @@ struct BaseballDiamondView: View {
                     .padding(10)
             }
         }
-        .frame(height: fixedHeight)
+        .frame(height: game.rulesSnapshot?.isSlowPitch == true ? max(fixedHeight ?? 330, 330) : fixedHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("完整棒球场，\(game.fieldingTeam.shortName)守备，垒上\(game.baseRunners.count)人")
     }
@@ -348,6 +348,8 @@ struct BaseballDiamondView: View {
             return polarPoint(angle: 270, radius: field.outfieldRadius * 0.62, center: field.home)
         case .rightField:
             return polarPoint(angle: 295, radius: field.outfieldRadius * 0.58, center: field.home)
+        case .free:
+            return polarPoint(angle: 270, radius: field.outfieldRadius * 0.42, center: field.home)
         }
     }
 

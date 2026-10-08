@@ -18,14 +18,14 @@ struct LocalBackup: Codable {
     init(snapshot: RosterSnapshot, date: Date = Date()) throws {
         try Self.validate(snapshot)
         format = "BaseballMaster Backup"
-        version = 3
+        version = 4
         createdAt = date
         payload = try JSONEncoder().encode(snapshot)
         checksum = Self.digest(payload)
     }
 
     func snapshot() throws -> RosterSnapshot {
-        guard format == "BaseballMaster Backup", (1...3).contains(version) else {
+        guard format == "BaseballMaster Backup", (1...4).contains(version) else {
             throw LocalDataError.invalid("备份格式或版本不受支持，请使用兼容的 App 版本。")
         }
         guard checksum == Self.digest(payload) else {
@@ -82,6 +82,11 @@ struct LocalBackup: Codable {
         }
         for stored in snapshot.games {
             let game = stored.state
+            try require((0...3).contains(stored.rules.startingBalls) && (0...2).contains(stored.rules.startingStrikes), "初始球数无效")
+            if stored.rules.isSlowPitch {
+                try require(stored.rules.fieldersCount == 10, "慢垒守备人数无效")
+                if stored.status != .scheduled { try require(stored.rules.startingValidationMessage == nil, "慢垒规则尚未补齐") }
+            }
             if let cap = stored.rules.halfInningRunLimit { try require((1...99).contains(cap), "半局得分上限无效") }
             if let limit = stored.rules.coachPitchLimit { try require((1...20).contains(limit), "教练投手球数上限无效") }
             for journal in ([game.historyJournal].compactMap { $0 } + (game.correctionRevisions ?? []).map(\.previousJournal)) {
@@ -124,6 +129,12 @@ struct LocalBackup: Codable {
             for (team, order) in [(game.homeTeam, game.homeBattingOrderIDs), (game.awayTeam, game.awayBattingOrderIDs)] {
                 try require(unique(order) && Set(order).isSubset(of: Set(team.players.map(\.id))), "打序球员无效")
                 if stored.status != .scheduled { try require(!team.players.isEmpty && !order.isEmpty, "已开始比赛缺少名单") }
+                if stored.rules.isSlowPitch && stored.status != .scheduled {
+                    let defense = team.id == game.homeTeam.id ? game.homeFieldingPlayerIDs : game.awayFieldingPlayerIDs
+                    try require(defense?.count == 10 && unique(defense ?? []) && Set(defense ?? []).isSubset(of: Set(team.players.map(\.id))), "慢垒 10 人守备不完整")
+                    let positions = (defense ?? []).compactMap { id in team.players.first { $0.id == id }?.primaryPosition }
+                    try require(Set(positions) == Set(FieldPosition.allCases), "慢垒守位不完整或重复")
+                }
             }
             try require(Set(game.baseRunners.values.map(\.id)).count == game.baseRunners.count, "跑者重复")
             try require(game.baseRunners.values.allSatisfy { runner in game.battingTeam.players.contains { $0.id == runner.id } }, "垒上球员不存在")

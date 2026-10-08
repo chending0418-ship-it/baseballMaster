@@ -46,3 +46,7 @@ App 先完成 Core Data 保存，才触发发布。Keychain 保存开播身份�
 普通直播期限为最近发布／心跳 + 1 小时。终场后是 `min(endedAt, serverTime) + 1 小时`；终场修订和心跳不能推后已有终场期限。在截止前的新版本恢复比赛，改回心跳期限。达到截止立即失效。设备应保持自动时间，创建时钟差超过 15 分钟会拒绝。
 
 备份不携带写入凭证。恢复备份后原绑定转为待关闭，避免旧历史自动覆盖正在直播的场次；若发现本地修订回退或同版内容变化，停止发布并要求用户重新开播。服务器返回 400/401/403/409/413 等确定错误也停止自动重试；网络与服务暂时错误按退避重试。关闭请求与在途网络响应竞态受保护，不会重新开启刚关闭的直播。
+
+## 2.3 慢垒可选字段
+
+仍为 schema 1，新增 mode `slowPitch`；标准及教练旧快照继续接受。rules 可包含 competitionFormat（timed／innings）、inningsLimit、initialBalls（0–3）、initialStrikes（0–2）、twoStrikeFoulPolicy（outImmediately／oneExtraFoul）、fieldersCount、rulesVersion、extraFoulUsed。不提供字段时保持未知，网页不补造规则。当前 B/S、真实投球数、双方完整打序与自由人均来自同一保存修订。时间赛按实际局次显示，计时显示剩余时间。先部署兼容服务端与网页，再发布 2.3 App；当前改动尚未生产部署。

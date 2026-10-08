@@ -81,6 +81,10 @@ struct LaunchRouterView: View {
                 NavigationStack { BackupManagementView() }
             } else if arguments.contains("--live-production-persistent-test") {
                 NavigationStack { ScorekeepingView() }
+            } else if arguments.contains("--v23-slow-preview") || arguments.contains("--v23-live-production-preview") {
+                V23DevelopmentFixture(mode: .slowPitch)
+            } else if arguments.contains("--v23-new-game-preview") {
+                V23DevelopmentFixture(mode: nil)
             } else if arguments.contains("--correction-preview") {
                 HistoryCorrectionFixture()
             } else if arguments.contains("--v11-coach-preview") {
@@ -506,4 +510,38 @@ private struct V11ScorekeepingFixture: View {
     }
 }
 
+#endif
+
+#if DEBUG
+private struct V23DevelopmentFixture: View {
+    @EnvironmentObject private var store: GameStore
+    let mode: GameMode?
+    @State private var ready = false
+    var body: some View {
+        Group {
+            if ready {
+                NavigationStack {
+                    if mode == nil { NewGameSetupView() } else { ScorekeepingView(showsGameHomeButton: true) }
+                }
+            } else { ProgressView() }
+        }
+        .task {
+            guard !ready else { return }
+            func team(_ name: String) -> Team {
+                Team(name: name, shortName: name, city: "", players: (0..<14).map { Player(name: name + "球员\($0 + 1)", number: $0 + 1, primaryPosition: FieldPosition.allCases[$0 % 10]) })
+            }
+            let own = team("飞鹰"), other = team("猎隼")
+            store.teams = [own]; store.currentTeam = own; store.opponentTeams = [other]
+            if let mode {
+                var rules = GameRules(fieldersCount: 10, timeLimitMinutes: 90, timeWarningMinutes: 5)
+                rules.mode = mode; rules.twoStrikeFoulPolicy = .oneExtraFoul; rules.competitionFormat = .timed
+                func assignments(_ team: Team, _ count: Int) -> [LineupAssignment] {
+                    team.players.prefix(count).enumerated().map { LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: $0.offset < 10 ? FieldPosition.allCases[$0.offset] : nil) }
+                }
+                store.startNewGame(opponent: other, isHome: false, rules: rules, lineup: assignments(own, 12), opponentLineup: assignments(other, 11))
+            }
+            ready = true
+        }
+    }
+}
 #endif

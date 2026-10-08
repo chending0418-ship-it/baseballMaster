@@ -65,7 +65,8 @@ struct GamePoster {
             let rulesText = game.status == .scheduled && game.lineup.isEmpty
                 ? "比赛规则待确认"
                 : "\(game.rules.scheduledInnings) 局制  /  \(game.rules.fieldersCount) 人守备\(game.rules.timeLimitMinutes.map { "  /  限时 \($0) 分钟" } ?? "")"
-            text(rulesText, CGRect(x: 74, y: 1373, width: 492, height: 40), size: 21, color: ink, weight: .medium)
+            let displayRules = game.rules.isSlowPitch ? "成人慢垒 / " + (game.rules.isTimeGame ? "时间赛 \(game.rules.timeLimitMinutes.map(String.init) ?? "待定") 分钟" : "\(game.rules.scheduledInnings) 局") + " / 10 人守备" : rulesText
+            text(displayRules, CGRect(x: 74, y: 1373, width: 492, height: 40), size: 21, color: ink, weight: .medium)
             text("棒球大师 · 以组织方最新通知为准", CGRect(x: 576, y: 1373, width: 432, height: 40), size: 21, color: ink)
 
         }

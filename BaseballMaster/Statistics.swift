@@ -210,7 +210,7 @@ extension GameStore {
                 var row = players[player.id] ?? PlayerSeasonStatistics(player: player, isCurrentRoster: false)
                 row.gamesPlayed += 1
                 row.batting.add(stored.state.batting[player.id] ?? BattingLine())
-                if stored.rules.gameMode == .standard { row.pitching = .aggregate([row.pitching, stored.state.pitching[player.id] ?? PitchingLine()]) }
+                if stored.rules.gameMode != .coachPitch { row.pitching = .aggregate([row.pitching, stored.state.pitching[player.id] ?? PitchingLine()]) }
                 row.fielding = .aggregate([row.fielding, stored.state.fielding[player.id] ?? FieldingLine()])
                 players[player.id] = row
             }
@@ -228,7 +228,7 @@ extension GameStore {
         return PlayerSeasonStatistics(
             player: player, gamesPlayed: records.count,
             batting: .aggregate(records.map(\.batting)),
-            pitching: .aggregate(completed.filter { $0.rules.gameMode == .standard }.compactMap { $0.state.pitching[player.id] }),
+            pitching: .aggregate(completed.filter { $0.rules.gameMode != .coachPitch }.compactMap { $0.state.pitching[player.id] }),
             fielding: .aggregate(completed.compactMap { $0.state.fielding[player.id] })
         )
     }

@@ -1,11 +1,11 @@
 # 目录与命名约定
 
-2026-09-29 整理。现适用于 `/Users/JasonChan/Documents/BaseballMaster-2.2/`；2026-10-03 已完成单目录收拢。
+2026-09-29 整理。现适用于 `/Users/JasonChan/Documents/BaseballMaster/`；2026-10-03 已完成单目录收拢，并按用户要求去掉项目文件夹版本号。
 
 ## 根目录保留什么
 
 ```text
-BaseballMaster-2.2/
+BaseballMaster/
 ├── 2.1 发布功能计划.md       2.1 维护与发布计划
 ├── 2.2 发布功能计划.md       2.2 现有功能优化计划
 ├── 2.3 发布功能计划.md       单份后续需求，2.2 完成后在同一项目目录继续
@@ -22,12 +22,13 @@ BaseballMaster-2.2/
 └── output/                  本机生成文件
 ```
 
-App 源码目录、工程名、资源引用、Bundle ID 和品牌名称沿用既有结构。用户最新要求顺序开发：2.3 只留单份后续需求，不建立专属目录；2.2 已按 [R05](releases/2.2/DEVELOPMENT-TODO.md#9-发布准备) 收拢为唯一的 `BaseballMaster-2.2` 项目目录，后续原地继续开发。
+App 源码目录、工程名、资源引用、Bundle ID 和品牌名称沿用既有结构。用户最新要求顺序开发：2.3 只留单份后续需求，不建立专属目录；2.2 已按 [R05](releases/2.2/DEVELOPMENT-TODO.md#9-发布准备) 收拢为唯一的 `BaseballMaster` 项目目录，后续原地继续开发。
 
 ## 文档规则
 
 - 根目录的中文版本计划保持易找、易编辑；新增想法写到计划顶部的“随手补充区”。
 - 当前功能和发布文档放 `docs/releases/<版本>/`，常用技术文档采用清楚的英文文件名，如 `CORRECTION-TODO.md`、`RELEASE-HANDOFF.md`。
+- 尚未开始开发的新版本方案可放 `docs/plans/`。3.0 的规划、TODO 与验收统一维护在 [3.0-TEAM-COLLABORATION.md](plans/3.0-TEAM-COLLABORATION.md)；本轮只写文档，不创建 3.0 项目目录、工作区或生成文件目录。根目录 README／TODO 与文档索引只链接和概述，不复制一份详细清单。
 - 已被新方案替代的草案、历史需求与记录放 `docs/archive/plans/<版本>/`，不与当前待办混放。
 - 旧截图放 `docs/archive/screenshots/`；当前交付截图放相应版本的发布目录。
 - 链接优先使用相对路径；重命名后同步更新引用。链接到另一个本机工作区时须明确标注。

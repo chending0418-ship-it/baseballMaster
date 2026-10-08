@@ -20,7 +20,12 @@ struct LiveSnapshot: Codable, Equatable {
         var name: String; var runs: Int; var hits: Int; var errors: Int; var innings: [Int]
         var shortName: String?; var playedInnings: [Bool]?; var lineup: [LineupPlayer]?; var pitcherID: String?
     }
-    struct Rules: Codable, Equatable { var scheduledInnings: Int; var halfInningRunLimit: Int?; var timeLimitMinutes: Int? }
+    struct Rules: Codable, Equatable {
+        var scheduledInnings: Int; var halfInningRunLimit: Int?; var timeLimitMinutes: Int?
+        var competitionFormat: String? = nil; var inningsLimit: Int? = nil
+        var initialBalls: Int? = nil; var initialStrikes: Int? = nil; var twoStrikeFoulPolicy: String? = nil
+        var fieldersCount: Int? = nil; var rulesVersion: Int? = nil; var extraFoulUsed: Bool? = nil
+    }
     struct Clock: Codable, Equatable { var startedAt: Double?; var runningSince: Double?; var elapsedSeconds: Double }
     struct BatterStats: Codable, Equatable { var atBats: Int; var hits: Int; var isComplete: Bool }
     struct Situation: Codable, Equatable {
@@ -52,18 +57,26 @@ struct LiveSnapshot: Codable, Equatable {
         let g = stored.state
         gameID = stored.id.uuidString; revision = stored.revision ?? 0
         let coach = stored.rules.gameMode == .coachPitch
-        mode = coach ? "coachPitch" : "standard"; isFinal = g.isFinal
+        mode = stored.rules.gameMode.rawValue; isFinal = g.isFinal
         endedAt = g.isFinal ? (g.endedAt ?? stored.updatedAt).timeIntervalSince1970 * 1000 : nil
         inning = g.inning; isTop = g.isTop; balls = g.balls; strikes = g.strikes; outs = g.outs
         let events = g.scoringEvents ?? []
         let playCategories: Set<ScoringEventCategory> = [.pitch, .battedBall, .runner, .out, .violation, .tiebreak]
         let started = stored.startedAt != nil || g.clockRunningSince != nil || (g.clockElapsedSeconds ?? 0) > 0
             || stored.openingPitchRecorded == true || g.inning > 1 || !g.isTop || events.contains { playCategories.contains($0.category) }
-            || g.balls > 0 || g.strikes > 0 || g.outs > 0 || !g.baseRunners.isEmpty
+            || g.balls != stored.rules.startingBalls || g.strikes != stored.rules.startingStrikes || g.outs > 0 || !g.baseRunners.isEmpty
             || g.homeScore > 0 || g.awayScore > 0 || g.homeHits > 0 || g.awayHits > 0
             || g.batting.values.contains { $0.plateAppearances > 0 } || g.pitching.values.contains { $0.pitches > 0 }
         hasStarted = started
         rules = Rules(scheduledInnings: g.scheduledInnings, halfInningRunLimit: stored.rules.halfInningRunLimit, timeLimitMinutes: stored.rules.timeLimitMinutes)
+        if stored.rules.isSlowPitch {
+            rules?.competitionFormat = stored.rules.isTimeGame ? "timed" : "innings"
+            rules?.inningsLimit = stored.rules.inningsLimit
+            rules?.initialBalls = stored.rules.startingBalls; rules?.initialStrikes = stored.rules.startingStrikes
+            rules?.twoStrikeFoulPolicy = stored.rules.twoStrikeFoulPolicy?.rawValue
+            rules?.fieldersCount = 10; rules?.rulesVersion = stored.rules.rulesVersion ?? 2
+            rules?.extraFoulUsed = g.extraFoulUsed
+        }
         clock = Clock(startedAt: stored.startedAt.map { $0.timeIntervalSince1970 * 1000 },
                       runningSince: g.clockRunningSince.map { $0.timeIntervalSince1970 * 1000 }, elapsedSeconds: max(0, g.clockElapsedSeconds ?? 0))
         func side(_ team: Team, isHome: Bool, runs: Int, hits: Int, errors: Int, innings: [Int]) -> Side {
@@ -77,13 +90,14 @@ struct LiveSnapshot: Codable, Equatable {
                                     position: dh == id ? "DH" : fielders.contains(id) ? p.primaryPosition.fullName : "打击")
             }
             let currentHalf = (g.inning - 1) * 2 + (g.isTop ? 0 : 1)
-            let played = innings.indices.map { index in
+            let visibleInnings = stored.rules.isTimeGame ? Array(innings.prefix(g.scoreInningCount)) : innings
+            let played = visibleInnings.indices.map { index in
                 let half = index * 2 + (isHome ? 1 : 0)
                 return started && (half < currentHalf || (half == currentHalf && (!g.isFinal || events.contains {
                     $0.inning == index + 1 && $0.isTop != isHome && playCategories.contains($0.category)
                 } || (index == 0 && !isHome && stored.startedAt != nil))) || innings[index] > 0)
             }
-            return Side(name: String(team.name.prefix(200)), runs: runs, hits: hits, errors: errors, innings: innings,
+            return Side(name: String(team.name.prefix(200)), runs: runs, hits: hits, errors: errors, innings: visibleInnings,
                         shortName: String(team.shortName.prefix(200)), playedInnings: played, lineup: lineup,
                         pitcherID: (isHome ? g.activeHomePitcherID : g.activeAwayPitcherID)?.uuidString)
         }

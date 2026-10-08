@@ -281,6 +281,9 @@ private struct HistoryOperationEditor: View {
     @State private var positions: [UUID: FieldPosition] = [:]
     @State private var outcome = PlayOutcome.single
     @State private var pitch = PitchAction.ball
+    @State private var illegalWasThrown = true
+    @State private var illegalResult = "好坏球／界外"
+    @State private var illegalPenaltyApplied = true
     @State private var runnerKind = RunnerEventKind.stolenBase
     @State private var moves: [RunnerDecision] = []
     @State private var defense: DefensivePlay?
@@ -351,7 +354,7 @@ private struct HistoryOperationEditor: View {
         Section("当时场上守位 · 一起校验保存") {
             ForEach(fielders) { p in
                 Picker(p.compactName, selection: Binding(get: { positions[p.id] ?? p.primaryPosition }, set: { positions[p.id] = $0 })) {
-                    ForEach(FieldPosition.allCases) { Text($0.fullName).tag($0) }
+                    ForEach(state.rulesSnapshot?.positions ?? FieldPosition.allCases.filter { $0 != .free }) { Text($0.fullName).tag($0) }
                 }
             }
             Text("可同时调整多人；棒次保持不变。投手、DH 与重复守位在预览中校验。").font(.caption)
@@ -362,11 +365,18 @@ private struct HistoryOperationEditor: View {
         Group {
             Section(kind == .error ? "失误如何影响原结果" : "补录内容") {
                 Picker("记录类型", selection: $mode) {
-                    ForEach(kind == .error ? ["击球结果", "附加失误"] : ["一球", "击球结果", "跑者事件", "仅修正局面", "补充说明"], id: \.self) { Text($0) }
+                    ForEach(kind == .error ? ["击球结果", "附加失误"] : (["一球", "击球结果", "跑者事件", "仅修正局面", "补充说明"] + (stored.rules.isSlowPitch ? ["Illegal"] : [])), id: \.self) { Text($0) }
                 }.onChange(of: mode) { _ in resetMoves() }
                 if mode == "补充说明" { TextField("补充已知信息，不改比分与统计", text: $supplementalNote, axis: .vertical) }
-                if mode == "一球" { Picker("球", selection: $pitch) { ForEach(PitchAction.allCases) { Text($0.rawValue).tag($0) } }.accessibilityIdentifier("history-pitch") }
-                if mode == "击球结果" || (mode == "附加失误" && !extraOnly) {
+                if mode == "Illegal" {
+                    Toggle("实际投出", isOn: $illegalWasThrown)
+                    Toggle("Illegal 罚则适用", isOn: $illegalPenaltyApplied)
+                    Picker("裁判最终结果", selection: $illegalResult) {
+                        ForEach(["好坏球／界外", "击球结果", "No Pitch"], id: \.self) { Text($0) }
+                    }.onChange(of: illegalResult) { _ in resetMoves() }
+                }
+                if mode == "一球" || (mode == "Illegal" && illegalResult == "好坏球／界外") { Picker("球", selection: $pitch) { ForEach(PitchAction.allCases) { Text($0.rawValue).tag($0) } }.accessibilityIdentifier("history-pitch") }
+                if isBattedResult || (mode == "附加失误" && !extraOnly) {
                     Picker("击球结果", selection: $outcome) { ForEach(PlayOutcome.allCases) { Text($0.rawValue).tag($0) } }
                         .onChange(of: outcome) { _ in resetMoves() }
                     if outcome == .error {
@@ -461,6 +471,11 @@ private struct HistoryOperationEditor: View {
             errors = original.errors
             switch original.command {
             case .pitch(let p): mode = "一球"; pitch = p
+            case .illegalPitch(let action, let thrown, let play, let route, let decisions, let runTiming, let penalty):
+                mode = "Illegal"; illegalWasThrown = thrown; illegalPenaltyApplied = penalty ?? (action == .ball)
+                if let play { illegalResult = "击球结果"; outcome = play; defense = route; moves = decisions ?? []; timing = runTiming }
+                else if let action { illegalResult = "好坏球／界外"; pitch = action }
+                else { illegalResult = "No Pitch" }
             case .play(let o, let d, let m, let t): mode = "击球结果"; outcome = o; defense = d; moves = m; timing = t
             case .runner(let k, let m, let t): mode = "跑者事件"; runnerKind = k; moves = m; timing = t
             case .pitcher(let p): mode = "换投"; incoming = p
@@ -476,6 +491,7 @@ private struct HistoryOperationEditor: View {
         if let ruling = original?.statisticsRuling { reviewedStats = true; rbi = ruling.runsBattedIn; earned = ruling.earnedRuns; unearned = Set(ruling.unearnedRunnerIDs) }
         if moves.isEmpty { resetMoves() }
     }
+    private var isBattedResult: Bool { mode == "击球结果" || (mode == "Illegal" && illegalResult == "击球结果") }
     private var responsiblePitchers: [Player] {
         let ids = Set(state.baseRunners.values.compactMap { state.runnerPitcherIDs?[$0.id] }).union([state.currentPitcher.id])
         return state.fieldingTeam.players.filter { ids.contains($0.id) }
@@ -491,7 +507,7 @@ private struct HistoryOperationEditor: View {
     }
     private var needsTiming: Bool {
         if mode == "跑者事件" { return worker.runnerEventNeedsTimingDecision(runnerKind, decisions: moves) }
-        if mode == "击球结果" || (mode == "附加失误" && !extraOnly) { return worker.playNeedsTimingDecision(outcome, decisions: moves) }
+        if isBattedResult || (mode == "附加失误" && !extraOnly) { return worker.playNeedsTimingDecision(outcome, decisions: moves) }
         return false
     }
     private func submit() {
@@ -515,6 +531,11 @@ private struct HistoryOperationEditor: View {
         } else {
             switch mode {
             case "一球": command = .pitch(pitch)
+            case "Illegal":
+                command = .illegalPitch(illegalResult == "好坏球／界外" ? pitch : nil, illegalWasThrown,
+                                        illegalResult == "击球结果" ? outcome : nil,
+                                        illegalResult == "击球结果" ? defense : nil,
+                                        illegalResult == "击球结果" ? moves : nil, effectiveTiming, illegalPenaltyApplied)
             case "跑者事件": command = .runner(runnerKind, moves, effectiveTiming)
             case "仅修正局面": command = .situation(situation!)
             case "补充说明":

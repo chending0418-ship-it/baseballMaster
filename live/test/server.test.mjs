@@ -224,3 +224,19 @@ test('viewer and link titles follow each game, escape names, and disappear on ex
   a.advance(HOUR + 1);
   const expired = await a.request('GET', '/' + second.data.code); assert.equal(expired.status, 410); assert.ok(!expired.data.includes('乙队 vs 丙队'));
 });
+
+test('2.3 slow pitch rule choices and actual counts survive the public projection', async t => {
+  const a = await setup(t), state = uiSnapshot();
+  state.mode = 'slowPitch'; state.balls = 1; state.strikes = 1; state.pitchCount = 0;
+  state.rules = {scheduledInnings: 6, timeLimitMinutes: 90, competitionFormat: 'timed', initialBalls: 1, initialStrikes: 1,
+    twoStrikeFoulPolicy: 'oneExtraFoul', fieldersCount: 10, rulesVersion: 2, extraFoulUsed: false};
+  state.away.lineup = Array.from({length:12}, (_, i) => ({player:{id:`away-${i}`,name:`客队球员${i+1}`,number:String(i+1)},order:i+1,position:i===9?'自由人':i>=10?'打击':'守备'}));
+  const created = await a.create(state); assert.equal(created.status, 201);
+  const read = await a.request('GET', `/api/sessions/${created.data.code}`, undefined, null);
+  assert.equal(read.status, 200); assert.equal(read.data.snapshot.mode, 'slowPitch');
+  assert.equal(read.data.snapshot.away.lineup.length, 12); assert.equal(read.data.snapshot.pitchCount, 0);
+  assert.deepEqual(read.data.snapshot.rules, state.rules);
+  for (const change of [r=>r.initialBalls=4,r=>r.initialStrikes=3,r=>r.twoStrikeFoulPolicy='unlimited',r=>r.competitionFormat='guess',r=>r.extraFoulUsed='yes']) {
+    const invalid=structuredClone(state); change(invalid.rules); assert.equal((await a.create(invalid)).status, 400);
+  }
+});

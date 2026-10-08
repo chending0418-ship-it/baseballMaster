@@ -2,16 +2,18 @@
 
 [文档索引](docs/README.md) · [项目目录说明](docs/PROJECT-STRUCTURE.md) · [输出文件入口](output/README.md)
 
-**发布计划与随手补充入口：[2.1](<2.1 发布功能计划.md>) · [2.2 现有功能优化](<2.2 发布功能计划.md>) · [2.3 慢垒与小组件](<2.3 发布功能计划.md>)。**
+**发布计划与随手补充入口：[2.1](<2.1 发布功能计划.md>) · [2.2 现有功能优化](<2.2 发布功能计划.md>) · [2.3 慢垒与已有功能优化](<2.3 发布功能计划.md>)。**
 
-**当前发布候选：2.2（Build 1）。** 导航、阵容、导出、筛选统计及直播 UI 已完成开发与模拟器回归，正式直播 Web／API、官网／支持／隐私已上线；两套七张截图、全部商店文案和签名归档已准备，见 [2.2 发布与审核交接](docs/releases/2.2/REVIEW-HANDOFF.md)。App 尚未上传或提交审核。慢垒、Free／Illegal 与桌面小组件只留在根目录的 2.3 后续计划，不建立专属工作区。
+
+
+**当前交付版本：2.3（Build 1）。** 成人慢垒、双方赛前阵容、投手实际出局修复、导出、恢复和直播适配已完成；按用户要求完成模拟器代替真机验收，209 项单元／集成与 72 个唯一界面场景通过，官网与兼容直播已上线。商店文案、两套截图、审核与上传说明、宣传图和签名归档齐备，见 [2.3 发布交接](docs/releases/2.3/REVIEW-HANDOFF.md)。Apple 上传／审核／发布由用户操作。小组件为后续待办，版本未定。
 
 - [2.1 记分纠错 TODO](<docs/releases/2.1/CORRECTION-TODO.md>)（漏换人／换守位／局面／失误，已实现并完成本地回归）
 - [2.2 手动结束比赛导航修复](docs/releases/2.2/MANUAL-END-FIX.md)（已修复，模拟器导航回归通过）
 - [2.2 导出、分享、阵容与统计改进 TODO](docs/releases/2.2/PRODUCT-IMPROVEMENTS-TODO.md)（第 2–8 项已实现并验证）
 - [2.2 直播 UI 独立任务](docs/releases/2.2/LIVE-UI-TODO.md)（已实现及模拟器／公网验收，Web 已部署）
 - [2.2 完整开发 TODO](docs/releases/2.2/DEVELOPMENT-TODO.md)（现有功能优化、直播 UI、联合回归与发布准备）
-- [2.3 后续需求清单](<2.3 发布功能计划.md>)（单份文档收录慢垒与小组件全部任务；2.2 完成后在同一目录实施）
+- [2.3 需求与交付清单](<2.3 发布功能计划.md>)（慢垒与功能优化的任务、实施和验收记录；小组件另见后续待办）
 - [正式发布流程](docs/releases/2.0/00-正式发布流程.md)
 - [2.1 审核提交交接](docs/releases/2.1/REVIEW-HANDOFF.md) · [商店文案与更新说明](docs/releases/2.1/APPSTORE-METADATA.md)
 - [开发与验证记录](<docs/archive/plans/1.1.1/VALIDATION.md>) · [需求与完成清单](<docs/archive/plans/1.1.1/TODO.md>)

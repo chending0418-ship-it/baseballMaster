@@ -40,7 +40,8 @@ function updateClock() {
   const elapsed = Math.floor(c.elapsedSeconds + (c.runningSince ? Math.max(0, until - c.runningSince) / 1000 : 0));
   const start = c.startedAt ? `${new Date(c.startedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })} 开赛` : '开赛时间未记录';
   const measured = c.startedAt || c.runningSince || elapsed > 0;
-  const duration = measured ? `${s.isFinal ? '比赛用时' : '已进行'} ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒` : '未计时';
+  const remaining = s.rules?.competitionFormat === 'timed' && Number.isFinite(s.rules.timeLimitMinutes) ? Math.max(0, s.rules.timeLimitMinutes * 60 - elapsed) : null;
+  const duration = remaining !== null && !s.isFinal ? `剩余 ${Math.floor(remaining / 60)} 分 ${remaining % 60} 秒` : measured ? `${s.isFinal ? '比赛用时' : '已进行'} ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒` : '未计时';
   const pause = measured && !s.isFinal && !c.runningSince ? ' · 计时暂停' : '';
   text('game-time', `${start} · ${duration}${pause}`);
 }
@@ -81,11 +82,11 @@ function render(s) {
   for (const meta of document.querySelectorAll('meta[name="description"],meta[property="og:description"]')) meta.content = `使用 BaseballMaster 观看 ${s.away.name} vs ${s.home.name} 的比赛文字直播。`;
   text('phase', s.isFinal ? '终场' : s.hasStarted === false ? '未开始' : halfName(s));
   text('game-status', s.isFinal ? '比赛已结束' : s.hasStarted === false ? '等待开赛' : '进行中');
-  text('mode', s.mode === 'coachPitch' ? '教练投手' : '普通比赛');
-  const rules = s.rules ? [`${s.rules.scheduledInnings} 局`, ...(s.rules.halfInningRunLimit ? [`半局 ${s.rules.halfInningRunLimit} 分换边`] : []), ...(s.rules.timeLimitMinutes ? [`限时 ${s.rules.timeLimitMinutes} 分钟`] : [])] : [];
+  text('mode', s.mode === 'slowPitch' ? '成人慢垒' : s.mode === 'coachPitch' ? '教练投手' : '普通比赛');
+  const rules = s.rules ? [...(s.rules.competitionFormat === 'timed' ? [`时间赛 ${s.rules.timeLimitMinutes ?? '待定'} 分钟`, ...(s.rules.inningsLimit ? [`局数上限 ${s.rules.inningsLimit}`] : [])] : [`${s.rules.scheduledInnings} 局`]), ...(s.rules.initialBalls !== undefined ? [`初始 ${s.rules.initialStrikes} 好 ${s.rules.initialBalls} 坏`] : []), ...(s.rules.twoStrikeFoulPolicy ? [s.rules.twoStrikeFoulPolicy === 'outImmediately' ? '两好后界外出局' : '再允许一次界外'] : []), ...(s.rules.fieldersCount ? [`${s.rules.fieldersCount} 人守备`] : []), ...(s.strikes >= 2 && s.rules.twoStrikeFoulPolicy === 'oneExtraFoul' && typeof s.rules.extraFoulUsed === 'boolean' ? [s.rules.extraFoulUsed ? '额外界外机会已用' : '仍允许一次界外'] : []), ...(s.rules.halfInningRunLimit ? [`半局 ${s.rules.halfInningRunLimit} 分换边`] : []), ...(s.rules.timeLimitMinutes ? [`限时 ${s.rules.timeLimitMinutes} 分钟`] : [])] : [];
   text('rules', rules.length ? '· ' + rules.join(' · ') : '');
   text('away-name', s.away.name); text('home-name', s.home.name); text('away-score', s.away.runs); text('home-score', s.home.runs);
-  const innings = Math.max(s.away.innings.length, s.home.innings.length, s.inning);
+  const innings = s.rules?.competitionFormat === 'timed' ? Math.max(1, s.inning, s.away.innings.reduce((last, n, i) => n > 0 ? i + 1 : last, 0), s.home.innings.reduce((last, n, i) => n > 0 ? i + 1 : last, 0)) : Math.max(s.away.innings.length, s.home.innings.length, s.inning);
   const head = node('tr'); ['', ...Array.from({length: innings}, (_, i) => i + 1), 'R', 'H', 'E'].forEach((v, i) => { const th = node('th', v, i === innings + 1 ? 'total' : ''); th.scope = 'col'; head.append(th); });
   $('innings-head').replaceChildren(head);
   const teamCol = node('col', undefined, 'team-col'), otherCols = node('col'); otherCols.span = innings + 3; $('innings-cols').replaceChildren(teamCol, otherCols);

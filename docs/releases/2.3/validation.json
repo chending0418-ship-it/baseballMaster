@@ -1,0 +1,381 @@
+{
+  "date": "2026-10-08",
+  "version": "2.3",
+  "build": "1",
+  "unitIntegration": {
+    "passed": 209,
+    "failed": 0,
+    "skipped": 0
+  },
+  "ui": {
+    "uniquePassed": 72,
+    "unresolvedFailures": 0,
+    "smallDeviceRuns": {
+      "iPhone16e": 3,
+      "iPhoneSE3": 3
+    }
+  },
+  "serviceTestsPassed": 17,
+  "localBrowserGroupsPassed": 8,
+  "publicBrowserGroupsPassed": 8,
+  "websiteViewportPageChecksPassed": 24,
+  "publicFilesMatched": 44,
+  "physicalDeviceReplacedBySimulatorAtUserRequest": true,
+  "upgrade": {
+    "passed": true,
+    "simulator": "A92A9924-F252-4CF7-9925-E57FE86DC21B",
+    "oldVersion": "2.2",
+    "newVersion": "2.3",
+    "bundleID": "com.jasonchen.baseballmaster",
+    "synthetic": true,
+    "settingsPreserved": true,
+    "oldMatchStatePreserved": true,
+    "continuedToWalkWithOneActualPitch": true,
+    "backupRestorePreserved": true,
+    "oldBinarySHA256": "b568db964c05687a9e7516af77912d6316e81eec659d63c910a443d21c6548b3",
+    "newBinarySHA256": "6ce9d26e3e243a87b0c6742f5c7c6287464d0deb92b1f927aacdac9022263628",
+    "oldAppRefusalUIVerified": true,
+    "newAppCanReopenAfterRefusedDowngrade": true,
+    "oldAppPreservedGamePayload": true,
+    "comparison": "All state fields match; Swift UUID-keyed history-context positions compared as dictionaries, not unordered JSON pair arrays",
+    "refusalScreenshot": "old-app-refusal.png"
+  },
+  "release": {
+    "version": "2.3",
+    "build": "1",
+    "bundleID": "com.jasonchen.baseballmaster",
+    "minimumOS": "16.0",
+    "binaryDSYMUUIDMatches": true,
+    "uuid": "F6904F0A-D7C9-3B03-A7F9-4F771CFB4DE0",
+    "strictCodeSignPassed": true,
+    "archive": "output/releases/2.3/archives/BaseballMaster-2.3-1-release.xcarchive",
+    "distributionUploadPerformed": false
+  },
+  "website": {
+    "checkedAt": "2026-10-08T04:24:22.985366+00:00",
+    "base": "https://baseballmaster.cc",
+    "matched": [
+      {
+        "path": "assets/app-icon.png",
+        "bytes": 90673,
+        "sha256": "26cd1716a8f86fcd82b124be9e9f2869f43f7fccb02f24737a0390566fb3cc4c",
+        "matched": true
+      },
+      {
+        "path": "assets/appearance-report-2.0.jpg",
+        "bytes": 132633,
+        "sha256": "4d27bf4b9c2b2204b54153bb8b018ecd2357d4311e7b01ec8ccb25b0653616d6",
+        "matched": true
+      },
+      {
+        "path": "assets/baseballmaster-2.2-update.png",
+        "bytes": 563960,
+        "sha256": "928c597f1c709293cb08e5850a6355dbb7c94a4ea46a0c65eb6739b22e43b194",
+        "matched": true
+      },
+      {
+        "path": "assets/baseballmaster-2.3-update.png",
+        "bytes": 608459,
+        "sha256": "61fc12241f7a605b764e1af6d4b7ede2befee1bca0457d98fef82956294419f3",
+        "matched": true
+      },
+      {
+        "path": "assets/box-score-2.0.jpg",
+        "bytes": 151688,
+        "sha256": "573e85a9544e540caa52d18042ed890b77e0a8b88e47766b411801d02552d38a",
+        "matched": true
+      },
+      {
+        "path": "assets/coach-2.0.jpg",
+        "bytes": 216950,
+        "sha256": "420a25569e6bb15aadd4a37a01d315afd580252ec6b8aecde3cb640a9b8f2657",
+        "matched": true
+      },
+      {
+        "path": "assets/correction-preview-2.1.jpg",
+        "bytes": 51315,
+        "sha256": "16b417dd5a2fa0381b10f342ce3075e76d32b46bb14317b28dfe6b82f72879a0",
+        "matched": true
+      },
+      {
+        "path": "assets/corrections-2.1.jpg",
+        "bytes": 56717,
+        "sha256": "70eef4541c3eaf9a070fc78133e594e008dfc1bf0e1b6b2310fe7aaf73051b83",
+        "matched": true
+      },
+      {
+        "path": "assets/features.css",
+        "bytes": 4661,
+        "sha256": "4d95af9be19d041a2320e0a0801c19485499dedc80a3e619dcc6fdb8633357d9",
+        "matched": true
+      },
+      {
+        "path": "assets/gallery.js",
+        "bytes": 2403,
+        "sha256": "a0e8cb14c3986a83c37eed47515216646585a6aa70a84f6a230ff8ea30018031",
+        "matched": true
+      },
+      {
+        "path": "assets/home-2.0.jpg",
+        "bytes": 177660,
+        "sha256": "a138cd660895df7d3673a4e8ab24e92c2f1cefdaa05aca85c2f38144be82f699",
+        "matched": true
+      },
+      {
+        "path": "assets/legal.css",
+        "bytes": 3742,
+        "sha256": "cb040d5c003e0f5063d0ab4091e44491e20f6c9a7053faa261bea8cbe6fe44f1",
+        "matched": true
+      },
+      {
+        "path": "assets/limits-2.0.jpg",
+        "bytes": 218291,
+        "sha256": "f3cb81e0ee05ff31a1b3972d619a5db7c8e0aeb8b3c7ec4ec4dbcb22933dde5d",
+        "matched": true
+      },
+      {
+        "path": "assets/lineup-2.2.jpg",
+        "bytes": 77393,
+        "sha256": "60af3d7e05c215d095c88c2170931ff5f45aeef9dad2cbb0142c830c1a90a4d2",
+        "matched": true
+      },
+      {
+        "path": "assets/live-desktop-preview.png",
+        "bytes": 176650,
+        "sha256": "638be1148f35806b277dc8399e2f862181238c8d64798896defee2c11483a0ab",
+        "matched": true
+      },
+      {
+        "path": "assets/live-lineups-2.2.jpg",
+        "bytes": 74130,
+        "sha256": "e1a9cfa95f11546b0f1ba44024db066eb62b7bf5a486a52c9db6d40961dc5ddb",
+        "matched": true
+      },
+      {
+        "path": "assets/live-mobile-preview.png",
+        "bytes": 140698,
+        "sha256": "b8fb70efba7ce80cc72d96c8487108a8dba399562aa082f8d3601d5c7ad6e1ef",
+        "matched": true
+      },
+      {
+        "path": "assets/live-preview.css",
+        "bytes": 2726,
+        "sha256": "c0b464b46452b8187cdc0df3b13f2a88527a4cda022ceb098a27c1183e4bf504",
+        "matched": true
+      },
+      {
+        "path": "assets/live-sharing-2.1.jpg",
+        "bytes": 89091,
+        "sha256": "c6c6e401e35b14437a3fbfbe6fbeb0556045c5ca64a8bb0ef6bd47c5a9d20e80",
+        "matched": true
+      },
+      {
+        "path": "assets/live-viewer-2.1.jpg",
+        "bytes": 78111,
+        "sha256": "b6d18ae14df0aa00ec6d4aab2c0c125c1c8c64ab22f547266468c3cecd38f0b3",
+        "matched": true
+      },
+      {
+        "path": "assets/live-viewer-2.2.jpg",
+        "bytes": 86837,
+        "sha256": "431a253e4999c2be3fa5ecd647a7c848fd296dd251f67ff377295aa69a818395",
+        "matched": true
+      },
+      {
+        "path": "assets/observation-2.0.jpg",
+        "bytes": 114992,
+        "sha256": "6ffd7641d2e03a93a8a996396426588c33aa719a0e6ef1726b2e013a19428adb",
+        "matched": true
+      },
+      {
+        "path": "assets/pregame-lineup-2.3.jpg",
+        "bytes": 73454,
+        "sha256": "04b19bdd65b32560e8220255cadcfed02e7971bddf1d38613afd38f9f3b914ad",
+        "matched": true
+      },
+      {
+        "path": "assets/release-2.1.css",
+        "bytes": 3928,
+        "sha256": "f22ff3ad53fa70696434d071e4ab3106bea3623a932b6721d21fbde65d4497b9",
+        "matched": true
+      },
+      {
+        "path": "assets/release-2.2.css",
+        "bytes": 5617,
+        "sha256": "846073ab357e53cd187592676baeae3afe6e98aadaea402f9427eefb7e5de1fc",
+        "matched": true
+      },
+      {
+        "path": "assets/release-2.3.css",
+        "bytes": 5617,
+        "sha256": "532002e2923ca73f9b4424610174231cddf1c35390933826248da616aa0f5031",
+        "matched": true
+      },
+      {
+        "path": "assets/rules-2.0.jpg",
+        "bytes": 274287,
+        "sha256": "c0aa56d34007593ed01fed68e67959f180c2e91d555a07dd446d602b963153b5",
+        "matched": true
+      },
+      {
+        "path": "assets/scoring-2.0.jpg",
+        "bytes": 218272,
+        "sha256": "0f3af2ce5fcbb91078f49d49aeaddc68249ad1d0febc988c11f729e6fbb4ec2a",
+        "matched": true
+      },
+      {
+        "path": "assets/scoring-2.1.jpg",
+        "bytes": 84989,
+        "sha256": "bd31216283d5a72d8d428034e364f9e5198b2a6350fff475f728892a5d446f8e",
+        "matched": true
+      },
+      {
+        "path": "assets/scoring-2.2.jpg",
+        "bytes": 97571,
+        "sha256": "c1815a9f912641dbada452074801208968f08e44c31028b9281aaa6b3c00129e",
+        "matched": true
+      },
+      {
+        "path": "assets/scoring-2.3.jpg",
+        "bytes": 103790,
+        "sha256": "f279b8a13d549e8d426e3f46740b7e7b257717d95fccf69067988f75f3f8ee42",
+        "matched": true
+      },
+      {
+        "path": "assets/site.css",
+        "bytes": 18862,
+        "sha256": "b20bea757401ea678e91264632386b033581ed835b39cc4f6c4005e6b3c6a894",
+        "matched": true
+      },
+      {
+        "path": "assets/site.js",
+        "bytes": 1968,
+        "sha256": "2db356143d0c1ef4100a697e08bbd6299d01caa78e160326785bb3fed9c27154",
+        "matched": true
+      },
+      {
+        "path": "assets/slow-lineup-2.3.jpg",
+        "bytes": 73454,
+        "sha256": "04b19bdd65b32560e8220255cadcfed02e7971bddf1d38613afd38f9f3b914ad",
+        "matched": true
+      },
+      {
+        "path": "assets/slow-live-2.3.jpg",
+        "bytes": 93582,
+        "sha256": "994abf26ae69b97fff150a3217e0dc2d75a38c42fbd9d5e8be9c3052912b0a93",
+        "matched": true
+      },
+      {
+        "path": "assets/slow-rules-2.3.jpg",
+        "bytes": 84083,
+        "sha256": "25ebe2b768b606ccd8dc225c8758212bd4b23fea19b1a9c61313a29fcaf26af5",
+        "matched": true
+      },
+      {
+        "path": "assets/statistics-2.0.jpg",
+        "bytes": 180906,
+        "sha256": "f10b397483db1f6f6ff64bfe52ebdbda83c18a6689904c04a3b9822dd35cbf8d",
+        "matched": true
+      },
+      {
+        "path": "assets/statistics-filter-2.2.jpg",
+        "bytes": 43049,
+        "sha256": "eae4387717067a4c8ac0191fb40dbcd37bd13ec712daa824757639d74cd651cf",
+        "matched": true
+      },
+      {
+        "path": "assets/time-2.0.jpg",
+        "bytes": 212072,
+        "sha256": "1d4220886d1973e06336aa4dfeea6fda26df0c1002c9381837ffb844ac036f79",
+        "matched": true
+      },
+      {
+        "path": "index.html",
+        "bytes": 21676,
+        "sha256": "1fe96a85bc3c75d38962453b09045b7be34cc85768eb9c7059dc61ad344e8ff1",
+        "matched": true
+      },
+      {
+        "path": "privacy.html",
+        "bytes": 14370,
+        "sha256": "4685d35dbeebd7238603568c2eb3f0001370bd81ef56cac3a9de889cbbf4e40a",
+        "matched": true
+      },
+      {
+        "path": "robots.txt",
+        "bytes": 105,
+        "sha256": "e0796764495c1374b0a8e7d18829b12ad138175eb5fb0b0a398686cf8d6f6ae6",
+        "matched": true
+      },
+      {
+        "path": "sitemap.xml",
+        "bytes": 287,
+        "sha256": "5ee6b90f7c482d7ea2e2932f45aa2ad77dac8e3a2769c26ea83a3f43677059cf",
+        "matched": true
+      },
+      {
+        "path": "support.html",
+        "bytes": 17033,
+        "sha256": "4bcefcff59af227e48ac7180332eca83d53211ff7f2bcd8e87816523b934fc37",
+        "matched": true
+      }
+    ],
+    "blockedPaths": [
+      {
+        "path": "/README.md",
+        "status": 404
+      },
+      {
+        "path": "/TODO.md",
+        "status": 404
+      },
+      {
+        "path": "/.git/config",
+        "status": 404
+      },
+      {
+        "path": "/assets/",
+        "status": 404
+      }
+    ],
+    "httpRedirect": 308,
+    "liveHealthy": true,
+    "appStore": {
+      "trackId": 6802063886,
+      "trackName": "棒球比赛记录大师",
+      "version": "2.2",
+      "currentVersionReleaseDate": "2026-10-03T00:05:43Z"
+    }
+  },
+  "appStoreUploadPerformed": false,
+  "gitPush": "pending final execution",
+  "sources": {
+    "BaseballMaster/BackupViews.swift": "efa3872ae6f083c514a38c536e00239c9481b7af8e5a806808726ad165a269a3",
+    "BaseballMaster/BaseballMasterApp.swift": "2a5914b5f276c23596e068dd87ff81fff818a3813b97df8170d5056dc4706ed2",
+    "BaseballMaster/Components.swift": "9181868d474aaab3f90418cb7aee2bdcd4a2a6ce96d83d2a498fd24161923920",
+    "BaseballMaster/DesignSystem.swift": "4d1dff141cabf7855ef20636f24753ed1043e7e7f644dc3f34a62b2004a39505",
+    "BaseballMaster/GamePoster.swift": "4ec1ac8127132dad31123a285e3622565d432917c74e38cff5b7c13f36a18968",
+    "BaseballMaster/GameStore.swift": "6918a77528c3b3028b3de736a02cb5464c4c3c60610aca6c30f1fb344062b663",
+    "BaseballMaster/HistoryCorrection.swift": "10c7c4b4003c7aef3d32214118161aea2c9c320d7e21096766444edef8c5456a",
+    "BaseballMaster/HistoryCorrectionViews.swift": "7a60fbf6bf036f2c91cd77f12ab652019922996ef5c06666c9455fbd51dbb3ab",
+    "BaseballMaster/LiveBroadcast.swift": "8f48b208c1c38c5ed4792a3f6ef2a5999e4da2da0fb304b4ab12c9380b52efa6",
+    "BaseballMaster/LiveBroadcastViews.swift": "c148704bdacbdf713f7331dc071d8683c9eb97f02c69dd13b2e9354eb79f8f33",
+    "BaseballMaster/LiveLineupViews.swift": "90f4a02cbe1a7a5b62012f391f995dbf7e5684bedcd7ea952458b6b80bc601d0",
+    "BaseballMaster/LocalBackup.swift": "738fc6f8f32e809d2e702b8a377d81023f35e5d883f5a30a5dd99472bbae7cca",
+    "BaseballMaster/MainViews.swift": "5da56d30234d25781c254b6a15b5fb0fa6268348337d3e9dd9fe19006df31639",
+    "BaseballMaster/Models.swift": "c13174090c69f68f045a6223389cce607d84879a58b110a70002840d110b19ca",
+    "BaseballMaster/NoviceScoringViews.swift": "5d7171e4bd1972d5e290ec9f5f3b47f4806473c758be344f79db6f67c0ff7f9e",
+    "BaseballMaster/PersistenceController.swift": "f8eb80bdb6859439b756af3195344b43cd0cf0c4c2a54152add8d8db28ecf31d",
+    "BaseballMaster/PlayByPlayPDFReport.swift": "9427ded6d8a4aa034822ecae9ad6ee556daeba6ba44707640b6eb3788d80ab68",
+    "BaseballMaster/ProfileViews.swift": "c5549f4cf5c589ea58cc91b081c6cf0948f3aaa3c566e319b566798634926af8",
+    "BaseballMaster/ReportPDFPreview.swift": "00f5a1b2003d09dd16705a0e736003fd3d77b7386e8336f94e5eae6a6eb8cad5",
+    "BaseballMaster/ReportPDFRenderer.swift": "66dbcda0790e799445761707dd3fbb9923ce7bd8d68cacca1fbcf5bc058697d2",
+    "BaseballMaster/ResultsViews.swift": "6b16c89682dcdeccd9b764b89c74a7a4bdb92851afc584c3e0b7ccfd41f5e3e9",
+    "BaseballMaster/ScorekeepingViews.swift": "a8e7edd3df008d6152df3f8fd117a98c0447c34a73023630468b65364df23af9",
+    "BaseballMaster/SetupAndRosterViews.swift": "6708556cbae4a27fb92cc8474d55160faaac4cc65ece8908c2b6da1b109a0344",
+    "BaseballMaster/Statistics.swift": "ebd0fcd5251deb2c13d55f668a139a7b3309a8c4e94c7d0c77f13d4ad0635112",
+    "BaseballMaster/StatisticsPDFReports.swift": "7ec65b3df46278eac46ed91d3de472e5dc97a828a6cf843f79a2b1e23ec1b468",
+    "BaseballMaster/StatisticsViews.swift": "b5d252ddfee27b72b71134bab546740ddd0eab75b606aa83fd104090a4815bea",
+    "BaseballMaster/UpgradeProtection.swift": "05a4d203cdd14f3d01acd00121c232c32ffa2a032c5da4b9027e653b8744f8cf"
+  }
+}

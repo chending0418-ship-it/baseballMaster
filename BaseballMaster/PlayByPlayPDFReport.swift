@@ -26,7 +26,7 @@ struct PlayByPlayPDFReport {
     var gameMode: GameMode = .standard
 
     var entries: [PlayByPlayEntry] {
-        let all = game.scoringEvents ?? []
+        let all = (game.scoringEvents ?? []).filter { !$0.isPregameLineupAdjustment }
         let owners = Dictionary(uniqueKeysWithValues: appearances.flatMap { pa in pa.events.map { ($0.id, pa.id) } })
         var groups: [UUID: [ScoringEventRecord]] = [:]
         var owner = appearances.first?.id
@@ -49,14 +49,16 @@ struct PlayByPlayPDFReport {
         let selected = entries.filter { appearanceID == nil || $0.appearance.id == appearanceID }
         let title = appearanceID == nil ? "逐打席比赛速报" : "\(selected.first?.appearance.sequenceLabel ?? "单打席")速报"
         return ReportPDFCanvas.render(kind: "PLAY BY PLAY / 逐打席速报", title: title,
-            subtitle: "\(game.awayTeam.name) vs \(game.homeTeam.name) · \(playedAt.map { ReportPDFCanvas.dateText($0, includesTime: true) } ?? "比赛时间未记录") · \(game.isFinal ? "已结束" : "进行中")",
+            subtitle: "\(game.awayTeam.name) vs \(game.homeTeam.name) · \(playedAt.map { ReportPDFCanvas.dateText($0, includesTime: true) } ?? "比赛时间未记录") · \(game.isFinal ? "已结束" : "进行中")" + (game.rulesSnapshot?.isSlowPitch == true ? " · " + (game.rulesSnapshot?.summary ?? "") : ""),
             generatedAt: generatedAt) { canvas in
             if game.statisticsIncomplete == true { canvas.paragraph("过程或责任待确认 · 统计可能不完整", bold: true) }
             if selected.isEmpty {
                 canvas.paragraph("暂无可导出的逐打席记录", size: 16, bold: true)
                 canvas.paragraph("旧记录若仅有中文日志而没有打席归属与局面快照，不能还原逐球局面。可在完整比赛记录中查看原文。", muted: true)
-                if !game.playLog.isEmpty {
-                    canvas.table(title: "原始比赛记录", headers: ["局次", "记录"], rows: game.playLog.map {
+                let setupLogIDs = Set((game.scoringEvents ?? []).filter(\.isPregameLineupAdjustment).compactMap(\.logEntryID))
+                let logs = game.playLog.filter { !setupLogIDs.contains($0.id) }
+                if !logs.isEmpty {
+                    canvas.table(title: "原始比赛记录", headers: ["局次", "记录"], rows: logs.map {
                         ["\($0.inning)局\($0.isTop ? "上" : "下")", $0.text]
                     }, weights: [1, 8])
                 }
@@ -98,6 +100,7 @@ struct PlayByPlayPDFReport {
         return ReportPDFCanvas.render(kind: "逐打席 / 文字简版", title: title,
             subtitle: "\(game.awayTeam.name) vs \(game.homeTeam.name) · \(playedAt.map { ReportPDFCanvas.dateText($0, includesTime: true) } ?? "比赛时间未记录") · \(game.isFinal ? "已结束" : "进行中")",
             generatedAt: generatedAt, pageSize: ReportPDFCanvas.portraitPageSize) { canvas in
+            if game.rulesSnapshot?.isSlowPitch == true { canvas.paragraph(game.rulesSnapshot?.summary ?? "", size: 10, muted: true) }
             if game.statisticsIncomplete == true { canvas.paragraph("过程或责任待确认 · 统计可能不完整", bold: true) }
             guard !selected.isEmpty else {
                 canvas.paragraph("暂无可导出的打席文字记录。", size: 11)
