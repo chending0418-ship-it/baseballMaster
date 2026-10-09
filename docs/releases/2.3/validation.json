@@ -454,5 +454,275 @@
       }
     ],
     "reference": "https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications"
+  },
+  "coreFeatureArtworkSupplement": {
+    "checkedAt": "2026-10-09T03:45:23.225280+00:00",
+    "countPerSize": 9,
+    "totalImages": 27,
+    "additionalFeatures": [
+      "普通棒球现场记分",
+      "球队与球员统计"
+    ],
+    "capture": {
+      "appVersion": "2.3",
+      "build": "1",
+      "simulator": "B894FF83-208D-40E3-A57B-CD570DCBAAEC",
+      "model": "iPhone 17 Pro Max",
+      "runtime": "iOS 26.1",
+      "syntheticInMemoryData": true,
+      "binarySHA256": "05c78ed97a105d4ef48afd0595ebf82dab0418a2172e4d5fa923442f3ccd72a6",
+      "screenshots": [
+        {
+          "file": "output/releases/2.3/app-store/raw/08.png",
+          "sha256": "745f9e86ce65afcd2858ebf4803dd2137e317e821ca83855105006beb25a1e2d",
+          "sourceAttachment": {
+            "configurationName": "Test Scheme Action",
+            "deviceId": "B894FF83-208D-40E3-A57B-CD570DCBAAEC",
+            "deviceName": "iPhone 17 Pro Max",
+            "exportedFileName": "365C82F9-E8E3-4E1E-A531-43CD25F159B6.png",
+            "isAssociatedWithFailure": false,
+            "suggestedHumanReadableName": "AppStore-01-现场记分_0_8784A653-0629-4E5F-967A-1F3BB50E5BE0.png",
+            "timestamp": 1791517443.281
+          },
+          "state": "Confirmed Play Ball, then one ball and one called strike"
+        },
+        {
+          "file": "output/releases/2.3/app-store/raw/09.png",
+          "sha256": "604ec4bdb363a0cbfedb610c3b15b2171dbf5c106ec939af62d4ed388f633654",
+          "sourceAttachment": {
+            "configurationName": "Test Scheme Action",
+            "deviceId": "B894FF83-208D-40E3-A57B-CD570DCBAAEC",
+            "deviceName": "iPhone 17 Pro Max",
+            "exportedFileName": "E51E7B79-3B4B-4B89-BF9E-B339964482E2.png",
+            "isAssociatedWithFailure": false,
+            "suggestedHumanReadableName": "AppStore-07-数据统计_0_64EF0BAF-2947-41C6-8F04-8FDC8B6ED83D.png",
+            "timestamp": 1791517451.331
+          },
+          "state": "Existing statistics overview with one completed synthetic game"
+        }
+      ],
+      "automationPassed": true,
+      "testSourceRestored": true
+    },
+    "format": "8-bit RGB PNG, no alpha",
+    "visualReviewPassed": true,
+    "files": [
+      {
+        "file": "iphone-6.3/01-成人慢垒记分.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/01.png",
+        "sha256": "fae6c1a4aecb2c87d422d75ccbc4b128c39674a9054e78174f2e4388d6de5721"
+      },
+      {
+        "file": "iphone-6.3/02-双方阵容.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/02.png",
+        "sha256": "750094417a824c9a3344ae632a92cd73d115bbb57a3b3f880bc289b125e6799e"
+      },
+      {
+        "file": "iphone-6.3/03-本场慢垒规则.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/03.png",
+        "sha256": "5ba21ca535bc7b22dbd6f72c7cfd6a4e77a7d5e1285d7361fdaf3a566a3fb4e5"
+      },
+      {
+        "file": "iphone-6.3/04-Illegal裁判结果.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/04.png",
+        "sha256": "d3e8293f51fa31d8dcb613e6a9b8c343fb5047b5d0e0911f9f9eaee8c8ff1162"
+      },
+      {
+        "file": "iphone-6.3/05-慢垒文字直播.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/05.png",
+        "sha256": "d2aaa35e84eb160584bd9a8a27d944f72b657eab9938e709c45a40cfade460ad"
+      },
+      {
+        "file": "iphone-6.3/06-历史纠错.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/06.png",
+        "sha256": "63d2a0bb3cfd08f0feb605ad8627cf36aa11a91d2ffcfb1940dd9d165e1d6ab9"
+      },
+      {
+        "file": "iphone-6.3/07-完整战报.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/07.png",
+        "sha256": "d221582d5f783a1673d6f59848031b5fe1318f1a83b605be04f755e3e4c0c345"
+      },
+      {
+        "file": "iphone-6.3/08-棒球现场记分.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/08.png",
+        "sha256": "2f85c2180bcc52d9847c3b11e36dbcd8cb93346fcd06b66096c2cb5857c6701c"
+      },
+      {
+        "file": "iphone-6.3/09-球队与球员统计.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/09.png",
+        "sha256": "cfb719207cfaba2c638bdfce40408a06880e8ddd77b96aa409983091b81b1933"
+      },
+      {
+        "file": "iphone-6.9/01-成人慢垒记分.png",
+        "width": 1320,
+        "height": 2868,
+        "alpha": false,
+        "source": "raw/01.png",
+        "sha256": "12262bbfb9796b764d19d7fe0bfb11052650069f540fbb5db918d010637caedf"
+      },
+      {
+        "file": "iphone-6.9/02-双方阵容.png",
+        "width": 1320,
+        "height": 2868,
+        "alpha": false,
+        "source": "raw/02.png",
+        "sha256": "b4e479b369e23f2e9d57886405e5cbcdab6e21efce7f362d11874a345a6c2cc5"
+      },
+      {
+        "file": "iphone-6.9/03-本场慢垒规则.png",
+        "width": 1320,
+        "height": 2868,
+        "alpha": false,
+        "source": "raw/03.png",
+        "sha256": "d3d87be0a987d5b49fad49665d9489d5b30b34af62074cb16d380addaae739d7"
+      },
+      {
+        "file": "iphone-6.9/04-Illegal裁判结果.png",
+        "width": 1320,
+        "height": 2868,
+        "alpha": false,
+        "source": "raw/04.png",
+        "sha256": "082958ac2cf749509d67792cec7db73b807c9484a51d6476f6a150e20214909b"
+      },
+      {
+        "file": "iphone-6.9/05-慢垒文字直播.png",
+        "width": 1320,
+        "height": 2868,
+        "alpha": false,
+        "source": "raw/05.png",
+        "sha256": "cb557d4cec1278b6945ad9c01b8e41442001b3fb8aa19297296cad21bfc95796"
+      },
+      {
+        "file": "iphone-6.9/06-历史纠错.png",
+        "width": 1320,
+        "height": 2868,
+        "alpha": false,
+        "source": "raw/06.png",
+        "sha256": "eb3154776f273c2b0312e9bfb12dd2b1ec5d916637db3717fcc86e0471e2134c"
+      },
+      {
+        "file": "iphone-6.9/07-完整战报.png",
+        "width": 1320,
+        "height": 2868,
+        "alpha": false,
+        "source": "raw/07.png",
+        "sha256": "cae0b51e38d31376882675947f70de8e983c3a0dcc27b83aea70eef9d1afb427"
+      },
+      {
+        "file": "iphone-6.9/08-棒球现场记分.png",
+        "width": 1320,
+        "height": 2868,
+        "alpha": false,
+        "source": "raw/08.png",
+        "sha256": "141e6d0b2aaf1ec5cee6ac7bcca451914519ebbe7ca074c1da4b8a40c2ecdca7"
+      },
+      {
+        "file": "iphone-6.9/09-球队与球员统计.png",
+        "width": 1320,
+        "height": 2868,
+        "alpha": false,
+        "source": "raw/09.png",
+        "sha256": "c3c7e6da51affb80227cba0580bb6350190ff686d4b1c28a873ac65da76e85e4"
+      },
+      {
+        "file": "iphone-6.5/01-成人慢垒记分.png",
+        "width": 1242,
+        "height": 2688,
+        "alpha": false,
+        "source": "raw/01.png",
+        "sha256": "8cdc43f667199651c57305f45706e29d6764dd2d790272154680f82fdae1d91d"
+      },
+      {
+        "file": "iphone-6.5/02-双方阵容.png",
+        "width": 1242,
+        "height": 2688,
+        "alpha": false,
+        "source": "raw/02.png",
+        "sha256": "7d66d50379fe33a97c1353e1eb3554ed26cc9c45a459dc22103f6ae1cd8f65f8"
+      },
+      {
+        "file": "iphone-6.5/03-本场慢垒规则.png",
+        "width": 1242,
+        "height": 2688,
+        "alpha": false,
+        "source": "raw/03.png",
+        "sha256": "403342e3b66d66d9de9cf63df044a3c6bb7054c5b26c43dac8ccc71e68fd5286"
+      },
+      {
+        "file": "iphone-6.5/04-Illegal裁判结果.png",
+        "width": 1242,
+        "height": 2688,
+        "alpha": false,
+        "source": "raw/04.png",
+        "sha256": "4bb5c35940306ddacc3e937b788c9a37645af6172ec80ce74a0ca65a3e86b80d"
+      },
+      {
+        "file": "iphone-6.5/05-慢垒文字直播.png",
+        "width": 1242,
+        "height": 2688,
+        "alpha": false,
+        "source": "raw/05.png",
+        "sha256": "a283c04314e09023aa5ac8013b5d95555f325133fee4f4b06bc4b58e1c3abc51"
+      },
+      {
+        "file": "iphone-6.5/06-历史纠错.png",
+        "width": 1242,
+        "height": 2688,
+        "alpha": false,
+        "source": "raw/06.png",
+        "sha256": "691b335e16fd16beb558cf484f20117dcaf009cfd023d69f005d5e2456472c61"
+      },
+      {
+        "file": "iphone-6.5/07-完整战报.png",
+        "width": 1242,
+        "height": 2688,
+        "alpha": false,
+        "source": "raw/07.png",
+        "sha256": "95cf167edb49c874723cb3ef13eab133b9a2708f71b3336a4ffe52f8be833d21"
+      },
+      {
+        "file": "iphone-6.5/08-棒球现场记分.png",
+        "width": 1242,
+        "height": 2688,
+        "alpha": false,
+        "source": "raw/08.png",
+        "sha256": "3ce8d73e1c04111a0c3d88043ef91ef4a2db963a8cd7138e874f0badffcb999e"
+      },
+      {
+        "file": "iphone-6.5/09-球队与球员统计.png",
+        "width": 1242,
+        "height": 2688,
+        "alpha": false,
+        "source": "raw/09.png",
+        "sha256": "ffbf885f84c0327178c2ed6827ebddfc76f0c6c1d05dd33be08c07dbee4a932e"
+      }
+    ]
   }
 }

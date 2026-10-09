@@ -13,7 +13,9 @@ const data = [
 ["04","Illegal裁判结果","Illegal 宣告","按最终结果记录","区分实际投出、未投罚球和裁判最终判定","2.3 新增 · 非法投球","球数、实际投球与比赛责任一起保存"],
 ["05","慢垒文字直播","亲友打开链接","跟上每个打席","慢垒规则、Free 与完整打序同步展示","2.3 适配 · 手机网页观赛","主动开播 · 只读观赛 · 无需安装 App"],
 ["06","历史纠错","把遗漏补回来","先核对后续影响","换人、守位、局面与失误，按记录时点更正","历史纠错 · 三模式适配","草稿预览，确认后保存"],
-["07","完整战报","比赛留下记录","记录成为战报","投手实际出局与完整阵容，如实进入统计","2.3 完善 · 统计与导出","赛前调整不进入导出的打席明细"]
+["07","完整战报","比赛留下记录","记录成为战报","投手实际出局与完整阵容，如实进入统计","2.3 完善 · 统计与导出","赛前调整不进入导出的打席明细"],
+["08","棒球现场记分","棒球现场记分","每一球都记清","球数、击球与跑垒，跟着场上结果记录","核心功能 · 普通棒球","九人守备 · 实时垒况 · 投打对决"],
+["09","球队与球员统计","看球队表现","也看球员成长","按球队、赛季或指定比赛，回看每份数据","核心功能 · 统计与报告","打击 · 投手 · 守备 · PDF 报告"]
 ].map(([id,name,line1,line2,detail,tag,foot])=>({id,name,line1,line2,detail,tag,foot}));
 function html(item,w,h) {
  const s=w/1320;
@@ -28,7 +30,7 @@ function html(item,w,h) {
  .detail{position:absolute;left:99px;top:615px;margin:0;font-size:36px;line-height:1.45;letter-spacing:0;color:#d0e0d7}
  .phone{position:absolute;left:202px;top:770px;width:916px;padding:13px;background:#183733;border:2px solid #658276;border-radius:88px;box-shadow:0 26px 80px #00151480}.phone img{display:block;width:886px;height:auto;border-radius:74px}
  .footer{position:absolute;bottom:73px;width:100%;text-align:center;color:#a6c4b6;font-size:28px;letter-spacing:1px}
- </style><div class="canvas"><div class="field"></div><div class="brand"><img src="../source/app-icon.png"><div class="wordmark">BASEBALL<span>MASTER</span><small>棒球比赛记录大师</small></div></div><div class="number">${item.id} / 07</div><div class="tag">${item.tag}</div><h1>${item.line1}<span>${item.line2}</span></h1><p class="detail">${item.detail}</p><div class="phone"><img src="../raw/${item.id}.png" alt="真实 App 界面：${item.name}"></div><div class="footer">${item.foot}</div></div></html>`;
+ </style><div class="canvas"><div class="field"></div><div class="brand"><img src="../source/app-icon.png"><div class="wordmark">BASEBALL<span>MASTER</span><small>棒球比赛记录大师</small></div></div><div class="number">${item.id} / ${String(data.length).padStart(2,'0')}</div><div class="tag">${item.tag}</div><h1>${item.line1}<span>${item.line2}</span></h1><p class="detail">${item.detail}</p><div class="phone"><img src="../raw/${item.id}.png" alt="真实 App 界面：${item.name}"></div><div class="footer">${item.foot}</div></div></html>`;
 }
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
@@ -52,10 +54,15 @@ function html(item,w,h) {
   }
   await page.close();
  }
- const gallery=`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>BaseballMaster 2.3 · App Store 宣传图</title><style>*{box-sizing:border-box}body{margin:0;padding:42px;background:#e8eee8;color:#092a2a;font-family:-apple-system,'PingFang SC',sans-serif}h1{font-size:30px;margin:0 0 10px}p{font-size:16px;margin:0 0 32px;color:#4c675f}.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:18px}figure{margin:0}img{width:100%;display:block;border-radius:12px;box-shadow:0 8px 25px #092a2a1c}figcaption{font-size:15px;font-weight:600;margin:14px 0}a{color:inherit;text-decoration:none}.caption{margin-top:22px}</style><h1>BaseballMaster · App Store 宣传图</h1><p>2.3 实际界面 · 成人慢垒／双方阵容／本场规则／Illegal／文字直播／历史纠错／完整战报</p><div class="grid">${data.map(d=>`<figure><a href="iphone-6.3/${d.id}-${d.name}.png"><img src="iphone-6.3/${d.id}-${d.name}.png"></a><figcaption>${d.id} · ${d.name}</figcaption></figure>`).join('')}</div><p class="caption">6.1／6.3 英寸栏目：1206 × 2622　 ·　6.9 英寸：1320 × 2868　 ·　6.5 英寸：1242 × 2688　 ·　真实 App 与配套观赛网页，合成比赛数据</p></html>`;
+ const gallery=`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>BaseballMaster 2.3 · App Store 宣传图</title><style>*{box-sizing:border-box}body{margin:0;padding:42px;background:#e8eee8;color:#092a2a;font-family:-apple-system,'PingFang SC',sans-serif}h1{font-size:30px;margin:0 0 10px}p{font-size:16px;margin:0 0 32px;color:#4c675f}.grid{display:grid;grid-template-columns:repeat(9,1fr);gap:18px}figure{margin:0}img{width:100%;display:block;border-radius:12px;box-shadow:0 8px 25px #092a2a1c}figcaption{font-size:15px;font-weight:600;margin:14px 0}a{color:inherit;text-decoration:none}.caption{margin-top:22px}</style><h1>BaseballMaster · App Store 宣传图</h1><p>2.3 实际界面 · 版本更新 + 原有核心功能：棒球现场记分／球队与球员统计</p><div class="grid">${data.map(d=>`<figure><a href="iphone-6.3/${d.id}-${d.name}.png"><img src="iphone-6.3/${d.id}-${d.name}.png"></a><figcaption>${d.id} · ${d.name}</figcaption></figure>`).join('')}</div><p class="caption">6.1／6.3 英寸栏目：1206 × 2622　 ·　6.9 英寸：1320 × 2868　 ·　6.5 英寸：1242 × 2688　 ·　真实 App 与配套观赛网页，合成比赛数据</p></html>`;
  fs.writeFileSync(path.join(out,'index.html'),gallery);
- const page=await browser.newPage({viewport:{width:2100,height:850},deviceScaleFactor:1});
+ const page=await browser.newPage({viewport:{width:2700,height:850},deviceScaleFactor:1});
  await page.goto('file://'+path.join(out,'index.html'));await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:path.join(out,'overview.png'),fullPage:true});
+ const supplementGallery=gallery.replace('repeat(9,1fr)','repeat(2,1fr)').replace(/<div class="grid">[\s\S]*?<\/div><p class="caption">/, '<div class="grid">'+data.slice(-2).map(d=>`<figure><img src="iphone-6.3/${d.id}-${d.name}.png"><figcaption>${d.id} · ${d.name}</figcaption></figure>`).join('')+'</div><p class="caption">');
+ fs.writeFileSync(path.join(out,'core-features.html'),supplementGallery);
+ await page.setViewportSize({width:1200,height:850});
+ await page.goto('file://'+path.join(out,'core-features.html'));await page.evaluate(async()=>{await document.fonts.ready;await Promise.all([...document.images].map(i=>i.decode()))});
+ await page.screenshot({path:path.join(out,'core-features-overview.png'),fullPage:true});
  fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify({created:'2026-10-09',appVersion:'2.3 (1)',items:data,files:manifest},null,2)+'\n');
  const websiteAssets=path.resolve(__dirname,'../public/assets');
  for(const [id,name] of [['01','scoring'],['02','slow-lineup'],['03','slow-rules'],['02','pregame-lineup'],['05','slow-live']]){
