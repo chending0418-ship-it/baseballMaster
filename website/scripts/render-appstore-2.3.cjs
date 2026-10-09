@@ -32,10 +32,10 @@ function html(item,w,h) {
 }
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
- fs.mkdirSync(out,{recursive:true});for(const d of ['iphone-6.9','iphone-6.5','source'])fs.mkdirSync(path.join(out,d),{recursive:true});
+ fs.mkdirSync(out,{recursive:true});for(const d of ['iphone-6.3','iphone-6.9','iphone-6.5','source'])fs.mkdirSync(path.join(out,d),{recursive:true});
  fs.copyFileSync(path.resolve(__dirname,'../../BaseballMaster/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png'),path.join(out,'source/app-icon.png'));
  const manifest=[];
- for (const [dir,w,h] of [['iphone-6.9',1320,2868],['iphone-6.5',1242,2688]]) {
+ for (const [dir,w,h] of [['iphone-6.3',1206,2622],['iphone-6.9',1320,2868],['iphone-6.5',1242,2688]]) {
   const page=await browser.newPage({viewport:{width:w,height:h},deviceScaleFactor:1});
   for(const item of data){
    const stem=`${item.id}-${item.name}`;
@@ -52,11 +52,11 @@ function html(item,w,h) {
   }
   await page.close();
  }
- const gallery=`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>BaseballMaster 2.3 · App Store 宣传图</title><style>*{box-sizing:border-box}body{margin:0;padding:42px;background:#e8eee8;color:#092a2a;font-family:-apple-system,'PingFang SC',sans-serif}h1{font-size:30px;margin:0 0 10px}p{font-size:16px;margin:0 0 32px;color:#4c675f}.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:18px}figure{margin:0}img{width:100%;display:block;border-radius:12px;box-shadow:0 8px 25px #092a2a1c}figcaption{font-size:15px;font-weight:600;margin:14px 0}a{color:inherit;text-decoration:none}.caption{margin-top:22px}</style><h1>BaseballMaster · App Store 宣传图</h1><p>2.3 实际界面 · 成人慢垒／双方阵容／本场规则／Illegal／文字直播／历史纠错／完整战报</p><div class="grid">${data.map(d=>`<figure><a href="iphone-6.9/${d.id}-${d.name}.png"><img src="iphone-6.9/${d.id}-${d.name}.png"></a><figcaption>${d.id} · ${d.name}</figcaption></figure>`).join('')}</div><p class="caption">6.9 英寸：1320 × 2868　 ·　6.5 英寸：1242 × 2688　 ·　真实 App 与配套观赛网页，合成比赛数据</p></html>`;
+ const gallery=`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>BaseballMaster 2.3 · App Store 宣传图</title><style>*{box-sizing:border-box}body{margin:0;padding:42px;background:#e8eee8;color:#092a2a;font-family:-apple-system,'PingFang SC',sans-serif}h1{font-size:30px;margin:0 0 10px}p{font-size:16px;margin:0 0 32px;color:#4c675f}.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:18px}figure{margin:0}img{width:100%;display:block;border-radius:12px;box-shadow:0 8px 25px #092a2a1c}figcaption{font-size:15px;font-weight:600;margin:14px 0}a{color:inherit;text-decoration:none}.caption{margin-top:22px}</style><h1>BaseballMaster · App Store 宣传图</h1><p>2.3 实际界面 · 成人慢垒／双方阵容／本场规则／Illegal／文字直播／历史纠错／完整战报</p><div class="grid">${data.map(d=>`<figure><a href="iphone-6.3/${d.id}-${d.name}.png"><img src="iphone-6.3/${d.id}-${d.name}.png"></a><figcaption>${d.id} · ${d.name}</figcaption></figure>`).join('')}</div><p class="caption">6.1／6.3 英寸栏目：1206 × 2622　 ·　6.9 英寸：1320 × 2868　 ·　6.5 英寸：1242 × 2688　 ·　真实 App 与配套观赛网页，合成比赛数据</p></html>`;
  fs.writeFileSync(path.join(out,'index.html'),gallery);
  const page=await browser.newPage({viewport:{width:2100,height:850},deviceScaleFactor:1});
  await page.goto('file://'+path.join(out,'index.html'));await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:path.join(out,'overview.png'),fullPage:true});
- fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify({created:'2026-10-08',appVersion:'2.3 (1)',items:data,files:manifest},null,2)+'\n');
+ fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify({created:'2026-10-09',appVersion:'2.3 (1)',items:data,files:manifest},null,2)+'\n');
  const websiteAssets=path.resolve(__dirname,'../public/assets');
  for(const [id,name] of [['01','scoring'],['02','slow-lineup'],['03','slow-rules'],['02','pregame-lineup'],['05','slow-live']]){
   await sharp(path.join(out,'raw',id+'.png')).resize({width:660}).jpeg({quality:88}).toFile(path.join(websiteAssets,name+'-2.3.jpg'));

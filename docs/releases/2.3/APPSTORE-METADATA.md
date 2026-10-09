@@ -22,6 +22,6 @@
 
 本版主要内容为成人慢垒、10 / Free、独立扩展打序、初始球数、两种界外策略、Illegal、时间赛、赛前双方阵容和投手实际出局修复。小组件仍属后续待办，不写入本版新增内容。慢垒按用户配置与裁判确认结果记录，不宣称获得赛事规则认证。
 
-截图与总览见 [APPSTORE-ARTWORK.md](APPSTORE-ARTWORK.md)。提供两套七张真实界面 PNG；总览和传播海报不上传到截图栏目。本次没有制作 App Preview 视频。
+截图与总览见 [APPSTORE-ARTWORK.md](APPSTORE-ARTWORK.md)。提供三套各七张真实界面 PNG，覆盖 6.1／6.3、6.9 与 6.5 英寸栏目；总览和传播海报不上传到截图栏目。本次没有制作 App Preview 视频。
 
 [社交稿](social-announcement-zh-Hans.txt) 的正式上架措辞仅在商店实际发布后使用；官网当前标注 2.3 准备发布，可下载版本以商店为准。
