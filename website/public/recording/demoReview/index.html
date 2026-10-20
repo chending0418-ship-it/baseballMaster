@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#092a2a">
+  <meta name="description" content="BaseballMaster 局面记录 V4：自由设置局面，连续练习记分。同一球场记录球种、落点与守备传球。">
+  <title>局面记录 V4 · BaseballMaster</title>
+  <link rel="icon" href="/assets/app-icon.png">
+  <link rel="stylesheet" href="/recording/demoReview/style.css?v=4">
+</head>
+<body>
+  <header class="review-bar"><a class="brand" href="/" aria-label="BaseballMaster 首页"><img src="/assets/app-icon.png" width="36" height="36" alt=""><span><b>BASEBALL</b>MASTER<small>棒球比赛记录大师</small></span></a><span class="version">V4 交互评审</span></header>
+  <main class="workspace">
+    <aside class="guide"><span class="eyebrow">RECORDING / V4</span><h1>下一球，<br>顺手记下来。</h1><p>自由设置局面，连续练习记分。</p><div class="guide-note"><b>一张球场，记清整球</b><p>选球种、点落点，再依次点处理球的守备员。安打也记录传球路线；落点与守备分别保存。</p><b>整球一次完成</b><p>跑者先带入建议去向，再按现场修改。安打与后续进垒分别保留。</p><b>随时返回修改</b><p>撤销、恢复、补充这球，均会同步恢复球数和垒况。</p></div><p class="scope">使用合成阵容，打者依次轮换。数据仅在当前浏览器练习，不写入正式比赛；刷新会清空。</p></aside>
+    <section class="mobile-workspace" aria-label="记分操作演示">
+      <div class="scenario-bar"><button id="scenarioPicker" class="scenario-pick" aria-haspopup="dialog">自由练习 · 设置局面 ▾</button><button id="resetScenario" class="reset">重新开始</button></div>
+      <div id="taskHint" class="task-hint">自由记分 · 球种、落点与守备 · 浏览器练习数据</div>
+      <div class="phone" id="phone"><div id="app"></div><div id="overlay"></div><div id="toast" role="status" aria-live="polite"></div></div>
+      <div class="review-foot">无预设任务 · 可连续记录 · 刷新后清空练习数据</div>
+    </section>
+  </main>
+  <script type="module" src="/recording/demoReview/app.js?v=4"></script>
+</body>
+</html>

@@ -20,7 +20,8 @@ struct TeamRosterView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                SectionHeader(title: "球队管理", subtitle: "\(store.teams.count) 支球队")
+                SharedTeamsEntryView(directory: store.teamSharing)
+                SectionHeader(title: "本机球队管理", subtitle: "\(store.teams.count) 支球队")
 
                 if store.teams.isEmpty {
                     BMCard {
@@ -574,10 +575,13 @@ struct NewGameSetupView: View {
     @State private var scheduleForLater = false
     @State private var configureScheduleNow = false
     @State private var scheduledAt = Date().addingTimeInterval(86_400)
+    @State private var backfill = false
+    @State private var playedAt = Date()
     @State private var showLineup = false
     @State private var showScheduleConfirmation = false
     @State private var showScheduledCreated = false
     @State private var createdGameID: UUID?
+    @State private var shareTeamID: UUID?
     @State private var posterGame: StoredGame?
 
     init(scheduleForLater: Bool = false, configureScheduleNow: Bool = false) {
@@ -590,7 +594,7 @@ struct NewGameSetupView: View {
     }
 
     private var selectedTeam: Team? {
-        store.teams.first(where: { $0.id == selectedTeamID })
+        store.recordableTeams.first(where: { $0.id == selectedTeamID })
     }
 
     private var selectedOpponent: Team? {
@@ -692,11 +696,11 @@ struct NewGameSetupView: View {
                         if mode == .team {
                             settingPickerRow(title: "本队", icon: "person.3.fill") {
                                 Picker("本队", selection: $selectedTeamID) {
-                                    ForEach(store.teams) { team in
-                                        Text("\(team.shortName) · \(team.players.count) 人").tag(Optional(team.id))
+                                    ForEach(store.recordableTeams) { team in
+                                        Text("\(team.shortName) · \(store.teams.contains { $0.id == team.id } ? "本机球队" : "共享球队") · \(team.players.count) 人").tag(Optional(team.id))
                                     }
                                 }
-                                .pickerStyle(.menu)
+                                .pickerStyle(.menu).accessibilityIdentifier("new-game-own-team")
                             }
 
                             Divider().padding(.leading, 42)
@@ -779,6 +783,22 @@ struct NewGameSetupView: View {
                             .font(.system(size: 15, weight: .semibold))
                             .frame(minHeight: 58)
                             .accessibilityIdentifier("scheduled-game-date")
+                        } else {
+                            Divider()
+                            Toggle("补填过去的比赛", isOn: $backfill)
+                                .tint(BMTheme.green)
+                                .frame(minHeight: 54)
+                                .accessibilityIdentifier("backfill-game-toggle")
+                            if backfill {
+                                Divider()
+                                DatePicker("比赛时间", selection: $playedAt, in: ...Date(),
+                                           displayedComponents: [.date, .hourAndMinute])
+                                    .frame(minHeight: 58)
+                                    .accessibilityIdentifier("backfill-game-date")
+                                Text("选择实际比赛日期与时间，计时仍从开始记录后独立计算。")
+                                    .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                                    .padding(.bottom, 10)
+                            }
                         }
                     }
                 }
@@ -909,6 +929,8 @@ struct NewGameSetupView: View {
                                 .frame(minHeight: 54)
                             if hasPitcherInningsLimit {
                                 Divider()
+                                Text("按登板局数限制：登板未投球也计一局，同一局不重复；与统计 IP 分开。")
+                                    .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                                 settingPickerRow(title: "投球局数上限", icon: "number.circle.fill") {
                                     Picker("投球局数上限", selection: $pitcherInningsLimit) {
                                         ForEach(1...7, id: \.self) { Text("\($0) 局").tag($0) }
@@ -931,6 +953,8 @@ struct NewGameSetupView: View {
                         }
                     }
                 }
+
+                BMCard { ShareDestinationPicker(teamID: $shareTeamID) }
 
                 Button {
                     if scheduleForLater && !configureScheduleNow {
@@ -961,7 +985,7 @@ struct NewGameSetupView: View {
         .scrollDismissesKeyboard(.interactively)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if selectedTeamID == nil || !store.teams.contains(where: { $0.id == selectedTeamID }) {
+            if selectedTeamID == nil || !store.recordableTeams.contains(where: { $0.id == selectedTeamID }) {
                 selectedTeamID = store.currentTeam?.id
             }
             if selectedOpponentID == nil || !store.opponentTeams.contains(where: { $0.id == selectedOpponentID }) {
@@ -981,7 +1005,9 @@ struct NewGameSetupView: View {
                     homeTeam: home,
                     rules: rules,
                     scheduledAt: scheduleForLater ? scheduledAt : Date(),
-                    startImmediately: !scheduleForLater
+                    playedAt: !scheduleForLater && backfill ? playedAt : nil,
+                    startImmediately: !scheduleForLater,
+                    shareTeamID: shareTeamID
                 )
             } else if let opponent = selectedOpponent, let own = selectedTeam {
                 ObservedGameLineupView(
@@ -989,8 +1015,10 @@ struct NewGameSetupView: View {
                     homeTeam: isHome ? own : opponent,
                     rules: rules,
                     scheduledAt: scheduleForLater ? scheduledAt : Date(),
+                    playedAt: !scheduleForLater && backfill ? playedAt : nil,
                     startImmediately: !scheduleForLater,
-                    ourTeamID: own.id
+                    ourTeamID: own.id,
+                    shareTeamID: shareTeamID
                 )
             }
         }
@@ -1015,8 +1043,16 @@ struct NewGameSetupView: View {
             Button("返回比赛首页") { store.returnToGameHome() }
             Button("制作宣传海报") { posterGame = store.games.first { $0.id == createdGameID } }
         } message: {
-            Text("可从比赛首页的“即将进行”打开，并在开赛前补充名单和完成设置。")
+            Text("可从比赛首页的“即将进行”打开，并在开赛前补充名单和完成设置。" + scheduledSharingResult)
         }
+    }
+
+    private var scheduledSharingResult: String {
+        guard let shareTeamID else { return "" }
+        if let createdGameID, store.sharedMatches.publishedMatch(sourceID: createdGameID, teamID: shareTeamID) != nil {
+            return "\n已共享到球队，成员可以查看这场比赛。"
+        }
+        return "\n共享尚未完成：" + (store.sharedMatches.message ?? "请稍后从比赛设置重试共享。")
     }
 
     private func saveSchedule() {
@@ -1032,7 +1068,10 @@ struct NewGameSetupView: View {
                 scheduledAt: scheduledAt
             )
         }
-        showScheduledCreated = true
+        Task {
+            if let shareTeamID, let game = store.games.first(where: { $0.id == createdGameID }) { await store.sharedMatches.publish(game, teamID: shareTeamID) }
+            showScheduledCreated = true
+        }
     }
 
     private func settingPickerRow<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
@@ -1394,6 +1433,9 @@ struct ScheduledGamePreparationView: View {
                     }
                 }
 
+                if let stored = store.games.first(where: { $0.id == gameID }), stored.sharedGameID == nil {
+                    BMCard { LocalMatchShareView(game: stored) }
+                }
                 Button {
                     showLineup = true
                 } label: {
@@ -1645,6 +1687,8 @@ private struct GameRulesEditor: View {
                     .frame(minHeight: 54)
                 if rules.pitcherInningsLimit != nil {
                     Divider()
+                    Text("按登板局数限制：登板未投球也计一局，同一局不重复；与统计 IP 分开。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                     settingPickerRow(title: "投球局数上限", icon: "number.circle.fill") {
                         Picker(
                             "投球局数上限",
@@ -2027,7 +2071,7 @@ struct LineupSelectionView: View {
             parts.append("单投手 \(pitches) 球限制，剩余 \(rules.pitchWarningRemaining ?? 0) 球提醒")
         }
         if let innings = rules.pitcherInningsLimit {
-            parts.append("单投手最多 \(innings) 局")
+            parts.append("单投手最多登板 \(innings) 局（未投球也计入）")
         }
         if rules.designatedHitterEnabled {
             parts.append(rules.twoWayPlayerEnabled ? "启用大谷条款" : "启用指定打击 DH")
@@ -2093,9 +2137,11 @@ struct ObservedGameLineupView: View {
     let homeTeam: Team
     let rules: GameRules
     let scheduledAt: Date
+    let playedAt: Date?
     let startImmediately: Bool
     let scheduledGameID: UUID?
     let ourTeamID: UUID?
+    let shareTeamID: UUID?
     @State private var savedMessage: String?
 
     @State private var draggingPlayerID: UUID?
@@ -2112,9 +2158,11 @@ struct ObservedGameLineupView: View {
         homeTeam: Team,
         rules: GameRules,
         scheduledAt: Date = Date(),
+        playedAt: Date? = nil,
         startImmediately: Bool = true,
         scheduledGameID: UUID? = nil,
         ourTeamID: UUID? = nil,
+        shareTeamID: UUID? = nil,
         initialAwayLineup: [LineupAssignment] = [],
         initialHomeLineup: [LineupAssignment] = []
     ) {
@@ -2122,8 +2170,10 @@ struct ObservedGameLineupView: View {
         self.homeTeam = homeTeam
         self.rules = rules
         self.scheduledAt = scheduledAt
+        self.playedAt = playedAt
         self.startImmediately = startImmediately
         self.scheduledGameID = scheduledGameID
+        self.shareTeamID = shareTeamID
         self.ourTeamID = ourTeamID
         func preparedLineup(_ initial: [LineupAssignment], for team: Team) -> [LineupAssignment] {
             let playerIDs = Set(team.players.map(\.id))
@@ -2226,7 +2276,7 @@ struct ObservedGameLineupView: View {
                     } else {
                         store.setCurrentTeam(id: ourTeamID)
                         createdGameID = store.startNewGame(opponent: opponent, isHome: isHome, rules: rules, lineup: ownLineup,
-                                                          opponentLineup: opponentLineup, scheduledAt: scheduledAt, startImmediately: startImmediately)
+                                                          opponentLineup: opponentLineup, scheduledAt: scheduledAt, playedAt: playedAt, startImmediately: startImmediately)
                         if startImmediately { showGame = createdGameID != nil } else { showScheduledCreated = createdGameID != nil }
                     }
                 } else if let scheduledGameID {
@@ -2244,13 +2294,19 @@ struct ObservedGameLineupView: View {
                         awayLineup: awayAssignments,
                         homeLineup: homeAssignments,
                         scheduledAt: scheduledAt,
+                        playedAt: playedAt,
                         startImmediately: startImmediately
                     )
-                    if startImmediately { showGame = true } else { showScheduledCreated = true }
+                    if startImmediately { showGame = createdGameID != nil } else { showScheduledCreated = createdGameID != nil }
                 }
             }
         } message: {
             Text(confirmationSummary)
+        }
+        .onChange(of: createdGameID) { id in
+            if let shareTeamID, let game = store.games.first(where: { $0.id == id }) {
+                Task { await store.sharedMatches.publish(game, teamID: shareTeamID) }
+            }
         }
         .sheet(item: $posterGame) { stored in
             NavigationStack {
@@ -2294,7 +2350,7 @@ struct ObservedGameLineupView: View {
             if rules.isSlowPitch {
                 Menu("增加打者／全员加入") {
                     ForEach(bench) { player in
-                        Button(player.compactName) {
+                        Button(player.lineupSelectionText) {
                             assignments.wrappedValue.append(LineupAssignment(playerID: player.id, battingOrder: assignments.wrappedValue.count + 1, position: nil))
                         }
                     }
@@ -2331,7 +2387,7 @@ struct ObservedGameLineupView: View {
                         if !bench.isEmpty {
                             Menu {
                                 ForEach(bench) { replacement in
-                                    Button(replacement.name) {
+                                    Button(replacement.lineupSelectionText) {
                                         assignments.wrappedValue[index].playerID = replacement.id
                                     }
                                 }
@@ -2339,6 +2395,8 @@ struct ObservedGameLineupView: View {
                                 Image(systemName: "person.2.badge.gearshape.fill")
                                     .foregroundStyle(BMTheme.secondaryText)
                             }
+                            .accessibilityLabel("更换\(player.name)")
+                            .accessibilityIdentifier("lineup-player-menu-\(role)-\(index)")
                         }
                         Menu {
                             if rules.isSlowPitch {
@@ -2379,6 +2437,7 @@ struct ObservedGameLineupView: View {
                     .padding(12)
                     .background(BMTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 13))
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("observed-lineup-row-\(team.id)-\(assignment.playerID)")
                     .onDrag {
                         draggingPlayerID = assignment.playerID
@@ -2430,6 +2489,7 @@ struct ObservedGameLineupView: View {
 
     private var confirmationSummary: String {
         var text = "\(awayTeam.shortName)（客队）对 \(homeTeam.shortName)（主队）\n\(rules.summary)"
+        if let playedAt { text += "\n补填比赛：\(playedAt.formatted(date: .abbreviated, time: .shortened))" }
         if !startImmediately {
             text += "\n开赛：\(scheduledAt.formatted(date: .abbreviated, time: .shortened))"
         }

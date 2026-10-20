@@ -1,0 +1,32 @@
+[Unit]
+Description=BaseballMaster 3.0 private team collaboration
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/lhcos-data
+
+[Service]
+Type=simple
+User=baseballmaster-team
+Group=baseballmaster-team
+WorkingDirectory=/www/server/baseballmaster-collaboration/current
+EnvironmentFile=/etc/baseballmaster-collaboration.env
+ExecStartPre=/usr/bin/mountpoint -q /lhcos-data
+ExecStart=/www/server/baseballmaster-node/node-v24.21.0-linux-x64/bin/node collaboration/server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+LimitCORE=0
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/www/server/baseballmaster-collaboration-data /lhcos-data/baseballmaster-private-v3
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=2G
+MemorySwapMax=0
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

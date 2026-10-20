@@ -29,7 +29,7 @@ enum ReportStatisticsTables {
     static func rate(_ value: Double, available: Bool) -> String { available ? statText(value) : "-" }
 
     static func playerName(_ row: PlayerSeasonStatistics) -> String {
-        row.player.compactName + (row.isCurrentRoster ? "" : "（历史）")
+        row.player.compactName + (row.isUnlinked ? "（未关联）" : row.isCurrentRoster ? "" : "（历史）")
     }
 
     static func batting(_ canvas: ReportPDFCanvas, title: String, players: [PlayerSeasonStatistics], totalGames: Int, includeTotal: Bool = true, compact: Bool = false) {
@@ -84,19 +84,20 @@ struct TeamSeasonPDFReport {
     }
 
     func pdfData(generatedAt: Date = Date()) -> Data {
-        ReportPDFCanvas.render(kind: "SEASON REPORT / 球队赛季报告", title: team.name,
-                               subtitle: "\(seasonName) · \(isFiltered ? "所选比赛统计" : "完整球队赛季数据") · \(summary.games.count) 场已结束比赛", generatedAt: generatedAt) { canvas in
+        ReportPDFCanvas.render(kind: "ANNUAL REPORT / 球队年度报告", title: team.name,
+                               subtitle: "\(seasonName) · \(isFiltered ? "所选比赛统计" : "完整球队年度数据") · \(summary.games.count) 场已结束比赛", generatedAt: generatedAt) { canvas in
+            if summary.games.contains(where: { $0.sharedGameID != nil }) { canvas.paragraph("共享比赛按这台设备最近收到的球队记录统计，不包含尚未同步的修改。年度统计按已确认的球员对应关系汇总，比赛中的原始球员资料保留。", size: 9, muted: true) }
             if summary.games.contains(where: { $0.state.statisticsIncomplete == true }) { canvas.paragraph("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold: true) }
             canvas.metrics([("比赛", "\(summary.games.count)"), ("胜 / 负 / 平", "\(summary.wins) / \(summary.losses) / \(summary.ties)"),
                             ("得分", "\(summary.runs)"), ("失分", "\(summary.runsAllowed)"),
                             ("打率 AVG", ReportStatisticsTables.rate(summary.batting.average, available: summary.batting.atBats > 0)),
                             ("防御率 ERA", summary.pitching.outsRecorded > 0 ? String(format: "%.2f", summary.pitching.era) : "-")])
-            canvas.paragraph("范围：本球队、本赛季\(isFiltered ? "所选" : "全部")已结束比赛与全部球员；不受页面搜索和排序影响。观赛、练习、未来安排及进行中比赛不计入。历史参赛球员仍保留贡献；旧版独立个人记录不计入球队汇总。", size: 9, muted: true)
+            canvas.paragraph("范围：本球队、本年度\(isFiltered ? "所选" : "全部")已结束比赛与全部球员；不受页面搜索和排序影响。观赛、练习、未来安排及进行中比赛不计入。历史参赛球员仍保留贡献；旧版独立个人记录不计入球队汇总。", size: 9, muted: true)
             if summary.pendingCount > 0 {
                 canvas.paragraph("数据待复核：当前范围内有 \(summary.pendingCount) 条待确认记录，数据可能在复核后变化。", size: 10, bold: true)
             }
             let gameRows = summary.games.map { game in
-                [ReportPDFCanvas.dateText(game.startedAt ?? game.scheduledAt ?? game.createdAt), game.opponent.name,
+                [ReportPDFCanvas.dateText(game.effectivePlayedAt, timeZone: game.playedTimeZone), game.opponent.name,
                  game.isHome ? "主场" : "客场", game.ourScore == game.opponentScore ? "平" : (game.ourScore > game.opponentScore ? "胜" : "负"),
                  "\(game.ourScore) : \(game.opponentScore)", "\(game.isHome ? game.state.homeHits : game.state.awayHits)",
                  "\(game.isHome ? game.state.homeErrors : game.state.awayErrors)"]
@@ -105,17 +106,17 @@ struct TeamSeasonPDFReport {
                          rows: gameRows, weights: [1.8, 4, 1, 1, 2.8, 1, 1])
             canvas.newPage()
             let players = summary.filteredPlayers(category: .batting, metric: .plateAppearances, ascending: false, recordsOnly: false)
-            ReportStatisticsTables.batting(canvas, title: "赛季打击", players: players, totalGames: summary.games.count)
+            ReportStatisticsTables.batting(canvas, title: "年度打击", players: players, totalGames: summary.games.count)
             canvas.newPage()
             if !summary.games.isEmpty && summary.games.allSatisfy({ $0.rules.gameMode == .coachPitch }) { canvas.paragraph("教练投手模式：投手数据不适用") }
-            else { ReportStatisticsTables.pitching(canvas, title: "赛季投手", players: players) }
-            ReportStatisticsTables.fielding(canvas, title: "赛季守备", players: players)
+            else { ReportStatisticsTables.pitching(canvas, title: "年度投手", players: players) }
+            ReportStatisticsTables.fielding(canvas, title: "年度守备", players: players)
             ReportStatisticsTables.legend(canvas)
         }
     }
 
     func write() throws -> URL {
-        try ReportExportFile.write(pdfData(), name: "\(team.shortName)-\(seasonName)-球队赛季报告")
+        try ReportExportFile.write(pdfData(), name: "\(team.shortName)-\(seasonName)-球队年度报告")
     }
 }
 
@@ -132,20 +133,21 @@ struct PlayerStatisticsPDFReport {
     init(store: GameStore, player: Player, seasonID: String, teamID: UUID?, gameIDs: Set<UUID>, scopeGameIDs: Set<UUID>? = nil) {
         self.player = player
         seasonName = store.statisticsSeasons.first { $0.id == seasonID }?.name ?? seasonID
-        teamName = store.teams.first { teamID == nil ? $0.players.contains(where: { $0.id == player.id }) : $0.id == teamID }?.name ?? "历史球员"
+        teamName = store.statisticsTeams.first { teamID == nil ? $0.players.contains(where: { $0.id == player.id }) : $0.id == teamID }?.name ?? "历史球员"
         let seasonRecords = store.gameRecords(for: player, seasonID: seasonID, teamID: teamID)
             .filter { scopeGameIDs == nil || scopeGameIDs!.contains($0.id) }
         let selectedIDs = gameIDs.intersection(Set(seasonRecords.map(\.id)))
         seasonGameCount = seasonRecords.count
         records = seasonRecords.filter { selectedIDs.contains($0.id) }
         games = store.completedStatisticsGames(teamID: teamID, seasonID: seasonID)
-            .filter { selectedIDs.contains($0.id) && $0.statisticsParticipantIDs.contains(player.id) }
+            .filter { selectedIDs.contains($0.id) && !$0.statisticsSources(for: player.id).isEmpty }
         summary = store.playerStatistics(for: player, seasonID: seasonID, teamID: teamID, gameIDs: selectedIDs)
     }
 
     func pdfData(generatedAt: Date = Date()) -> Data {
         ReportPDFCanvas.render(kind: "PLAYER REPORT / 球员个人报告", title: player.name,
                                subtitle: "\(player.englishName) · \(player.numbersText) · \(teamName) · \(seasonName)\n范围：已选 \(records.count) / \(seasonGameCount) 场比赛", generatedAt: generatedAt) { canvas in
+            if games.contains(where: { $0.sharedGameID != nil }) { canvas.paragraph("共享比赛按这台设备最近收到的球队记录和已确认的球员对应关系统计，不包含尚未同步的修改。", size: 9, muted: true) }
             if games.contains(where: { $0.state.statisticsIncomplete == true }) { canvas.paragraph("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold: true) }
             canvas.metrics([("已选比赛", "\(records.count)"), ("打率 AVG", ReportStatisticsTables.rate(summary.batting.average, available: summary.batting.atBats > 0)),
                             ("安打 H", "\(summary.batting.hits)"), ("打点 RBI", "\(summary.batting.runsBattedIn)"),
@@ -169,7 +171,7 @@ struct PlayerStatisticsPDFReport {
             canvas.table(title: "逐场投手 · PITCHING GAME LOG", headers: ["日期 / 对手 / 结果", "IP", "H", "R", "ER", "BB", "SO", "P", "ERA"],
                          rows: records.map { record in
                 if games.first(where: { $0.id == record.id })?.rules.gameMode == .coachPitch { return [recordLabel(record)] + Array(repeating: "不适用", count: 8) }
-                guard let p = games.first(where: { $0.id == record.id })?.state.pitching[player.id] else {
+                guard let p = games.first(where: { $0.id == record.id })?.recordedPitching(for: player.id) else {
                     return [recordLabel(record)] + Array(repeating: "-", count: 8)
                 }
                 return [recordLabel(record), p.inningsText, "\(p.hits)", "\(p.runs)", "\(p.earnedRuns)", "\(p.walks)", "\(p.strikeouts)",
@@ -177,7 +179,7 @@ struct PlayerStatisticsPDFReport {
             }, weights: [5] + Array(repeating: 1, count: 8))
             canvas.table(title: "逐场守备 · FIELDING GAME LOG", headers: ["日期 / 对手 / 结果", "PO", "A", "E", "DP", "FPCT"],
                          rows: records.map { record in
-                guard let f = games.first(where: { $0.id == record.id })?.state.fielding[player.id] else {
+                guard let f = games.first(where: { $0.id == record.id })?.recordedFielding(for: player.id) else {
                     return [recordLabel(record)] + Array(repeating: "-", count: 5)
                 }
                 return [recordLabel(record), "\(f.putouts)", "\(f.assists)", "\(f.errors)", "\(f.doublePlays)", f.percentage.map(statText) ?? "-"]
@@ -187,7 +189,7 @@ struct PlayerStatisticsPDFReport {
     }
 
     private func recordLabel(_ record: PlayerGameRecord) -> String {
-        "\(ReportPDFCanvas.dateText(record.date))\n\(record.opponent)\n\(record.result)"
+        "\(ReportPDFCanvas.dateText(record.date, timeZone: games.first(where: { $0.id == record.id })?.playedTimeZone ?? .current))\n\(record.opponent)\n\(record.result)"
     }
 
     func write() throws -> URL {
@@ -200,10 +202,11 @@ struct GameBoxScorePDFReport {
     let game: GameState
     let rules: GameRules?
     let playedAt: Date?
+    var timeZone: TimeZone = .current
 
     func pdfData(generatedAt: Date = Date()) -> Data {
         ReportPDFCanvas.render(kind: "BOX SCORE / 单场比赛战报", title: "\(game.awayTeam.name) vs \(game.homeTeam.name)",
-                               subtitle: "比赛时间：\(playedAt.map { ReportPDFCanvas.dateText($0, includesTime: true) } ?? "未记录") · \(game.isFinal ? "已结束" : "进行中 / 非最终数据") · " + ((rules ?? game.rulesSnapshot)?.isSlowPitch == true ? ((rules ?? game.rulesSnapshot)?.summary ?? "") : "规定 \(rules?.scheduledInnings ?? game.scheduledInnings) 局"), generatedAt: generatedAt) { canvas in
+                               subtitle: "比赛时间：\(playedAt.map { ReportPDFCanvas.dateText($0, includesTime: true, timeZone: timeZone) } ?? "未记录") · \(game.isFinal ? "已结束" : "进行中 / 非最终数据") · " + ((rules ?? game.rulesSnapshot)?.isSlowPitch == true ? ((rules ?? game.rulesSnapshot)?.summary ?? "") : "规定 \(rules?.scheduledInnings ?? game.scheduledInnings) 局"), generatedAt: generatedAt) { canvas in
             if game.pitchingOutsReviewRequired == true { canvas.paragraph("旧比赛投手局数待核对：可重放历史不完整，保留原始值。", bold: true) }
             if game.statisticsIncomplete == true { canvas.paragraph("过程或责任待确认 · 统计可能不完整", bold: true) }
             canvas.metrics([("客队 · \(String(game.awayTeam.shortName.prefix(14)))", "\(game.awayScore)"),

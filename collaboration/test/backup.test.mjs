@@ -1,0 +1,74 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID,randomBytes } from 'node:crypto';
+import { mkdtempSync,rmSync,readFileSync,writeFileSync,readdirSync,existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { CollaborationStore,createCollaborationServer,BASE } from '../server.mjs';
+import { SafetyJournal } from '../safety-journal.mjs';
+import { createEncryptedBackup,restoreEncryptedBackup } from '../backup.mjs';
+import { maintain } from '../maintenance.mjs';
+import { fixture } from './match-fixture.mjs';
+const secret=()=>randomBytes(32).toString('base64url'),op=b=>({operationID:randomUUID(),...b});
+async function setup(t) {
+ const folder=mkdtempSync(join(tmpdir(),'bm-backup-'));t.after(()=>rmSync(folder,{recursive:true,force:true}));
+ const key=randomBytes(32),journalID=randomUUID(),journalDirectory=join(folder,'independent-storage'),database=join(folder,'primary.sqlite');
+ const journal=new SafetyJournal({directory:journalDirectory,key,journalID,create:true}),s=new CollaborationStore({database,safetyJournal:journal});t.after(()=>s.close());
+ s.db.prepare("INSERT INTO metadata VALUES('safetyJournalID',?)").run(journalID);
+ const credential=secret(),admin=s.register(credential,{label:'管理员的 iPhone'}).deviceID,team=s.createTeam(admin,op({name:'海浪私有名单',nickname:'陈教练',recoveryToken:secret()})).teamID;
+ const member=s.register(secret(),{label:'队员设备'}).deviceID,token=secret();s.invite(team,admin,op({role:'member',token}));s.redeem(member,op({token,nickname:'队员'}));
+ const completed=s.games.create(team,admin,op(fixture(true)));s.games.access(team,completed.id,admin,op({mode:'public',baseAccessVersion:1}));
+ const ongoing=s.games.create(team,admin,op(fixture())),live=s.games.live(team,ongoing.id,admin,op({enabled:true}));
+ const archive=join(folder,'daily.sealed');const saved=await createEncryptedBackup({database,destination:archive,key});
+ return {folder,key,journalID,journalDirectory,journal,s,database,credential,admin,member,team,completed,ongoing,live,archive,saved};
+}
+test('encrypted backup round-trip applies newer deletion/revocation ledger, closes old links and requires explicit device review',async t=>{
+ const a=await setup(t);assert.equal(a.saved.verified,true);assert.ok(a.saved.backupBytes<a.saved.databaseBytes);
+ const bytes=readFileSync(a.archive);assert.equal(bytes.includes(Buffer.from(a.credential)),false);assert.equal(bytes.includes(Buffer.from('海浪私有名单')),false);
+ const deletedAt=a.s.now();
+ a.s.games.deleteOrRestore(a.team,a.completed.id,a.admin,op({deleted:true,baseRevision:1,writerEpoch:1}));
+ const m=a.s.membership(a.team,a.member);a.s.changeMember(a.team,m.id,a.admin,op({role:'member',active:false,baseRevision:m.revision}));
+ const destination=join(a.folder,'restored.sqlite'),result=await restoreEncryptedBackup({archive:a.archive,destination,key:a.key,journalDirectory:a.journalDirectory});
+ assert.equal(result.quarantined,false);assert.ok(result.appliedDenials>=2);
+ const app=createCollaborationServer({database:destination});app.server.listen(0,'127.0.0.1');await new Promise(r=>app.server.once('listening',r));
+ t.after(async()=>{app.server.closeAllConnections();await new Promise(r=>app.server.close(r));app.store.close();});
+ const s=app.store;assert.equal(s.listTeams(a.member).teams.length,0);
+ assert.equal(s.games.document(a.team,a.completed.id,a.admin).deleted,true);
+ assert.throws(()=>s.games.publicRead(a.completed.viewCode));assert.throws(()=>s.games.publicRead(a.live.liveCode,null,true));
+ assert.equal(s.games.document(a.team,a.ongoing.id,a.admin).payload.id,a.ongoing.localID ?? JSON.parse(a.s.db.prepare('SELECT payload FROM shared_games WHERE id=?').get(a.ongoing.id).payload).id);
+ assert.notEqual(s.listTeams(a.admin).recoveryEpoch,a.s.listTeams(a.admin).recoveryEpoch);
+ assert.ok(Math.abs(s.db.prepare('SELECT updated_at FROM shared_games WHERE id=?').get(a.completed.id).updated_at-deletedAt)<1000);
+ const origin=`http://127.0.0.1:${app.server.address().port}${BASE}`,headers={'X-BM-Protocol':'1','Content-Type':'application/json',Authorization:'Bearer '+a.credential};
+ const blocked=await fetch(origin+'/teams',{method:'POST',headers,body:JSON.stringify(op({name:'旧队列',nickname:'教练'}))});assert.equal(blocked.status,409);assert.equal((await blocked.json()).error.code,'recovery_review');
+ const wrong=await fetch(origin+'/devices/recovery-review',{method:'POST',headers,body:JSON.stringify({recoveryEpoch:randomUUID()})});assert.equal(wrong.status,409);
+ const reviewed=await fetch(origin+'/devices/recovery-review',{method:'POST',headers,body:JSON.stringify({recoveryEpoch:result.recoveryEpoch})});assert.equal(reviewed.status,200);
+ const allowed=await fetch(origin+'/teams',{method:'POST',headers,body:JSON.stringify(op({name:'新确认的球队',nickname:'教练'}))});assert.equal(allowed.status,200);
+});
+test('missing journal restores only into quarantine; wrong key, corrupt archive and corrupt ledger refuse activation or overwrite',async t=>{
+ const a=await setup(t),quarantine=join(a.folder,'quarantine.sqlite');
+ const result=await restoreEncryptedBackup({archive:a.archive,destination:quarantine,key:a.key});assert.equal(result.quarantined,true);
+ const store=new CollaborationStore({database:quarantine});assert.equal(store.db.prepare("SELECT value FROM metadata WHERE key='restoreQuarantine'").get().value,'1');store.close();
+ await assert.rejects(restoreEncryptedBackup({archive:a.archive,destination:quarantine,key:a.key}));
+ const wrong=join(a.folder,'wrong.sqlite');await assert.rejects(restoreEncryptedBackup({archive:a.archive,destination:wrong,key:randomBytes(32),journalDirectory:a.journalDirectory}));assert.equal(existsSync(wrong),false);
+ const corrupted=join(a.folder,'corrupt.sealed'),bytes=readFileSync(a.archive);bytes[bytes.length-4]^=1;writeFileSync(corrupted,bytes);
+ await assert.rejects(restoreEncryptedBackup({archive:corrupted,destination:wrong,key:a.key,journalDirectory:a.journalDirectory}));assert.equal(existsSync(wrong),false);
+ const file=readdirSync(a.journalDirectory).find(n=>/^[a-f0-9]{64}\.sealed$/.test(n));writeFileSync(join(a.journalDirectory,file),'corrupt');
+ await assert.rejects(restoreEncryptedBackup({archive:a.archive,destination:wrong,key:a.key,journalDirectory:a.journalDirectory}));assert.equal(existsSync(wrong),false);
+});
+test('independent journal failure rolls back the database; a denial written before a failed commit remains conservative on restore',async t=>{
+ const a=await setup(t),original=a.s.safetyJournal;
+ a.s.safetyJournal={record(){throw new Error('independent storage unavailable');}};
+ const body=op({deleted:true,baseRevision:1,writerEpoch:1});assert.throws(()=>a.s.games.deleteOrRestore(a.team,a.completed.id,a.admin,body));
+ assert.equal(a.s.games.document(a.team,a.completed.id,a.admin).deleted,false);
+ a.s.safetyJournal={record(store){original.record(store);throw new Error('failure after durable denial');}};
+ assert.throws(()=>a.s.games.deleteOrRestore(a.team,a.completed.id,a.admin,body));assert.equal(a.s.games.document(a.team,a.completed.id,a.admin).deleted,false);
+ a.s.safetyJournal=original;
+ const destination=join(a.folder,'conservative.sqlite');await restoreEncryptedBackup({archive:a.archive,destination,key:a.key,journalDirectory:a.journalDirectory});
+ const restored=new CollaborationStore({database:destination});assert.equal(restored.games.document(a.team,a.completed.id,a.admin).deleted,true);restored.close();
+});
+test('restoration does not extend deletion retention; expiry removes payload and the backup cannot revive the old source',async t=>{
+ const a=await setup(t);a.s.games.deleteOrRestore(a.team,a.completed.id,a.admin,op({deleted:true,baseRevision:1,writerEpoch:1}));
+ const destination=join(a.folder,'expired.sqlite');await restoreEncryptedBackup({archive:a.archive,destination,key:a.key,journalDirectory:a.journalDirectory});
+ const restored=new CollaborationStore({database:destination,now:()=>Date.now()+31*86400000});
+ maintain(restored);assert.equal(restored.db.prepare('SELECT payload FROM shared_games WHERE id=?').get(a.completed.id).payload,'{}');restored.close();
+});

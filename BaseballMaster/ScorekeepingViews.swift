@@ -67,7 +67,7 @@ struct ScorekeepingView: View {
                                 .font(.caption.bold()).frame(maxWidth: .infinity, minHeight: 32)
                         }.tint(BMTheme.green).accessibilityIdentifier("swap-opening-sides")
                     }
-                    pitchControls
+                    pitchControls.disabled(!store.canEditCurrentMatch)
 
                     HStack(spacing: 10) {
                         Button {
@@ -193,12 +193,30 @@ struct ScorekeepingView: View {
                     .accessibilityIdentifier("return-game-home")
                 }
             }
+            if let stored = store.activeStoredGame, let shared = store.sharedMatches.match(localID: stored.id) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Text(store.sharedMatches.status(stored.id))
+                        NavigationLink {
+                            SharedMatchDetailView(coordinator: store.sharedMatches, matchID: shared.id)
+                        } label: { Label("比赛同步与交接", systemImage: "person.2") }
+                            .accessibilityIdentifier("open-match-sync-detail")
+                        Button { showHistoryCorrection = true } label: { Label("纠正记录", systemImage: "clock.arrow.circlepath") }
+                            .accessibilityIdentifier("open-history-correction")
+                        NavigationLink(destination: GamePosterView(game: stored)) {
+                            Label("比赛宣传海报", systemImage: "photo.badge.plus")
+                        }.accessibilityIdentifier("open-game-poster")
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .accessibilityLabel("比赛同步与更多操作")
+                    .accessibilityIdentifier("match-sync-controls")
+                }
+            } else {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showHistoryCorrection = true } label: { Image(systemName: "clock.arrow.circlepath") }
                     .accessibilityLabel("纠正记录").accessibilityIdentifier("open-history-correction")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                if store.liveBroadcasts.isEnabled {
+                if store.liveBroadcasts.isEnabled, store.activeGameID.map({ !store.sharedMatches.isShared($0) }) ?? true {
                     Button { showLiveBroadcast = true } label: {
                         Image(systemName: "antenna.radiowaves.left.and.right")
                     }
@@ -214,6 +232,7 @@ struct ScorekeepingView: View {
                     .accessibilityLabel("比赛宣传海报")
                     .accessibilityIdentifier("open-game-poster")
                 }
+            }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(destination: BoxScoreView()) {
@@ -639,7 +658,7 @@ struct ScorekeepingView: View {
             else { store.recordPitch(action) }
             haptic(.light)
         } label: {
-            Text(action.rawValue)
+            Text(action.title)
         }
         .buttonStyle(ScoreActionButtonStyle(color: color, filled: true))
         .accessibilityIdentifier("pitch-\(action.rawValue)")
@@ -1278,6 +1297,7 @@ struct SubstitutionSheet: View {
                              onSaved: { savedMessage = "阵容已保存，可继续调整" })
                 .environmentObject(store)
         }
+        .pitcherChangeConfirmation(store, onConfirmed: adjustmentSaved)
         .gameActionErrorAlert(store)
     }
 
@@ -1311,8 +1331,7 @@ struct SubstitutionSheet: View {
             playerList(
                 store.availablePitchers
             ) { player in
-                store.changePitcher(to: player)
-                adjustmentSaved()
+                if store.requestLineupChange(.pitcher(player)) { adjustmentSaved() }
             }
 
         case .pinchHitter:
@@ -1363,7 +1382,7 @@ struct SubstitutionSheet: View {
 
         case .fielderReplacementPlayer(let previous):
             playerList(store.fieldingBenchPlayers) { replacement in
-                if store.replaceFielder(previous, with: replacement) { adjustmentSaved() }
+                if store.requestLineupChange(.fielder(previous, replacement)) { adjustmentSaved() }
             }
 
         case .doubleSwitch:
@@ -1379,8 +1398,7 @@ struct SubstitutionSheet: View {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 ForEach(store.availableFieldPositions) { position in
                     Button {
-                        store.changeFieldingPosition(for: player, to: position)
-                        adjustmentSaved()
+                        if store.requestLineupChange(.position(player, position)) { adjustmentSaved() }
                     } label: {
                         VStack(spacing: 6) {
                             Text(position.shortName)
@@ -1593,14 +1611,8 @@ private struct DoubleSwitchEditor: View {
               let secondOut = store.activeFielders.first(where: { $0.id == secondOutID }),
               let firstIn = store.fieldingBenchPlayers.first(where: { $0.id == firstInID }),
               let secondIn = store.fieldingBenchPlayers.first(where: { $0.id == secondInID }) else { return }
-        if store.performDoubleSwitch(
-            firstOut: firstOut,
-            firstIn: firstIn,
-            firstPosition: firstPosition,
-            secondOut: secondOut,
-            secondIn: secondIn,
-            secondPosition: secondPosition
-        ) {
+        if store.requestLineupChange(.doubleSwitch(firstOut, firstIn, firstPosition,
+                                                   secondOut, secondIn, secondPosition)) {
             onComplete()
         }
     }
@@ -1745,5 +1757,40 @@ private struct GameActionErrorAlertModifier: ViewModifier {
 extension View {
     func gameActionErrorAlert(_ store: GameStore) -> some View {
         modifier(GameActionErrorAlertModifier(store: store))
+    }
+
+    func pitcherChangeConfirmation(_ store: GameStore, isLineupEditor: Bool = false,
+                                   onConfirmed: @escaping () -> Void) -> some View {
+        modifier(PitcherChangeConfirmationModifier(store: store, isLineupEditor: isLineupEditor,
+                                                   onConfirmed: onConfirmed))
+    }
+}
+
+private struct PitcherChangeConfirmationModifier: ViewModifier {
+    @ObservedObject var store: GameStore
+    let isLineupEditor: Bool
+    let onConfirmed: () -> Void
+
+    private var pending: GameStore.PendingPitcherChange? {
+        guard let value = store.pendingPitcherChange,
+              value.change.isLineupEditor == isLineupEditor else { return nil }
+        return value
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .interactiveDismissDisabled(pending != nil)
+            .alert("确认当前投手", isPresented: Binding(get: { pending != nil }, set: { _ in }),
+                   presenting: pending) { value in
+                Button("确认，是这位投手") {
+                    if store.confirmPitcherChange(id: value.id) { onConfirmed() }
+                }.accessibilityIdentifier("confirm-current-pitcher")
+                Button("选错了，重新选择", role: .cancel) { store.cancelPitcherChange() }
+                    .accessibilityIdentifier("cancel-pitcher-change")
+            } message: { value in
+                Text("\(value.teamName)\n原投手：\(value.previous.lineupSelectionText)\n新投手：\(value.candidate.lineupSelectionText)\n\n请核对场上实际投手。确认后才能继续记录；取消不改变记录。"
+                     + (store.activeRules?.pitcherInningsLimit.map { "\n本场限制 \($0) 个登板局。登板后即使未投球，也占用该局额度；同一局不重复计算。统计 IP 另按实际出局数累计。" } ?? ""))
+            }
+            .onDisappear { if pending != nil { store.cancelPitcherChange() } }
     }
 }

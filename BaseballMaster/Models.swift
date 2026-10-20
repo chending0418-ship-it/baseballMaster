@@ -97,6 +97,11 @@ struct Player: Identifiable, Hashable, Codable {
         numberTexts.isEmpty ? "暂无背号" : numberTexts.map { "#\($0)" }.joined(separator: " / ")
     }
 
+    var lineupSelectionText: String {
+        guard !chineseName.isEmpty || !englishName.isEmpty else { return numbersText }
+        return "\(name) · \(numbersText)"
+    }
+
     static func validNumberTexts(_ texts: [String]) -> Bool {
         !texts.isEmpty && Set(texts).count == texts.count && texts.allSatisfy { text in
             if text == "00" { return true }
@@ -383,12 +388,24 @@ struct LineupAssignment: Identifiable, Equatable, Codable {
     var id: UUID { playerID }
 }
 
+struct GameDateRevision: Equatable, Codable {
+    var changedAt: Date
+    var previousDate: Date
+    var playedAt: Date
+    var previousTimeZoneID: String?
+    var timeZoneID: String
+}
+
 struct StoredGame: Identifiable, Equatable, Codable {
-    let id: UUID
+    var id: UUID
     let createdAt: Date
     var updatedAt: Date
     var scheduledAt: Date?
     var startedAt: Date?
+    /// User-entered match time; never used to drive the scoring clock.
+    var playedAt: Date? = nil
+    var playedTimeZoneID: String? = nil
+    var dateRevisions: [GameDateRevision]? = nil
     let seasonID: String
     let ourTeamID: UUID?
     let opponentTeamID: UUID?
@@ -404,6 +421,12 @@ struct StoredGame: Identifiable, Equatable, Codable {
     var revision: Int? = nil
     var publicationState: String? = nil
     var pendingPublicationRevisions: [Int]? = nil
+    /// A restored shared copy remains read-only until current device ownership is verified.
+    var sharedTeamID: UUID? = nil
+    var sharedGameID: UUID? = nil
+    /// Explicit historical identity links; the match snapshot and event references stay intact.
+    var sharedPlayerLinks: [MatchPlayerLink]? = nil
+    var historySourceID: UUID? = nil
 
     init(
         id: UUID = UUID(),
@@ -411,6 +434,8 @@ struct StoredGame: Identifiable, Equatable, Codable {
         updatedAt: Date = Date(),
         scheduledAt: Date? = nil,
         startedAt: Date? = Date(),
+        playedAt: Date? = nil,
+        playedTimeZoneID: String? = nil,
         seasonID: String,
         ourTeamID: UUID?,
         opponentTeamID: UUID?,
@@ -427,6 +452,8 @@ struct StoredGame: Identifiable, Equatable, Codable {
         self.updatedAt = updatedAt
         self.scheduledAt = scheduledAt
         self.startedAt = startedAt
+        self.playedAt = playedAt
+        self.playedTimeZoneID = playedTimeZoneID ?? TimeZone.current.identifier
         self.seasonID = seasonID
         self.ourTeamID = ourTeamID
         self.opponentTeamID = opponentTeamID
@@ -446,6 +473,16 @@ struct StoredGame: Identifiable, Equatable, Codable {
     var ourTeam: Team { isHome ? state.homeTeam : state.awayTeam }
     var isObservation: Bool { isSpectator == true }
     var effectiveScheduledAt: Date { scheduledAt ?? createdAt }
+    var effectivePlayedAt: Date { playedAt ?? startedAt ?? scheduledAt ?? createdAt }
+    var displayDate: Date { status == .scheduled ? effectiveScheduledAt : effectivePlayedAt }
+    var playedTimeZone: TimeZone { playedTimeZoneID.flatMap(TimeZone.init(identifier:)) ?? .current }
+    var dateText: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = playedTimeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: displayDate)
+    }
 }
 
 struct PitchingLine: Equatable, Codable {
@@ -465,6 +502,66 @@ struct PitchingLine: Equatable, Codable {
     var innings: Double { Double(outsRecorded) / 3.0 }
     var era: Double { innings == 0 ? 0 : Double(earnedRuns) * 7.0 / innings }
     var whip: Double { innings == 0 ? 0 : Double(walks + hits) / innings }
+}
+
+/// Competition limits count innings in which a pitcher took the mound, even
+/// with zero pitches or outs. This projection is independent of statistical IP.
+struct PitcherInningUsage {
+    var inningsByPitcher: [UUID: Set<Int>] = [:]
+    var hasIncompleteHistory = false
+
+    func innings(for playerID: UUID) -> Set<Int> { inningsByPitcher[playerID] ?? [] }
+}
+
+extension GameState {
+    var pitcherInningUsage: PitcherInningUsage {
+        guard rulesSnapshot?.gameMode != .coachPitch else { return PitcherInningUsage() }
+        var usage = PitcherInningUsage()
+        var started = false
+        var hasOpeningConfirmation = false
+        var previousHalf: Int?
+        func include(_ situation: GameSituationSnapshot?) {
+            guard let situation,
+                  let pitcherID = situation.isTop ? situation.activeHomePitcherID : situation.activeAwayPitcherID else {
+                usage.hasIncompleteHistory = true
+                return
+            }
+            let half = (situation.inning - 1) * 2 + (situation.isTop ? 0 : 1)
+            if previousHalf == nil && half != 0 { usage.hasIncompleteHistory = true }
+            if let previousHalf, half < previousHalf || half > previousHalf + 1 {
+                usage.hasIncompleteHistory = true
+            }
+            previousHalf = half
+            usage.inningsByPitcher[pitcherID, default: []].insert(situation.inning)
+        }
+        for event in scoringEvents ?? [] {
+            guard !event.isPregameLineupAdjustment else { continue }
+            if event.notation == "PLAY" {
+                started = true
+                hasOpeningConfirmation = true
+            }
+            switch event.category {
+            case .pitch, .battedBall, .runner, .out, .violation, .tiebreak: started = true
+            default:
+                if event.notation == "HALF-END" || event.notation == "RESUME" { started = true }
+            }
+            guard started else { continue }
+            // A substitution's before/after snapshots retain both pitchers.
+            // Half transitions count only the team now taking the field.
+            include(event.beforeSituation)
+            include(event.afterSituation)
+        }
+        let hasLiveState = clockRunningSince != nil || clockElapsedSeconds != nil
+            || inning > 1 || !isTop || outs > 0 || !baseRunners.isEmpty
+            || homeScore > 0 || awayScore > 0
+            || pitching.values.contains { $0 != PitchingLine() }
+            || batting.values.contains { $0 != BattingLine() }
+        if started || hasLiveState {
+            include(situationSnapshot)
+            if !hasOpeningConfirmation { usage.hasIncompleteHistory = true }
+        }
+        return usage
+    }
 }
 
 struct FieldingLine: Equatable, Codable {
@@ -495,6 +592,15 @@ enum PitchAction: String, CaseIterable, Identifiable, Codable {
     case foul = "界外"
 
     var id: String { rawValue }
+
+    // Raw values are part of saved history commands; keep display wording separate.
+    var title: String {
+        switch self {
+        case .calledStrike: "好球 - 看"
+        case .swingingStrike: "好球 - 挥空"
+        default: rawValue
+        }
+    }
 }
 
 enum PlayOutcome: String, CaseIterable, Identifiable, Codable {
@@ -1547,4 +1653,19 @@ struct LiveLineupDraft {
         changes.append("#\(incoming.numberText) \(incoming.name) 替换 #\(outgoing.numberText) \(outgoing.name)" + (keepsDH ? "登板，原投手继续 DH" : "，接替本场棒次与守位"))
         return true
     }
+}
+
+/// Calendar years are derived from the match date, never from the legacy season label.
+enum MatchYear {
+    static func id(for date: Date, timeZone: TimeZone = .current) -> String {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = timeZone
+        return String(calendar.component(.year, from: date))
+    }
+    static var current: String { id(for: Date()) }
+}
+extension StoredGame {
+    var yearID: String { MatchYear.id(for: displayDate, timeZone: playedTimeZoneID.flatMap(TimeZone.init(identifier:)) ?? TimeZone(secondsFromGMT: 0)!) }
+}
+extension PlayerGameRecord {
+    var yearID: String { MatchYear.id(for: date) }
 }

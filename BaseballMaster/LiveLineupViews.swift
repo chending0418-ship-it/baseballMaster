@@ -10,6 +10,7 @@ struct LiveLineupEditor: View {
     @State private var replacement: LineupReplacement?
     @State private var saved = false
     @State private var confirmExit = false
+    @State private var returnAfterPitcherConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -124,24 +125,35 @@ struct LiveLineupEditor: View {
             }
             .interactiveDismissDisabled(draft.hasChanges)
             .confirmationDialog("还有未保存的阵容调整", isPresented: $confirmExit, titleVisibility: .visible) {
-                Button("保存并返回") { if saveDraft() { onCancel() } }
+                Button("保存并返回") {
+                    returnAfterPitcherConfirmation = true
+                    if saveDraft() { onCancel() }
+                }
                     .disabled(draft.validationMessage != nil)
                 Button("放弃调整并返回", role: .destructive, action: onCancel)
                 Button("继续调整", role: .cancel) {}
+            }
+            .pitcherChangeConfirmation(store, isLineupEditor: true) {
+                didSaveDraft()
+                if returnAfterPitcherConfirmation { onCancel() }
             }
             .gameActionErrorAlert(store)
         }
     }
 
-    private func save() { _ = saveDraft() }
+    private func save() { returnAfterPitcherConfirmation = false; _ = saveDraft() }
 
     @discardableResult
     private func saveDraft() -> Bool {
-        guard store.saveLineup(draft) else { return false }
+        guard store.requestLineupChange(.lineup(draft)) else { return false }
+        didSaveDraft()
+        return true
+    }
+
+    private func didSaveDraft() {
         draft = store.lineupDraft(forHomeTeam: draft.isHomeTeam)
         saved = true
         onSaved()
-        return true
     }
 
     private func playerLabel(_ player: Player, active: Bool) -> some View {

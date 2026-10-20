@@ -1,0 +1,8 @@
+[Unit]
+Description=BaseballMaster operational checks every 15 minutes
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Unit=baseballmaster-team-monitor.service
+[Install]
+WantedBy=timers.target

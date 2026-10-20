@@ -11,3 +11,12 @@ tmp/
 live/data/
 live/node_modules/
 live/.env
+
+collaboration/data/
+collaboration/node_modules/
+collaboration/.env
+
+# Generated release bundles and unpacked delivery copies remain local.
+/docs/releases/**/*.zip
+/docs/releases/**/*.pdf
+/docs/releases/2.3/BaseballMaster-2.3-AppStore/

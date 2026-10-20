@@ -28,7 +28,7 @@ App 源码目录、工程名、资源引用、Bundle ID 和品牌名称沿用既
 
 - 根目录的中文版本计划保持易找、易编辑；新增想法写到计划顶部的“随手补充区”。
 - 当前功能和发布文档放 `docs/releases/<版本>/`，常用技术文档采用清楚的英文文件名，如 `CORRECTION-TODO.md`、`RELEASE-HANDOFF.md`。
-- 尚未开始开发的新版本方案可放 `docs/plans/`。3.0 的规划、TODO 与验收统一维护在 [3.0-TEAM-COLLABORATION.md](plans/3.0-TEAM-COLLABORATION.md)；本轮只写文档，不创建 3.0 项目目录、工作区或生成文件目录。根目录 README／TODO 与文档索引只链接和概述，不复制一份详细清单。
+- 尚未开始开发的新版本方案可放 `docs/plans/`。3.0 发布总览使用根目录 [3.0 发布功能计划.md](<../3.0 发布功能计划.md>)，集中说明功能、状态和提交入口；详细方案、原编号 TODO 与验收继续维护在 [3.0-TEAM-COLLABORATION.md](plans/3.0-TEAM-COLLABORATION.md)。2026-10-09 页面与流程评审的可复现的设计材料保存在 `docs/design/3.0/`，截图与 PDF 放在 `output/samples/3.0-ui-review/`，渲染检查放在 `output/validation/3.0/ui-review/`；不另建项目目录或工作区。根目录 README／TODO 与文档索引只链接和概述，不复制一份详细需求清单。
 - 已被新方案替代的草案、历史需求与记录放 `docs/archive/plans/<版本>/`，不与当前待办混放。
 - 旧截图放 `docs/archive/screenshots/`；当前交付截图放相应版本的发布目录。
 - 链接优先使用相对路径；重命名后同步更新引用。链接到另一个本机工作区时须明确标注。
@@ -78,3 +78,5 @@ node output/releases/2.1/app-store/source/render.cjs
 测试使用具体模拟器；指定 `-resultBundlePath` 时，结果放入 `output/validation/<版本>/<任务>/`，每次使用尚不存在的 `.xcresult` 路径。素材渲染需要 Node.js、Playwright、Sharp 和 Chrome；直播原图采集还需先启动本地直播服务。
 
 移动后的实际编译与操作验证见 [目录整理与回归记录](maintenance/2026-09-29-directory-cleanup.md)。
+
+2026-10-11 开始 3.0 开发：自有球队服务放在 `collaboration/`，身份接口说明为 `collaboration/PROTOCOL.md`；与 `live/` 的现有实时直播服务分开。3.0 开发证据在 `output/validation/3.0/development/`，构建缓存在 `output/cache/xcode/3.0/`，进度记录在 `docs/releases/3.0/DEVELOPMENT.md`。

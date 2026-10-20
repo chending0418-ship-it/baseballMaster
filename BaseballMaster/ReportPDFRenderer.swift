@@ -64,9 +64,10 @@ final class ReportPDFCanvas {
         y = pageNumber == 1 ? 62 : 70
     }
 
-    static func dateText(_ date: Date, includesTime: Bool = false) -> String {
+    static func dateText(_ date: Date, includesTime: Bool = false, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = timeZone
         formatter.dateFormat = includesTime ? "yyyy-MM-dd HH:mm" : "yyyy-MM-dd"
         return formatter.string(from: date)
     }

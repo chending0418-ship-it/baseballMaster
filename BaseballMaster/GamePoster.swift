@@ -47,8 +47,8 @@ struct GamePoster {
             text(game.state.homeTeam.name, CGRect(x: 64, y: 643, width: 952, height: 198), size: 174, color: ink, weight: .black)
             block(CGRect(x: 72, y: 869, width: 936, height: 5), ink)
 
-            let date = game.scheduledAt ?? game.startedAt ?? game.createdAt
-            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "zh_CN")
+            let date = game.displayDate
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "zh_CN"); formatter.timeZone = game.playedTimeZone
             formatter.dateFormat = "yyyy / MM.dd"
             text(formatter.string(from: date), CGRect(x: 72, y: 907, width: 592, height: 85), size: 67, color: ink, weight: .black)
             formatter.dateFormat = "EEEE"

@@ -203,6 +203,7 @@ struct BaseballDiamondView: View {
         .frame(height: game.rulesSnapshot?.isSlowPitch == true ? max(fixedHeight ?? 330, 330) : fixedHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("完整棒球场，\(game.fieldingTeam.shortName)守备，垒上\(game.baseRunners.count)人")
+        .accessibilityIdentifier("scorekeeping-field")
     }
 
     private func outfield(in size: CGSize) -> Path {
@@ -314,7 +315,9 @@ struct BaseballDiamondView: View {
             Circle().stroke(isPitcher ? .white.opacity(0.7) : BMTheme.brandNavy.opacity(0.2), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.16), radius: 2, y: 1)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(position.fullName)，\(player.name)")
+        .accessibilityIdentifier("fielder-\(position.rawValue)")
     }
 
     private func basePosition(_ base: Base, in size: CGSize) -> CGPoint {
@@ -364,7 +367,11 @@ struct BaseballDiamondView: View {
         // The portrait card is taller than a square field diagram. A small,
         // symmetric overscan keeps the true quarter-circle large and lets the
         // card crop only its two far corners instead of leaving a blank header.
-        let outfieldRadius = max(1, (size.width / 2 - sideInset) * rootTwo * 1.30)
+        // Practice guidance and the reset toolbar shorten this card. Keep the
+        // center fielder's entire marker below the top edge at every height.
+        let widthRadius = (size.width / 2 - sideInset) * rootTwo * 1.30
+        let heightRadius = (home.y - 40) / 0.62
+        let outfieldRadius = max(1, min(widthRadius, heightRadius))
         let fenceOffset = outfieldRadius / rootTwo
         let leftFence = CGPoint(x: home.x - fenceOffset, y: home.y - fenceOffset)
         let rightFence = CGPoint(x: home.x + fenceOffset, y: home.y - fenceOffset)

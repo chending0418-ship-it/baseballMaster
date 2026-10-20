@@ -1,0 +1,43 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomBytes,randomUUID} from 'node:crypto';
+import {CollaborationStore,createCollaborationServer,BASE} from '../server.mjs';
+const secret=()=>randomBytes(32).toString('base64url'),op=b=>({operationID:randomUUID(),...b});
+test('device rotation is retryable, retains membership, refuses old or pending credentials and reused secrets',t=>{
+ const s=new CollaborationStore();t.after(()=>s.close());
+ const old=secret(),device=s.register(old,{label:'iPhone'}).deviceID,next=secret(),body=op({newToken:next});
+ const team=s.createTeam(device,op({name:'海浪',nickname:'教练'})).teamID;
+ const prepared=s.credentials.prepare(device,body);assert.deepEqual(s.credentials.prepare(device,body),prepared);
+ assert.equal(s.authenticate(old),device);assert.throws(()=>s.register(next,{label:'冒用'}));
+ assert.throws(()=>s.credentials.prepare(device,op({newToken:next})),e=>e.code==='token_reused');
+ assert.throws(()=>s.credentials.commit(secret(),prepared));
+ const committed=s.credentials.commit(next,prepared);assert.equal(committed.deviceID,device);
+ assert.deepEqual(s.credentials.commit(next,prepared),committed);assert.equal(s.authenticate(next),device);
+ assert.throws(()=>s.authenticate(old));assert.throws(()=>s.register(old,{label:'旧授权'}));
+ assert.equal(s.listTeams(device).teams[0].id,team);
+ const third=secret(),again=s.credentials.prepare(device,op({newToken:third}));s.credentials.commit(third,again);
+ assert.throws(()=>s.credentials.commit(next,prepared));assert.equal(s.authenticate(third),device);
+});
+test('credential commit respects expiry, revocation, database rollback and disaster recovery review',t=>{
+ let now=Date.now();const s=new CollaborationStore({now:()=>now});t.after(()=>s.close());
+ const old=secret(),device=s.register(old,{label:'iPhone'}).deviceID,next=secret(),prepared=s.credentials.prepare(device,op({newToken:next}));
+ s.db.prepare("INSERT INTO metadata VALUES('needsDeviceRecoveryReview','1')").run();s.db.exec('DELETE FROM device_recovery_reviews');
+ assert.throws(()=>s.credentials.commit(next,prepared),e=>e.code==='recovery_review');
+ s.db.prepare('INSERT INTO device_recovery_reviews VALUES(?,?)').run(device,s.listTeams(device).recoveryEpoch);
+ s.db.exec("CREATE TRIGGER rotation_failure BEFORE UPDATE ON devices BEGIN SELECT RAISE(ABORT,'disk full'); END;");
+ assert.throws(()=>s.credentials.commit(next,prepared));assert.equal(s.authenticate(old),device);assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM retired_credentials').get().n,0);
+ s.db.exec('DROP TRIGGER rotation_failure');now+=86400001;assert.throws(()=>s.credentials.commit(next,prepared),e=>e.code==='rotation_expired');
+ s.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(device);assert.throws(()=>s.credentials.commit(next,prepared));assert.deepEqual(s.listTeams(device).teams,[]);
+});
+test('HTTP credential preparation and commit require possession of the correct old and new credentials',async t=>{
+ const app=createCollaborationServer();app.server.listen(0,'127.0.0.1');await new Promise(r=>app.server.once('listening',r));
+ t.after(async()=>{app.server.closeAllConnections();await new Promise(r=>app.server.close(r));app.store.close();});
+ const origin=`http://127.0.0.1:${app.server.address().port}${BASE}`,old=secret(),next=secret();
+ const post=(path,token,body)=>fetch(origin+path,{method:'POST',headers:{'Content-Type':'application/json','X-BM-Protocol':'1',Authorization:'Bearer '+token},body:JSON.stringify(body)});
+ assert.equal((await post('/devices',old,{label:'iPhone'})).status,200);
+ const prepared=await post('/devices/credential-prepare',old,op({newToken:next}));assert.equal(prepared.status,200);const body=await prepared.json();
+ assert.equal((await post('/devices/credential-commit',old,body)).status,404);
+ assert.equal((await post('/devices/credential-commit',next,body)).status,200);
+ assert.equal((await post('/devices',old,{label:'旧设备'})).status,401);
+ assert.equal((await post('/devices',next,{label:'iPhone'})).status,200);
+});

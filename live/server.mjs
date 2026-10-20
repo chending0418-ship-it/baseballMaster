@@ -89,7 +89,7 @@ export function validateSnapshot(s) {
   return s;
 }
 
-export function createLiveServer({ dbPath = ':memory:', now = Date.now, trustProxy = false, maxSessions = 500, createLimit = 30 } = {}) {
+export function createLiveServer({ dbPath = ':memory:', now = Date.now, trustProxy = false, maxSessions = 500, createLimit = 30, adminToken } = {}) {
   if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(dbPath);
   if (dbPath !== ':memory:') chmodSync(dbPath, 0o600);
@@ -145,6 +145,21 @@ export function createLiveServer({ dbPath = ':memory:', now = Date.now, trustPro
       sweep();
       const url = new URL(req.url, 'http://localhost');
       const path = url.pathname;
+      // Private server-to-server inspection. Nginx never forwards this path.
+      if(path==='/internal/admin-live' || path.startsWith('/internal/admin-live/')) {
+        const supplied=req.headers.authorization?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
+        if(!/^[a-f0-9]{64}$/.test(adminToken??'') || !supplied || !['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)
+          || !timingSafeEqual(Buffer.from(hash(supplied)),Buffer.from(hash(adminToken))))throw new HTTPError(404,'页面不存在');
+        if(req.method!=='GET')throw new HTTPError(405,'只支持查看');
+        if(path==='/internal/admin-live')return json(200,{items:db.prepare(`SELECT code AS id,revision,last_seen AS updatedAt,expires_at AS expiresAt,final AS isFinal,
+          json_extract(payload,'$.away.name') AS awayName,json_extract(payload,'$.home.name') AS homeName,
+          json_extract(payload,'$.away.runs') AS awayRuns,json_extract(payload,'$.home.runs') AS homeRuns,
+          json_extract(payload,'$.inning') AS inning,json_extract(payload,'$.isTop') AS isTop FROM live WHERE expires_at>? ORDER BY last_seen DESC`).all(now())});
+        const code=path.slice('/internal/admin-live/'.length);
+        if(!CODE.test(code))throw new HTTPError(404,'直播不存在');const row=get.get(code);
+        if(!row)throw new HTTPError(404,'直播已关闭或到期');
+        return json(200,{snapshot:JSON.parse(row.payload),game:{id:row.code,updatedAt:row.last_seen,expiresAt:row.expires_at,revision:row.revision},source:'temporary'});
+      }
       if (path === `${BASE}/health` && req.method === 'GET') return json(200, { ok: true });
       const ip = trustProxy ? (req.headers['x-real-ip'] || req.socket.remoteAddress) : req.socket.remoteAddress;
       limit(`all:${ip}`, 6000);
@@ -227,7 +242,7 @@ export function createLiveServer({ dbPath = ':memory:', now = Date.now, trustPro
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.umask(0o077);
-  const { server } = createLiveServer({ dbPath: process.env.LIVE_DB || './data/live.sqlite', trustProxy: process.env.TRUST_PROXY === '1' });
+  const { server } = createLiveServer({ dbPath: process.env.LIVE_DB || './data/live.sqlite', trustProxy: process.env.TRUST_PROXY === '1', adminToken:process.env.BM_ADMIN_BRIDGE_TOKEN });
   server.listen(Number(process.env.PORT || 18088), process.env.HOST || '127.0.0.1', () => console.log('BaseballMaster live service ready'));
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
 }

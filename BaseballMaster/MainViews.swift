@@ -123,7 +123,7 @@ struct GameHomeView: View {
                     }
                 }
 
-                SectionHeader(title: "最近比赛", subtitle: store.seasons.first?.name)
+                SectionHeader(title: "最近比赛", subtitle: "按比赛日期排序")
                 if store.recentGames.isEmpty {
                     emptyGameCard(
                         icon: "clock",
@@ -208,7 +208,7 @@ struct GameHomeView: View {
                 Text((store.currentTeam?.name ?? "尚未创建球队"))
                     .font(.system(size: 24, weight: .black))
                     .foregroundStyle(BMTheme.navy)
-                Text("\(store.seasons.first?.name ?? "暂无赛季") · \((store.currentTeam?.players.count ?? 0)) 名球员")
+                Text("\(MatchYear.current + " 年") · \((store.currentTeam?.players.count ?? 0)) 名球员")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(BMTheme.secondaryText)
             }
@@ -225,7 +225,7 @@ struct GameHomeView: View {
 
     private var recordText: String {
         let completed = store.recentGames.filter {
-            $0.ourTeamID == store.currentTeam?.id && $0.seasonID == store.seasons.first?.id
+            store.belongsToStatisticsTeam($0, teamID: store.currentTeam?.id) && $0.yearID == MatchYear.current
         }
         guard !completed.isEmpty else { return "暂无战绩" }
         let wins = completed.filter { $0.ourScore > $0.opponentScore }.count
@@ -276,7 +276,7 @@ struct GameHomeView: View {
                 Text("\(stored.state.awayTeam.shortName) 对 \(stored.state.homeTeam.shortName)")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(BMTheme.navy)
-                Text(stored.updatedAt.formatted(date: .abbreviated, time: .omitted))
+                Text(stored.dateText)
                     .font(.system(size: 12))
                     .foregroundStyle(BMTheme.secondaryText)
             }
