@@ -8,7 +8,8 @@ export class TeamArchiveService {
   const profile=this.store.roster.read(team,device).team;
   const games=this.db.prepare('SELECT id,revision AS serverRevision,deleted,purged FROM shared_games WHERE team_id=? ORDER BY id').all(team);
   const recoveryEpoch=this.store.listTeams(device).recoveryEpoch;
-  const data={format:'BaseballMaster Team Archive',version:1,profile,games:games.map(g=>({...g,deleted:!!g.deleted,purged:!!g.purged})),recoveryEpoch};
+  const requiresV2 = this.db.prepare("SELECT 1 FROM shared_games WHERE team_id=? AND purged=0 AND json_extract(payload,'$.minimumWriterFormat')=2 LIMIT 1").get(team);
+  const data={format:'BaseballMaster Team Archive',version:requiresV2?2:1,profile,games:games.map(g=>({...g,deleted:!!g.deleted,purged:!!g.purged})),recoveryEpoch};
   return {...data,snapshot:hash(data)};
  }
  item(team,game,device,snapshot){

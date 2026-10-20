@@ -369,8 +369,8 @@ export function createCollaborationServer(options = {}) {
         requireValue(store.db.prepare("SELECT value FROM metadata WHERE key='restoreQuarantine'").get()?.value !== '1',503,'recovery_review','服务正在核对恢复资料。');
         return reply(200,{status:'ok',protocol:PROTOCOL});
       }
-      if(path===BASE+'/capabilities' && req.method==='GET') return reply(200,{protocol:PROTOCOL,matchFormat:1,minimumAppVersion:'3.0',
-        capabilities:['team-roles','match-revisions','writer-handoff','historical-access','device-pairing','management-recovery','roster-years','history-import','player-links','conflict-review','team-lifecycle','portable-archive','credential-rotation','recovery-review']});
+      if(path===BASE+'/capabilities' && req.method==='GET') return reply(200,{protocol:PROTOCOL,matchFormat:2,minimumAppVersion:'3.0',
+        capabilities:['batted-ball-observation','writer-format-guard','team-roles','match-revisions','writer-handoff','historical-access','device-pairing','management-recovery','roster-years','history-import','player-links','conflict-review','team-lifecycle','portable-archive','credential-rotation','recovery-review']});
       requireValue(store.db.prepare("SELECT value FROM metadata WHERE key='restoreQuarantine'").get()?.value !== '1',503,'recovery_review','服务正在核对恢复资料，请稍后重试；本机记录会保留。');
       const now = store.now();
       // Only a configured local reverse proxy may supply the client address.

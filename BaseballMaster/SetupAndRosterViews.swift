@@ -560,6 +560,7 @@ struct NewGameSetupView: View {
     @State private var spectatorHomeTeamID: UUID?
     @State private var isHome = false
     @State private var versionRules = GameRules()
+    @State private var recordingMethod = RecordingMethod.traditional
     @State private var innings = 6
     @State private var fieldersCount = 9
     @State private var hasTimeLimit = false
@@ -621,6 +622,7 @@ struct NewGameSetupView: View {
             usesDesignatedHitter: usesDesignatedHitter,
             allowsTwoWayPlayer: usesDesignatedHitter && allowsTwoWayPlayer
         )
+        value.recordingMethod = recordingMethod
         value.mode = versionRules.mode
         value.halfInningRunLimit = versionRules.halfInningRunLimit
         value.coachPitchLimit = versionRules.coachPitchLimit
@@ -681,6 +683,7 @@ struct NewGameSetupView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                RecordingMethodPicker(method: $recordingMethod)
                 SectionHeader(
                     title: "参赛球队",
                     subtitle: scheduleForLater ? "安排时只需基本信息" : "第 1 步，共 2 步"
@@ -1575,6 +1578,7 @@ private struct GameRulesEditor: View {
     }
 
     var body: some View {
+        RecordingMethodPicker(method: Binding(get: { rules.effectiveRecordingMethod }, set: { rules.recordingMethod = $0 }))
         SectionHeader(title: "比赛规则")
         BMCard {
             VStack(spacing: 0) {

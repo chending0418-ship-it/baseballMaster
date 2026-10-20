@@ -149,3 +149,71 @@ test('restricted mode and approval operations cannot be changed by unrelated sco
  assert.equal((await a.req(a.admin.key,'POST',g.path+'/access',op({mode:'public',baseAccessVersion:1}))).status,409);
  assert.equal((await a.req('','GET','/watch/'+g.viewCode)).status,403);
 });
+
+test('3.1.0 contact fields survive sharing, while older writers cannot drop them after a handoff', async t => {
+ const a = await setup(t), b = await a.member('scorer');
+ const f = fixture(); f.formatVersion = 2; f.payload.rules.recordingMethod = 'situation';
+ const observation = {type:'line',precision:'region',region:'foulLeft'};
+ f.payload.state.scoringEvents = [{id:randomUUID(),category:'battedBall',battedBall:observation}];
+ const created = await a.req(a.admin.key,'POST',`/teams/${a.team}/games`,op(f));
+ assert.equal(created.status,200,JSON.stringify(created.data));
+ const path = `/teams/${a.team}/games/${created.data.id}`;
+ let remote = (await a.req(a.admin.key,'GET',path)).data;
+ assert.deepEqual(remote.payload.state.scoringEvents[0].battedBall,observation);
+ assert.equal(remote.payload.minimumWriterFormat,2);
+ const lost = structuredClone(f); lost.formatVersion = 1; delete lost.payload.rules.recordingMethod; delete lost.payload.state.scoringEvents;
+ const rejected = await a.req(a.admin.key,'PUT',path,op({...lost,baseRevision:1,writerEpoch:1}));
+ assert.equal(rejected.status,426);
+ assert.equal((await a.req(a.admin.key,'GET',path)).data.serverRevision,1);
+ const proposal=await a.req(a.admin.key,'POST',path+'/handoff/propose',op({targetDeviceID:b.id,baseRevision:1,writerEpoch:1}));
+ assert.equal(proposal.status,200);
+ remote=(await a.req(b.key,'GET',path)).data;
+ assert.equal((await a.req(b.key,'POST',path+'/handoff/accept',op({handoffID:remote.handoff.id,digest:remote.digest,baseRevision:1,writerEpoch:1}))).status,200);
+ assert.equal((await a.req(b.key,'PUT',path,op({...lost,baseRevision:1,writerEpoch:2}))).status,426);
+ assert.equal((await a.req(b.key,'PUT',path,op({...f,baseRevision:1,writerEpoch:2}))).status,200);
+ const final=(await a.req(b.key,'GET',path)).data;
+ assert.deepEqual(final.payload.state.scoringEvents[0].battedBall,observation);
+});
+
+test('3.1.0 observation validation rejects fake precision, invalid coordinates and slow-pitch bunts', async t => {
+ const a=await setup(t);
+ for (const [mode,o] of [
+  ['standard',{type:'ground',precision:'point',x:2,y:.4}],
+  ['standard',{type:'unknown',precision:'region',region:'center',x:.5,y:.2}],
+  ['standard',{type:'fly',precision:'unknown',x:.5}],
+  ['slowPitch',{type:'bunt',precision:'unknown'}],
+ ]) {
+  const f=fixture(false,mode);f.formatVersion=2;f.payload.state.scoringEvents=[{category:'battedBall',battedBall:o}];
+  assert.equal((await a.req(a.admin.key,'POST',`/teams/${a.team}/games`,op(f))).status,400);
+ }
+ for(const observation of [{type:'unknown',precision:'point',x:.05,y:.1},{type:'fly',precision:'unknown'},{type:'bunt',precision:'region',region:'infieldLeft'}]) {
+  const f=fixture();f.formatVersion=2;f.payload.state.scoringEvents=[{category:'battedBall',battedBall:observation}];
+  assert.equal((await a.req(a.admin.key,'POST',`/teams/${a.team}/games`,op(f))).status,200);
+ }
+ // Legacy matches and clients retain format-1 writes until a 3.1.0 writer upgrades that match.
+ const legacy=await a.create();
+ assert.equal((await a.req(a.admin.key,'PUT',legacy.path,op({...legacy.fixture,baseRevision:1,writerEpoch:1}))).status,200);
+});
+
+test('V4 same-field fielding, return throws, independent error and archive writer format are preserved', async t => {
+ const a=await setup(t),f=fixture();f.formatVersion=2;f.payload.rules.recordingMethod='situation';
+ const fielding={status:'recorded',route:[8,4,8],participants:[]};
+ const observation={type:'line',precision:'region',region:'center',fielding};
+ f.payload.state.scoringEvents=[{category:'battedBall',resolvedOutcome:'一垒安打',battedBall:observation}];
+ const created=await a.req(a.admin.key,'POST',`/teams/${a.team}/games`,op(f));assert.equal(created.status,200);
+ const path=`/teams/${a.team}/games/${created.data.id}`;
+ assert.deepEqual((await a.req(a.admin.key,'GET',path)).data.payload.state.scoringEvents[0].battedBall,observation);
+ assert.equal(a.store.archives.manifest(a.team,a.admin.id).version,2);
+ for(const bad of [
+  {status:'recorded',route:[]}, {status:'noFielding',route:[8]}, {status:'recorded',route:[11]}, {status:'noFielding',route:[]}
+ ]) {
+  const body=structuredClone(f);body.payload.id=randomUUID();body.projection.gameID=body.payload.id;body.payload.state.scoringEvents[0].battedBall.fielding=bad;
+  assert.equal((await a.req(a.admin.key,'POST',`/teams/${a.team}/games`,op(body))).status,400);
+ }
+ const error=structuredClone(f);error.payload.id=randomUUID();error.projection.gameID=error.payload.id;
+ error.payload.state.scoringEvents[0].resolvedOutcome='对方失误';error.payload.state.scoringEvents[0].battedBall.fielding={status:'recorded',route:[6,3],errorPosition:3};
+ assert.equal((await a.req(a.admin.key,'POST',`/teams/${a.team}/games`,op(error))).status,200);
+ const pending=structuredClone(f);pending.payload.id=randomUUID();pending.projection.gameID=pending.payload.id;
+ pending.payload.state.scoringEvents[0].battedBall.fielding={status:'pending',route:[7]};
+ assert.equal((await a.req(a.admin.key,'POST',`/teams/${a.team}/games`,op(pending))).status,200);
+});

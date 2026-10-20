@@ -2777,3 +2777,156 @@ extension BaseballMasterUITests {
         captureHistory(app, name: "3.0.1-foreground-refresh")
     }
 }
+
+extension BaseballMasterUITests {
+    func testV310PracticeOffersBothMethodsAndObservationCancelDoesNotRecord() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch(); app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let choice = XCTAttachment(screenshot: app.screenshot()); choice.name = "V4-两种练习方式"; choice.lifetime = .keepAlways; add(choice)
+        let start = app.buttons["start-practice-inning"]; revealStatisticsControl(start, in: app); start.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch, before = batter.label
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        XCTAssertTrue(app.buttons["quick-outcome-1B"].waitForExistence(timeout: 5))
+        let menu = XCTAttachment(screenshot: app.screenshot()); menu.name = "V4-常用击球入口"; menu.lifetime = .keepAlways; add(menu)
+        app.buttons["quick-outcome-1B"].tap(); app.buttons["contact-type-line"].tap()
+        XCTAssertFalse(app.buttons["finish-situation-field"].isEnabled)
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).tap()
+        XCTAssertTrue(app.buttons["situation-fielder-8"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["finish-situation-field"].isEnabled, "An empty-base hit still requires explicit fielding")
+        app.buttons["situation-fielder-8"].tap(); app.buttons["situation-fielder-4"].tap()
+        let contact = XCTAttachment(screenshot: app.screenshot()); contact.name = "V4-同场落点与守备传球"; contact.lifetime = .keepAlways; add(contact)
+        app.buttons["cancel-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5)); XCTAssertEqual(batter.label, before)
+        app.buttons["ball-in-play"].tap(); app.buttons["quick-outcome-1B"].tap(); app.buttons["contact-type-line"].tap()
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).tap()
+        app.buttons["situation-fielder-8"].tap(); app.buttons["situation-fielder-4"].tap()
+        app.buttons["finish-situation-field"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5)); XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(app.buttons["amend-situation-play"].exists)
+        let field = XCTAttachment(screenshot: app.screenshot()); field.name = "V4-姓名背号与补充这球"; field.lifetime = .keepAlways; add(field)
+        let savedBatter = batter.label
+        app.buttons["amend-situation-play"].tap()
+        XCTAssertTrue(app.buttons["edit-situation-field"].waitForExistence(timeout: 5)); app.buttons["edit-situation-field"].tap()
+        app.buttons["situation-fielder-2"].tap()
+        app.buttons["finish-situation-field"].tap(); app.buttons["cancel-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5)); XCTAssertEqual(batter.label, savedBatter)
+        app.buttons["amend-situation-play"].tap(); app.buttons["edit-situation-field"].tap()
+        app.buttons["situation-fielder-2"].tap(); app.buttons["finish-situation-field"].tap(); app.buttons["confirm-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "Amending the complete play must not add a pitch")
+        app.buttons["undo-last-play"].tap(); app.buttons["redo-last-play"].tap()
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"))
+    }
+
+    func testV310TraditionalPracticeRetainsOriginalFlowAndSetupChoice() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["基础版"].tap()
+        let start = app.buttons["start-practice-inning"]; revealStatisticsControl(start, in: app); start.tap()
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        XCTAssertTrue(app.buttons["arrival-到一垒"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["quick-outcome-1B"].exists)
+        app.buttons["arrival-到一垒"].tap(); app.buttons["cause-正常打上垒"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["continue-contact"].exists)
+        app.terminate(); app.launchArguments = ["--setup-preview"]; app.launch()
+        XCTAssertTrue(app.segmentedControls["recording-method-picker"].waitForExistence(timeout: 5))
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let setup = XCTAttachment(screenshot: app.screenshot()); setup.name = "3.1.0-开局选择记录方式"; setup.lifetime = .keepAlways; add(setup)
+    }
+}
+
+extension BaseballMasterUITests {
+    func testV310BatterChartCurrentAnnualDarkModeAndNamedFielders() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--batted-ball-preview", "-appAppearance", "light"]
+        app.launch()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        XCTAssertTrue(batter.waitForExistence(timeout: 5))
+        let fielder = app.descendants(matching: .any)["fielder-6"].firstMatch
+        XCTAssertTrue(fielder.exists); XCTAssertTrue(fielder.label.contains("号")); XCTAssertFalse(fielder.label.contains("游击"))
+        let field = XCTAttachment(screenshot: app.screenshot()); field.name = "3.1.0-球场姓名背号"; field.lifetime = .keepAlways; add(field)
+        batter.tap()
+        XCTAssertTrue(app.navigationBars["打击表现"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["batter-contact-coverage"].label.contains("有去向 2 球 · 缺少去向 1 球"))
+        let current = XCTAttachment(screenshot: app.screenshot()); current.name = "3.1.0-本场击球图"; current.lifetime = .keepAlways; add(current)
+        app.segmentedControls["batter-performance-scope"].buttons.element(boundBy: 1).tap()
+        XCTAssertTrue(app.staticTexts["batter-contact-coverage"].label.contains("有去向 2 球 · 缺少去向 1 球"))
+        let mark = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "点选去向")).firstMatch
+        XCTAssertTrue(mark.exists); mark.tap()
+        XCTAssertTrue(app.staticTexts["selected-contact-detail"].exists)
+        let annual = XCTAttachment(screenshot: app.screenshot()); annual.name = "3.1.0-年度击球图"; annual.lifetime = .keepAlways; add(annual)
+        app.terminate(); app.launchArguments = ["--batted-ball-preview", "-appAppearance", "dark"]; app.launch()
+        app.descendants(matching: .any)["current-batter"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["打击表现"].waitForExistence(timeout: 5))
+        let dark = XCTAttachment(screenshot: app.screenshot()); dark.name = "3.1.0-深色击球图"; dark.lifetime = .keepAlways; add(dark)
+    }
+}
+
+extension BaseballMasterUITests {
+    func testV310DoublePlayChecksRunnersAndDefenseBackPreservesObservation() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch(); app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]; revealStatisticsControl(start, in: app); start.tap()
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        XCTAssertTrue(app.buttons["quick-outcome-DP"].waitForExistence(timeout: 5)); XCTAssertFalse(app.buttons["quick-outcome-DP"].isEnabled)
+        app.buttons["quick-outcome-1B"].tap(); app.buttons["contact-type-line"].tap()
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).tap()
+        app.buttons["situation-fielder-7"].tap(); app.buttons["finish-situation-field"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5)); app.buttons["ball-in-play"].tap()
+        XCTAssertTrue(app.buttons["quick-outcome-DP"].isEnabled); app.buttons["quick-outcome-DP"].tap(); app.buttons["contact-type-ground"].tap()
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.32, dy: 0.45)).tap()
+        app.buttons["situation-route-6-4-3"].tap(); app.buttons["finish-situation-field"].tap()
+        XCTAssertTrue(app.buttons["situation-runner-0"].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["situation-runner-1"].exists)
+        XCTAssertTrue(app.staticTexts["situation-defense-description"].label.contains("防守路线 6-4-3"))
+        app.buttons["edit-situation-field"].tap()
+        XCTAssertTrue(app.staticTexts["situation-route"].label.contains("6 → 4 → 3"))
+        app.buttons["finish-situation-field"].tap()
+        let runners = XCTAttachment(screenshot: app.screenshot()); runners.name = "V4-统一核对双杀跑者"; runners.lifetime = .keepAlways; add(runners)
+        app.buttons["confirm-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+    }
+}
+
+extension BaseballMasterUITests {
+    func testV310V4CompoundHitReusesFieldingAndRecordsRunnerCausesOnce() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--situation-compound-preview"]
+        app.launch(); app.buttons["ball-in-play"].tap(); app.buttons["quick-outcome-1B"].tap()
+        app.buttons["contact-type-line"].tap()
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+        app.buttons["situation-fielder-8"].tap(); app.buttons["situation-fielder-4"].tap(); app.buttons["finish-situation-field"].tap()
+        XCTAssertTrue(app.buttons["situation-destination-1-得分"].waitForExistence(timeout: 5))
+        app.buttons["situation-destination-1-得分"].tap(); app.buttons["situation-runner-0"].tap()
+        app.buttons["situation-destination-0-出局"].tap()
+        let extra = app.buttons["situation-extra-route-0"]; revealStatisticsControl(extra, in: app); extra.tap()
+        XCTAssertTrue(app.buttons["situation-reuse-route"].waitForExistence(timeout: 5)); app.buttons["situation-reuse-route"].tap()
+        XCTAssertTrue(app.buttons["confirm-situation-play"].waitForExistence(timeout: 5))
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "V4-安打后进垒被触杀-独立原因和路线"; capture.lifetime = .keepAlways; add(capture)
+        app.buttons["confirm-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        XCTAssertTrue(pitcher.label.contains("本场已投 2 球"))
+    }
+
+    func testV310V4ErrorResponsibilityIsIndependentOfFirstHandler() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch(); app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]; revealStatisticsControl(start, in: app); start.tap()
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        app.buttons["quick-outcome-E"].tap(); app.buttons["contact-type-ground"].tap()
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.32, dy: 0.45)).tap()
+        app.buttons["situation-fielder-6"].tap(); app.buttons["situation-fielder-3"].tap()
+        XCTAssertFalse(app.buttons["finish-situation-field"].isEnabled)
+        app.segmentedControls["situation-field-mode"].buttons["失误责任"].tap(); app.buttons["situation-fielder-3"].tap()
+        let field = XCTAttachment(screenshot: app.screenshot()); field.name = "V4-同场指定独立失误责任人"; field.lifetime = .keepAlways; add(field)
+        app.buttons["finish-situation-field"].tap()
+        XCTAssertTrue(app.staticTexts["situation-error-responsibility"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["situation-error-responsibility"].label.contains("一垒手"))
+        app.buttons["confirm-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+    }
+}

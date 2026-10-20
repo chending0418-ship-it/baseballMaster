@@ -59,6 +59,7 @@ final class GameStore: ObservableObject {
 
     var isHistoryReplay = false
     var historyReplayDate: Date?
+    var transientCorrectionID = UUID()
     var historyPendingCommand: HistoryCommand?
     var historySuppressCapture = false
     private var actionDepth = 0
@@ -261,6 +262,7 @@ final class GameStore: ObservableObject {
         return stored.effectivePlayedAt
     }
     var activeStoredGame: StoredGame? { games.first { $0.id == activeGameID } }
+    var supportsTransientCorrection: Bool { activeGameID == nil && sourceDatabaseURL == nil && game.rulesSnapshot?.effectiveRecordingMethod == .situation }
     var activeRules: GameRules? {
         activeGameID.flatMap { id in games.first(where: { $0.id == id })?.rules }
     }
@@ -718,12 +720,15 @@ final class GameStore: ObservableObject {
         }
     }
 
-    func resetPracticeInning() {
+    func resetPracticeInning(method: RecordingMethod = .traditional) {
+        transientCorrectionID = UUID()
         cancelPitcherChange()
         activeGameID = nil
         let awayTeam = teams.first(where: { $0.players.count >= 9 }) ?? Self.makeWaves()
         let homeTeam = opponentTeams.first(where: { $0.players.count >= 9 }) ?? Self.makeFalcons()
-        game = GameState(homeTeam: homeTeam, awayTeam: awayTeam, scheduledInnings: 1)
+        var practiceRules = GameRules(scheduledInnings: 1)
+        practiceRules.recordingMethod = method
+        game = GameState(homeTeam: homeTeam, awayTeam: awayTeam, scheduledInnings: 1, rules: practiceRules)
         undoStack.removeAll()
         redoStack.removeAll()
         addLog("练习开始：所有记录只用于本次练习")
@@ -1070,7 +1075,7 @@ final class GameStore: ObservableObject {
     @discardableResult
     func recordIllegalPitch(_ action: PitchAction?, wasThrown: Bool, outcome: PlayOutcome? = nil,
                             defensivePlay: DefensivePlay? = nil, decisions: [RunnerDecision]? = nil,
-                            timingRunCounts: Bool? = nil, penaltyApplied: Bool? = nil) -> Bool {
+                            timingRunCounts: Bool? = nil, penaltyApplied: Bool? = nil, observation: BattedBallObservation? = nil) -> Bool {
         guard isSlowPitch, canRecordAction,
               wasThrown || (outcome == nil && (action == nil || action == .ball)) else {
             actionErrorMessage = "请确认慢垒 Illegal 的裁判结果及是否实际投出。"; return false
@@ -1080,7 +1085,7 @@ final class GameStore: ObservableObject {
         defer { commitAtomicAction() }
         let oldIDs = Set((game.scoringEvents ?? []).map(\.id))
         if let outcome {
-            guard applyPlay(outcome, defensivePlay: defensivePlay, decisions: decisions, timingRunCounts: timingRunCounts) else { return false }
+            guard applyPlay(outcome, defensivePlay: defensivePlay, decisions: decisions, timingRunCounts: timingRunCounts, observation: observation) else { return false }
         } else if let action {
             recordPitch(action, countsAsPitch: wasThrown)
         } else {
@@ -1314,9 +1319,27 @@ final class GameStore: ObservableObject {
     }
 
     @discardableResult
-    func applyPlay(_ outcome: PlayOutcome, defensivePlay: DefensivePlay? = nil, decisions: [RunnerDecision]? = nil, timingRunCounts: Bool? = nil) -> Bool {
+    func applyPlay(_ outcome: PlayOutcome, defensivePlay: DefensivePlay? = nil, decisions: [RunnerDecision]? = nil, timingRunCounts: Bool? = nil, observation: BattedBallObservation? = nil) -> Bool {
         beginAtomicAction()
-        let result = applyPlayOperation(outcome, defensivePlay: defensivePlay, decisions: decisions, timingRunCounts: timingRunCounts)
+        if let observation, !observation.isValid || (isSlowPitch && observation.type == .bunt) {
+            actionErrorMessage = "请核对击球观察；成人慢垒不能记录触击。"
+            commitAtomicAction(); return false
+        }
+        var prepared = observation
+        prepared?.fielding?.capture(in: game)
+        if let details = prepared?.runnerDetails {
+            prepared?.runnerDetails = details.map { item in var copy = item; copy.fielding?.capture(in: game); return copy }
+        }
+        let proposed = decisions ?? suggestedRunnerDecisions(for: outcome)
+        if let issue = situationObservationError(prepared, outcome: outcome, decisions: proposed) {
+            actionErrorMessage = issue; commitAtomicAction(); return false
+        }
+        let beforeIDs = Set((game.scoringEvents ?? []).map(\.id))
+        let resolvedDefense = prepared?.fielding != nil ? situationDefensivePlay(outcome: outcome, observation: prepared!, decisions: proposed) : defensivePlay
+        let result = applyPlayOperation(outcome, defensivePlay: resolvedDefense, decisions: decisions, timingRunCounts: timingRunCounts, observation: prepared)
+        if result, let index = game.scoringEvents?.firstIndex(where: { !beforeIDs.contains($0.id) && $0.category == .battedBall }) {
+            attachBattedBall(prepared, at: index)
+        }
         commitAtomicAction()
         return result && actionErrorMessage == nil
     }
@@ -1325,7 +1348,8 @@ final class GameStore: ObservableObject {
         _ outcome: PlayOutcome,
         defensivePlay: DefensivePlay? = nil,
         decisions: [RunnerDecision]? = nil,
-        timingRunCounts: Bool? = nil
+        timingRunCounts: Bool? = nil,
+        observation: BattedBallObservation? = nil
     ) -> Bool {
         beginAtomicAction()
         recordHistoryCommand(.play(outcome, defensivePlay, decisions ?? suggestedRunnerDecisions(for: outcome), timingRunCounts))
@@ -1342,7 +1366,7 @@ final class GameStore: ObservableObject {
             actionErrorMessage = issue
             return false
         }
-        if playNeedsTimingDecision(outcome, decisions: proposedDecisions), timingRunCounts == nil {
+        if (observation?.fielding == nil ? playNeedsTimingDecision(outcome, decisions: proposedDecisions) : situationNeedsTimingDecision(outcome, decisions: proposedDecisions)), timingRunCounts == nil {
             actionErrorMessage = "第三出局同时发生得分，请先确认得分与触杀的先后。"
             return false
         }
@@ -1377,6 +1401,8 @@ final class GameStore: ObservableObject {
         }
 
         let automaticRunnerRuns = automaticRunnerRunCount(in: finalDecisions)
+        let errorAdvances = (observation?.runnerDetails ?? []).filter { detail in detail.cause == .error && finalDecisions.contains { $0.id == detail.playerID && $0.hasActualMovement } }.map(\.playerID)
+        if !errorAdvances.isEmpty { game.unearnedRunnerIDs = Array(Set(game.unearnedRunnerIDs ?? []).union(errorAdvances)).sorted { $0.uuidString < $1.uuidString } }
         var resolution = resolveRunners(finalDecisions, unearnedBatter: outcome == .error)
         // A batter reaching on a fielder's choice can replace an inherited
         // runner in the preceding pitcher's responsibility chain (9.16(g)).
@@ -1396,17 +1422,19 @@ final class GameStore: ObservableObject {
         let reachesThirdOut = game.outs + resolution.outs >= 3
         let thirdOutCancelsRuns = reachesThirdOut && (
             (game.outs == 2 && batterIsOut)
-                || [.groundOut, .fieldersChoice, .doublePlay, .triplePlay, .pendingOut].contains(outcome)
+                || (observation?.fielding == nil && [.groundOut, .fieldersChoice, .doublePlay, .triplePlay, .pendingOut].contains(outcome))
         )
         if thirdOutCancelsRuns {
             resolution = (runs: 0, outs: resolution.outs, scorers: [])
             actionEffectiveScorers = []
         }
-        if outcome == .runnerTagOut, timingRunCounts == false {
+        if (outcome == .runnerTagOut || observation?.fielding != nil), timingRunCounts == false {
             resolution = (runs: 0, outs: resolution.outs, scorers: [])
             actionEffectiveScorers = []
         }
-        battingLine.runsBattedIn += [.error, .pendingOut, .pending, .other].contains(outcome) ? 0 : resolution.runs
+        let nonRBI = Set((observation?.runnerDetails ?? []).filter { [.relay, .error, .award, .pending].contains($0.cause) }.map(\.playerID))
+        let rbiRuns = resolution.scorers.filter { !nonRBI.contains($0.id) }.count
+        battingLine.runsBattedIn += [.error, .pendingOut, .pending, .other].contains(outcome) ? 0 : rbiRuns
         game.batting[batter.id] = battingLine
         if !isCoachPitch { game.pitching[pitcher.id] = pitchingLine }
         chargePitcherRuns(resolution.scorers, fallback: pitcher.id, earned: ![.error, .pendingOut, .pending].contains(outcome))
@@ -1416,8 +1444,14 @@ final class GameStore: ObservableObject {
         }
         addRuns(resolution.runs)
         applyDefensiveCredits(defensivePlay, outcome: outcome)
+        if observation?.fielding != nil, outcome == .error, defensivePlay?.errorPosition == nil {
+            if game.isTop { game.homeErrors += 1 } else { game.awayErrors += 1 }
+        }
+        let extraErrors = Set((observation?.runnerDetails ?? []).filter { detail in finalDecisions.contains { $0.id == detail.playerID && $0.hasActualMovement } }.compactMap { $0.cause == .error ? $0.fielding?.errorPosition : nil }).subtracting(Set([defensivePlay?.errorPosition].compactMap { $0 }))
+        for position in extraErrors { applyDefensiveCredits(.error(at: position), outcome: .error) }
 
-        let defenseText = defensivePlay.map { "，\($0.title)（\($0.notation)）" } ?? ""
+        let route = observation?.fielding?.description ?? defensivePlay.map { game.defensiveRouteDescription($0) }
+        let defenseText = route.map { "，" + $0 } ?? ""
         let runnerText = runnerSummary(finalDecisions)
         addLog(
             "\(batter.name)：\(outcome.rawValue)\(defenseText)\(runnerText.isEmpty ? "" : "；\(runnerText)")",
@@ -1430,6 +1464,7 @@ final class GameStore: ObservableObject {
             resolvedOutcome: outcome,
             automaticRunnerRuns: automaticRunnerRuns
         )
+        if let index = game.scoringEvents?.indices.last { game.scoringEvents?[index].defensiveRoute = route }
         if evaluateWalkOff() { return true }
         advanceBatter()
         if resolution.outs > 0 { registerOuts(resolution.outs) }
@@ -2242,6 +2277,7 @@ final class GameStore: ObservableObject {
         let cleanNotation = notation?.trimmingCharacters(in: .whitespacesAndNewlines)
         events[eventIndex].title = cleanTitle
         events[eventIndex].category = category
+        if category != .battedBall { events[eventIndex].battedBall = nil; events[eventIndex].defensiveRoute = nil }
         events[eventIndex].notation = cleanNotation?.isEmpty == true ? nil : cleanNotation
         events[eventIndex].primaryPlayerID = primaryPlayerID
         events[eventIndex].secondaryPlayerID = secondaryPlayerID

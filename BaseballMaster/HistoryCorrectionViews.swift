@@ -96,11 +96,11 @@ struct HistoryCorrectionView: View {
                 }
                 .sheet(item: $target) { selected in
                     if let stored = store.activeStoredGame, let kind {
-                        HistoryOperationEditor(state: selected.state, stored: stored, kind: kind, original: selected.original) { command, errors, addedPlayer, ruling in
+                        HistoryOperationEditor(state: selected.state, stored: stored, kind: kind, original: selected.original) { command, errors, addedPlayer, ruling, observation in
                             guard var value = draft else { return }
                             if let addedPlayer { value.addedPlayers.append(addedPlayer); value.addedPlayersHome[addedPlayer.id] = selected.state.isTop == (kind != .substitution || command.isDefensiveSubstitution) }
                             var op = selected.original ?? HistoryOperation(command: command, before: selected.state, timestamp: selected.original?.timestamp ?? anchorDate(selected.index), inserted: true)
-                            op.command = command; op.title = command.title; op.errors = errors; op.statisticsRuling = ruling
+                            op.command = command; op.title = command.title; op.errors = errors; op.statisticsRuling = ruling; op.battedBall = observation
                             op.context = HistoryContext(selected.state); op.acceptsNewContext = true; op.correctedAt = Date()
                             if selected.replacing { op.edited = true; value.journal.operations[selected.index] = op }
                             else { value.journal.operations.insert(op, at: selected.index) }
@@ -273,7 +273,9 @@ private struct HistoryOperationEditor: View {
     let stored: StoredGame
     let kind: HistoryCorrectionKind
     let original: HistoryOperation?
-    let onSave: (HistoryCommand, [HistoryErrorCredit], Player?, HistoryStatisticsRuling?) -> Void
+    let onSave: (HistoryCommand, [HistoryErrorCredit], Player?, HistoryStatisticsRuling?, BattedBallObservation?) -> Void
+    @State private var observation = BattedBallObservation()
+    @State private var hasObservation = false
     @State private var mode = "换投"
     @State private var incoming: UUID?
     @State private var outgoing: UUID?
@@ -379,7 +381,9 @@ private struct HistoryOperationEditor: View {
                 if isBattedResult || (mode == "附加失误" && !extraOnly) {
                     Picker("击球结果", selection: $outcome) { ForEach(PlayOutcome.allCases) { Text($0.rawValue).tag($0) } }
                         .onChange(of: outcome) { _ in resetMoves() }
-                    if outcome == .error {
+                    if observation.fielding != nil && hasObservation {
+                        Text("守备路线及失误责任在下方同一球场修改。").font(.caption)
+                    } else if outcome == .error {
                         Picker("失误守位", selection: $errorPosition) { ForEach(fielders) { Text("\($0.primaryPosition.fullName) · \($0.compactName)").tag($0.primaryPosition) } }
                     } else {
                         Picker("守备路线", selection: $defense) {
@@ -390,6 +394,12 @@ private struct HistoryOperationEditor: View {
                     Text("修改已有击球时保留一次打席与一球；附加失误保留有效安打。请逐一核对实际进垒。").font(.caption)
                 }
                 if mode == "跑者事件" { Picker("原因", selection: $runnerKind) { ForEach(RunnerEventKind.allCases) { Text($0.rawValue).tag($0) } } }
+            }
+            if isBattedResult {
+                Section("球型与去向") {
+                    Toggle("补充击球观察", isOn: $hasObservation)
+                    if hasObservation { BattedBallObservationEditor(observation: $observation, allowsBunting: !stored.rules.isSlowPitch, game: state, outcome: outcome) }
+                }
             }
             if ["击球结果", "附加失误", "跑者事件"].contains(mode) {
                 Section("实际跑者去向") {
@@ -469,6 +479,7 @@ private struct HistoryOperationEditor: View {
         if kind == .error { outcome = .error }
         if let original {
             errors = original.errors
+            observation = original.battedBall ?? BattedBallObservation(); hasObservation = original.battedBall != nil
             switch original.command {
             case .pitch(let p): mode = "一球"; pitch = p
             case .illegalPitch(let action, let thrown, let play, let route, let decisions, let runTiming, let penalty):
@@ -545,14 +556,20 @@ private struct HistoryOperationEditor: View {
                 if moves.isEmpty {
                     guard !errors.isEmpty else { issue = "请选择至少一名失误责任人。"; return }
                     let ruling = reviewedStats && ["击球结果", "附加失误", "跑者事件"].contains(mode) ? HistoryStatisticsRuling(runsBattedIn: rbi, earnedRuns: Dictionary(uniqueKeysWithValues: responsiblePitchers.map { ($0.id, earned[$0.id, default: 0]) }), unearnedRunnerIDs: Array(unearned)) : nil
-                    onSave(.additionalErrors(errors), [], newPlayer, ruling); dismiss(); return
+                    onSave(.additionalErrors(errors), [], newPlayer, ruling, nil); dismiss(); return
                 }
                 command = .runner(.defensiveErrorAdvance, moves, effectiveTiming)
             default: command = .play(outcome, outcome == .error ? .error(at: errorPosition) : defense, moves, effectiveTiming)
             }
         }
         let ruling = reviewedStats && ["击球结果", "附加失误", "跑者事件"].contains(mode) ? HistoryStatisticsRuling(runsBattedIn: rbi, earnedRuns: Dictionary(uniqueKeysWithValues: responsiblePitchers.map { ($0.id, earned[$0.id, default: 0]) }), unearnedRunnerIDs: Array(unearned)) : nil
-        onSave(command, errors, newPlayer, ruling); dismiss()
+        let contact: BattedBallObservation?
+        switch command {
+        case .play: contact = isBattedResult ? (hasObservation ? observation : nil) : original?.battedBall
+        case .illegalPitch(_, _, let result, _, _, _, _): contact = result != nil && hasObservation ? observation : nil
+        default: contact = nil
+        }
+        onSave(command, errors, newPlayer, ruling, contact); dismiss()
     }
 }
 
