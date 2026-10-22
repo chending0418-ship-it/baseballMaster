@@ -39,6 +39,13 @@
 		A10000000000000000000028 /* LiveLineupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000028 /* LiveLineupViews.swift */; };
 		A10000000000000000000029 /* HistoryCorrection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000029 /* HistoryCorrection.swift */; };
 		A10000000000000000000030 /* HistoryCorrectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000030 /* HistoryCorrectionViews.swift */; };
+		A10000000000000000000031 /* TeamCollaboration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000031 /* TeamCollaboration.swift */; };
+		A10000000000000000000032 /* TeamSharingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000032 /* TeamSharingStore.swift */; };
+		A10000000000000000000033 /* TeamCollaborationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000033 /* TeamCollaborationViews.swift */; };
+		A10000000000000000000034 /* SharedMatches.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000034 /* SharedMatches.swift */; };
+		A10000000000000000000035 /* SharedMatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000035 /* SharedMatchViews.swift */; };
+		A10000000000000000000037 /* TeamSecurityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000037 /* TeamSecurityViews.swift */; };
+		A10000000000000000000036 /* TeamSecurity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000036 /* TeamSecurity.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,6 +101,13 @@
 		F10000000000000000000028 /* LiveLineupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveLineupViews.swift; sourceTree = "<group>"; };
 		F10000000000000000000029 /* HistoryCorrection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryCorrection.swift; sourceTree = "<group>"; };
 		F10000000000000000000030 /* HistoryCorrectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryCorrectionViews.swift; sourceTree = "<group>"; };
+		F10000000000000000000031 /* TeamCollaboration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamCollaboration.swift; sourceTree = "<group>"; };
+		F10000000000000000000032 /* TeamSharingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamSharingStore.swift; sourceTree = "<group>"; };
+		F10000000000000000000033 /* TeamCollaborationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamCollaborationViews.swift; sourceTree = "<group>"; };
+		F10000000000000000000034 /* SharedMatches.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedMatches.swift; sourceTree = "<group>"; };
+		F10000000000000000000035 /* SharedMatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedMatchViews.swift; sourceTree = "<group>"; };
+		F10000000000000000000037 /* TeamSecurityViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamSecurityViews.swift; sourceTree = "<group>"; };
+		F10000000000000000000036 /* TeamSecurity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamSecurity.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -154,6 +168,13 @@
 				F10000000000000000000027 /* LiveBroadcastViews.swift */,
 				F10000000000000000000028 /* LiveLineupViews.swift */,
 				F10000000000000000000030 /* HistoryCorrectionViews.swift */,
+				F10000000000000000000032 /* TeamSharingStore.swift */,
+				F10000000000000000000033 /* TeamCollaborationViews.swift */,
+				F10000000000000000000035 /* SharedMatchViews.swift */,
+				F10000000000000000000037 /* TeamSecurityViews.swift */,
+				F10000000000000000000036 /* TeamSecurity.swift */,
+				F10000000000000000000034 /* SharedMatches.swift */,
+				F10000000000000000000031 /* TeamCollaboration.swift */,
 				F10000000000000000000029 /* HistoryCorrection.swift */,
 				F10000000000000000000026 /* LiveBroadcast.swift */,
 				F10000000000000000000013 /* ProfileViews.swift */,
@@ -344,6 +365,13 @@
 				A10000000000000000000027 /* LiveBroadcastViews.swift in Sources */,
 				A10000000000000000000028 /* LiveLineupViews.swift in Sources */,
 				A10000000000000000000030 /* HistoryCorrectionViews.swift in Sources */,
+				A10000000000000000000032 /* TeamSharingStore.swift in Sources */,
+				A10000000000000000000033 /* TeamCollaborationViews.swift in Sources */,
+				A10000000000000000000035 /* SharedMatchViews.swift in Sources */,
+				A10000000000000000000037 /* TeamSecurityViews.swift in Sources */,
+				A10000000000000000000036 /* TeamSecurity.swift in Sources */,
+				A10000000000000000000034 /* SharedMatches.swift in Sources */,
+				A10000000000000000000031 /* TeamCollaboration.swift in Sources */,
 				A10000000000000000000029 /* HistoryCorrection.swift in Sources */,
 				A10000000000000000000026 /* LiveBroadcast.swift in Sources */,
 				A10000000000000000000013 /* ProfileViews.swift in Sources */,
@@ -442,7 +470,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 2.3;
+				MARKETING_VERSION = 3.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -470,7 +498,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 2.3;
+				MARKETING_VERSION = 3.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

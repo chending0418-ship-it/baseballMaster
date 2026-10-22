@@ -177,10 +177,10 @@ struct LocalDataManagementView: View {
             VStack(alignment: .leading, spacing: 20) {
                 BMCard {
                     VStack(alignment: .leading, spacing: 12) {
-                        Label("仅保存在这台设备", systemImage: "iphone.gen3")
+                        Label("本机使用与球队共享", systemImage: "iphone.gen3")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(BMTheme.navy)
-                        Text("本队、对手球队、球员、赛季、未来比赛和现场记录均保存在本机，不需要登录。记分、统计、报表和本地备份可离线使用。当前版本暂不提供文字直播，不向开发者服务器上传球队、球员、比赛记录或备份。")
+                        Text("无需注册，也可以保持纯本机使用；记分、统计、报表和本地备份可离线使用。主动开启球队共享后，所选球队资料、名单和比赛同步到 baseballmaster.cc 自有服务，受邀成员可查看。共享资料有本机缓存，最新授权和修改结果需联网核对。")
                             .font(.system(size: 14))
                             .foregroundStyle(BMTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -193,7 +193,7 @@ struct LocalDataManagementView: View {
                     DataMetricCard(title: "对手", value: store.opponentTeams.count, icon: "shield.fill")
                     DataMetricCard(title: "本队球员", value: playerCount, icon: "person.fill")
                     DataMetricCard(title: "对手球员", value: opponentPlayerCount, icon: "person.2.fill")
-                    DataMetricCard(title: "赛季", value: store.seasons.count, icon: "calendar")
+                    DataMetricCard(title: "年度", value: store.statisticsSeasons.count, icon: "calendar")
                     DataMetricCard(title: "比赛记录", value: store.games.count, icon: "baseball.diamond.bases")
                     DataMetricCard(title: "球员统计", value: store.recordedPlayerGameCount, icon: "chart.bar.doc.horizontal")
                     DataMetricCard(title: "进行中", value: store.ongoingGames.count, icon: "play.circle.fill")
@@ -342,7 +342,7 @@ struct AppAboutView: View {
                         Text("为现场记分而设计")
                             .font(.system(size: 17, weight: .bold))
                             .foregroundStyle(BMTheme.navy)
-                        Text("帮助非专业记分员用更直观的方式记录比赛，并查看球队、球员与赛季表现。")
+                        Text("帮助非专业记分员用更直观的方式记录比赛，并查看球队、球员与年度表现。")
                             .font(.system(size: 14))
                             .foregroundStyle(BMTheme.secondaryText)
                     }
@@ -353,7 +353,7 @@ struct AppAboutView: View {
                         Label("隐私与数据", systemImage: "lock.shield.fill")
                             .font(.system(size: 17, weight: .bold))
                             .foregroundStyle(BMTheme.navy)
-                        Text("球队、球员、赛季和逐场统计保存在本机，不启用 CloudKit，也不要求用户账号。只有你主动开启文字直播时，才会上传本场球队名称、当前阵容与守位、球员姓名及背号、投打表现、比分、规则、计时和比赛过程；任何持有观赛链接的人都能观看。关闭成功、终场一小时后或连续一小时未同步，云端直播内容自动删除，本地比赛保留。报表与备份仅在你主动导出或分享时交给所选位置或接收方。")
+                        Text("保留纯本机使用，不使用 iCloud／CloudKit，也无需注册账号。主动开启球队共享后，所选球队资料、名单和比赛上传到 baseballmaster.cc 自有服务，队内成员按授权访问。主动开播后，任何持有直播链接的人都能观看；关闭成功、终场一小时后或连续一小时未同步，临时直播内容失效，球队长期档案仍保留。历史网页按永久开放、仅指定人员或不开放分别控制，关闭网页不会删除比赛。报表与备份由你主动导出或分享。")
                             .accessibilityIdentifier("about-privacy-description")
                             .font(.system(size: 14))
                             .foregroundStyle(BMTheme.secondaryText)
@@ -794,7 +794,7 @@ struct PracticeInningView: View {
 
                 SectionHeader(title: "建议练习顺序")
                 VStack(spacing: 10) {
-                    practiceStep(number: 1, title: "记录投球", detail: "尝试坏球、看振、挥空和界外。")
+                    practiceStep(number: 1, title: "记录投球", detail: "尝试坏球、好球 - 看、好球 - 挥空和界外。")
                     practiceStep(number: 2, title: "记录击球", detail: "先选择打者最终位置，再确认发生原因。")
                     practiceStep(number: 3, title: "处理跑者", detail: "确认跑者进垒、得分或出局。")
                     practiceStep(number: 4, title: "修正与撤销", detail: "模拟看错现场后进行修正。")

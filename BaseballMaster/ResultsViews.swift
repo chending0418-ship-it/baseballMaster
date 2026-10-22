@@ -9,6 +9,7 @@ struct BoxScoreView: View {
     @State private var showShareSheet = false
     @State private var showLiveBroadcast = false
     @State private var showHistoryCorrection = false
+    @State private var dateEditingGame: StoredGame?
     @State private var shareURLs: [URL] = []
     @State private var exportErrorMessage: String?
     private let sections = ["打击", "投手", "守备", "记录"]
@@ -17,9 +18,17 @@ struct BoxScoreView: View {
         ScrollView {
             VStack(spacing: 16) {
                 ScoreboardCard(game: store.game)
+                if let stored = store.activeStoredGame {
+                    Text("比赛时间：\(stored.dateText)")
+                        .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
+                        .accessibilityIdentifier("result-game-date")
+                }
+                if let stored = store.activeStoredGame, stored.sharedGameID == nil, !store.readOnlyPresentation {
+                    BMCard { LocalMatchShareView(game: stored) }
+                }
                 LineScoreTable(game: store.game)
-                Button { showHistoryCorrection = true } label: { Label("纠正记录", systemImage: "clock.arrow.circlepath") }
-                    .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-history-correction")
+                if store.canEditCurrentMatch { Button { showHistoryCorrection = true } label: { Label("纠正记录", systemImage: "clock.arrow.circlepath") }
+                    .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-history-correction") }
                 if store.game.statisticsIncomplete == true {
                     Text("过程或责任待确认 · 统计可能不完整").font(.subheadline.bold()).foregroundStyle(BMTheme.orange)
                 }
@@ -43,14 +52,14 @@ struct BoxScoreView: View {
 
                 exportActions
 
-                if store.game.isFinal {
+                if store.game.isFinal && store.canEditCurrentMatch {
                     Button("恢复为进行中") {
                         if store.game.canResumePrecisely == true { _ = store.reopenGame() }
                         else { confirmLegacyReopen = true }
                     }.buttonStyle(SecondaryButtonStyle())
                     .accessibilityIdentifier("reopen-game")
                 }
-                if !store.game.isFinal {
+                if !store.game.isFinal && store.canEditCurrentMatch {
                     Button {
                         showEndReasonSheet = true
                     } label: {
@@ -67,7 +76,20 @@ struct BoxScoreView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if store.liveBroadcasts.isEnabled, store.activeStoredGame != nil {
+                if !store.readOnlyPresentation, let id = store.activeGameID { MatchSharingToolbar(coordinator: store.sharedMatches, localID: id) }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if let stored = store.activeStoredGame, stored.status == .completed, store.canEditCurrentMatch {
+                    Menu {
+                        Button("修改比赛时间") { dateEditingGame = stored }
+                            .accessibilityIdentifier("edit-game-date")
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .accessibilityLabel("比赛更多操作")
+                    .accessibilityIdentifier("game-result-more")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if store.liveBroadcasts.isEnabled, let game = store.activeStoredGame, !store.sharedMatches.isShared(game.id), !store.readOnlyPresentation {
                     Button { showLiveBroadcast = true } label: { Image(systemName: "antenna.radiowaves.left.and.right") }
                         .accessibilityLabel("文字直播与分享")
                         .accessibilityIdentifier("open-live-broadcast")
@@ -75,6 +97,9 @@ struct BoxScoreView: View {
             }
         }
         .sheet(isPresented: $showHistoryCorrection) { HistoryCorrectionView().environmentObject(store) }
+        .sheet(item: $dateEditingGame) { stored in
+            GameDateEditor(game: stored).environmentObject(store)
+        }
         .sheet(isPresented: $showLiveBroadcast) {
             if store.liveBroadcasts.isEnabled, let id = store.activeStoredGame?.id { LiveBroadcastSheet(store: store, gameID: id) }
         }
@@ -183,7 +208,7 @@ struct BoxScoreView: View {
             let appearances = store.plateAppearanceRecords()
             SectionHeader(title: "中文比赛记录", subtitle: "按打席 · \(appearances.count) 条")
 
-            if !store.pendingReviewEvents.isEmpty {
+            if !store.pendingReviewEvents.isEmpty && store.canEditCurrentMatch {
                 BMCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("还有 \(store.pendingReviewEvents.count) 条待确认记录", systemImage: "exclamationmark.triangle.fill")
@@ -358,12 +383,13 @@ struct BoxScoreView: View {
     private var gameExporter: GameExportService {
         GameExportService(game: store.game, rules: store.activeRules,
                           plateAppearances: store.plateAppearanceRecords(),
-                          gameEvents: store.nonPlateAppearanceGameEvents(), playedAt: store.activeGameRecordedAt)
+                          gameEvents: store.nonPlateAppearanceGameEvents(), playedAt: store.activeGameRecordedAt,
+                          timeZone: store.activeStoredGame?.playedTimeZone ?? .current)
     }
 
     private var playByPlayReport: PlayByPlayPDFReport {
         PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: store.activeGameRecordedAt,
-                           gameMode: store.activeRules?.gameMode ?? .standard)
+                           timeZone: store.activeStoredGame?.playedTimeZone ?? .current, gameMode: store.activeRules?.gameMode ?? .standard)
     }
 
     private func prepareShare(_ selection: GameExportSelection) {
@@ -534,6 +560,52 @@ struct LineScoreTable: View {
     }
 }
 
+struct GameDateEditor: View {
+    @EnvironmentObject private var store: GameStore
+    @Environment(\.dismiss) private var dismiss
+    let game: StoredGame
+    @State private var date: Date
+    @State private var error: String?
+
+    init(game: StoredGame) {
+        self.game = game
+        _date = State(initialValue: game.effectivePlayedAt)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("实际比赛时间") {
+                    DatePicker("日期与时间", selection: $date, in: ...Date(),
+                               displayedComponents: [.date, .hourAndMinute])
+                        .environment(\.timeZone, game.playedTimeZone)
+                        .accessibilityIdentifier("completed-game-date")
+                    Text("原时间：\(game.dateText)")
+                    Text("比赛时区：\(game.playedTimeZone.localizedName(for: .standard, locale: Locale(identifier: "zh_CN")) ?? game.playedTimeZone.identifier)")
+                        .font(.footnote)
+                }
+                Section {
+                    Text("更正后会更新历史排序、统计中的比赛日期和新导出的报告，比分、记分过程与比赛时长保持原样。")
+                }
+                if let error { Section { Text(error).foregroundStyle(.red) } }
+            }
+            .navigationTitle("修改比赛时间")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        if store.updateCompletedGameDate(id: game.id, playedAt: date,
+                            timeZoneID: game.playedTimeZone.identifier, expectedRevision: game.revision ?? 0) {
+                            dismiss()
+                        } else { error = store.actionErrorMessage }
+                    }.accessibilityIdentifier("save-completed-game-date")
+                }
+            }
+        }
+    }
+}
+
 enum GameExportSelection {
     case completeRecord
     case boxScore
@@ -557,10 +629,12 @@ struct GameExportService {
     let plateAppearances: [PlateAppearanceRecord]
     let gameEvents: [ScoringEventRecord]
     var playedAt: Date? = nil
+    var timeZone: TimeZone = .current
 
     func completeRecordText() -> String {
         var lines: [String] = []
         lines.append("BaseballMaster 完整比赛记录")
+        if let playedAt { lines.append("比赛时间：\(ReportPDFCanvas.dateText(playedAt, includesTime: true, timeZone: timeZone))") }
         if game.statisticsIncomplete == true { lines.append("过程或责任待确认 · 统计可能不完整") }
         if let count = game.correctionRevisions?.count, count > 0 { lines.append("历史更正：\(count) 次，当前数据为已保存修订") }
         lines.append("\(game.awayTeam.name) vs \(game.homeTeam.name)")
@@ -654,7 +728,7 @@ struct GameExportService {
     }
 
     func boxScorePDFData() -> Data {
-        GameBoxScorePDFReport(game: game, rules: rules, playedAt: playedAt).pdfData()
+        GameBoxScorePDFReport(game: game, rules: rules, playedAt: playedAt, timeZone: timeZone).pdfData()
     }
 
     func writeBoxScorePDF() throws -> URL {
@@ -737,7 +811,7 @@ struct PlayerDetailView: View {
     private var seasonGames: [PlayerGameRecord] {
         store.gameRecords(for: player, seasonID: selectedSeasonID, teamID: statisticsTeamID).filter { record in
             (inheritedGameIDs == nil || inheritedGameIDs!.contains(record.id)) &&
-                (modeFilter == nil || (store.games.first { $0.id == record.id }?.rules.gameMode ?? .standard) == modeFilter)
+                (modeFilter == nil || (store.officialStatisticsGames.first { $0.id == record.id }?.rules.gameMode ?? .standard) == modeFilter)
         }
     }
 
@@ -782,10 +856,10 @@ struct PlayerDetailView: View {
                     VStack(spacing: 14) {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("统计赛季")
+                                Text("统计年度")
                                     .font(.system(size: 12, weight: .bold))
                                     .foregroundStyle(BMTheme.secondaryText)
-                                Picker("统计赛季", selection: $selectedSeasonID) {
+                                Picker("统计年度", selection: $selectedSeasonID) {
                                     ForEach(store.statisticsSeasons) { season in
                                         Text(season.name).tag(season.id)
                                     }
@@ -825,6 +899,9 @@ struct PlayerDetailView: View {
 
                 GameModeFilter(selection: $modeFilter)
                     .onChange(of: modeFilter) { _ in selectedGameIDs = Set(seasonGames.map(\.id)) }
+                if let statisticsTeamID, store.teamSharing.teams.contains(where: { $0.id == statisticsTeamID }) {
+                    SharedStatisticsSyncNotice(coordinator: store.sharedMatches, teamID: statisticsTeamID)
+                }
                 Picker("球员统计分类", selection: $category) {
                     ForEach(StatisticsCategory.allCases) { Text($0.rawValue).tag($0) }
                 }
@@ -863,7 +940,7 @@ struct PlayerDetailView: View {
                         SectionHeader(title: "表现总结", subtitle: selectedSeasonName)
                         performanceSummary(title: "近 3 场", records: Array(selectedGames.prefix(3)))
                         performanceSummary(title: "近 10 场", records: Array(selectedGames.prefix(10)))
-                        performanceSummary(title: inheritedGameIDs == nil && selectedGames.count == seasonGames.count ? "本赛季" : "当前筛选", records: selectedGames)
+                        performanceSummary(title: inheritedGameIDs == nil && selectedGames.count == seasonGames.count ? "本年度" : "当前筛选", records: selectedGames)
                     }
 
                 } else if modeFilter == .coachPitch && category == .pitching {
@@ -879,7 +956,7 @@ struct PlayerDetailView: View {
                     SectionHeader(title: "比赛明细", subtitle: "按时间倒序")
                     if seasonGames.isEmpty {
                         BMCard {
-                            Text("这个赛季还没有比赛数据")
+                            Text("这个年度还没有比赛数据")
                                 .font(.system(size: 14))
                                 .foregroundStyle(BMTheme.secondaryText)
                                 .frame(maxWidth: .infinity, minHeight: 72)
@@ -910,7 +987,8 @@ struct PlayerDetailView: View {
             selectedGameIDs = Set(seasonGames.map(\.id))
         }
         .sheet(isPresented: $showGameFilter) {
-            GameFilterSheet(games: seasonGames, initialSelection: selectedGameIDs) { selection in
+            GameFilterSheet(games: seasonGames, initialSelection: selectedGameIDs,
+                            timeZones: Dictionary(uniqueKeysWithValues: store.games.map { ($0.id, $0.playedTimeZone) })) { selection in
                 selectedGameIDs = selection
             }
         }
@@ -935,7 +1013,7 @@ struct PlayerDetailView: View {
         guard !preparedSelection else { return }
         preparedSelection = true
         if !store.statisticsSeasons.contains(where: { $0.id == selectedSeasonID }) {
-            selectedSeasonID = store.statisticsSeasons.first?.id ?? ""
+            selectedSeasonID = MatchYear.current
         }
         selectedGameIDs = Set(seasonGames.map(\.id))
     }
@@ -973,15 +1051,15 @@ struct PlayerDetailView: View {
     }
 
     private func gameRecordSummary(_ record: PlayerGameRecord) -> String {
-        let stored = store.games.first { $0.id == record.id }
+        let stored = store.officialStatisticsGames.first { $0.id == record.id }
         switch category {
         case .batting: return "\(record.batting.hits)-\(record.batting.atBats)"
         case .pitching:
             if stored?.rules.gameMode == .coachPitch { return "投手数据不适用" }
-            guard let line = stored?.state.pitching[player.id] else { return "无投手记录" }
+            guard let line = stored?.recordedPitching(for: player.id) else { return "无投手记录" }
             return "\(line.inningsText) 局 · \(line.strikeouts) 三振"
         case .fielding:
-            guard let line = stored?.state.fielding[player.id] else { return "无守备记录" }
+            guard let line = stored?.recordedFielding(for: player.id) else { return "无守备记录" }
             return "\(line.putouts) 刺杀 · \(line.assists) 助杀 · \(line.errors) 失误"
         }
     }
@@ -992,7 +1070,7 @@ struct PlayerDetailView: View {
                 Text("对 \(record.opponent)")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(BMTheme.navy)
-                Text("\(gameDateText(record.date)) · \(record.result)")
+                Text("\(gameDateText(record.date, timeZone: store.officialStatisticsGames.first(where: { $0.id == record.id })?.playedTimeZone ?? .current)) · \(record.result)")
                     .font(.system(size: 12))
                     .foregroundStyle(BMTheme.secondaryText)
             }
@@ -1018,6 +1096,7 @@ struct StatisticsGameChoice: Identifiable {
     let date: Date
     let result: String
     let value: String
+    var timeZone: TimeZone = .current
 }
 
 struct GameFilterSheet: View {
@@ -1029,9 +1108,10 @@ struct GameFilterSheet: View {
     init(
         games: [PlayerGameRecord],
         initialSelection: Set<UUID>,
+        timeZones: [UUID: TimeZone] = [:],
         onApply: @escaping (Set<UUID>) -> Void
     ) {
-        self.games = games.map { StatisticsGameChoice(id: $0.id, opponent: $0.opponent, date: $0.date, result: $0.result, value: "\($0.batting.hits)-\($0.batting.atBats)") }
+        self.games = games.map { StatisticsGameChoice(id: $0.id, opponent: $0.opponent, date: $0.date, result: $0.result, value: "\($0.batting.hits)-\($0.batting.atBats)", timeZone: timeZones[$0.id] ?? .current) }
         self.onApply = onApply
         _selection = State(initialValue: initialSelection)
     }
@@ -1039,9 +1119,10 @@ struct GameFilterSheet: View {
     init(games: [StoredGame], initialSelection: Set<UUID>, onApply: @escaping (Set<UUID>) -> Void) {
         self.games = games.map { game in
             StatisticsGameChoice(id: game.id, opponent: game.opponent.name,
-                date: game.startedAt ?? game.scheduledAt ?? game.createdAt,
+                date: game.effectivePlayedAt,
                 result: "\(game.ourScore):\(game.opponentScore) · \(game.rules.gameMode.title)",
-                value: game.ourScore == game.opponentScore ? "平" : (game.ourScore > game.opponentScore ? "胜" : "负"))
+                value: game.ourScore == game.opponentScore ? "平" : (game.ourScore > game.opponentScore ? "胜" : "负"),
+                timeZone: game.playedTimeZone)
         }
         self.onApply = onApply
         _selection = State(initialValue: initialSelection)
@@ -1072,7 +1153,7 @@ struct GameFilterSheet: View {
 
                 Section("选择参与统计的比赛") {
                     if games.isEmpty {
-                        Text("当前赛季没有比赛数据")
+                        Text("当前年度没有比赛数据")
                             .foregroundStyle(BMTheme.secondaryText)
                     } else {
                         ForEach(games) { game in
@@ -1091,7 +1172,7 @@ struct GameFilterSheet: View {
                                         Text("对 \(game.opponent)")
                                             .font(.system(size: 15, weight: .bold))
                                             .foregroundStyle(BMTheme.navy)
-                                        Text("\(gameDateText(game.date)) · \(game.result)")
+                                        Text("\(gameDateText(game.date, timeZone: game.timeZone)) · \(game.result)")
                                             .font(.system(size: 12))
                                             .foregroundStyle(BMTheme.secondaryText)
                                     }
@@ -1127,9 +1208,10 @@ struct GameFilterSheet: View {
     }
 }
 
-private func gameDateText(_ date: Date) -> String {
+private func gameDateText(_ date: Date, timeZone: TimeZone = .current) -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "zh_CN")
+    formatter.timeZone = timeZone
     formatter.dateFormat = "M月d日"
     return formatter.string(from: date)
 }

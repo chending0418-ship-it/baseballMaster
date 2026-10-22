@@ -375,7 +375,7 @@ private struct HistoryOperationEditor: View {
                         ForEach(["好坏球／界外", "击球结果", "No Pitch"], id: \.self) { Text($0) }
                     }.onChange(of: illegalResult) { _ in resetMoves() }
                 }
-                if mode == "一球" || (mode == "Illegal" && illegalResult == "好坏球／界外") { Picker("球", selection: $pitch) { ForEach(PitchAction.allCases) { Text($0.rawValue).tag($0) } }.accessibilityIdentifier("history-pitch") }
+                if mode == "一球" || (mode == "Illegal" && illegalResult == "好坏球／界外") { Picker("球", selection: $pitch) { ForEach(PitchAction.allCases) { Text($0.title).tag($0) } }.accessibilityIdentifier("history-pitch") }
                 if isBattedResult || (mode == "附加失误" && !extraOnly) {
                     Picker("击球结果", selection: $outcome) { ForEach(PlayOutcome.allCases) { Text($0.rawValue).tag($0) } }
                         .onChange(of: outcome) { _ in resetMoves() }

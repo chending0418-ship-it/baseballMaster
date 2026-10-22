@@ -38,7 +38,7 @@ enum HistoryCommand: Equatable, Codable {
     var title: String {
         switch self {
         case .swapOpeningSides: "互换先攻／后攻"
-        case .pitch(let p): p.rawValue
+        case .pitch(let p): p.title
         case .illegalPitch: "Illegal／非法投球"
         case .play(let p, _, _, _): p.rawValue
         case .runner(let p, _, _): p.rawValue
@@ -395,6 +395,7 @@ extension GameStore {
 
     @discardableResult
     func saveCorrection(_ draft: HistoryCorrectionDraft) -> Bool {
+        guard canEditCurrentMatch else { actionErrorMessage = "当前设备没有记分权，请先完成交接。"; return false }
         let cleanReason = draft.reason.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanReason.isEmpty else { actionErrorMessage = "请填写更正原因。"; return false }
         let preview = previewCorrection(draft)

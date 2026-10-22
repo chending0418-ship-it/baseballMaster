@@ -38,6 +38,13 @@ struct BaseballMasterApp: App {
         initialStore = GameStore()
         #endif
         #if DEBUG
+        if AppLaunchArguments.values.contains("--v30-match-fixture") {
+            if let team = initialStore.currentTeam {
+                initialStore.startNewGame(opponent: initialStore.opponentTeams[0], isHome: false, innings: 6, lineup: Array(team.players.prefix(9)))
+                initialStore.startGameClock(); initialStore.recordPitch(.ball)
+                if AppLaunchArguments.values.contains("--v30-match-final") { initialStore.finishGame() }
+            }
+        }
         initialStore.runUpgradeReleaseAuditIfRequested()
         #endif
         _store = StateObject(wrappedValue: initialStore)
@@ -47,9 +54,21 @@ struct BaseballMasterApp: App {
         WindowGroup {
             LaunchRouterView()
                 .environmentObject(store)
-                .task { store.liveBroadcasts.setForeground(true) }
+                .onOpenURL { url in
+                    if let token = DevicePairingLink.token(from: url.absoluteString) {
+                        store.selectedTab = 1
+                        store.teamSharing.incomingPairing = DevicePairingLink.url(token).absoluteString
+                        return
+                    }
+                    guard let token = TeamInvitationLink.token(from: url.absoluteString) else { return }
+                    store.selectedTab = 1
+                    store.teamSharing.incomingInvitation = TeamInvitationLink.url(token: token).absoluteString
+                }
+                .task { store.liveBroadcasts.setForeground(true); store.sharedMatches.setForeground(true); store.teamSharing.setForeground(true) }
                 .onChange(of: scenePhase) { phase in
                     store.liveBroadcasts.setForeground(phase == .active)
+                    store.sharedMatches.setForeground(phase == .active)
+                    if phase != .inactive { store.teamSharing.setForeground(phase == .active) }
                     if phase == .background { store.createAutomaticBackup() }
                 }
         }
@@ -79,6 +98,8 @@ struct LaunchRouterView: View {
         Group {
             if store.requiresDataRecovery {
                 NavigationStack { BackupManagementView() }
+            } else if arguments.contains("--v30-sharing-preview") {
+                RootTabView().onAppear { store.selectedTab = 1 }
             } else if arguments.contains("--live-production-persistent-test") {
                 NavigationStack { ScorekeepingView() }
             } else if arguments.contains("--v23-slow-preview") || arguments.contains("--v23-live-production-preview") {
@@ -161,6 +182,8 @@ struct LaunchRouterView: View {
                 NavigationStack {
                     BundledRulePDFView(initialQuery: "不合法投球")
                 }
+            } else if arguments.contains("--v30-date-preview") {
+                BoxScorePreviewFixtureView(completedBackfill: true)
             } else if arguments.contains("--boxscore-preview") {
                 BoxScorePreviewFixtureView()
             } else if arguments.contains("--home-preview") {
@@ -273,13 +296,14 @@ private struct StatisticsPreviewFixtureView: View {
                         seasonID: store.seasons[0].id, date: Date(), opponent: "旧版独立记录", result: "未记录",
                         batting: BattingLine(plateAppearances: 100, atBats: 100, hits: 100)))
                 }
-                store.seasons.swapAt(0, 1)
                 store.startNewGame(opponent: opponent, isHome: true, innings: 6, lineup: lineup)
                 _ = store.applyPlay(.homeRun)
                 for _ in 0..<3 { _ = store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays[0]) }
                 _ = store.applyPlay(.double)
                 store.finishGame()
-                store.seasons.swapAt(0, 1)
+                if let saved = store.activeStoredGame, let previousYear = Calendar(identifier: .gregorian).date(byAdding: .year, value: -1, to: Date()) {
+                    _ = store.updateCompletedGameDate(id: saved.id, playedAt: previousYear, timeZoneID: TimeZone.current.identifier, expectedRevision: saved.revision ?? 0)
+                }
                 store.addTeam(name: "新建球队", shortName: "新队", city: "")
             }
     }
@@ -346,6 +370,7 @@ private struct PendingReviewFixtureView: View {
 
 private struct BoxScorePreviewFixtureView: View {
     @EnvironmentObject private var store: GameStore
+    var completedBackfill = false
     @State private var configured = false
 
     var body: some View {
@@ -370,6 +395,14 @@ private struct BoxScorePreviewFixtureView: View {
                 _ = store.recordRunnerEvent(.stolenBase, decisions: steal)
                 _ = store.applyPlay(.double)
                 _ = store.applyPlay(.pending)
+                if completedBackfill {
+                    store.finishGame()
+                    if let saved = store.activeStoredGame,
+                       let date = ISO8601DateFormatter().date(from: "2024-02-29T06:00:00Z") {
+                        _ = store.updateCompletedGameDate(id: saved.id, playedAt: date,
+                            timeZoneID: "Asia/Shanghai", expectedRevision: saved.revision ?? 0)
+                    }
+                }
             }
     }
 }
@@ -491,6 +524,12 @@ private struct V11ScorekeepingFixture: View {
                     LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: $0.element.primaryPosition)
                 }
                 store.startNewGame(opponent: store.opponentTeams[0], isHome: false, rules: rules, lineup: lineup)
+                if limitPreview {
+                    // Limits are based on mound appearances, not a fabricated IP
+                    // total. Move through a real recorded first inning.
+                    store.startGameClock()
+                    store.endCurrentHalf(); store.endCurrentHalf()
+                }
                 if !openingPreview { store.game.baseRunners[.second] = team.players[1] }
                 if startsAfterRunners { store.game.awayBatterIndex = 4 }
                 if limitPreview {

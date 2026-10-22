@@ -318,7 +318,7 @@ final class LiveBroadcastManager: ObservableObject {
     private func update(_ b: LiveBinding) throws { var next = bindings; next.removeAll { $0.gameID == b.gameID }; next.append(b); try save(next) }
     func start(_ gameID: UUID) {
         guard isEnabled, credentialError == nil, binding(for: gameID) == nil,
-              let stored = store?.games.first(where: { $0.id == gameID }), stored.status == .ongoing,
+              let stored = store?.games.first(where: { $0.id == gameID }), stored.status == .ongoing, stored.sharedGameID == nil,
               store?.requiresDataRecovery == false else { return }
         do {
             var bytes = [UInt8](repeating: 0, count: 32)

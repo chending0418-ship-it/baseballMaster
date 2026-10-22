@@ -1,0 +1,18 @@
+[Unit]
+Description=BaseballMaster service, backup age and capacity checks
+After=baseballmaster-collaboration.service
+[Service]
+Type=oneshot
+User=baseballmaster-team
+Group=baseballmaster-team
+WorkingDirectory=/www/server/baseballmaster-collaboration/current
+EnvironmentFile=/etc/baseballmaster-collaboration.env
+ExecStartPre=/usr/bin/mountpoint -q /lhcos-data
+ExecStart=/www/server/baseballmaster-node/node-v24.21.0-linux-x64/bin/node collaboration/operations.mjs check
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=256M
+TimeoutStartSec=60

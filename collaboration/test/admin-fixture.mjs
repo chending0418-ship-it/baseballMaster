@@ -1,0 +1,31 @@
+import {randomBytes,randomUUID,scryptSync} from 'node:crypto';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {once} from 'node:events';
+import {createCollaborationServer} from '../server.mjs';
+import {createLiveServer} from '../../live/server.mjs';
+import {uiSnapshot} from '../../live/test/fixture.mjs';
+import {fixture} from './match-fixture.mjs';
+export const op=body=>({operationID:randomUUID(),...body});
+export async function adminFixture(options={}) {
+ const folder=mkdtempSync(join(tmpdir(),'bm-admin-')),password='demo-only-password',salt=randomBytes(16).toString('hex'),legacyToken=randomBytes(32).toString('hex');
+ let now=Date.now();const clock=()=>now;
+ const live=createLiveServer({now:clock,adminToken:legacyToken});live.server.listen(0,'127.0.0.1');await once(live.server,'listening');
+ const legacyBase='http://127.0.0.1:'+live.server.address().port;
+ const config={salt,passwordHash:scryptSync(password,salt,64).toString('hex'),legacyToken,legacyBase,allowLocal:true,...options};
+ const app=createCollaborationServer({database:join(folder,'test.sqlite'),now:clock,admin:config,requestsPerMinute:10000});
+ app.server.listen(0,'127.0.0.1');await once(app.server,'listening');const origin='http://127.0.0.1:'+app.server.address().port;
+ const store=app.store,key=randomBytes(32).toString('base64url'),device=store.register(key,{label:'合成测试设备'}).deviceID;
+ const makeTeam=name=>store.createTeam(device,op({name,nickname:'陈教练',profile:{shortName:name,city:'上海',players:[{sourceID:randomUUID(),chineseName:'陈昊',englishName:'Chen Hao',numbers:['00','12']},{sourceID:randomUUID(),chineseName:'周子墨',englishName:'',numbers:['7']} ]}})).teamID;
+ const team=makeTeam('上海海浪'),otherTeam=makeTeam('北京飞鹰');
+ const makeGame=(teamID=team,final=false)=>{const f=fixture(final);f.payload.state.awayTeam.name='上海海浪';f.projection.away.name='上海海浪';f.payload.state.homeTeam.name='北京飞鹰';f.projection.home.name='北京飞鹰';return store.games.create(teamID,device,op(f));};
+ const game=makeGame(),completed=makeGame(team,true),otherGame=makeGame(otherTeam,true);store.games.live(team,game.id,device,op({enabled:true}));
+ const liveKey=randomBytes(32).toString('hex');
+ const liveRequest=async(method,path,body)=>fetch(legacyBase+'/livestreaming/novideo/api/sessions'+path,{method,headers:{Authorization:'Bearer '+liveKey,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+ const temporary=await (await liveRequest('POST','',{requestID:randomUUID(),createdAt:now,snapshot:uiSnapshot()})).json();
+ const request=async(path,options={})=>fetch(origin+'/admin/'+path,{...options,headers:{Origin:origin,'Content-Type':'application/json',...options.headers}});
+ const login=async(p=password)=>{const r=await request('api/login',{method:'POST',body:JSON.stringify({password:p}),headers:{Origin:config.allowLocal?origin:'https://baseballmaster.cc'}});return {status:r.status,cookie:r.headers.get('set-cookie'),data:await r.json()};};
+ const close=async()=>{for(const {server}of [app,live]){server.closeAllConnections();await new Promise(r=>server.close(r));}store.close();rmSync(folder,{recursive:true,force:true});};
+ return {...app,folder,password,config,team,otherTeam,device,key,game,completed,otherGame,temporary,legacyBase,origin,request,login,liveRequest,makeGame,makeTeam,clock,advance:ms=>now+=ms,close};
+}

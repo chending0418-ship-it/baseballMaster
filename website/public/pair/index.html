@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex,nofollow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>设备配对 · 棒球比赛记录大师</title>
+  <meta name="description" content="通过 BaseballMaster 在原设备核对并授权新设备。">
+  <meta property="og:title" content="设备配对 · 棒球比赛记录大师"><meta property="og:description" content="通过 BaseballMaster 在原设备核对并授权新设备。"><meta property="og:type" content="website"><meta property="og:site_name" content="BaseballMaster">
+  <meta property="og:image" content="https://baseballmaster.cc/assets/app-icon.png?v=20261014">
+  <meta property="og:image:secure_url" content="https://baseballmaster.cc/assets/app-icon.png?v=20261014">
+  <meta property="og:image:type" content="image/png"><meta property="og:image:width" content="256"><meta property="og:image:height" content="256"><meta property="og:image:alt" content="棒球比赛记录大师 App Logo">
+  <meta name="twitter:card" content="summary"><meta name="twitter:image" content="https://baseballmaster.cc/assets/app-icon.png?v=20261014">
+  <meta itemprop="image" content="https://baseballmaster.cc/assets/app-icon.png?v=20261014">
+  <link rel="image_src" href="https://baseballmaster.cc/assets/app-icon.png?v=20261014">
+  <link rel="icon" type="image/png" href="https://baseballmaster.cc/assets/app-icon.png?v=20261014"><link rel="apple-touch-icon" href="https://baseballmaster.cc/assets/app-icon.png?v=20261014">
+  <link rel="stylesheet" href="/join/join.css">
+</head>
+<body>
+  <main>
+    <img src="/assets/app-icon.png" width="72" height="72" alt="棒球比赛记录大师">
+    <p class="eyebrow">BASEBALL MASTER</p>
+    <h1>核对新设备配对</h1>
+    <p id="message">请在原设备打开 App，选择球队并核对新设备上的相同短语。配对不会自动交接记分权。</p>
+    <a id="open-app" class="button" hidden>打开 App 核对配对</a>
+    <a class="button secondary" href="https://apps.apple.com/cn/app/id6802063886" rel="noreferrer">下载 iOS App</a>
+    <p class="note">尚未安装？下载后回到此页面，点击「打开 App 核对配对」。请使用支持球队共享的 3.0 或更新版本。</p>
+    <button id="copy-link" hidden>复制配对请求</button>
+    <p class="note">也可在 App 的「球队 → 共享球队 → 球队设备与配对 → 授权我的新设备」粘贴链接。请求仅在 10 分钟内有效，须双方确认；短语不一致时不要授权。</p>
+    <p id="status" role="status"></p>
+  </main>
+  <script src="/pair/pair.js"></script>
+</body>
+</html>

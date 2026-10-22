@@ -1,0 +1,22 @@
+[Unit]
+Description=BaseballMaster verified encrypted daily backup
+After=baseballmaster-collaboration.service
+RequiresMountsFor=/lhcos-data
+
+[Service]
+Type=oneshot
+User=baseballmaster-team
+Group=baseballmaster-team
+WorkingDirectory=/www/server/baseballmaster-collaboration/current
+EnvironmentFile=/etc/baseballmaster-collaboration.env
+ExecStartPre=/usr/bin/mountpoint -q /lhcos-data
+ExecStart=/www/server/baseballmaster-node/node-v24.21.0-linux-x64/bin/node collaboration/operations.mjs backup
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/www/server/baseballmaster-collaboration-data /lhcos-data/baseballmaster-private-v3
+MemoryMax=1G
+MemorySwapMax=0
+TimeoutStartSec=3600

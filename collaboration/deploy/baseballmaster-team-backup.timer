@@ -1,0 +1,9 @@
+[Unit]
+Description=BaseballMaster daily encrypted recovery point
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=300
+Unit=baseballmaster-team-backup.service
+[Install]
+WantedBy=timers.target

@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
     <key>ITSAppUsesNonExemptEncryption</key><false/>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>com.jasonchen.baseballmaster.invitation</string>
+        <key>CFBundleURLSchemes</key><array><string>baseballmaster</string></array>
+    </dict></array>
     <key>UTExportedTypeDeclarations</key><array><dict>
         <key>UTTypeIdentifier</key><string>com.jasonchen.baseballmaster.backup</string>
         <key>UTTypeDescription</key><string>BaseballMaster 完整备份</string>
@@ -9,5 +13,10 @@
         <key>UTTypeTagSpecification</key><dict>
             <key>public.filename-extension</key><array><string>bmbackup</string></array>
         </dict>
+    </dict><dict>
+        <key>UTTypeIdentifier</key><string>com.jasonchen.baseballmaster.team-archive</string>
+        <key>UTTypeDescription</key><string>BaseballMaster 球队完整档案</string>
+        <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+        <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>bmteam</string></array></dict>
     </dict></array>
 </dict></plist>

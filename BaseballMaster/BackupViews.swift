@@ -21,7 +21,7 @@ struct BackupManagementView: View {
                     .font(.title2.bold())
                 Text(store.requiresDataRecovery
                      ? "数据库无法完整读取。为避免覆盖原记录，已暂停记分和编辑；请选择完整备份恢复。恢复时会保留原数据库文件。"
-                     : "备份包含球队、名单、赛季、所有比赛及逐球记录。你可以存入“文件”或通过系统分享转移到另一台设备。")
+                     : "备份包含球队、名单、年度比赛档案及逐球记录。你可以存入“文件”或通过系统分享转移到另一台设备。")
                     .foregroundStyle(BMTheme.secondaryText)
                 if !store.requiresDataRecovery {
                     Button {
@@ -47,6 +47,7 @@ struct BackupManagementView: View {
                 Button { importing = true } label: { Label("选择备份文件恢复", systemImage: "square.and.arrow.down") }
                     .buttonStyle(SecondaryButtonStyle())
                     .accessibilityIdentifier("import-local-backup")
+                NavigationLink("球队完整档案") { TeamArchiveLibraryView() }.buttonStyle(SecondaryButtonStyle())
                 if let url = store.automaticBackupURLs.first {
                     Button {
                         perform { pendingBackup = try LocalBackup.read(url); confirmRestore = true }
@@ -101,5 +102,95 @@ struct BackupManagementView: View {
 
     private func perform(_ operation: () throws -> Void) {
         do { try operation() } catch { self.error = error.localizedDescription }
+    }
+}
+
+struct TeamArchiveExportView: View {
+    let teamID: UUID
+    @ObservedObject var directory: TeamSharingStore
+    @State private var busy = false
+    @State private var share: ExportedReportFile?
+    @State private var error: String?
+    var body: some View {
+        List {
+            Text("导出全队名单、比赛、规则和球员对应关系，也保留回收站中的记录与删除标记。尚未同步到球队的记录请另外保存。")
+            Text("文件不含设备授权、恢复码和观看链接。它可以在「我的 → 备份与恢复 → 球队完整档案」校验并导入为本机只读档案。档案未加密，请妥善保管。")
+            Button(busy ? "正在导出并校验…" : "导出完整档案") { Task {
+                busy = true; error = nil; defer { busy = false }
+                do {
+                    guard let client = directory.service as? TeamServiceClient else { throw LocalDataError.invalid("请连接球队服务后导出。") }
+                    share = ExportedReportFile(url: try await client.exportTeamArchive(teamID: teamID))
+                } catch { self.error = error.localizedDescription }
+            } }.disabled(busy).accessibilityIdentifier("export-team-archive")
+            if busy { ProgressView("逐场读取球队记录；资料有变化时会提示重新导出。") }
+            if let error { Text(error).foregroundStyle(BMTheme.orange) }
+        }.navigationTitle("球队完整档案").navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $share) { ActivityShareSheet(items: [$0.url]) }
+    }
+}
+
+struct TeamArchiveLibraryView: View {
+    private struct Item: Identifiable { let url: URL; let name: String; let count: Int; var id: URL { url } }
+    @State private var items: [Item] = []
+    @State private var importing = false
+    @State private var pending: URL?
+    @State private var summary: String?
+    @State private var error: String?
+    var body: some View {
+        List {
+            Text("保存共享球队导出的完整档案，离线查看比赛和名单。导入不会替换当前球队，也不会让你重新加入球队或恢复管理、观看权限。")
+            Button("选择球队档案文件") { importing = true }.accessibilityIdentifier("import-team-archive")
+            if let error { Text(error).foregroundStyle(BMTheme.orange) }
+            ForEach(items) { item in NavigationLink { TeamArchiveReaderView(url: item.url) } label: {
+                VStack(alignment: .leading) { Text(item.name); Text("\(item.count) 场比赛 · 本机只读档案").font(.caption).foregroundStyle(BMTheme.secondaryText) }
+            } }
+        }.navigationTitle("球队完整档案").navigationBarTitleDisplayMode(.inline).task { reload() }
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.data, .json]) { result in
+                do { let url = try result.get(); let archive = try PortableTeamArchive.validate(url); pending = url; summary = "\(archive.manifest.profile.name) · \(archive.records.filter { !$0.deleted }.count) 场有效比赛。导入后保留为本机只读档案。" }
+                catch { self.error = error.localizedDescription }
+            }
+            .alert("档案校验通过", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
+                Button("取消", role: .cancel) { pending = nil }
+                Button("导入到本机") { do { if let pending { _ = try PortableTeamArchive.restore(pending) }; pending = nil; reload() } catch { self.error = error.localizedDescription } }
+            } message: { Text(summary ?? "") }
+    }
+    private func reload() {
+        do { items = try FileManager.default.contentsOfDirectory(at: PortableTeamArchive.library(), includingPropertiesForKeys: nil).filter { $0.pathExtension == "bmteam" }.map { url in
+            let archive = try PortableTeamArchive.validate(url); return Item(url: url, name: archive.manifest.profile.name, count: archive.records.filter { !$0.deleted }.count)
+        }; error = nil } catch { self.error = error.localizedDescription }
+    }
+}
+
+struct TeamArchiveReaderView: View {
+    let url: URL
+    private struct Presentation: Identifiable { let id = UUID(); let store: GameStore }
+    @State private var archive: VerifiedTeamArchive?
+    @State private var presentation: Presentation?
+    @State private var error: String?
+    var body: some View {
+        List {
+            if let archive {
+                Section(archive.manifest.profile.name) {
+                    Text("这份档案保存在本机，包含导出时的比分和名单。共享球队后续的修改不会更新这份文件。")
+                    ShareLink("分享这份档案", item: url)
+                }
+                Section("球队名单") { ForEach(archive.manifest.profile.players) { player in
+                    Text("\(player.numberText) \(player.name)" + (player.isArchived ? " · 已停用" : ""))
+                } }
+                Section("比赛记录") { ForEach(archive.records) { record in
+                    if let game = record.payload {
+                        Button { do {
+                            let copy = GameStore(persistenceURL: nil); try copy.installSharedCopy(game); copy.openGame(id: game.id); copy.readOnlyPresentation = true
+                            presentation = Presentation(store: copy)
+                        } catch { self.error = error.localizedDescription } } label: {
+                            VStack(alignment: .leading) { Text("\(game.state.awayTeam.name) vs \(game.state.homeTeam.name)"); Text(record.deleted ? "导出时已在回收站" : game.effectivePlayedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption) }
+                        }
+                    } else { Text("已清除的比赛 · 仅保留删除标记").foregroundStyle(BMTheme.secondaryText) }
+                } }
+            }
+            if let error { Text(error).foregroundStyle(BMTheme.orange) }
+        }.navigationTitle("本机球队档案").navigationBarTitleDisplayMode(.inline)
+            .task { do { archive = try PortableTeamArchive.validate(url) } catch { self.error = error.localizedDescription } }
+            .sheet(item: $presentation) { item in NavigationStack { BoxScoreView().environmentObject(item.store).toolbar { Button("完成") { presentation = nil } } } }
     }
 }

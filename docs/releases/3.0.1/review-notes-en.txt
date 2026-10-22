@@ -1,0 +1,24 @@
+App: 棒球比赛记录大师 (BaseballMaster)
+Version: 3.0.1 (Build 1)
+Bundle ID: com.jasonchen.baseballmaster
+
+No login or review account is required. No subscriptions, in-app purchases, ads or third-party analytics. The UI is Simplified Chinese. Core scoring, sample teams, corrections, statistics, reports and local backups work offline.
+
+This is a maintenance update to the released version 3.0. It fixes local records being treated as shared records, improves team invitations and sharing workflows, and simplifies user-facing explanations. Local games and games shared with a team are saved separately: edits and deletions in either place do not automatically change the other. Optional team sharing continues to use our existing service and device authorization, not iCloud. Existing local records are not automatically uploaded.
+
+Review steps:
+1. Open 球队 (Teams) > 球队共享 (Team sharing) > 新建共享球队 (Create shared team). Use a fictional team and nickname. You become administrator. Save the 管理恢复卡 (Management recovery card), or defer saving it. No phone number, email or account registration is needed.
+2. Open 邀请成员 (Invite members). The same team invitation link can be used by multiple installations. Administrators may manually replace it; previously joined members remain. Existing single-use invitations created by App 3.0 remain compatible. Reviewers can create their own links instead of using a fixed review credential.
+3. Join from another installation to test roles. Administrators and scorers can add/edit player names and jersey numbers; ordinary members can view team records. Administrators manage roles and membership. The limit is three administrators per team, counted by member rather than paired device.
+4. Choose 使用共享名单开始比赛 (Start game with shared players), or create a game in 比赛 (Games). Team choices identify local and shared teams. Choose a team in 队内共享 before saving; future games can also be shared. Local games remain. To update the team's record, open the game from the shared team.
+5. Complete a local game, select a shared team on the results screen, and confirm sharing. Alternatively use 球队比赛与历史 (Team games and history) > 共享本机比赛 (Share local game), or 导入历史比赛 (Import historical games) for administrator batch imports. Compare local and shared lists: the local records remain. Editing or deleting a shared game does not modify its local original, and local edits do not automatically replace an already shared game.
+6. Open a shared game to view records, statistics and reports. Each shared game has one scoring device; scoring handoff requires both devices to confirm. Team pages automatically refresh on first entry after launch or returning from the background, and have manual refresh controls.
+
+Services: https://baseballmaster.cc/api/v3 (protocol 1) and https://baseballmaster.cc/join/ are already deployed. Old single-use and new fixed invitations coexist. The baseballmaster://join format and App 3.0 invitation endpoints remain compatible during review.
+
+Optional sharing and web viewing require internet. Anyone with a valid live link can view; live links expire one hour after completion or one hour without sync/heartbeat. Closing removes temporary public content. Historical web viewing is separately controlled (public, specific people or closed); closing web access retains the match and team members' in-app access. No audio/video streaming or automatic full-device cloud backup.
+
+Privacy: https://baseballmaster.cc/privacy.html
+Support: https://baseballmaster.cc/support.html
+Marketing: https://baseballmaster.cc/
+Contact: chending0418@gmail.com

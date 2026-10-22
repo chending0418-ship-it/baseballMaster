@@ -1,0 +1,25 @@
+App: 棒球比赛记录大师 (BaseballMaster)
+Version: 3.0 (Build 1)
+Bundle ID: com.jasonchen.baseballmaster
+
+No login or review account is required. No subscriptions, in-app purchases, ads or third-party analytics. The UI is Simplified Chinese. Core scoring, editable sample teams, corrections, statistics, reports and local backups work offline.
+
+This update adds team sharing, match sync, scoring handoff, historical permissions, device pairing and management recovery. These optional features use our own service and device authorization, not iCloud. Existing local records are not automatically uploaded.
+
+Review steps:
+1. In 比赛 (Games), use 练习一局 (Practice), or create a 本队比赛 (Team Game) with fictional teams. Player choices show jersey numbers. Past dates and completed-game date corrections are supported. Pitcher changes require confirmation; appearance limits are separate from statistical innings based on actual outs.
+2. Open 球队 (Teams) > 球队共享 (Team sharing) > 新建共享球队 (Create shared team). Select an existing local team or a blank team, enter a nickname, confirm the scope and create. You become administrator. Save the 管理恢复卡 (Management recovery card), or choose 稍后保存，返回球队 to defer. Creation shares players; old matches require import.
+3. Use 邀请成员 (Invite members), then open the invitation on a second iPhone installation. Administrators and scorers can add/edit player names and jersey numbers; ordinary members are read-only. Administrators manage roles and membership. In 成员管理 (Member management), promote a joined member/scorer. Each team permits two administrators maximum; paired devices do not add administrators.
+4. Use 使用共享名单开始比赛 (Start game with shared players), then 球队比赛与历史 (Team games and history) > 共享本机比赛 (Share local game). Confirm sharing. Each match has one scoring device. Test handoff with the second scorer: synchronize, then both devices confirm. Disconnection never transfers control automatically.
+5. Open 球队比赛与历史 > 导入历史比赛 (Import historical games). Select completed local matches and their original team, verify player associations, preview and confirm. The app backs up before upload and keeps local originals. Statistics use match years, without manual seasons. Results include Box Score and PDF/TXT reports.
+6. In a shared match, use 实时直播 (Live) > 开启直播 (Enable live). Open its generated HTTPS link in Safari. Anyone with a valid live link can view without authorization. Close the test broadcast afterwards.
+7. End a shared match and open 历史网页观看 (Historical web viewing): 不开放 (Closed), 永久开放 (Public), or 仅指定人员 (Specific people). Public history is link-accessible. For an external viewer, generate a single-use invitation, enter a nickname in Safari, then approve the viewer in the app. Unapproved/revoked viewers cannot access it. Closed history retains the archive and team members' in-app access. These settings do not restrict valid live links.
+8. For the same person on another device, open 球队共享 > 接入这台新设备 (Connect this new device), generate a request, and verify the phrase on the existing device before both confirm. Pairing does not transfer scoring control. 使用恢复卡找回管理权 (Recover management) uses the saved card; recovery revokes previous team authorizations but retains the archive.
+
+Services: https://baseballmaster.cc/
+Text live: https://baseballmaster.cc/livestreaming/novideo/
+Reviewers create their own teams, invitations and links. Optional cloud features and live/web viewing require internet. Live links expire one hour after completion or one hour without sync/heartbeat; closing removes temporary public content. Local records and separately shared archives remain. Expired live links do not become replay links. No audio/video streaming or automatic full-device cloud backup. Shared records, member/device identifiers and operational audits support app functionality, as disclosed in the privacy policy.
+
+Privacy: https://baseballmaster.cc/privacy.html
+Support: https://baseballmaster.cc/support.html
+Contact: chending0418@gmail.com

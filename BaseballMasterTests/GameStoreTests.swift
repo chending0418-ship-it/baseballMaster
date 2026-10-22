@@ -3,6 +3,7 @@ import CoreData
 import PDFKit
 import SQLite3
 import CryptoKit
+import Security
 @testable import BaseballMaster
 
 private struct LiveReadEnvelope: Decodable { var snapshot: LiveSnapshot }
@@ -240,7 +241,7 @@ final class GameStoreTests: XCTestCase {
 
     func testTextOnlyPlayByPlayHandlesLongDescriptionsReviewsAndEmptyRecords() throws {
         let store = freshStore()
-        for _ in 0..<150 { store.recordPitch(.foul) }
+        for _ in 0..<240 { store.recordPitch(.foul) }
         store.applyPlay(.pending)
         let report = PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: nil)
         let data = report.pdfData(style: .textOnly)
@@ -947,9 +948,11 @@ final class GameStoreTests: XCTestCase {
             }
         )
         let pitcher = store.currentPitcher
-        store.game.pitching[pitcher.id] = PitchingLine(outsRecorded: 3)
-
-        XCTAssertTrue(store.ruleNotices().contains(where: { $0.contains("达到 1 局投球限制") }))
+        store.startGameClock()
+        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.pitchingLine(for: pitcher).inningsText, "0.0")
+        store.endCurrentHalf()
+        XCTAssertTrue(store.ruleNotices().contains(where: { $0.contains("达到 1 局登板额度") }))
     }
 
     func testStructuredScoringEventKeepsChineseLogAndSituationSnapshots() throws {
@@ -1680,7 +1683,7 @@ final class GameStoreTests: XCTestCase {
         XCTAssertEqual(appearance.batter.id, batter.id)
         XCTAssertEqual(appearance.events.count, 3)
         XCTAssertTrue(appearance.chineseRecord.contains("坏球"))
-        XCTAssertTrue(appearance.chineseRecord.contains("界外球"))
+        XCTAssertTrue(appearance.chineseRecord.contains("界外（"))
         XCTAssertTrue(appearance.chineseRecord.contains("一垒安打"))
         XCTAssertTrue(appearance.isComplete)
     }
@@ -1720,7 +1723,7 @@ final class GameStoreTests: XCTestCase {
         let text = exporter.completeRecordText()
         XCTAssertTrue(text.contains("【逐局比分】"))
         XCTAssertTrue(text.contains("【按打席中文比赛记录】"))
-        XCTAssertTrue(text.contains("看振"))
+        XCTAssertTrue(text.contains("好球 - 看"))
         XCTAssertTrue(text.contains("二垒安打"))
         XCTAssertTrue(text.contains("【结构化事件附录】"))
 
@@ -1768,11 +1771,12 @@ final class GameStoreTests: XCTestCase {
         included.state.pitching[player.id] = PitchingLine(outsRecorded: 4, strikeouts: 3)
         included.state.fielding[player.id] = FieldingLine(putouts: 1, assists: 2)
         var excluded = statisticsGame(store: store, seasonID: "excluded-season")
-        excluded.state.awayTeam.name = "不应导出的其他赛季对手"
+        excluded.playedAt = Calendar(identifier: .gregorian).date(byAdding: .year, value: -1, to: Date())
+        excluded.state.awayTeam.name = "不应导出的其他年度对手"
         store.games = [included, excluded]
         let report = TeamSeasonPDFReport(store: store, team: store.currentTeam!, seasonID: store.seasons[0].id)
         let text = try reportText(report.pdfData())
-        XCTAssertTrue(text.contains("SEASON REPORT"))
+        XCTAssertTrue(text.contains("ANNUAL REPORT"))
         XCTAssertTrue(text.contains("BATTING"))
         XCTAssertTrue(text.contains("PITCHING"))
         XCTAssertTrue(text.contains("FIELDING"))
@@ -1910,8 +1914,10 @@ final class GameStoreTests: XCTestCase {
         state.isFinal = status == .completed
         state.homeRunsByInning[0] = isHome ? runs : allowed
         state.awayRunsByInning[0] = isHome ? allowed : runs
+        let year = Int((seasonID ?? MatchYear.current).prefix(4)) ?? Int(MatchYear.current)!
+        let date = Calendar(identifier: .gregorian).date(from: DateComponents(year: year, month: 6, day: 1))!
         return StoredGame(
-            seasonID: seasonID ?? store.seasons[0].id, ourTeamID: ours.id,
+            playedAt: date, seasonID: seasonID ?? store.seasons[0].id, ourTeamID: ours.id,
             opponentTeamID: opponent.id, isHome: isHome, isSpectator: observation,
             rules: GameRules(), lineup: [], status: status, state: state
         )
@@ -1925,7 +1931,7 @@ final class GameStoreTests: XCTestCase {
             statisticsGame(store: store, isHome: false, runs: 2, allowed: 3),
             statisticsGame(store: store, runs: 1, allowed: 1),
             statisticsGame(store: store, team: other),
-            statisticsGame(store: store, seasonID: store.seasons[1].id),
+            statisticsGame(store: store, seasonID: String(Int(MatchYear.current)! - 1)),
             statisticsGame(store: store, status: .ongoing),
             statisticsGame(store: store, status: .scheduled),
             statisticsGame(store: store, observation: true)
@@ -2092,7 +2098,7 @@ final class GameStoreTests: XCTestCase {
     func testStatisticsExposeUnknownHistoricalSeasonsAndEmptyStates() {
         let store = GameStore(persistenceURL: nil)
         store.games = [statisticsGame(store: store, seasonID: "2024-local")]
-        XCTAssertEqual(store.statisticsSeasons.last?.id, "2024-local")
+        XCTAssertEqual(store.statisticsSeasons.last?.id, "2024")
         let summary = store.seasonStatistics(for: store.currentTeam!, seasonID: store.seasons[0].id)
         XCTAssertEqual(summary.games.count, 0)
         XCTAssertEqual(summary.wins, 0)
@@ -2618,6 +2624,58 @@ private final class LiveTestTransport: LiveTransport {
     }
 }
 extension GameStoreTests {
+    func testV30NewPitchWordingFlowsToLiveAndExportsWithoutChangingOldRecords() throws {
+        let store = v11Store()
+        for action in [PitchAction.ball, .calledStrike, .swingingStrike, .foul] { store.recordPitch(action) }
+        let modern = try XCTUnwrap(store.activeStoredGame)
+        let labels = ["坏球", "好球 - 看", "好球 - 挥空", "界外"]
+        let pitches = try XCTUnwrap(modern.state.scoringEvents).filter { $0.category == .pitch }
+        XCTAssertEqual(pitches.count, 4)
+        for (event, label) in zip(pitches, labels) { XCTAssertTrue(event.title.contains("：\(label)（")) }
+
+        var legacy = modern
+        let oldLabels = [("好球 - 看", "看振"), ("好球 - 挥空", "挥空"), ("界外", "界外球")]
+        for (current, old) in oldLabels {
+            for i in legacy.state.scoringEvents!.indices {
+                legacy.state.scoringEvents![i].title = legacy.state.scoringEvents![i].title
+                    .replacingOccurrences(of: "：\(current)（", with: "：\(old)（")
+            }
+            for i in legacy.state.playLog.indices {
+                legacy.state.playLog[i].text = legacy.state.playLog[i].text
+                    .replacingOccurrences(of: "：\(current)（", with: "：\(old)（")
+            }
+        }
+        let preserved = legacy
+        for (saved, expectedLabels) in [(modern, labels), (legacy, ["坏球", "看振", "挥空", "界外球"])] {
+            store.game = saved.state
+            let appearances = store.plateAppearanceRecords()
+            let record = appearances.map(\.chineseRecord).joined()
+            let exporter = GameExportService(game: saved.state, rules: saved.rules,
+                                            plateAppearances: appearances, gameEvents: store.nonPlateAppearanceGameEvents())
+            let projection = LiveSnapshot(saved)
+            let live = projection.entries.map { $0.summary + $0.details.map(\.text).joined() }.joined()
+            let report = PlayByPlayPDFReport(game: saved.state, appearances: appearances, playedAt: nil)
+            let detailed = try reportText(report.pdfData())
+            let plain = try reportText(report.pdfData(style: .textOnly), portrait: true)
+            for output in [record, exporter.completeRecordText(), live, detailed, plain] {
+                let compact = output.filter { !$0.isWhitespace }
+                for label in expectedLabels { XCTAssertTrue(compact.contains(label.filter { !$0.isWhitespace }), label) }
+                if saved == legacy { XCTAssertFalse(output.contains("好球 -")) }
+                else { XCTAssertFalse(output.contains("看振")); XCTAssertFalse(output.contains("界外球（")) }
+            }
+            XCTAssertEqual(store.game, saved.state, "Rendering must not rewrite saved records or statistics")
+        }
+        XCTAssertEqual(legacy, preserved)
+        XCTAssertEqual(try JSONDecoder().decode(StoredGame.self, from: JSONEncoder().encode(legacy)), legacy)
+        XCTAssertEqual(try JSONDecoder().decode(PitchAction.self, from: Data("\"看振\"".utf8)), .calledStrike)
+        XCTAssertEqual(try JSONDecoder().decode(PitchAction.self, from: Data("\"挥空\"".utf8)), .swingingStrike)
+
+        legacy.state.scoringEvents = nil; legacy.state.plateAppearances = nil
+        let oldLive = LiveSnapshot(legacy).entries.map(\.summary).joined()
+        XCTAssertTrue(oldLive.contains("看振")); XCTAssertTrue(oldLive.contains("挥空"))
+        XCTAssertFalse(oldLive.contains("好球 -"))
+    }
+
     func testLiveProjectionUsesStableAppearanceIDsAndUndoRemovesEvents() throws {
         let store = v11Store()
         let id = try XCTUnwrap(store.game.currentPlateAppearanceID)
@@ -3328,15 +3386,16 @@ extension GameStoreTests {
         XCTAssertFalse(store.game.isTop)
         XCTAssertTrue(store.ruleNotices().first?.contains(pitcher.name) == true, "Reached opponent limit must be visible before next pitcher's advisory")
         XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("达到 3 球限制") })
-        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("达到 1 局投球限制") })
+        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("达到 1 局登板额度") })
         store.undo()
-        XCTAssertFalse(store.ruleNotices().contains { $0.contains("已达到") })
+        XCTAssertFalse(store.ruleNotices().contains { $0.contains("达到 3 球限制") })
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: pitcher.id), [1])
         store.redo()
         XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("已达到") })
         let other = store.currentPitcher
         for _ in 0..<3 { store.applyPlay(.groundOut) }
         XCTAssertTrue(store.ruleNotices().contains { $0.contains(other.name) && $0.contains("已达到") })
-        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("已达到") })
+        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("超过 1 局限制") })
     }
 }
 
@@ -3488,9 +3547,11 @@ extension GameStoreTests {
         let store = v111Store(rules: GameRules(pitchLimit: 6, pitchWarningRemaining: 3, pitcherInningsLimit: 2))
         let first = store.currentPitcher.id
         XCTAssertNil(store.ruleNoticeSummary())
-        store.game.pitching[first] = PitchingLine(outsRecorded: 3)
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后一局")
-        store.game.pitching[first]?.pitches = 3
+        store.startGameClock()
+        store.endCurrentHalf(); store.endCurrentHalf()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: first), [1, 2])
+        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        store.game.pitching[first] = PitchingLine(pitches: 3)
         XCTAssertEqual(store.ruleNoticeSummary(), "还有 3 球")
         store.recordPitch(.ball)
         XCTAssertEqual(store.ruleNoticeSummary(), "还有 2 球")
@@ -3500,13 +3561,13 @@ extension GameStoreTests {
         XCTAssertEqual(store.ruleNoticeSummary(), "球数达限")
         store.game.pitching[first]?.pitches = 0
         store.game.pitching[first]?.outsRecorded = 6
-        XCTAssertEqual(store.ruleNoticeSummary(), "局数达限")
+        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局", "Statistical outs do not determine the appearance limit")
         store.endCurrentHalf()
         XCTAssertNotEqual(store.currentPitcher.id, first)
         XCTAssertEqual(store.ruleNoticeSummary(), "其他达限")
         store.game.pitching[store.currentPitcher.id] = PitchingLine(pitches: 3)
         XCTAssertEqual(store.ruleNoticeSummary(), "还有 3 球")
-        XCTAssertTrue(store.ruleNotices().contains { $0.contains("达到 2 局投球限制") })
+        XCTAssertTrue(store.ruleNotices().contains { $0.contains("达到 2 局登板额度") })
     }
 }
 
@@ -4521,7 +4582,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.game.scoringEvents?.filter { $0.illegalPitch != nil }.count, 4)
         let restored = GameStore(persistenceURL: nil)
         let backup = try LocalBackup.read(store.exportBackup())
-        XCTAssertEqual(backup.version, 4)
+        XCTAssertEqual(backup.version, 6)
         try restored.restoreBackup(backup)
         XCTAssertEqual(restored.game, store.game)
     }
@@ -4964,5 +5025,2017 @@ extension GameStoreTests {
         XCTAssertEqual(restored.currentBattingOrder, 1)
         XCTAssertEqual(restored.game.balls, 1); XCTAssertEqual(restored.game.strikes, 1)
         XCTAssertEqual(restored.game.extraFoulUsed, false)
+    }
+}
+
+// 3.0: the date of the match is independent from entry timestamps and the clock.
+extension GameStoreTests {
+    private func v30Backfill(_ mode: GameMode, observed: Bool = false, persistenceURL: URL? = nil) throws -> GameStore {
+        let store = GameStore(persistenceURL: persistenceURL)
+        var rules = GameRules(fieldersCount: mode == .slowPitch ? 10 : 9, timeLimitMinutes: 90)
+        rules.mode = mode
+        if mode == .slowPitch { rules.competitionFormat = .timed; rules.twoStrikeFoulPolicy = .oneExtraFoul }
+        func team(_ name: String) -> Team {
+            Team(name: name, shortName: name, city: "", players: (0..<12).map {
+                Player(name: "\(name)\($0)", number: $0, primaryPosition: FieldPosition.allCases[$0 % 10])
+            })
+        }
+        let away = team("补录客队"), home = team("补录主队")
+        let assignments = away.players.prefix(rules.fieldersCount).enumerated().map {
+            LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: FieldPosition.allCases[$0.offset])
+        }
+        let past = try XCTUnwrap(ISO8601DateFormatter().date(from: "2024-02-29T06:00:00Z"))
+        if observed {
+            store.opponentTeams = [away, home]
+            XCTAssertNotNil(store.createObservedGame(awayTeam: away, homeTeam: home, rules: rules, playedAt: past))
+        } else {
+            store.teams = [away]; store.currentTeam = away; store.opponentTeams = [home]
+            XCTAssertNotNil(store.startNewGame(opponent: home, isHome: false, rules: rules, lineup: assignments, playedAt: past))
+        }
+        return store
+    }
+
+    func testV30BackfillSurvivesPlayBallAndClockForAllModesAndObservation() throws {
+        for mode: GameMode in [.standard, .coachPitch, .slowPitch] {
+            for observed in [false, true] {
+                let store = try v30Backfill(mode, observed: observed)
+                let original = try XCTUnwrap(store.activeStoredGame)
+                let now = Date()
+                store.startGameClock(at: now)
+                XCTAssertEqual(store.activeGameRecordedAt, original.playedAt)
+                XCTAssertEqual(store.activeStoredGame?.startedAt, now)
+                XCTAssertEqual(store.elapsedGameTime(at: now.addingTimeInterval(30)), 30, accuracy: 0.01)
+                XCTAssertEqual(try XCTUnwrap(store.remainingGameTime(at: now)), 5400, accuracy: 0.01)
+                store.pauseGameClock(at: now.addingTimeInterval(60))
+                XCTAssertEqual(store.activeGameRecordedAt, original.playedAt)
+                let restored = GameStore(persistenceURL: nil)
+                try restored.restoreBackup(LocalBackup.read(store.exportBackup()))
+                XCTAssertEqual(restored.games.first?.playedAt, original.playedAt)
+                XCTAssertEqual(restored.games.first?.playedTimeZoneID, original.playedTimeZoneID)
+                XCTAssertEqual(restored.game.clockElapsedSeconds, 60)
+            }
+        }
+    }
+
+    func testV30DateCorrectionPreservesScoreClockJournalAndCreatesRevision() throws {
+        let store = try v30Backfill(.standard)
+        store.applyPlay(.single)
+        store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame)
+        let earlier = original.effectivePlayedAt.addingTimeInterval(-86400)
+        XCTAssertTrue(store.updateCompletedGameDate(id: original.id, playedAt: earlier, timeZoneID: "Asia/Shanghai", expectedRevision: original.revision ?? 0))
+        let corrected = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertEqual(corrected.state, original.state)
+        XCTAssertEqual(store.game, original.state)
+        XCTAssertEqual(corrected.createdAt, original.createdAt)
+        XCTAssertEqual(corrected.startedAt, original.startedAt)
+        XCTAssertEqual(corrected.seasonID, original.seasonID)
+        XCTAssertEqual(corrected.revision, (original.revision ?? 0) + 1)
+        XCTAssertEqual(corrected.dateRevisions?.first?.previousDate, original.effectivePlayedAt)
+        XCTAssertEqual(corrected.effectivePlayedAt, earlier)
+        XCTAssertEqual(corrected.dateText, "2024-02-28 14:00")
+        let player = store.game.awayTeam.players[0]
+        XCTAssertEqual(store.gameRecords(for: player, seasonID: corrected.seasonID).first?.date, earlier)
+        let exporter = GameExportService(game: store.game, rules: store.activeRules, plateAppearances: store.plateAppearanceRecords(),
+            gameEvents: store.nonPlateAppearanceGameEvents(), playedAt: corrected.effectivePlayedAt, timeZone: corrected.playedTimeZone)
+        XCTAssertTrue(exporter.completeRecordText().contains("2024-02-28 14:00"))
+        let pdf = try XCTUnwrap(PDFDocument(data: exporter.boxScorePDFData()))
+        XCTAssertTrue(try XCTUnwrap(pdf.string).contains("2024-02-28 14:00"))
+    }
+
+    func testV30DateCorrectionRejectsFutureStaleAndOngoingAndRollsBackOnDiskFailure() throws {
+        let store = freshStore()
+        let id = try XCTUnwrap(store.activeGameID)
+        XCTAssertFalse(store.updateCompletedGameDate(id: id, playedAt: Date().addingTimeInterval(-86400), timeZoneID: "UTC", expectedRevision: 0))
+        store.finishGame()
+        let before = try XCTUnwrap(store.activeStoredGame)
+        let revision = before.revision ?? 0
+        XCTAssertFalse(store.updateCompletedGameDate(id: id, playedAt: Date().addingTimeInterval(3600), timeZoneID: "UTC", expectedRevision: revision))
+        XCTAssertFalse(store.updateCompletedGameDate(id: id, playedAt: Date(), timeZoneID: "bad-zone", expectedRevision: revision))
+        XCTAssertFalse(store.updateCompletedGameDate(id: id, playedAt: Date(), timeZoneID: "UTC", expectedRevision: revision - 1))
+        CoreDataRosterStore.writeFault = { throw LocalDataError.invalid("Synthetic disk failure") }
+        defer { CoreDataRosterStore.writeFault = nil }
+        XCTAssertFalse(store.updateCompletedGameDate(id: id, playedAt: Date().addingTimeInterval(-86400), timeZoneID: "UTC", expectedRevision: revision))
+        XCTAssertEqual(store.activeStoredGame, before)
+        XCTAssertEqual(store.game, before.state)
+    }
+
+    func testV30DateSortingAndBackupKeepAnnualTotalsWithoutDuplicates() throws {
+        let store = try v30Backfill(.standard)
+        store.finishGame()
+        let first = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertNotNil(store.startNewGame(opponent: store.opponentTeams[0], isHome: false, rules: first.rules, lineup: first.lineup))
+        store.finishGame()
+        let second = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertEqual(store.recentGames.first?.id, second.id)
+        XCTAssertTrue(store.updateCompletedGameDate(id: second.id, playedAt: first.effectivePlayedAt.addingTimeInterval(-86400), timeZoneID: "UTC", expectedRevision: second.revision ?? 0))
+        XCTAssertEqual(store.recentGames.map(\.id), [first.id, second.id])
+        XCTAssertEqual(store.completedStatisticsGames(seasonID: first.yearID).map(\.id), [first.id, second.id])
+        let restored = GameStore(persistenceURL: nil)
+        try restored.restoreBackup(LocalBackup.read(store.exportBackup()))
+        XCTAssertEqual(restored.recentGames, store.recentGames)
+        XCTAssertEqual(restored.seasonStatistics(for: try XCTUnwrap(restored.currentTeam), seasonID: first.yearID).games.count, 2)
+    }
+
+    func testV30OldGameDecodingKeepsFallbackAndInvalidTimeZoneBackupIsRejected() throws {
+        let original = try XCTUnwrap(freshStore().activeStoredGame)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        for key in ["playedAt", "playedTimeZoneID", "dateRevisions"] { object.removeValue(forKey: key) }
+        let old = try JSONDecoder().decode(StoredGame.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(old.playedAt); XCTAssertNil(old.dateRevisions)
+        XCTAssertEqual(old.effectivePlayedAt, old.startedAt ?? old.scheduledAt ?? old.createdAt)
+        let store = freshStore()
+        store.games[0].playedTimeZoneID = "not-a-zone"
+        XCTAssertThrowsError(try store.exportBackup())
+    }
+
+    func testV30LineupCandidateLabelsPreserveNumbersAndNoNameFallback() {
+        var player = Player(name: "同名球员", number: 0, primaryPosition: .pitcher)
+        player.jerseyNumbers = ["00", "12"]
+        XCTAssertEqual(player.lineupSelectionText, "同名球员 · #00 / #12")
+        player.jerseyNumbers = ["0"]
+        XCTAssertEqual(player.lineupSelectionText, "同名球员 · #0")
+        player.chineseName = ""
+        XCTAssertEqual(player.lineupSelectionText, "#0")
+        player.jerseyNumbers = []; player.numbers = []
+        XCTAssertEqual(player.lineupSelectionText, "暂无背号")
+        player.englishName = "Alex"
+        XCTAssertEqual(player.lineupSelectionText, "Alex · 暂无背号")
+    }
+}
+
+private struct V30MemoryTeamCredential: TeamCredentialStorage {
+    let value: String
+    func loadOrCreate() throws -> String { value }
+}
+
+private final class V30DirectoryMemoryStorage: TeamDirectoryStorage {
+    var state = TeamDirectoryState()
+    var saves = 0
+    var failSaveAt: Int?
+    var failLoad = false
+    func load() throws -> TeamDirectoryState {
+        if failLoad { throw CocoaError(.fileReadNoPermission) }
+        return state
+    }
+    func save(_ state: TeamDirectoryState) throws {
+        saves += 1
+        if saves == failSaveAt { throw CocoaError(.fileWriteOutOfSpace) }
+        self.state = state
+    }
+}
+
+private actor V30DirectoryService: TeamDirectoryService {
+    var epoch = UUID()
+    var teamsValue: [SharedTeamSummary] = []
+    var results: [UUID: SharedTeamMembership] = [:]
+    var createIDs: [UUID] = []
+    var enrollCount = 0
+    var loseCreateResponse = false
+    func loseNextResponse() { loseCreateResponse = true }
+    func recoverServer() { epoch = UUID() }
+    func enroll(deviceName: String) async throws -> UUID { enrollCount += 1; return UUID() }
+    func teams() async throws -> SharedTeamList { SharedTeamList(teams: teamsValue, recoveryEpoch: epoch) }
+    func createTeam(name: String, nickname: String, operationID: UUID, profile: SharedRosterSeed?, recoveryToken: String?) async throws -> SharedTeamMembership {
+        createIDs.append(operationID)
+        if let saved = results[operationID] { return saved }
+        let result = SharedTeamMembership(teamID: UUID(), memberID: UUID(), role: .admin)
+        results[operationID] = result
+        teamsValue.append(SharedTeamSummary(id: result.teamID, name: name, revision: 1, role: .admin, memberID: result.memberID))
+        if loseCreateResponse { loseCreateResponse = false; throw TeamServiceError.message("模拟响应丢失") }
+        return result
+    }
+    func detail(teamID: UUID) async throws -> SharedTeamDetail {
+        guard let team = teamsValue.first(where: { $0.id == teamID }) else { throw TeamServiceError.response(404, "无权访问") }
+        return SharedTeamDetail(team: SharedTeamProfile(id: teamID, name: team.name, revision: team.revision, shortName: team.name, city: "", players: []), role: team.role, memberID: team.memberID)
+    }
+    func preview(token: String) async throws -> SharedInvitationPreview { throw TeamServiceError.response(410, "邀请失效") }
+    func invite(teamID: UUID, role: SharedTeamRole, token: String, operationID: UUID) async throws -> SharedTeamInvitation { throw TeamServiceError.response(403, "无权邀请") }
+    func join(token: String, nickname: String, operationID: UUID) async throws -> SharedTeamMembership { throw TeamServiceError.response(410, "邀请失效") }
+    func invitations(teamID: UUID) async throws -> [SharedTeamInvitation] { [] }
+    func members(teamID: UUID) async throws -> [SharedTeamMember] { [] }
+    func revoke(teamID: UUID, invitationID: UUID, operationID: UUID) async throws { }
+    func changeMember(teamID: UUID, member: SharedTeamMember, role: SharedTeamRole, remove: Bool, operationID: UUID) async throws { }
+    func leave(teamID: UUID, operationID: UUID) async throws { }
+}
+
+extension GameStoreTests {
+    func testV30SharedDirectoryRetryAfterRelaunchUsesSameOperationAndBinding() async throws {
+        let api = V30DirectoryService(), storage = V30DirectoryMemoryStorage()
+        let localID = UUID()
+        let directory = TeamSharingStore(service: api, storage: storage)
+        await directory.connect()
+        await api.loseNextResponse()
+        let sent = await directory.submit(.create(name: "待确认球队", nickname: "管理员", localTeamID: localID, profile: nil))
+        XCTAssertFalse(sent)
+        let pending = try XCTUnwrap(storage.state.pending)
+        let reopened = TeamSharingStore(service: api, storage: storage)
+        await reopened.connect()
+        XCTAssertFalse(reopened.canMutate)
+        let duplicate = await reopened.submit(.create(name: "误重复", nickname: "管理员", localTeamID: localID, profile: nil))
+        XCTAssertFalse(duplicate)
+        let retried = await reopened.retryPending()
+        XCTAssertTrue(retried)
+        let ids = await api.createIDs
+        XCTAssertEqual(ids, [pending.id, pending.id])
+        XCTAssertEqual(reopened.teams.count, 1)
+        XCTAssertEqual(reopened.state.bindings.count, 1)
+        XCTAssertEqual(reopened.state.bindings.first?.localTeamID, localID)
+        XCTAssertNil(storage.state.pending)
+    }
+
+    func testV30SharedDirectoryRequiresDurableInputBeforeSending() async {
+        let api = V30DirectoryService(), storage = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: api, storage: storage)
+        await directory.connect()
+        storage.failSaveAt = storage.saves + 1
+        let sent = await directory.submit(.create(name: "未发送", nickname: "管理员", localTeamID: nil, profile: nil))
+        XCTAssertFalse(sent)
+        let ids = await api.createIDs
+        XCTAssertTrue(ids.isEmpty)
+        XCTAssertNil(storage.state.pending)
+        let unreadable = V30DirectoryMemoryStorage(); unreadable.failLoad = true
+        let offlineAPI = V30DirectoryService(), blocked = TeamSharingStore(service: offlineAPI, storage: unreadable)
+        await blocked.connect()
+        let count = await offlineAPI.enrollCount
+        XCTAssertEqual(count, 0); XCTAssertFalse(blocked.canMutate)
+    }
+
+    func testV30SharedDirectoryAcknowledgmentDiskFailureRetainsRetryWithoutDuplicate() async throws {
+        let api = V30DirectoryService(), storage = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: api, storage: storage)
+        await directory.connect()
+        storage.failSaveAt = storage.saves + 3 // pending, preflight refresh, acknowledged result
+        let sent = await directory.submit(.create(name: "已提交待保存", nickname: "管理员", localTeamID: nil, profile: nil))
+        XCTAssertFalse(sent); XCTAssertNotNil(storage.state.pending)
+        storage.failSaveAt = nil
+        let retried = await directory.retryPending()
+        XCTAssertTrue(retried)
+        let ids = await api.createIDs
+        XCTAssertEqual(Set(ids).count, 1); XCTAssertEqual(directory.teams.count, 1)
+    }
+
+    func testV30SharedDirectoryRecoveryEpochBlocksOldPendingSubmission() async throws {
+        let api = V30DirectoryService(), storage = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: api, storage: storage)
+        await directory.connect(); await api.loseNextResponse()
+        _ = await directory.submit(.create(name: "恢复待核对", nickname: "管理员", localTeamID: nil, profile: nil))
+        await api.recoverServer()
+        let retried = await directory.retryPending()
+        XCTAssertFalse(retried); XCTAssertTrue(directory.state.requiresRecoveryReview)
+        XCTAssertNotNil(directory.state.pending); XCTAssertTrue(directory.teams.isEmpty)
+        let ids = await api.createIDs
+        XCTAssertEqual(ids.count, 1)
+        let reconciled = await directory.reconcileAfterRecovery()
+        XCTAssertTrue(reconciled); XCTAssertFalse(directory.state.requiresRecoveryReview)
+        XCTAssertNil(directory.state.pending); XCTAssertEqual(directory.teams.count, 1)
+        let after = await api.createIDs; XCTAssertEqual(after.count, 1, "Recovery review must not replay the old create request")
+    }
+
+    func testV30SharedDirectoryEncryptsPendingSecretsAndRejectsForeignDevice() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("private/directory.sealed")
+        let vault = V30MemoryTeamCredential(value: try TeamDeviceKeychain.randomSecret())
+        let file = TeamDirectoryFile(url: url, vault: vault)
+        let invitation = try TeamDeviceKeychain.randomSecret()
+        var state = TeamDirectoryState()
+        state.pending = PendingTeamCommand(id: UUID(), command: .join(token: invitation, nickname: "保密称呼"))
+        try file.save(state)
+        let raw = try Data(contentsOf: url)
+        XCTAssertNil(raw.range(of: Data(invitation.utf8)))
+        XCTAssertNil(raw.range(of: Data(vault.value.utf8)))
+        XCTAssertEqual(try file.load().pending?.id, state.pending?.id)
+        XCTAssertEqual(try url.deletingLastPathComponent().resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
+        let other = TeamDirectoryFile(url: url, vault: V30MemoryTeamCredential(value: try TeamDeviceKeychain.randomSecret()))
+        XCTAssertThrowsError(try other.load())
+        var tampered = raw; tampered[tampered.startIndex] ^= 1; try tampered.write(to: url)
+        XCTAssertThrowsError(try file.load())
+    }
+
+    func testV30InvitationParsingAcceptsOnlyExplicitTrustedRoutesAndCanonicalSecrets() throws {
+        let secret = try TeamDeviceKeychain.randomSecret()
+        XCTAssertEqual(TeamInvitationLink.token(from: TeamInvitationLink.url(token: secret).absoluteString), secret)
+        XCTAssertEqual(TeamInvitationLink.token(from: "baseballmaster://join#\(secret)"), secret)
+        for prefix in ["https://evil.example/join#", "http://baseballmaster.cc/join#", "https://baseballmaster.cc/other#",
+                       "https://baseballmaster.cc:444/join#", "https://user@baseballmaster.cc/join#", "https://baseballmaster.cc/join?token="] {
+            XCTAssertNil(TeamInvitationLink.token(from: prefix + secret))
+        }
+        XCTAssertNil(TeamInvitationLink.token(from: String(repeating: "A", count: 42) + "B"))
+    }
+
+    func testV30DirectoryClientRosterMemberManagementAndLeaveWithLocalServer() async throws {
+        let url = URL(string: "http://127.0.0.1:18788/api/v3")!
+        let admin = try TeamServiceClient(baseURL: url, vault: V30MemoryTeamCredential(value: TeamDeviceKeychain.randomSecret()))
+        let viewer = try TeamServiceClient(baseURL: url, vault: V30MemoryTeamCredential(value: TeamDeviceKeychain.randomSecret()))
+        _ = try await admin.enroll(deviceName: "名单管理设备"); _ = try await viewer.enroll(deviceName: "受邀设备")
+        var player = Player(name: "背号队员", number: 0, primaryPosition: .pitcher); player.jerseyNumbers = ["00", "0"]
+        let local = Team(name: "共享名单验收", shortName: "名单", city: "上海", players: [player])
+        let membership = try await admin.createTeam(name: local.name, nickname: "管理员", operationID: UUID(), profile: SharedRosterSeed(team: local))
+        let token = try TeamDeviceKeychain.randomSecret()
+        let invitation = try await admin.invite(teamID: membership.teamID, role: .member, token: token, operationID: UUID())
+        let preview = try await viewer.preview(token: token)
+        XCTAssertEqual(preview.teamName, local.name); XCTAssertEqual(preview.role, .member)
+        let guest = try await viewer.join(token: token, nickname: "球员家长", operationID: UUID())
+        let detail = try await viewer.detail(teamID: guest.teamID)
+        XCTAssertEqual(detail.team.players.first?.numbers, ["00", "0"])
+        XCTAssertNotEqual(detail.team.players.first?.id, player.id)
+        let members = try await admin.members(teamID: membership.teamID)
+        let member = try XCTUnwrap(members.first { $0.id == guest.memberID })
+        try await admin.changeMember(teamID: membership.teamID, member: member, role: .scorer, remove: false, operationID: UUID())
+        let promoted = try await viewer.detail(teamID: guest.teamID)
+        XCTAssertEqual(promoted.role, .scorer)
+        do { _ = try await viewer.members(teamID: guest.teamID); XCTFail("Scorer cannot manage members") } catch { XCTAssertTrue(error.localizedDescription.contains("当前角色")) }
+        let activeInvites = try await admin.invitations(teamID: membership.teamID)
+        XCTAssertFalse(activeInvites.contains { $0.id == invitation.id })
+        let leave = UUID(); try await viewer.leave(teamID: guest.teamID, operationID: leave)
+        try await viewer.leave(teamID: guest.teamID, operationID: leave)
+        let remaining = try await viewer.teams(); XCTAssertTrue(remaining.teams.isEmpty)
+        do { try await admin.leave(teamID: membership.teamID, operationID: UUID()); XCTFail("Last admin cannot leave") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("另一名管理员")) }
+    }
+}
+
+extension GameStoreTests {
+    func testV30TeamClientCreateInviteJoinAndReadAcrossTwoDevices() async throws {
+        let url = URL(string: "http://127.0.0.1:18788/api/v3")!
+        var probe = URLRequest(url: url.appendingPathComponent("teams"))
+        probe.timeoutInterval = 2
+        do {
+            let (_, response) = try await URLSession.shared.data(for: probe)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 426)
+        } catch let error as URLError where [.cannotConnectToHost, .timedOut].contains(error.code) {
+            throw XCTSkip("Run the local collaboration integration server on port 18788 for this test")
+        }
+        let admin = try TeamServiceClient(baseURL: url, vault: V30MemoryTeamCredential(value: TeamDeviceKeychain.randomSecret()))
+        let viewer = try TeamServiceClient(baseURL: url, vault: V30MemoryTeamCredential(value: TeamDeviceKeychain.randomSecret()))
+        let deviceID = try await admin.enroll(deviceName: "管理员测试手机")
+        let retryID = try await admin.enroll(deviceName: "管理员测试手机")
+        XCTAssertEqual(deviceID, retryID)
+        _ = try await viewer.enroll(deviceName: "成员测试手机")
+        let operationID = UUID()
+        let team = try await admin.createTeam(name: "端到端合成球队", nickname: "管理员", operationID: operationID)
+        let repeatTeam = try await admin.createTeam(name: "端到端合成球队", nickname: "管理员", operationID: operationID)
+        XCTAssertEqual(team.teamID, repeatTeam.teamID)
+        let invite = try TeamDeviceKeychain.randomSecret()
+        let invitation = try await admin.invite(teamID: team.teamID, role: .member, token: invite, operationID: UUID())
+        XCTAssertEqual(invitation.role, .member)
+        let joinOperation = UUID()
+        let member = try await viewer.join(token: invite, nickname: "队员", operationID: joinOperation)
+        XCTAssertEqual(member.teamID, team.teamID); XCTAssertEqual(member.role, .member)
+        let replay = try await viewer.join(token: invite, nickname: "队员", operationID: joinOperation)
+        XCTAssertEqual(replay.memberID, member.memberID)
+        let list = try await viewer.teams()
+        XCTAssertEqual(list.teams.count, 1); XCTAssertEqual(list.teams.first?.name, "端到端合成球队")
+        do {
+            _ = try await viewer.invite(teamID: team.teamID, role: .scorer, token: TeamDeviceKeychain.randomSecret(), operationID: UUID())
+            XCTFail("Member cannot invite")
+        } catch { XCTAssertEqual(error.localizedDescription, "当前角色不能执行此操作。") }
+    }
+
+    func testV30TeamCredentialPersistsLocallyAndDoesNotSynchronize() throws {
+        let account = "test-" + UUID().uuidString
+        let vault = TeamDeviceKeychain(account: account)
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.jasonchen.baseballmaster.collaboration", kSecAttrAccount as String: account]
+        defer { SecItemDelete(query as CFDictionary) }
+        let value = try vault.loadOrCreate()
+        XCTAssertEqual(value.count, 43)
+        XCTAssertEqual(try vault.loadOrCreate(), value)
+        var lookup = query; lookup[kSecReturnAttributes as String] = true
+        var attributes: CFTypeRef?
+        XCTAssertEqual(SecItemCopyMatching(lookup as CFDictionary, &attributes), errSecSuccess)
+        let result = try XCTUnwrap(attributes as? [String: Any])
+        XCTAssertEqual(result[kSecAttrAccessible as String] as? String, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        XCTAssertEqual((result[kSecAttrSynchronizable as String] as? NSNumber)?.boolValue ?? false, false)
+    }
+
+    func testV30BackfillAndDateCorrectionSurviveDatabaseReopen() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("roster.sqlite")
+        let store = try v30Backfill(.coachPitch, persistenceURL: url)
+        store.startGameClock(); store.pauseGameClock(); store.finishGame()
+        let game = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertTrue(store.updateCompletedGameDate(id: game.id, playedAt: game.effectivePlayedAt.addingTimeInterval(-86400),
+            timeZoneID: "Asia/Shanghai", expectedRevision: game.revision ?? 0))
+        let restored = GameStore(persistenceURL: url)
+        XCTAssertFalse(restored.requiresDataRecovery)
+        XCTAssertEqual(restored.recentGames, store.recentGames)
+        let db = try CoreDataRosterStore(storeURL: url)
+        _ = try db.loadSnapshot()
+        XCTAssertEqual(db.loadedSchemaVersion, 7)
+        try db.close()
+    }
+}
+
+extension GameStoreTests {
+    func testV30PendingPitcherCannotRecordOrWriteAnAccidentalSubstitution() throws {
+        let store = v111Store(rules: GameRules())
+        store.recordPitch(.ball)
+        let incoming = try XCTUnwrap(store.availablePitchers.first)
+        let before = store.game, saved = store.activeStoredGame
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        XCTAssertNotNil(store.pendingPitcherChange)
+        XCTAssertFalse(store.canRecordAction)
+        store.recordPitch(.calledStrike)
+        XCTAssertFalse(store.applyPlay(.groundOut))
+        store.endCurrentHalf()
+        store.undo()
+        store.finishGame()
+        XCTAssertEqual(store.game, before)
+        XCTAssertEqual(store.activeStoredGame, saved)
+        store.cancelPitcherChange()
+        XCTAssertTrue(store.canRecordAction)
+        XCTAssertEqual(store.game, before)
+        XCTAssertEqual(store.pitchingLine(for: incoming), PitchingLine())
+        store.undo()
+        XCTAssertEqual(store.pitchingLine(for: before.currentPitcher).pitches, 0,
+                       "Cancelled selection must not add an undo operation")
+    }
+
+    func testV30ConfirmedPitcherAccumulatesOnlyActualOutsAndCanUndo() throws {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 1))
+        store.recordPitch(.ball)
+        let previous = store.currentPitcher
+        let incoming = try XCTUnwrap(store.availablePitchers.first)
+        let before = store.game
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        let confirmation = try XCTUnwrap(store.pendingPitcherChange)
+        XCTAssertTrue(store.confirmPitcherChange(id: confirmation.id))
+        XCTAssertNil(store.pendingPitcherChange)
+        XCTAssertTrue(store.canRecordAction)
+        XCTAssertEqual(store.currentPitcher.id, incoming.id)
+        XCTAssertEqual(store.pitchingLine(for: incoming).inningsText, "0.0")
+        XCTAssertEqual(store.pitchingLine(for: previous).pitches, 1)
+        let changed = store.game
+        store.undo(); XCTAssertEqual(store.game, before)
+        store.redo(); XCTAssertEqual(store.game, changed)
+        XCTAssertFalse(store.confirmPitcherChange(id: confirmation.id), "Double confirmation cannot duplicate the change")
+        store.recordPitch(.ball)
+        XCTAssertEqual(store.pitchingLine(for: incoming).inningsText, "0.0")
+        for outs in 1...3 {
+            XCTAssertTrue(store.applyPlay(.groundOut))
+            XCTAssertEqual(store.pitchingLine(for: incoming).outsRecorded, outs)
+            XCTAssertEqual(store.pitchingLine(for: incoming).inningsText, outs == 3 ? "1.0" : "0.\(outs)")
+        }
+        XCTAssertNil(store.validateScoringTimeline())
+        XCTAssertEqual(store.activeStoredGame?.state.pitching[incoming.id]?.outsRecorded, 3)
+    }
+
+    func testV30PitcherConfirmationPreservesInheritedRunnersAndWalkResponsibility() throws {
+        let store = v111Store(rules: GameRules())
+        XCTAssertTrue(store.applyPlay(.single))
+        for _ in 0..<3 { store.recordPitch(.ball) }
+        let previous = store.currentPitcher, runners = store.game.baseRunners
+        let incoming = try XCTUnwrap(store.availablePitchers.first)
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        XCTAssertTrue(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        XCTAssertEqual(store.game.baseRunners, runners)
+        XCTAssertEqual(store.game.walkResponsiblePitcherID, previous.id)
+        XCTAssertTrue(runners.values.allSatisfy { store.game.runnerPitcherIDs?[$0.id] == previous.id })
+        store.recordPitch(.ball)
+        XCTAssertEqual(store.pitchingLine(for: previous).walks, 1)
+        XCTAssertEqual(store.pitchingLine(for: incoming).walks, 0)
+        XCTAssertEqual(store.pitchingLine(for: incoming).outsRecorded, 0)
+    }
+
+    func testV30EveryLiveLineupPathConfirmsPitcherAndCancelKeepsDraftUncommitted() throws {
+        for path in 0..<6 {
+            let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+            store.recordPitch(.ball)
+            let original = store.currentPitcher
+            let bench = store.fieldingBenchPlayers
+            let catcher = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .catcher })
+            let change: GameStore.LineupChange
+            switch path {
+            case 0: change = .pitcher(try XCTUnwrap(bench.first))
+            case 1: change = .fielder(original, try XCTUnwrap(bench.first))
+            case 2: change = .position(catcher, .pitcher)
+            case 3: change = .position(original, .catcher)
+            case 4:
+                XCTAssertGreaterThanOrEqual(bench.count, 2)
+                change = .doubleSwitch(original, bench[0], .pitcher, catcher, bench[1], .catcher)
+            default:
+                var draft = store.lineupDraft(forHomeTeam: !store.game.isTop)
+                let incoming = try XCTUnwrap(draft.players.first { draft.fieldingIDs.contains($0.id) && $0.primaryPosition == .catcher })
+                draft.changePosition(playerID: incoming.id, to: .pitcher)
+                change = .lineup(draft)
+            }
+            let before = store.game
+            XCTAssertFalse(store.requestLineupChange(change), "path \(path)")
+            XCTAssertNotNil(store.pendingPitcherChange, "path \(path)")
+            XCTAssertEqual(store.game, before)
+            store.cancelPitcherChange()
+            XCTAssertEqual(store.game, before)
+            XCTAssertFalse(store.requestLineupChange(change))
+            let failedProposal = try XCTUnwrap(store.pendingPitcherChange)
+            let saved = store.activeStoredGame
+            CoreDataRosterStore.writeFault = { throw CocoaError(.fileWriteOutOfSpace) }
+            let failed = store.confirmPitcherChange(id: failedProposal.id)
+            CoreDataRosterStore.writeFault = nil
+            XCTAssertFalse(failed, "path \(path) must report the persistence failure")
+            XCTAssertEqual(store.game, before)
+            XCTAssertEqual(store.activeStoredGame, saved)
+            XCTAssertFalse(store.requestLineupChange(change))
+            let pending = try XCTUnwrap(store.pendingPitcherChange)
+            XCTAssertTrue(store.confirmPitcherChange(id: pending.id), "path \(path): \(store.actionErrorMessage ?? "")")
+            XCTAssertEqual(store.pitchingLine(for: pending.candidate).outsRecorded, 0)
+            let id = path == 5 ? store.game.activeAwayPitcherID : store.game.activeHomePitcherID
+            XCTAssertEqual(id, pending.candidate.id)
+            if path == 5 {
+                // This draft edits the batting team's future pitcher, who has not taken the mound yet.
+                XCTAssertTrue(store.game.pitcherInningUsage.innings(for: pending.candidate.id).isEmpty)
+                store.endCurrentHalf()
+            }
+            XCTAssertEqual(store.game.pitcherInningUsage.innings(for: pending.candidate.id), [1], "path \(path)")
+            XCTAssertEqual(store.pitchingLine(for: pending.candidate).inningsText, "0.0", "path \(path)")
+            XCTAssertFalse(store.game.pitcherInningUsage.hasIncompleteHistory, "path \(path)")
+        }
+    }
+
+    func testV30StalePitcherConfirmationAndWrongTokenDoNotApply() throws {
+        let store = v111Store(rules: GameRules())
+        store.recordPitch(.ball)
+        let incoming = try XCTUnwrap(store.availablePitchers.first)
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        let pending = try XCTUnwrap(store.pendingPitcherChange)
+        XCTAssertFalse(store.confirmPitcherChange(id: UUID()))
+        XCTAssertNotNil(store.pendingPitcherChange)
+        store.game.balls = 2 // Simulate a separately refreshed match snapshot.
+        let refreshed = store.game
+        XCTAssertFalse(store.confirmPitcherChange(id: pending.id))
+        XCTAssertEqual(store.game, refreshed)
+        XCTAssertNil(store.pendingPitcherChange)
+        XCTAssertTrue(store.actionErrorMessage?.contains("局面已变化") == true)
+    }
+
+    func testV30PitcherConfirmationSaveFailureRollsBackAndCanRetry() throws {
+        let store = v111Store(rules: GameRules())
+        store.recordPitch(.ball)
+        let incoming = try XCTUnwrap(store.availablePitchers.first)
+        let before = store.game, saved = store.activeStoredGame
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        CoreDataRosterStore.writeFault = { throw CocoaError(.fileWriteOutOfSpace) }
+        defer { CoreDataRosterStore.writeFault = nil }
+        XCTAssertFalse(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        XCTAssertEqual(store.game, before)
+        XCTAssertEqual(store.activeStoredGame, saved)
+        CoreDataRosterStore.writeFault = nil
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        XCTAssertTrue(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        XCTAssertEqual(store.currentPitcher.id, incoming.id)
+    }
+
+    func testV30PregameAndCoachFieldingKeepExistingConfirmationFlow() throws {
+        for coach in [false, true] {
+            var rules = GameRules()
+            rules.mode = coach ? .coachPitch : .standard
+            let store = v111Store(rules: rules)
+            if coach { store.startGameClock() }
+            let incoming = try XCTUnwrap(store.availablePitchers.first)
+            XCTAssertTrue(store.requestLineupChange(.pitcher(incoming)))
+            XCTAssertNil(store.pendingPitcherChange)
+            XCTAssertEqual(store.currentPitcher.id, incoming.id)
+            XCTAssertEqual(store.pitchingLine(for: incoming).outsRecorded, 0)
+        }
+    }
+}
+
+extension GameStoreTests {
+    func testV30AppearanceLimitCountsConfirmedZeroPitchEntryOncePerInning() throws {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 3))
+        let starter = store.currentPitcher
+        let incoming = try XCTUnwrap(store.availablePitchers.first)
+        XCTAssertTrue(store.game.pitcherInningUsage.inningsByPitcher.isEmpty)
+        store.startGameClock()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: starter.id), [1])
+        XCTAssertFalse(store.game.pitcherInningUsage.hasIncompleteHistory)
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: incoming.id).isEmpty)
+        store.cancelPitcherChange()
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: incoming.id).isEmpty)
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        XCTAssertTrue(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: incoming.id), [1])
+        XCTAssertEqual(store.pitchingLine(for: incoming), PitchingLine())
+        store.undo()
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: incoming.id).isEmpty)
+        store.redo()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: incoming.id), [1])
+        for player in [starter, incoming, starter] {
+            XCTAssertFalse(store.requestLineupChange(.pitcher(player)))
+            XCTAssertTrue(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        }
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: starter.id), [1])
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: incoming.id), [1])
+        XCTAssertTrue(store.game.pitching.isEmpty)
+    }
+
+    func testV30AppearanceLimitAdvancesWithDefensiveInningsWithoutAnyPitches() {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+        let homePitcher = store.currentPitcher
+        let awayPitcherID = store.game.activeAwayPitcherID!
+        store.startGameClock()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1])
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: awayPitcherID).isEmpty)
+        store.endCurrentHalf()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: awayPitcherID), [1])
+        store.endCurrentHalf()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1, 2])
+        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.pitchingLine(for: homePitcher).inningsText, "0.0")
+        store.pauseGameClock(); store.startGameClock()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id).count, 2)
+        store.endCurrentHalf(); store.endCurrentHalf()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1, 2, 3])
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板超限")
+        XCTAssertEqual(store.pitchingLine(for: homePitcher).pitches, 0)
+        XCTAssertEqual(store.pitchingLine(for: homePitcher).inningsText, "0.0")
+    }
+
+    func testV30TwoOutRelieverUsesFullLimitInningButOnlyActualStatisticalOut() throws {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 1))
+        let starter = store.currentPitcher
+        XCTAssertTrue(store.applyPlay(.groundOut)); XCTAssertTrue(store.applyPlay(.groundOut))
+        let incoming = try XCTUnwrap(store.availablePitchers.first)
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        XCTAssertTrue(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: incoming.id).count, 1)
+        XCTAssertEqual(store.pitchingLine(for: incoming).inningsText, "0.0")
+        XCTAssertTrue(store.applyPlay(.groundOut))
+        XCTAssertEqual(store.pitchingLine(for: incoming).inningsText, "0.1")
+        XCTAssertEqual(store.pitchingLine(for: starter).inningsText, "0.2")
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: incoming.id).count, 1)
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: starter.id).count, 1)
+        XCTAssertFalse(store.game.pitcherInningUsage.hasIncompleteHistory)
+    }
+
+    func testV30PregameAndBattingTeamPitcherSelectionDoNotInventMoundEntry() throws {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 3))
+        let pregamePitcher = try XCTUnwrap(store.availablePitchers.first)
+        XCTAssertTrue(store.requestLineupChange(.pitcher(pregamePitcher)))
+        XCTAssertTrue(store.game.pitcherInningUsage.inningsByPitcher.isEmpty)
+        store.startGameClock()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: pregamePitcher.id), [1])
+        var awayDraft = store.lineupDraft(forHomeTeam: false)
+        let oldAway = try XCTUnwrap(awayDraft.pitcherID)
+        let newAway = try XCTUnwrap(awayDraft.players.first { awayDraft.fieldingIDs.contains($0.id) && $0.primaryPosition == .catcher })
+        awayDraft.changePosition(playerID: newAway.id, to: .pitcher)
+        XCTAssertFalse(store.requestLineupChange(.lineup(awayDraft)))
+        XCTAssertTrue(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: oldAway).isEmpty)
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: newAway.id).isEmpty)
+        store.endCurrentHalf()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: newAway.id), [1])
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: oldAway).isEmpty)
+    }
+
+    func testV30AppearanceLimitSurvivesEncodingAndHistoryReplayAndCorrection() throws {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+        store.startGameClock()
+        let incoming = try XCTUnwrap(store.availablePitchers.first)
+        XCTAssertFalse(store.requestLineupChange(.pitcher(incoming)))
+        XCTAssertTrue(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        let saved = try XCTUnwrap(store.activeStoredGame)
+        let decoded = try JSONDecoder().decode(StoredGame.self, from: JSONEncoder().encode(saved))
+        XCTAssertEqual(decoded.state.pitcherInningUsage.inningsByPitcher, store.game.pitcherInningUsage.inningsByPitcher)
+        var draft = try store.makeCorrectionDraft()
+        let replayed = store.previewCorrection(draft)
+        XCTAssertNil(replayed.conflict)
+        XCTAssertEqual(replayed.game.pitcherInningUsage.inningsByPitcher, store.game.pitcherInningUsage.inningsByPitcher)
+        draft.journal.operations.removeAll { if case .pitcher(let id) = $0.command { return id == incoming.id }; return false }
+        let corrected = store.previewCorrection(draft)
+        XCTAssertNil(corrected.conflict)
+        XCTAssertTrue(corrected.game.pitcherInningUsage.innings(for: incoming.id).isEmpty)
+        XCTAssertEqual(corrected.game.pitching, store.game.pitching)
+    }
+
+    func testV30IncompleteOldMoundHistoryNeverUsesStatisticalIPForLimits() {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+        let pitcher = store.currentPitcher
+        store.game.pitching[pitcher.id] = PitchingLine(outsRecorded: 27, pitches: 90)
+        store.game.scoringEvents = nil
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: pitcher.id), [1])
+        XCTAssertTrue(store.game.pitcherInningUsage.hasIncompleteHistory)
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板待核对")
+        XCTAssertFalse(store.ruleNotices().contains { $0.contains("超过 2 局") })
+        XCTAssertEqual(store.pitchingLine(for: pitcher).inningsText, "9.0")
+    }
+
+    func testV30FinalHalfDecisionDoesNotCountAnUnplayedDefensiveHalf() {
+        let store = v111Store(rules: GameRules(scheduledInnings: 1, pitcherInningsLimit: 2))
+        let awayPitcher = store.game.activeAwayPitcherID!
+        store.startGameClock()
+        store.game.homeRunsByInning[0] = 1
+        store.endCurrentHalf()
+        XCTAssertEqual(store.game.pendingDecision, .regulationHalf)
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: awayPitcher).isEmpty)
+        store.resolveGameDecision(finish: true)
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: awayPitcher).isEmpty)
+    }
+
+    func testV30CoachPitchHasNoPitcherAppearanceQuotaAndSlowPitchCanUseOne() throws {
+        for mode in [GameMode.coachPitch, .slowPitch] {
+            let store = try v30Backfill(mode)
+            store.startGameClock()
+            XCTAssertEqual(store.game.pitcherInningUsage.innings(for: store.currentPitcher.id).count, mode == .coachPitch ? 0 : 1)
+        }
+    }
+}
+
+private final class V30MatchMemoryStorage: SharedMatchStorage {
+    var state = SharedMatchLocalState()
+    var failSave = false
+    func load() throws -> SharedMatchLocalState { state }
+    func save(_ state: SharedMatchLocalState) throws {
+        if failSave { throw CocoaError(.fileWriteOutOfSpace) }
+        self.state = state
+    }
+}
+private actor V30UnreliableMatchService: MatchService {
+    let client: TeamServiceClient
+    var offline = false
+    var loseNextResponse = false
+    var operations: [String] = []
+    var expireCursor = false
+    func expireNextCursor() { expireCursor = true }
+    var recoveryEpochOverride: UUID?
+    func simulateServerRecovery() { recoveryEpochOverride = UUID() }
+    var importCommitHook: (@MainActor @Sendable () -> Void)?
+    func afterImportCommit(_ hook: @escaping @MainActor @Sendable () -> Void) { importCommitHook = hook }
+    init(_ client: TeamServiceClient) { self.client = client }
+    func network(offline: Bool = false, loseNextResponse: Bool = false) { self.offline = offline; self.loseNextResponse = loseNextResponse }
+    func enroll(deviceName: String) async throws -> UUID { if offline { throw TeamServiceError.message("测试断网") }; return try await client.enroll(deviceName: deviceName) }
+    func teams() async throws -> SharedTeamList {
+        let value = try await client.teams()
+        return SharedTeamList(teams: value.teams, recoveryEpoch: recoveryEpochOverride ?? value.recoveryEpoch)
+    }
+    func matchPage(teamID: UUID, cursor: Int) async throws -> SharedMatchPage {
+        if expireCursor && cursor > 0 { expireCursor = false; throw TeamServiceError.response(410, "同步记录已整理") }
+        let value = try await client.matchPage(teamID: teamID, cursor: cursor)
+        return SharedMatchPage(games: value.games, cursor: value.cursor, hasMore: value.hasMore, recoveryEpoch: recoveryEpochOverride ?? value.recoveryEpoch)
+    }
+    func match(teamID: UUID, gameID: UUID) async throws -> SharedMatch { try await client.match(teamID: teamID, gameID: gameID) }
+    func matchCommand(path: String, method: String, body: MatchJSON) async throws -> MatchJSON {
+        operations.append(String(data: try JSONEncoder().encode(body), encoding: .utf8)!)
+        let result = try await client.matchCommand(path: path, method: method, body: body)
+        if path.hasSuffix("/history-imports/commit"), let hook = importCommitHook { importCommitHook = nil; await hook() }
+        if loseNextResponse { loseNextResponse = false; throw TeamServiceError.message("测试响应丢失") }
+        return result
+    }
+    func matchDevices(teamID: UUID, gameID: UUID) async throws -> [MatchDevice] { try await client.matchDevices(teamID: teamID, gameID: gameID) }
+    func matchViewers(teamID: UUID, gameID: UUID) async throws -> MatchViewers { try await client.matchViewers(teamID: teamID, gameID: gameID) }
+}
+
+extension GameStoreTests {
+    private func matchClient() throws -> TeamServiceClient {
+        try TeamServiceClient(baseURL: URL(string: "http://127.0.0.1:18788/api/v3")!, vault: V30MemoryTeamCredential(value: TeamDeviceKeychain.randomSecret()))
+    }
+    private func matchPartner(_ admin: TeamServiceClient, team: UUID, role: SharedTeamRole = .scorer) async throws -> TeamServiceClient {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "接手 iPhone 17 Pro")
+        let token = try TeamDeviceKeychain.randomSecret()
+        _ = try await admin.invite(teamID: team, role: role, token: token, operationID: UUID())
+        _ = try await client.join(token: token, nickname: role.title, operationID: UUID())
+        return client
+    }
+    func testV30FullMatchSyncHandoffAndReadOnlyScoringUseActualAppPayload() async throws {
+        let admin = try matchClient(); _ = try await admin.enroll(deviceName: "原记录员")
+        let team = try await admin.createTeam(name: "比赛交接集成", nickname: "教练", operationID: UUID())
+        let partner = try await matchPartner(admin, team: team.teamID), spectator = try await matchPartner(admin, team: team.teamID, role: .member)
+        let a = freshStore(), b = GameStore(persistenceURL: nil), c = GameStore(persistenceURL: nil)
+        let ca = SharedMatchCoordinator(store: a, service: admin, storage: V30MatchMemoryStorage())
+        let cb = SharedMatchCoordinator(store: b, service: partner, storage: V30MatchMemoryStorage())
+        let cc = SharedMatchCoordinator(store: c, service: spectator, storage: V30MatchMemoryStorage())
+        a.sharedMatches = ca; b.sharedMatches = cb; c.sharedMatches = cc
+        a.startGameClock(); a.recordPitch(.ball)
+        let source = try XCTUnwrap(a.activeStoredGame)
+        await ca.publish(source, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(ca.state.matches.last?.payload?.id)
+        a.openGame(id: sharedCopyID)
+        XCTAssertNil(ca.message)
+        let match = try XCTUnwrap(ca.match(localID: sharedCopyID))
+        XCTAssertTrue(ca.canEdit(sharedCopyID))
+        await cb.synchronize(teamID: team.teamID); await cc.synchronize(teamID: team.teamID)
+        XCTAssertNil(cb.message); XCTAssertNil(cc.message)
+        XCTAssertEqual(b.games.first(where: { $0.id == sharedCopyID })?.state, source.state)
+        c.openGame(id: sharedCopyID); let readOnly = c.game
+        c.recordPitch(.calledStrike); c.finishGame(); XCTAssertEqual(c.game, readOnly)
+        XCTAssertFalse(cc.canEdit(sharedCopyID))
+        let nextDevice = try await partner.enroll(deviceName: "接手设备")
+        await ca.command(match, resource: "handoff/propose", fields: ["targetDeviceID": .uuid(nextDevice)])
+        XCTAssertNil(ca.message); XCTAssertFalse(ca.canEdit(sharedCopyID))
+        let frozen = a.game; a.recordPitch(.calledStrike); XCTAssertEqual(a.game, frozen)
+        await cb.synchronize(teamID: team.teamID)
+        let offered = try XCTUnwrap(cb.match(id: match.id)); XCTAssertNotNil(offered.handoff)
+        await cb.command(offered, resource: "handoff/accept")
+        XCTAssertNil(cb.message); XCTAssertTrue(cb.canEdit(sharedCopyID))
+        b.openGame(id: sharedCopyID); b.recordPitch(.calledStrike)
+        await cb.waitForSync()
+        await ca.synchronize(teamID: team.teamID)
+        XCTAssertEqual(a.games.first(where: { $0.id == sharedCopyID })?.state.strikes, 1)
+        XCTAssertFalse(ca.canEdit(sharedCopyID)); XCTAssertEqual(cb.match(id: match.id)?.writerEpoch, 2)
+        XCTAssertTrue(ca.state.conflicts.isEmpty); XCTAssertTrue(cc.state.conflicts.isEmpty)
+    }
+    func testV30MatchLostResponseRelaunchAndDurableQueuePreventDuplicateCreation() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "测试")
+        let team = try await client.createTeam(name: "续传测试", nickname: "教练", operationID: UUID())
+        let unreliable = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage(), store = freshStore()
+        let coordinator = SharedMatchCoordinator(store: store, service: unreliable, storage: disk); store.sharedMatches = coordinator
+        await unreliable.network(loseNextResponse: true)
+        await coordinator.publish(try XCTUnwrap(store.activeStoredGame), teamID: team.teamID)
+        XCTAssertEqual(disk.state.pending.count, 1)
+        let operationID = try XCTUnwrap(disk.state.pending.first?.id)
+        let relaunched = SharedMatchCoordinator(store: store, service: unreliable, storage: disk); store.sharedMatches = relaunched
+        await relaunched.synchronize(teamID: team.teamID)
+        XCTAssertNil(relaunched.message); XCTAssertTrue(disk.state.pending.isEmpty)
+        let page = try await client.matchPage(teamID: team.teamID, cursor: 0); XCTAssertEqual(page.games.count, 1)
+        let calls = await unreliable.operations
+        XCTAssertEqual(calls.count, 2)
+        for call in calls { XCTAssertTrue(call.lowercased().contains(operationID.uuidString.lowercased())) }
+        let second = freshStore(), failing = V30MatchMemoryStorage(); failing.failSave = true
+        let protected = SharedMatchCoordinator(store: second, service: unreliable, storage: failing)
+        await protected.publish(try XCTUnwrap(second.activeStoredGame), teamID: team.teamID)
+        let after = await unreliable.operations; XCTAssertEqual(after.count, 2)
+    }
+    func testV30OfflineScoringThenForceTakeoverPreservesConflictAndRejectsOldWriter() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "原设备")
+        let team = try await client.createTeam(name: "离线接管测试", nickname: "教练", operationID: UUID())
+        let admin2 = try await matchPartner(client, team: team.teamID)
+        let members = try await client.members(teamID: team.teamID), secondMember = try XCTUnwrap(members.first { $0.id != team.memberID })
+        try await client.changeMember(teamID: team.teamID, member: secondMember, role: .admin, remove: false, operationID: UUID())
+        let a = freshStore(), disk = V30MatchMemoryStorage(), unreliable = V30UnreliableMatchService(client)
+        let ca = SharedMatchCoordinator(store: a, service: unreliable, storage: disk); a.sharedMatches = ca
+        await ca.publish(try XCTUnwrap(a.activeStoredGame), teamID: team.teamID)
+        a.openGame(id: try XCTUnwrap(ca.state.matches.first?.payload?.id))
+        let shared = try XCTUnwrap(ca.state.matches.first), localID = try XCTUnwrap(shared.payload?.id)
+        await unreliable.network(offline: true); a.recordPitch(.ball); await ca.waitForSync()
+        XCTAssertEqual(a.game.balls, 1); XCTAssertFalse(ca.state.pending.isEmpty)
+        let b = GameStore(persistenceURL: nil), cb = SharedMatchCoordinator(store: b, service: admin2, storage: V30MatchMemoryStorage()); b.sharedMatches = cb
+        await cb.synchronize(teamID: team.teamID)
+        let remote = try XCTUnwrap(cb.match(id: shared.id)), device = try XCTUnwrap(cb.state.deviceID)
+        await cb.command(remote, resource: "handoff/force", fields: ["targetDeviceID": .uuid(device), "confirmRisk": .bool(true)])
+        XCTAssertNil(cb.message)
+        await unreliable.network(); await ca.synchronize(teamID: team.teamID)
+        XCTAssertEqual(ca.state.conflicts.first?.game.state.balls, 1)
+        XCTAssertFalse(ca.canEdit(localID)); XCTAssertTrue(ca.state.pending.isEmpty)
+        await ca.synchronize(teamID: team.teamID)
+        XCTAssertEqual(ca.match(id: shared.id)?.payload?.state.balls, 0)
+        XCTAssertEqual(ca.state.conflicts.first?.game.state.balls, 1)
+    }
+    func testV30SharedMatchFinalDateCorrectionAndHistoricalPermissionsStayIndependent() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "记录手机")
+        let team = try await client.createTeam(name: "历史授权测试", nickname: "教练", operationID: UUID())
+        let store = freshStore(), coordinator = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = coordinator
+        store.recordPitch(.ball); store.finishGame()
+        let local = try XCTUnwrap(store.activeStoredGame)
+        await coordinator.publish(local, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(coordinator.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+        XCTAssertNil(coordinator.message)
+        let match = try XCTUnwrap(coordinator.match(localID: sharedCopyID))
+        XCTAssertEqual(match.accessMode, .closed)
+        await coordinator.command(match, resource: "access", fields: ["mode": .string("public")]); XCTAssertNil(coordinator.message)
+        XCTAssertTrue(store.updateCompletedGameDate(id: sharedCopyID, playedAt: Date().addingTimeInterval(-86400), timeZoneID: "Asia/Shanghai", expectedRevision: store.activeStoredGame!.revision ?? 0))
+        await coordinator.waitForSync()
+        let remote = try await client.match(teamID: team.teamID, gameID: match.id)
+        XCTAssertEqual(remote.accessMode, .public); XCTAssertEqual(remote.payload?.playedAt, store.activeStoredGame?.playedAt)
+        XCTAssertEqual(remote.payload?.state, local.state)
+        await coordinator.command(remote, resource: "access", fields: ["mode": .string("closed")])
+        let closed = try await client.match(teamID: team.teamID, gameID: match.id)
+        XCTAssertNotNil(closed.payload); XCTAssertEqual(closed.accessMode, .closed)
+    }
+}
+
+extension GameStoreTests {
+    func testV30ThreeModeCompleteGamesAndCorrectionReplaySurviveSharing() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "三模式测试")
+        let team = try await client.createTeam(name: "三模式共享", nickname: "教练", operationID: UUID())
+        for mode: GameMode in [.standard, .coachPitch, .slowPitch] {
+            let store = try v30Backfill(mode)
+            store.startGameClock(); store.recordPitch(.ball); _ = store.applyPlay(.single); store.finishGame()
+            let coordinator = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = coordinator
+            let local = try XCTUnwrap(store.activeStoredGame)
+            await coordinator.publish(local, teamID: team.teamID); XCTAssertNil(coordinator.message, mode.rawValue)
+        let sharedCopyID = try XCTUnwrap(coordinator.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+            let match = try XCTUnwrap(coordinator.match(localID: sharedCopyID)), remote = try await client.match(teamID: team.teamID, gameID: match.id)
+            XCTAssertEqual(remote.payload?.state, local.state); XCTAssertEqual(remote.payload?.rules, local.rules)
+            let draft = try store.makeCorrectionDraft(), preview = store.previewCorrection(draft)
+            XCTAssertTrue(preview.canSave, preview.conflict ?? "")
+            XCTAssertEqual(preview.game.homeScore, local.state.homeScore); XCTAssertEqual(preview.game.awayScore, local.state.awayScore)
+            XCTAssertTrue(store.reopenGame()); store.undo(); await coordinator.waitForSync()
+            let revised = try await client.match(teamID: team.teamID, gameID: match.id)
+            XCTAssertGreaterThan(revised.serverRevision, remote.serverRevision)
+            XCTAssertEqual(revised.payload?.state, store.game)
+        }
+    }
+    func testV30SharedBackupRestoreDoesNotPublishAnOldVersionAndQueueIsDeviceBound() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "备份测试")
+        let team = try await client.createTeam(name: "共享备份保护", nickname: "教练", operationID: UUID())
+        let store = freshStore(), coordinator = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = coordinator
+        await coordinator.publish(try XCTUnwrap(store.activeStoredGame), teamID: team.teamID)
+        store.openGame(id: try XCTUnwrap(coordinator.state.matches.first?.payload?.id))
+        let oldBackup = try LocalBackup.read(store.exportBackup()), localID = try XCTUnwrap(store.activeGameID)
+        store.recordPitch(.ball); await coordinator.waitForSync()
+        let match = try XCTUnwrap(coordinator.match(localID: localID)), revision = match.serverRevision
+        try store.restoreBackup(oldBackup)
+        XCTAssertFalse(coordinator.canEdit(localID)); XCTAssertEqual(coordinator.state.conflicts.count, 1)
+        await coordinator.synchronize(teamID: team.teamID)
+        let remote = try await client.match(teamID: team.teamID, gameID: match.id)
+        XCTAssertEqual(remote.serverRevision, revision); XCTAssertEqual(remote.payload?.state.balls, 1)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = SharedMatchFile(url: directory.appendingPathComponent("matches.sealed"), vault: V30MemoryTeamCredential(value: try TeamDeviceKeychain.randomSecret()))
+        try file.save(coordinator.state)
+        XCTAssertFalse(String(data: try Data(contentsOf: file.url), encoding: .utf8)?.contains("payload") == true)
+        let another = SharedMatchFile(url: file.url, vault: V30MemoryTeamCredential(value: try TeamDeviceKeychain.randomSecret()))
+        XCTAssertThrowsError(try another.load())
+        XCTAssertEqual(try file.load().matches.count, 1)
+    }
+}
+
+
+extension GameStoreTests {
+    func testV30RemovedMemberClearsSharedCopyAndPublisherKeepsOnlyOriginalLocalGame() async throws {
+        let admin = try matchClient(); _ = try await admin.enroll(deviceName: "教练")
+        let team = try await admin.createTeam(name: "退出清理", nickname: "教练", operationID: UUID())
+        let publisher = try await matchPartner(admin, team: team.teamID)
+        let reader = try await matchPartner(admin, team: team.teamID, role: .member)
+        let a = freshStore(), ca = SharedMatchCoordinator(store: a, service: publisher, storage: V30MatchMemoryStorage()); a.sharedMatches = ca
+        let original = try XCTUnwrap(a.activeStoredGame)
+        await ca.publish(original, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(ca.state.matches.first?.payload?.id); a.openGame(id: sharedCopyID)
+        a.recordPitch(.ball); await ca.waitForSync()
+        let b = GameStore(persistenceURL: nil), cb = SharedMatchCoordinator(store: b, service: reader, storage: V30MatchMemoryStorage()); b.sharedMatches = cb
+        await cb.synchronize(teamID: team.teamID)
+        XCTAssertTrue(b.games.contains { $0.id == sharedCopyID })
+        let sharedID = try XCTUnwrap(cb.state.matches.first?.id)
+        b.openGame(id: sharedCopyID)
+        try await reader.leave(teamID: team.teamID, operationID: UUID())
+        await cb.synchronize(teamID: team.teamID)
+        XCTAssertNil(cb.message); XCTAssertFalse(b.games.contains { $0.id == sharedCopyID }); XCTAssertNil(b.activeGameID)
+        XCTAssertEqual(b.game.balls, 0)
+        try await publisher.leave(teamID: team.teamID, operationID: UUID())
+        await ca.synchronize(teamID: team.teamID)
+        XCTAssertNil(ca.message); XCTAssertTrue(ca.state.matches.isEmpty)
+        XCTAssertEqual(a.games.first { $0.id == original.id }?.state, original.state)
+        XCTAssertNil(a.games.first { $0.id == original.id }?.sharedGameID)
+        let retained = try await admin.match(teamID: team.teamID, gameID: sharedID)
+        XCTAssertNotNil(retained.payload)
+    }
+}
+
+private actor V30SecurityClient: TeamDirectoryService, TeamSecurityService {
+    let client: TeamServiceClient
+    var lose = false
+    var delayedRecoveryReply: MatchJSON?
+    var securityCalls = 0
+    init(_ client: TeamServiceClient) { self.client = client }
+    func loseNextResponse() { lose = true }
+    func deliverDelayedRecoveryRead(_ value: MatchJSON) { delayedRecoveryReply = value }
+    func enroll(deviceName: String) async throws -> UUID { try await client.enroll(deviceName: deviceName) }
+    func teams() async throws -> SharedTeamList { try await client.teams() }
+    func createTeam(name: String, nickname: String, operationID: UUID, profile: SharedRosterSeed?, recoveryToken: String?) async throws -> SharedTeamMembership { try await client.createTeam(name: name, nickname: nickname, operationID: operationID, profile: profile, recoveryToken: recoveryToken) }
+    func detail(teamID: UUID) async throws -> SharedTeamDetail { try await client.detail(teamID: teamID) }
+    func preview(token: String) async throws -> SharedInvitationPreview { try await client.preview(token: token) }
+    func invite(teamID: UUID, role: SharedTeamRole, token: String, operationID: UUID) async throws -> SharedTeamInvitation { try await client.invite(teamID: teamID, role: role, token: token, operationID: operationID) }
+    func join(token: String, nickname: String, operationID: UUID) async throws -> SharedTeamMembership { try await client.join(token: token, nickname: nickname, operationID: operationID) }
+    func invitations(teamID: UUID) async throws -> [SharedTeamInvitation] { try await client.invitations(teamID: teamID) }
+    func revoke(teamID: UUID, invitationID: UUID, operationID: UUID) async throws { try await client.revoke(teamID: teamID, invitationID: invitationID, operationID: operationID) }
+    func members(teamID: UUID) async throws -> [SharedTeamMember] { try await client.members(teamID: teamID) }
+    func changeMember(teamID: UUID, member: SharedTeamMember, role: SharedTeamRole, remove: Bool, operationID: UUID) async throws { try await client.changeMember(teamID: teamID, member: member, role: role, remove: remove, operationID: operationID) }
+    func leave(teamID: UUID, operationID: UUID) async throws { try await client.leave(teamID: teamID, operationID: operationID) }
+    func securityRequest(path: String, method: String, body: MatchJSON?) async throws -> MatchJSON {
+        securityCalls += 1
+        if method == "GET", path.hasSuffix("/recovery"), let delayedRecoveryReply {
+            self.delayedRecoveryReply = nil; return delayedRecoveryReply
+        }
+        let result = try await client.securityRequest(path: path, method: method, body: body)
+        if method != "GET", lose { lose = false; throw TeamServiceError.message("测试响应丢失") }
+        return result
+    }
+}
+extension GameStoreTests {
+    func testV30DelayedRecoveryReadCannotEraseNewlyRotatedCard() async throws {
+        let client = try matchClient(), proxy = V30SecurityClient(client), disk = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: proxy, storage: disk); await directory.connect()
+        let created = await directory.submit(.create(name: "恢复卡读写竞争", nickname: "教练", localTeamID: nil, profile: nil)); XCTAssertTrue(created)
+        let team = try XCTUnwrap(directory.teams.first), status = try await directory.recoveryStatus(team.id)
+        let oldReply = try await client.securityRequest(path: "teams/\(team.id.uuidString.lowercased())/recovery", method: "GET", body: nil)
+        let rotated = await directory.rotateRecovery(status); XCTAssertTrue(rotated)
+        let newCard = try XCTUnwrap(directory.state.recoveryCards?.first)
+        await proxy.deliverDelayedRecoveryRead(oldReply)
+        do { let _ = try await directory.recoveryStatus(team.id); XCTFail("Stale recovery read must require refresh") } catch { }
+        XCTAssertEqual(directory.state.recoveryCards?.first?.token, newCard.token)
+        XCTAssertEqual(disk.state.recoveryCards?.first?.version, 2)
+        let fresh = try await directory.recoveryStatus(team.id); XCTAssertEqual(fresh.version, 2)
+        let valid = try await directory.previewRecovery(newCard.code); XCTAssertEqual(valid.version, 2)
+    }
+    func testV30CreateTeamGeneratesRecoverableCardAndPairingRetainsSameMember() async throws {
+        let a = try matchClient(), b = try matchClient()
+        let da = TeamSharingStore(service: a, storage: V30DirectoryMemoryStorage())
+        let db = TeamSharingStore(service: b, storage: V30DirectoryMemoryStorage())
+        await da.connect(); await db.connect()
+        let created = await da.submit(.create(name: "管理恢复卡测试", nickname: "教练", localTeamID: nil, profile: nil)); XCTAssertTrue(created)
+        let team = try XCTUnwrap(da.teams.first), card = try XCTUnwrap(da.state.recoveryCards?.first)
+        XCTAssertFalse(card.confirmedSaved); XCTAssertEqual(card.version, 1)
+        let status = try await db.previewRecovery(card.code); XCTAssertEqual(status.teamID, team.id)
+        await db.createPairing(); XCTAssertNil(db.errorMessage)
+        let request = try XCTUnwrap(db.state.pairing), preview = try await da.previewPairing(teamID: team.id, input: DevicePairingLink.url(request.token).absoluteString)
+        XCTAssertEqual(preview.phrase, request.request.phrase)
+        let approved = await da.approvePairing(preview, token: request.token); XCTAssertTrue(approved); XCTAssertTrue(db.teams.isEmpty)
+        await db.refreshPairing(); let accepted = await db.acceptPairing(); XCTAssertTrue(accepted)
+        XCTAssertEqual(db.teams.first?.memberID, team.memberID)
+        XCTAssertEqual(db.teams.first?.role, .admin)
+        let devices = try await db.teamDevices(team.id); XCTAssertEqual(devices.count, 2)
+        let old = try XCTUnwrap(devices.first { $0.isCurrent == 0 }), removed = await db.removeDevice(old, teamID: team.id); XCTAssertTrue(removed)
+        await da.connect(); XCTAssertTrue(da.teams.isEmpty); XCTAssertTrue(da.state.recoveryCards?.isEmpty == true)
+        let finalDevices = try await db.teamDevices(team.id); XCTAssertEqual(finalDevices.count, 1)
+        da.confirmCardSaved(team.id); XCTAssertTrue(da.state.recoveryCards?.isEmpty == true)
+    }
+    func testV30ManagementRecoveryLostReplyRelaunchRetainsNewCodeAndIsolatesOldScoringDraft() async throws {
+        let client = try matchClient(), proxy = V30SecurityClient(client), disk = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: proxy, storage: disk); await directory.connect()
+        let created = await directory.submit(.create(name: "恢复续接测试", nickname: "教练", localTeamID: nil, profile: nil)); XCTAssertTrue(created)
+        let card = try XCTUnwrap(directory.state.recoveryCards?.first), oldMember = try XCTUnwrap(directory.teams.first?.memberID)
+        let game = freshStore(), matchDisk = V30MatchMemoryStorage(), network = V30UnreliableMatchService(client)
+        let matches = SharedMatchCoordinator(store: game, service: network, storage: matchDisk); game.sharedMatches = matches
+        await matches.publish(try XCTUnwrap(game.activeStoredGame), teamID: card.teamID)
+        game.openGame(id: try XCTUnwrap(matches.state.matches.first?.payload?.id))
+        let shared = try XCTUnwrap(matches.state.matches.first)
+        await network.network(offline: true); game.recordPitch(.ball); await matches.waitForSync()
+        let preview = try await directory.previewRecovery(card.code)
+        await proxy.loseNextResponse()
+        let recovered = await directory.recoverManagement(input: card.code, preview: preview, nickname: "恢复后的教练"); XCTAssertFalse(recovered)
+        let pending = try XCTUnwrap(disk.state.pending), operation = try XCTUnwrap({ () -> TeamSecurityCommand? in if case .security(let c) = pending.command { return c }; return nil }())
+        let expectedToken = try XCTUnwrap(operation.newToken)
+        let reopened = TeamSharingStore(service: proxy, storage: disk); await reopened.connect()
+        XCTAssertNotNil(reopened.state.pending)
+        let retried = await reopened.retryPending(); XCTAssertTrue(retried, reopened.errorMessage ?? "")
+        XCTAssertNil(reopened.state.pending); XCTAssertEqual(reopened.state.recoveryCards?.first?.token, expectedToken)
+        XCTAssertNotEqual(reopened.teams.first?.memberID, oldMember)
+        XCTAssertEqual(reopened.state.recoveryCards?.first?.version, 2)
+        await network.network(); await matches.synchronize(teamID: card.teamID)
+        XCTAssertNil(matches.message); XCTAssertTrue(matches.state.pending.isEmpty)
+        XCTAssertEqual(matches.state.conflicts.first?.game.state.balls, 1)
+        let official = try await client.match(teamID: card.teamID, gameID: shared.id)
+        XCTAssertEqual(official.payload?.state.balls, 0); XCTAssertFalse(official.canWrite); XCTAssertFalse(official.writerActive)
+        XCTAssertEqual(official.accessMode, .closed)
+        let validNew = try await reopened.previewRecovery(try XCTUnwrap(reopened.state.recoveryCards?.first?.code)); XCTAssertEqual(validNew.version, 2)
+        do { let _: TeamRecoveryStatus = try await reopened.previewRecovery(card.code); XCTFail("Old recovery card must be invalid") } catch { }
+    }
+    func testV30SecurityQueueMustSaveBeforeSendingAndKeepsRotationAfterAcknowledgmentDiskFailure() async throws {
+        let client = try matchClient(), proxy = V30SecurityClient(client), disk = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: proxy, storage: disk); await directory.connect()
+        disk.failSaveAt = disk.saves + 1
+        await directory.createPairing(); let before = await proxy.securityCalls; XCTAssertEqual(before, 0); XCTAssertNil(directory.state.pending)
+        disk.failSaveAt = nil
+        let created = await directory.submit(.create(name: "恢复保存失败", nickname: "教练", localTeamID: nil, profile: nil)); XCTAssertTrue(created)
+        let team = try XCTUnwrap(directory.teams.first), status = try await directory.recoveryStatus(team.id)
+        // Durable input, preflight refresh, then acknowledgment save fails after server commit.
+        disk.failSaveAt = disk.saves + 3
+        let rotated = await directory.rotateRecovery(status); XCTAssertFalse(rotated); XCTAssertNotNil(directory.state.pending)
+        disk.failSaveAt = nil
+        let retried = await directory.retryPending(); XCTAssertTrue(retried)
+        let card = try XCTUnwrap(directory.state.recoveryCards?.first), result = try await directory.previewRecovery(card.code)
+        XCTAssertEqual(result.version, 2); XCTAssertEqual(card.version, 2)
+    }
+    func testV30RecoveryCardsAndPairingSecretsAreDeviceEncryptedAndOldDirectoryRemainsReadable() throws {
+        let secret = try TeamDeviceKeychain.randomSecret(), team = UUID()
+        let card = SavedRecoveryCard(teamID: team, teamName: "隐私测试", token: secret, version: 2)
+        XCTAssertEqual(SavedRecoveryCard.parse(card.text)?.teamID, team)
+        XCTAssertEqual(SavedRecoveryCard.parse(card.code)?.token, secret)
+        XCTAssertNil(SavedRecoveryCard.parse(card.code + "\n" + card.code))
+        XCTAssertNil(DevicePairingLink.token(from: "https://baseballmaster.cc.evil/pair#" + secret))
+        XCTAssertNil(DevicePairingLink.token(from: "https://baseballmaster.cc/pair?token=" + secret))
+        XCTAssertNil(TeamInvitationLink.token(from: DevicePairingLink.url(secret).absoluteString))
+        XCTAssertEqual(DevicePairingLink.token(from: DevicePairingLink.url(secret).absoluteString), secret)
+        var state = TeamDirectoryState(); state.recoveryCards = [card]
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString); defer { try? FileManager.default.removeItem(at: dir) }
+        let vault = V30MemoryTeamCredential(value: try TeamDeviceKeychain.randomSecret()), file = TeamDirectoryFile(url: dir.appendingPathComponent("directory.sealed"), vault: vault)
+        try file.save(state)
+        XCTAssertEqual(try file.load().recoveryCards?.first?.token, secret)
+        XCTAssertFalse(String(data: try Data(contentsOf: file.url), encoding: .utf8)?.contains(secret) == true)
+        XCTAssertThrowsError(try TeamDirectoryFile(url: file.url, vault: V30MemoryTeamCredential(value: try TeamDeviceKeychain.randomSecret())).load())
+        let old = try JSONDecoder().decode(TeamDirectoryState.self, from: Data("{\"teams\":[],\"bindings\":[],\"requiresRecoveryReview\":false}".utf8))
+        XCTAssertNil(old.recoveryCards); XCTAssertNil(old.pairing)
+    }
+}
+
+extension V30SecurityClient: TeamRosterService {
+    func updateRoster(_ change: SharedRosterChange, operationID: UUID) async throws -> SharedTeamDetail {
+        let result = try await client.updateRoster(change, operationID: operationID)
+        if lose { lose = false; throw TeamServiceError.message("测试名单响应丢失") }
+        return result
+    }
+}
+
+extension GameStoreTests {
+    func testV30AnnualGroupingUsesMatchDateZoneInsteadOfLegacySeasonAndMovesAfterCorrection() throws {
+        let store = freshStore(); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame), team = try XCTUnwrap(store.currentTeam)
+        let boundary = ISO8601DateFormatter().date(from: "2024-12-31T16:30:00Z")!
+        XCTAssertTrue(store.updateCompletedGameDate(id: original.id, playedAt: boundary, timeZoneID: "Asia/Shanghai", expectedRevision: original.revision ?? 0))
+        let china = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertEqual(china.yearID, "2025")
+        XCTAssertEqual(china.seasonID, original.seasonID) // legacy source metadata is preserved, never used for grouping
+        XCTAssertEqual(store.seasonStatistics(for: team, seasonID: "2025").games.count, 1)
+        XCTAssertEqual(store.seasonStatistics(for: team, seasonID: "2024").games.count, 0)
+        XCTAssertTrue(store.updateCompletedGameDate(id: original.id, playedAt: boundary, timeZoneID: "America/Los_Angeles", expectedRevision: china.revision ?? 0))
+        XCTAssertEqual(store.activeStoredGame?.yearID, "2024")
+        XCTAssertEqual(store.seasonStatistics(for: team, seasonID: "2025").games.count, 0)
+        XCTAssertEqual(store.seasonStatistics(for: team, seasonID: "2024").games.count, 1)
+        XCTAssertEqual(store.activeStoredGame?.state, original.state)
+        XCTAssertEqual(store.games.count, 1)
+        XCTAssertTrue(store.statisticsSeasons.contains { $0.id == "2024" && $0.name == "2024 年" })
+        XCTAssertFalse(store.statisticsSeasons.contains { $0.id.contains("summer") || $0.id.contains("autumn") })
+        let restored = GameStore(persistenceURL: nil)
+        try restored.restoreBackup(LocalBackup.read(store.exportBackup()))
+        XCTAssertEqual(restored.games.first?.yearID, "2024")
+    }
+
+    func testV30SharedRosterRefreshUsesSourceIdentityAndArchiveKeepsHistoricalStatisticsAcrossDevices() async throws {
+        let a = freshStore(), b = GameStore(persistenceURL: nil), admin = try matchClient()
+        _ = try await admin.enroll(deviceName: "名单管理员")
+        let originalTeam = try XCTUnwrap(a.currentTeam), player = originalTeam.players[0]
+        let created = try await admin.createTeam(name: "年度同步队", nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: originalTeam))
+        let reader = try await matchPartner(admin, team: created.teamID, role: .member)
+        let da = TeamSharingStore(service: admin, storage: V30DirectoryMemoryStorage()), db = TeamSharingStore(service: reader, storage: V30DirectoryMemoryStorage())
+        a.teamSharing = da; b.teamSharing = db; await da.connect(); await db.connect()
+        let profile = try XCTUnwrap(da.state.profiles?.first), seeded = try XCTUnwrap(profile.players.first { $0.sourceID == player.id })
+        XCTAssertNotEqual(seeded.id, seeded.sourceID)
+        XCTAssertEqual(db.sharedRosterTeams.first?.players.first?.id, originalTeam.players.first?.id)
+        XCTAssertFalse(b.recordableTeams.contains { $0.id == created.teamID })
+        a.startGameClock(); a.recordPitch(.ball); a.finishGame()
+        let original = try XCTUnwrap(a.activeStoredGame)
+        let ca = SharedMatchCoordinator(store: a, service: admin, storage: V30MatchMemoryStorage()), cb = SharedMatchCoordinator(store: b, service: reader, storage: V30MatchMemoryStorage())
+        a.sharedMatches = ca; b.sharedMatches = cb
+        await ca.publish(original, teamID: created.teamID); await cb.synchronize(teamID: created.teamID)
+        let sharedCopyID = try XCTUnwrap(ca.state.matches.last?.payload?.id)
+        a.openGame(id: sharedCopyID)
+        XCTAssertNil(ca.message); XCTAssertNil(cb.message)
+        let statsTeam = try XCTUnwrap(db.sharedRosterTeams.first)
+        XCTAssertEqual(b.seasonStatistics(for: statsTeam, seasonID: original.yearID).games.count, 1)
+        var archived = seeded; archived.archived = true
+        let submitted = await da.submit(.roster(SharedRosterChange(teamID: created.teamID, baseRevision: profile.revision, kind: "player", player: archived)))
+        XCTAssertTrue(submitted); await db.connect()
+        let after = try XCTUnwrap(db.sharedRosterTeams.first)
+        XCTAssertFalse(after.players.contains { $0.id == player.id })
+        XCTAssertEqual(b.games.first?.state, original.state)
+        let historical = b.seasonStatistics(for: after, seasonID: original.yearID)
+        XCTAssertEqual(historical.games.count, 1)
+        let report = PlayerStatisticsPDFReport(store: b, player: player, seasonID: original.yearID, teamID: after.id, gameIDs: [sharedCopyID])
+        XCTAssertEqual(report.teamName, "年度同步队")
+        XCTAssertTrue(historical.players.contains { $0.id == player.id && !$0.isCurrentRoster })
+        let stored = try XCTUnwrap(a.activeStoredGame), movedDate = ISO8601DateFormatter().date(from: "2023-12-31T23:30:00Z")!
+        XCTAssertTrue(a.updateCompletedGameDate(id: stored.id, playedAt: movedDate, timeZoneID: "UTC", expectedRevision: stored.revision ?? 0))
+        await ca.synchronize(); await cb.synchronize(teamID: created.teamID)
+        XCTAssertEqual(b.games.first?.yearID, "2023")
+        XCTAssertEqual(b.seasonStatistics(for: after, seasonID: original.yearID).games.count, 0)
+        XCTAssertEqual(b.seasonStatistics(for: after, seasonID: "2023").games.count, 1)
+        let left = await db.submit(.leave(teamID: created.teamID)); XCTAssertTrue(left)
+        XCTAssertTrue(db.sharedRosterTeams.isEmpty)
+        XCTAssertTrue(b.completedStatisticsGames(teamID: created.teamID, seasonID: "2023").isEmpty)
+        a.setCurrentTeam(id: created.teamID)
+        let roster = try XCTUnwrap(a.currentTeam)
+        XCTAssertEqual(roster.id, created.teamID); XCTAssertFalse(roster.players.contains { $0.id == player.id })
+        let lineup = Array(roster.players.prefix(9)).enumerated().map { LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: FieldPosition.allCases[$0.offset]) }
+        XCTAssertNotNil(a.startNewGame(opponent: a.opponentTeams[0], isHome: false, rules: GameRules(), lineup: lineup))
+        XCTAssertEqual(a.activeStoredGame?.ourTeamID, created.teamID)
+        XCTAssertEqual(Set(a.activeStoredGame!.ourTeam.players.map(\.id)), Set(roster.players.map(\.id)))
+        XCTAssertNoThrow(try a.exportBackup())
+    }
+
+    func testV30RosterConflictKeepsDraftAcrossRelaunchAndExplicitRebasePreservesOtherPlayers() async throws {
+        let client = try matchClient(), disk = V30DirectoryMemoryStorage(), directory = TeamSharingStore(service: client, storage: disk)
+        await directory.connect()
+        let created = await directory.submit(.create(name: "并发名单队", nickname: "教练", localTeamID: nil, profile: nil)); XCTAssertTrue(created)
+        await directory.connect()
+        let team = try XCTUnwrap(directory.teams.first)
+        let first = SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: "同名", englishName: "", numbers: ["00"], archived: false)
+        let second = SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: "同名", englishName: "", numbers: ["00"], archived: false)
+        _ = try await client.updateRoster(SharedRosterChange(teamID: team.id, baseRevision: team.revision, kind: "player", player: first), operationID: UUID())
+        let stale = SharedRosterChange(teamID: team.id, baseRevision: team.revision, kind: "player", player: second)
+        let result = await directory.submit(.roster(stale)); XCTAssertFalse(result)
+        XCTAssertNil(directory.state.pending); XCTAssertEqual(directory.state.rosterDraft?.player?.id, second.id)
+        let reopened = TeamSharingStore(service: client, storage: disk); await reopened.connect()
+        let unrelated = SharedRosterChange(teamID: team.id, baseRevision: 2, kind: "profile", name: "不能丢弃名单草稿", shortName: "测试", city: "")
+        let blocked = await reopened.submit(.roster(unrelated)); XCTAssertFalse(blocked)
+        XCTAssertEqual(reopened.state.rosterDraft?.player?.id, second.id)
+        var draft = try XCTUnwrap(reopened.state.rosterDraft)
+        draft.baseRevision = try XCTUnwrap(reopened.state.profiles?.first?.revision)
+        let retried = await reopened.submit(.roster(draft)); XCTAssertTrue(retried)
+        XCTAssertNil(reopened.state.rosterDraft)
+        XCTAssertEqual(Set(reopened.sharedRosterTeams[0].players.map(\.id)), Set([first.sourceID, second.sourceID]))
+    }
+    func testV30ScorerRosterConflictKeepsDraftAcrossRelaunchAndExplicitRebase() async throws {
+        let admin = try matchClient(); _ = try await admin.enroll(deviceName: "名单管理设备")
+        let created = try await admin.createTeam(name: "记录员名单", nickname: "管理员", operationID: UUID())
+        let client = try await matchPartner(admin, team: created.teamID, role: .scorer)
+        let disk = V30DirectoryMemoryStorage(), directory = TeamSharingStore(service: client, storage: disk)
+        await directory.connect()
+        let team = try XCTUnwrap(directory.teams.first)
+        XCTAssertTrue(team.role.canEditPlayers)
+        XCTAssertFalse(SharedTeamRole.member.canEditPlayers)
+        let first = SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: "同名", englishName: "", numbers: ["00"], archived: false)
+        let second = SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: "同名", englishName: "", numbers: ["00"], archived: false)
+        _ = try await admin.updateRoster(SharedRosterChange(teamID: team.id, baseRevision: team.revision, kind: "player", player: first), operationID: UUID())
+        let stale = SharedRosterChange(teamID: team.id, baseRevision: team.revision, kind: "player", player: second)
+        let result = await directory.submit(.roster(stale)); XCTAssertFalse(result)
+        XCTAssertNil(directory.state.pending); XCTAssertEqual(directory.state.rosterDraft?.player?.id, second.id)
+        let reopened = TeamSharingStore(service: client, storage: disk); await reopened.connect()
+        let unrelated = SharedRosterChange(teamID: team.id, baseRevision: 2, kind: "profile", name: "不能丢弃名单草稿", shortName: "测试", city: "")
+        let blocked = await reopened.submit(.roster(unrelated)); XCTAssertFalse(blocked)
+        XCTAssertEqual(reopened.state.rosterDraft?.player?.id, second.id)
+        var draft = try XCTUnwrap(reopened.state.rosterDraft)
+        draft.baseRevision = try XCTUnwrap(reopened.state.profiles?.first?.revision)
+        let retried = await reopened.submit(.roster(draft)); XCTAssertTrue(retried)
+        XCTAssertNil(reopened.state.rosterDraft)
+        XCTAssertEqual(Set(reopened.sharedRosterTeams[0].players.map(\.id)), Set([first.sourceID, second.sourceID]))
+    }
+
+    func testV30RosterLostResponseAndDiskFailureRetrySameOperationWithoutDuplicate() async throws {
+        let client = try matchClient(), proxy = V30SecurityClient(client), disk = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: proxy, storage: disk); await directory.connect()
+        let created = await directory.submit(.create(name: "名单重试", nickname: "教练", localTeamID: nil, profile: nil)); XCTAssertTrue(created)
+        await directory.connect(); let team = try XCTUnwrap(directory.teams.first)
+        let player = SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: "测试", englishName: "", numbers: ["0", "00"], archived: false)
+        let change = SharedRosterChange(teamID: team.id, baseRevision: team.revision, kind: "player", player: player)
+        disk.failSaveAt = disk.saves + 1
+        let notSent = await directory.submit(.roster(change)); XCTAssertFalse(notSent)
+        let untouched = try await client.detail(teamID: team.id); XCTAssertTrue(untouched.team.players.isEmpty)
+        disk.failSaveAt = nil; await proxy.loseNextResponse()
+        let lost = await directory.submit(.roster(change)); XCTAssertFalse(lost)
+        let pendingID = try XCTUnwrap(disk.state.pending?.id)
+        let reopened = TeamSharingStore(service: client, storage: disk); await reopened.connect()
+        XCTAssertEqual(reopened.state.pending?.id, pendingID)
+        let retry = await reopened.retryPending(); XCTAssertTrue(retry)
+        let synced = try await client.detail(teamID: team.id)
+        XCTAssertEqual(synced.team.players.count, 1); XCTAssertEqual(synced.team.revision, 2)
+        XCTAssertEqual(synced.team.players.first?.numbers, ["0", "00"])
+        let cached = TeamSharingStore(service: client, storage: disk); cached.loadCachedDirectory()
+        XCTAssertEqual(cached.sharedRosterTeams.first?.players.first?.id, player.sourceID)
+    }
+}
+
+extension GameStoreTests {
+    func testV30HistoricalImportThreeModesPreserveLocalGamesDatesAndOnlyLinkExplicitPlayers() async throws {
+        for mode in [GameMode.standard, .coachPitch, .slowPitch] {
+            var rules = GameRules(); rules.mode = mode
+            let store = mode == .slowPitch ? try slowStore() : v111Store(rules: rules)
+            let sourceTeam = try XCTUnwrap(store.currentTeam), batter = store.currentBatter
+            XCTAssertTrue(store.applyPlay(.single)); store.finishGame()
+            let old = try XCTUnwrap(store.activeStoredGame)
+            let played = ISO8601DateFormatter().date(from: "2024-12-31T16:30:00Z")!
+            XCTAssertTrue(store.updateCompletedGameDate(id: old.id, playedAt: played, timeZoneID: "Asia/Shanghai", expectedRevision: old.revision ?? 0))
+            let original = try XCTUnwrap(store.activeStoredGame)
+            let official = Player(chineseName: "陈昊", englishName: "", numbers: [0])
+            let cloudTeam = Team(name: "海浪", shortName: "海浪", city: "", players: [official])
+            let client = try matchClient(); _ = try await client.enroll(deviceName: "iPhone 17 Pro")
+            let created = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: cloudTeam))
+            let directory = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage()); store.teamSharing = directory; await directory.connect()
+            let disk = V30MatchMemoryStorage(), coordinator = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = coordinator
+            await coordinator.prepareHistoricalImport([original], teamID: created.teamID, sourceTeamID: sourceTeam.id, links: [MatchPlayerLink(sourceID: batter.id, targetID: official.id)])
+            XCTAssertNil(coordinator.message); XCTAssertEqual(coordinator.state.historyImport?.rows.first?.preview?.status, "new")
+            XCTAssertNil(coordinator.state.historyImport?.backupURL)
+            await coordinator.resumeHistoricalImport()
+            XCTAssertTrue(coordinator.state.historyImport?.finished == true, coordinator.message ?? "")
+            let backup = try XCTUnwrap(coordinator.state.historyImport?.backupURL)
+            XCTAssertTrue(try LocalBackup.read(backup).snapshot().games.contains { $0 == original })
+            XCTAssertEqual(store.games.first { $0.id == original.id }, original)
+            let remote = try XCTUnwrap(coordinator.state.matches.first), copied = try XCTUnwrap(store.games.first { $0.sharedGameID == remote.id })
+            XCTAssertNotEqual(copied.id, original.id); XCTAssertEqual(copied.historySourceID, original.id)
+            XCTAssertEqual(copied.state, original.state); XCTAssertEqual(copied.rules, original.rules)
+            XCTAssertEqual(copied.playedAt, original.playedAt); XCTAssertEqual(copied.playedTimeZoneID, "Asia/Shanghai"); XCTAssertEqual(copied.yearID, "2025")
+            XCTAssertEqual(remote.accessMode, .closed); XCTAssertFalse(remote.liveEnabled)
+            let team = try XCTUnwrap(directory.sharedRosterTeams.first)
+            let stats = store.seasonStatistics(for: team, seasonID: "2025")
+            XCTAssertEqual(stats.games.count, 1); XCTAssertEqual(stats.players.first { $0.id == official.id }?.batting.hits, 1)
+            XCTAssertFalse(stats.players.contains { $0.id == batter.id }); XCTAssertTrue(stats.players.contains { $0.isUnlinked })
+            XCTAssertEqual(store.gameRecords(for: official, seasonID: "2025", teamID: team.id).first?.batting.hits, 1)
+            let report = PlayerStatisticsPDFReport(store: store, player: official, seasonID: "2025", teamID: team.id, gameIDs: [copied.id])
+            XCTAssertEqual(report.summary.batting.hits, 1); XCTAssertTrue(try reportText(report.pdfData()).contains("2025"))
+            let reader = try await matchPartner(client, team: created.teamID, role: .member), other = GameStore(persistenceURL: nil)
+            let readerDirectory = TeamSharingStore(service: reader, storage: V30DirectoryMemoryStorage()); other.teamSharing = readerDirectory; await readerDirectory.connect()
+            let sync = SharedMatchCoordinator(store: other, service: reader, storage: V30MatchMemoryStorage()); other.sharedMatches = sync
+            await sync.synchronize(teamID: created.teamID)
+            XCTAssertEqual(other.games.first?.sharedPlayerLinks, copied.sharedPlayerLinks)
+            XCTAssertEqual(other.seasonStatistics(for: try XCTUnwrap(readerDirectory.sharedRosterTeams.first), seasonID: "2025").players.first { $0.id == official.id }?.batting.hits, 1)
+            store.openGame(id: copied.id)
+            let correctedDate = ISO8601DateFormatter().date(from: "2023-12-31T10:00:00Z")!
+            XCTAssertTrue(store.updateCompletedGameDate(id: copied.id, playedAt: correctedDate, timeZoneID: "UTC", expectedRevision: copied.revision ?? 0))
+            await coordinator.waitForSync(); await coordinator.synchronize(teamID: created.teamID); await sync.synchronize(teamID: created.teamID)
+            XCTAssertEqual(other.games.first?.yearID, "2023"); XCTAssertEqual(other.games.first?.sharedPlayerLinks, copied.sharedPlayerLinks)
+            XCTAssertEqual(store.games.first { $0.id == original.id }, original)
+        }
+    }
+
+    func testV30HistoricalImportLostResponseRelaunchBackupAndDuplicateConflictReview() async throws {
+        let store = freshStore(); store.recordPitch(.ball); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame), client = try matchClient()
+        _ = try await client.enroll(deviceName: "导入 iPhone")
+        let team = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID())
+        let disk = V30MatchMemoryStorage(), proxy = V30UnreliableMatchService(client)
+        let importing = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = importing
+        await importing.prepareHistoricalImport([original], teamID: team.teamID, sourceTeamID: original.ourTeam.id, links: [])
+        await proxy.network(loseNextResponse: true); await importing.resumeHistoricalImport()
+        XCTAssertNotNil(importing.state.historyImport?.rows.first?.pending); XCTAssertEqual(store.games.count, 1)
+        importing.endHistoricalImport(); XCTAssertNotNil(importing.state.historyImport, "Unknown upload outcomes must be resolved, not discarded")
+        let relaunched = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = relaunched
+        await relaunched.resumeHistoricalImport()
+        XCTAssertTrue(relaunched.state.historyImport?.finished == true, relaunched.message ?? "")
+        let importedPage = try await client.matchPage(teamID: team.teamID, cursor: 0)
+        XCTAssertEqual(importedPage.games.count, 1)
+        XCTAssertEqual(store.games.first { $0.id == original.id }, original)
+        relaunched.endHistoricalImport()
+        await relaunched.prepareHistoricalImport([original], teamID: team.teamID, sourceTeamID: original.ourTeam.id, links: [])
+        XCTAssertEqual(relaunched.state.historyImport?.rows.first?.preview?.status, "duplicate")
+        await relaunched.resumeHistoricalImport(); XCTAssertEqual(relaunched.state.historyImport?.rows.first?.status, "skipped")
+        relaunched.endHistoricalImport()
+        store.openGame(id: original.id)
+        XCTAssertTrue(store.updateCompletedGameDate(id: original.id, playedAt: original.effectivePlayedAt.addingTimeInterval(-60), timeZoneID: "UTC", expectedRevision: original.revision ?? 0))
+        let changed = try XCTUnwrap(store.activeStoredGame)
+        await relaunched.prepareHistoricalImport([changed], teamID: team.teamID, sourceTeamID: original.ourTeam.id, links: [])
+        XCTAssertEqual(relaunched.state.historyImport?.rows.first?.preview?.status, "conflict"); XCTAssertFalse(relaunched.state.historyImport!.ready)
+        relaunched.chooseHistoricalImport(original.id, decision: "skip"); await relaunched.resumeHistoricalImport()
+        XCTAssertEqual(store.games.first { $0.id == original.id }, changed)
+        let remote = try XCTUnwrap(relaunched.state.matches.first)
+        await relaunched.command(remote, resource: "deletion", fields: ["deleted": .bool(true)])
+        relaunched.endHistoricalImport()
+        await relaunched.prepareHistoricalImport([changed], teamID: team.teamID, sourceTeamID: original.ourTeam.id, links: [])
+        XCTAssertEqual(relaunched.state.historyImport?.rows.first?.preview?.status, "deleted")
+        await relaunched.resumeHistoricalImport(); XCTAssertEqual(relaunched.state.historyImport?.rows.first?.status, "skipped")
+        XCTAssertEqual(store.games.first { $0.id == original.id }, changed)
+    }
+
+    func testV30HistoricalImportCancelFailureAndBackupRestoreNeverUploadUnconfirmedGames() async throws {
+        let store = freshStore(); store.finishGame(); let original = try XCTUnwrap(store.activeStoredGame), client = try matchClient()
+        _ = try await client.enroll(deviceName: "iPhone"); let team = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID())
+        let disk = V30MatchMemoryStorage(), coordinator = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = coordinator
+        await coordinator.prepareHistoricalImport([original], teamID: team.teamID, sourceTeamID: original.ourTeam.id, links: [])
+        coordinator.endHistoricalImport(); XCTAssertNil(coordinator.state.historyImport)
+        do { let page = try await client.matchPage(teamID: team.teamID, cursor: 0); XCTAssertTrue(page.games.isEmpty) }
+        await coordinator.prepareHistoricalImport([original], teamID: team.teamID, sourceTeamID: original.ourTeam.id, links: [])
+        disk.failSave = true; await coordinator.resumeHistoricalImport(); XCTAssertNotNil(coordinator.message)
+        do { let page = try await client.matchPage(teamID: team.teamID, cursor: 0); XCTAssertTrue(page.games.isEmpty) }
+        disk.failSave = false
+        let backup = try LocalBackup.read(store.exportBackup()); try store.restoreBackup(backup)
+        XCTAssertNil(coordinator.state.historyImport); XCTAssertEqual(store.games.first, original)
+        let member = try await matchPartner(client, team: team.teamID, role: .member)
+        let denied = SharedMatchCoordinator(store: store, service: member, storage: V30MatchMemoryStorage())
+        await denied.prepareHistoricalImport([original], teamID: team.teamID, sourceTeamID: original.ourTeam.id, links: [])
+        XCTAssertNil(denied.state.historyImport); XCTAssertNotNil(denied.message)
+    }
+}
+
+extension GameStoreTests {
+    func testV30HistoricalImportPauseResumesOnlyRemainingGamesAndObservationsStayExcluded() async throws {
+        let store = freshStore(); store.finishGame()
+        let before = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertTrue(store.updateCompletedGameDate(id: before.id, playedAt: before.effectivePlayedAt.addingTimeInterval(-86400), timeZoneID: "UTC", expectedRevision: before.revision ?? 0))
+        let first = try XCTUnwrap(store.activeStoredGame), originalTeam = try XCTUnwrap(store.currentTeam)
+        store.startNewGame(opponent: store.opponentTeams[0], isHome: false, innings: 6, lineup: Array(originalTeam.players.prefix(9)))
+        store.recordPitch(.ball); store.finishGame(); let second = try XCTUnwrap(store.activeStoredGame)
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "iPhone")
+        let team = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: originalTeam))
+        let directory = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage()); store.teamSharing = directory; await directory.connect()
+        let proxy = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage()
+        let coordinator = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = coordinator
+        await coordinator.prepareHistoricalImport([first,second], teamID: team.teamID, sourceTeamID: originalTeam.id, links: [])
+        await proxy.afterImportCommit { coordinator.pauseHistoricalImport() }
+        await coordinator.resumeHistoricalImport()
+        XCTAssertEqual(coordinator.state.historyImport?.rows.map(\.status), ["imported", "waiting"])
+        XCTAssertEqual(store.games.first { $0.id == first.id }, first); XCTAssertEqual(store.games.first { $0.id == second.id }, second)
+        let resumed = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = resumed
+        await resumed.resumeHistoricalImport(); XCTAssertTrue(resumed.state.historyImport?.finished == true, resumed.message ?? "")
+        let page = try await client.matchPage(teamID: team.teamID, cursor: 0); XCTAssertEqual(page.games.count, 2)
+        resumed.endHistoricalImport()
+        let observedID = try XCTUnwrap(store.createObservedGame(awayTeam: store.opponentTeams[0], homeTeam: store.opponentTeams[1], rules: GameRules(), startImmediately: true))
+        store.openGame(id: observedID); store.finishGame(); let observation = try XCTUnwrap(store.activeStoredGame)
+        await resumed.prepareHistoricalImport([observation], teamID: team.teamID, sourceTeamID: observation.state.awayTeam.id, links: [])
+        if resumed.state.historyImport?.rows.first?.preview?.status == "similar" { resumed.chooseHistoricalImport(observation.id, decision: "independent") }
+        await resumed.resumeHistoricalImport(); XCTAssertTrue(resumed.state.historyImport?.finished == true, resumed.message ?? "")
+        let copy = try XCTUnwrap(store.games.first { $0.historySourceID == observation.id }); XCTAssertTrue(copy.isObservation); XCTAssertNil(copy.ourTeamID)
+        let completed = store.completedStatisticsGames(teamID: team.teamID, seasonID: observation.yearID)
+        XCTAssertFalse(completed.contains { $0.id == copy.id }); XCTAssertEqual(store.games.first { $0.id == observation.id }, observation)
+    }
+}
+
+extension GameStoreTests {
+    func testV30PlayerLinksAcrossModesDevicesStatisticsAndReportsKeepOriginalMatch() async throws {
+        for mode in [GameMode.standard, .coachPitch, .slowPitch] {
+            var rules = GameRules(); rules.mode = mode
+            let store = mode == .slowPitch ? try slowStore() : v111Store(rules: rules)
+            let temporary = store.currentBatter
+            XCTAssertTrue(store.applyPlay(.single)); store.finishGame()
+            let original = try XCTUnwrap(store.activeStoredGame)
+            let official = Player(chineseName: "正式陈昊", englishName: "", numbers: [0])
+            let team = Team(name: "海浪", shortName: "海浪", city: "", players: [official])
+            let client = try matchClient(); _ = try await client.enroll(deviceName: "iPhone 17 Pro")
+            let created = try await client.createTeam(name: team.name, nickname: "陈教练", operationID: UUID(), profile: SharedRosterSeed(team: team))
+            store.teamSharing = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage()); await store.teamSharing.connect()
+            let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
+            await sync.publish(original, teamID: created.teamID); XCTAssertNil(sync.message)
+        let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+            let before = try XCTUnwrap(sync.state.matches.first)
+            let links = [MatchPlayerLink(sourceID: temporary.id, targetID: official.id)]
+            await sync.command(before, resource: "player-links", fields: ["playerLinks": try .encode(links), "baseRosterRevision": .number(1)])
+            XCTAssertNil(sync.message)
+            let linked = try XCTUnwrap(sync.match(id: before.id)), cloud = try XCTUnwrap(store.teamSharing.sharedRosterTeams.first)
+            XCTAssertEqual(linked.serverRevision, before.serverRevision + 1); XCTAssertEqual(linked.payload?.state, original.state)
+            XCTAssertEqual(linked.playerLinks, links); XCTAssertEqual(linked.payload?.ourTeam, original.ourTeam)
+            let stats = store.seasonStatistics(for: cloud, seasonID: original.yearID)
+            XCTAssertEqual(stats.games.count, 1); XCTAssertEqual(stats.players.first { $0.id == official.id }?.batting.hits, 1)
+            XCTAssertFalse(stats.players.contains { $0.id == temporary.id }); XCTAssertEqual(stats.batting.hits, 1)
+            let report = PlayerStatisticsPDFReport(store: store, player: official, seasonID: original.yearID, teamID: cloud.id, gameIDs: [sharedCopyID])
+            XCTAssertEqual(report.summary.batting.hits, 1); XCTAssertEqual(report.records.count, 1)
+            XCTAssertTrue(try reportText(report.pdfData()).contains("正式陈昊"))
+            XCTAssertTrue(try reportText(TeamSeasonPDFReport(store: store, team: cloud, seasonID: original.yearID).pdfData()).contains("球队记录"))
+            let reader = try await matchPartner(client, team: cloud.id, role: .member), other = GameStore(persistenceURL: nil)
+            other.teamSharing = TeamSharingStore(service: reader, storage: V30DirectoryMemoryStorage()); await other.teamSharing.connect()
+            other.sharedMatches = SharedMatchCoordinator(store: other, service: reader, storage: V30MatchMemoryStorage())
+            await other.sharedMatches.synchronize() // A new device discovers all its teams, even with no cached matches.
+            XCTAssertNil(other.sharedMatches.message); XCTAssertEqual(other.sharedMatches.state.matches.count, 1)
+            XCTAssertEqual(other.seasonStatistics(for: try XCTUnwrap(other.teamSharing.sharedRosterTeams.first), seasonID: original.yearID).batting, stats.batting)
+            XCTAssertEqual(other.gameRecords(for: official, seasonID: original.yearID, teamID: cloud.id).first?.batting.hits, 1)
+            await sync.command(linked, resource: "player-links", fields: ["playerLinks": .array([]), "baseRosterRevision": .number(1)])
+            XCTAssertNil(sync.message); await other.sharedMatches.synchronize()
+            XCTAssertEqual(other.seasonStatistics(for: cloud, seasonID: original.yearID).players.first { $0.id == official.id }?.batting.hits, 0)
+            XCTAssertEqual(other.seasonStatistics(for: cloud, seasonID: original.yearID).players.first { $0.id == temporary.id }?.batting.hits, 1)
+            XCTAssertEqual(other.seasonStatistics(for: cloud, seasonID: original.yearID).batting.hits, 1)
+        }
+    }
+
+    func testV30SharedStatisticsExcludeUnacknowledgedDraftsAndDeletedGames() async throws {
+        let store = freshStore(); XCTAssertTrue(store.applyPlay(.single)); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame), player = store.currentTeam!.players.first!
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "iPhone")
+        let created = try await client.createTeam(name: "飞鹰", nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: original.ourTeam))
+        store.teamSharing = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage()); await store.teamSharing.connect()
+        let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = sync
+        await sync.publish(original, teamID: created.teamID)
+        let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+        let cloud = try XCTUnwrap(store.teamSharing.sharedRosterTeams.first), remote = try XCTUnwrap(sync.state.matches.first)
+        let expected = store.seasonStatistics(for: cloud, seasonID: original.yearID)
+        var dirty = try XCTUnwrap(store.games.first { $0.id == sharedCopyID })
+        dirty.state.batting[player.id, default: BattingLine()].hits += 20
+        dirty.state.batting[player.id, default: BattingLine()].atBats += 20
+        dirty.playedAt = ISO8601DateFormatter().date(from: "2021-01-01T12:00:00Z")!
+        dirty.revision = (dirty.revision ?? 0) + 1
+        try store.installSharedCopy(dirty)
+        XCTAssertEqual(store.seasonStatistics(for: cloud, seasonID: original.yearID).batting, expected.batting)
+        XCTAssertEqual(store.completedStatisticsGames(teamID: cloud.id, seasonID: "2021").count, 0)
+        XCTAssertEqual(TeamSeasonPDFReport(store: store, team: cloud, seasonID: original.yearID).summary.batting, expected.batting)
+        let relaunched = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = relaunched
+        XCTAssertEqual(store.seasonStatistics(for: cloud, seasonID: original.yearID).batting, expected.batting)
+        await relaunched.refresh(remote)
+        XCTAssertEqual(store.games.first { $0.id == sharedCopyID }?.state.batting[player.id]?.hits, dirty.state.batting[player.id]?.hits, "Refreshing an unchanged official version must not erase a local draft")
+        XCTAssertTrue(relaunched.state.conflicts.isEmpty)
+        _ = try await client.matchCommand(path: TeamServiceClient.matchPath(cloud.id, remote.id) + "/deletion", method: "POST", body: .object([
+            "operationID": .uuid(UUID()), "baseRevision": .number(Double(remote.serverRevision)), "writerEpoch": .number(Double(remote.writerEpoch)), "deleted": .bool(true)
+        ]))
+        await relaunched.refresh(remote)
+        XCTAssertNil(relaunched.message); XCTAssertTrue(store.completedStatisticsGames(teamID: cloud.id, seasonID: original.yearID).isEmpty)
+        XCTAssertTrue(relaunched.state.conflicts.contains { $0.game.state.batting[player.id]?.hits == dirty.state.batting[player.id]?.hits })
+    }
+
+    func testV30PlayerLinksLostResponseRetryPersistenceAndStaleReviewDoNotLoseDraft() async throws {
+        let store = freshStore(); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame), source = original.ourTeam.players[0]
+        let official = Player(chineseName: "关联目标", englishName: "", numbers: [12])
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "iPhone")
+        let created = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: Team(name: "海浪", shortName: "海浪", city: "", players: [official])))
+        store.teamSharing = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage()); await store.teamSharing.connect()
+        let disk = V30MatchMemoryStorage(), proxy = V30UnreliableMatchService(client)
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        await sync.publish(original, teamID: created.teamID)
+        let before = try XCTUnwrap(sync.state.matches.first), fields: [String: MatchJSON] = ["playerLinks": try .encode([MatchPlayerLink(sourceID: source.id, targetID: official.id)]), "baseRosterRevision": .number(1)]
+        disk.failSave = true; await sync.command(before, resource: "player-links", fields: fields); disk.failSave = false
+        let unchanged = try await client.match(teamID: created.teamID, gameID: before.id); XCTAssertEqual(unchanged.serverRevision, before.serverRevision)
+        await proxy.network(loseNextResponse: true)
+        await sync.command(before, resource: "player-links", fields: fields)
+        XCTAssertNotNil(sync.message); XCTAssertEqual(sync.state.pending.count, 1); XCTAssertEqual(sync.match(id: before.id)?.playerLinks, [])
+        let pendingID = sync.state.pending.first?.id
+        let resumed = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = resumed
+        XCTAssertEqual(resumed.state.pending.first?.id, pendingID); await resumed.synchronize()
+        XCTAssertNil(resumed.message); XCTAssertTrue(resumed.state.pending.isEmpty)
+        XCTAssertEqual(resumed.match(id: before.id)?.serverRevision, before.serverRevision + 1)
+        await resumed.command(before, resource: "player-links", fields: ["playerLinks": .array([]), "baseRosterRevision": .number(1)])
+        XCTAssertNotNil(resumed.message); XCTAssertEqual(resumed.match(id: before.id)?.playerLinks?.first?.targetID, official.id)
+        await resumed.refresh(try XCTUnwrap(resumed.match(id: before.id))); XCTAssertNil(resumed.message)
+        let json = try await client.matchCommand(path: TeamServiceClient.matchPath(created.teamID,before.id) + "/player-links", method: "GET", body: .object([:]))
+        let history = try JSONDecoder().decode(PlayerLinkHistory.self, from: JSONEncoder().encode(json))
+        XCTAssertEqual(history.changes.count, 1); XCTAssertEqual(history.changes.first?.before, [])
+    }
+}
+
+extension GameStoreTests {
+    func testV30NewOfficialVersionWhileSameWriterHasDraftPreservesConflictAndCleanRefreshInstalls() async throws {
+        let store = freshStore(); store.finishGame(); let original = try XCTUnwrap(store.activeStoredGame)
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "iPhone")
+        let team = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID())
+        let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
+        await sync.publish(original, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+        let remote = try XCTUnwrap(sync.state.matches.first)
+        var updated = try XCTUnwrap(remote.payload); updated.revision = (updated.revision ?? 0) + 1
+        updated.playedAt = Date(timeIntervalSince1970: 1700000000)
+        func upload(_ match: SharedMatch, _ game: StoredGame) async throws {
+            var game = game; game.id = match.wireLocalID ?? game.id
+            _ = try await client.matchCommand(path: TeamServiceClient.matchPath(team.teamID, match.id), method: "PUT", body: .object([
+                "operationID": .uuid(UUID()), "baseRevision": .number(Double(match.serverRevision)), "writerEpoch": .number(Double(match.writerEpoch)),
+                "formatVersion": .number(1), "payload": try .encode(game), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(game).data())
+            ]))
+        }
+        try await upload(remote, updated); await sync.refresh(remote)
+        XCTAssertEqual(store.games.first { $0.id == sharedCopyID }?.playedAt, updated.playedAt)
+        XCTAssertTrue(sync.state.conflicts.isEmpty)
+        let current = try XCTUnwrap(sync.state.matches.first)
+        var dirty = try XCTUnwrap(store.games.first { $0.id == sharedCopyID }); dirty.revision = (dirty.revision ?? 0) + 1
+        dirty.playedAt = Date(timeIntervalSince1970: 1600000000); try store.installSharedCopy(dirty)
+        updated.revision = (updated.revision ?? 0) + 1; updated.playedAt = Date(timeIntervalSince1970: 1500000000)
+        try await upload(current, updated); await sync.refresh(current)
+        XCTAssertNil(sync.message); XCTAssertEqual(sync.state.conflicts.count, 1)
+        XCTAssertEqual(sync.state.conflicts.first?.game.playedAt, dirty.playedAt)
+        XCTAssertEqual(store.games.first { $0.id == sharedCopyID }?.playedAt, updated.playedAt)
+        XCTAssertFalse(sync.canEdit(sharedCopyID))
+        try sync.useOfficialVersion(try XCTUnwrap(sync.state.conflicts.first)); XCTAssertTrue(sync.canEdit(sharedCopyID))
+        XCTAssertEqual(sync.state.resolvedConflicts?.first?.game.playedAt, dirty.playedAt)
+    }
+}
+
+extension GameStoreTests {
+    func testV30ConflictSubmissionLostReplyAdminReviewAndDecisionKeepOriginalDraft() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "原设备")
+        let team = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID())
+        let store = freshStore(), disk = V30MatchMemoryStorage(), proxy = V30UnreliableMatchService(client)
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        store.startGameClock(); let source = try XCTUnwrap(store.activeStoredGame)
+        await sync.publish(source, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+        let original = try XCTUnwrap(sync.match(localID: sharedCopyID))
+        // Preserve an offline alternative, while the official record remains unchanged.
+        var draftGame = source; draftGame.id = sharedCopyID; draftGame.playedAt = Date(timeIntervalSince1970: 1600000000)
+        let draft = MatchConflict(id: UUID(), localID: sharedCopyID, savedAt: Date(), game: draftGame, reason: "旧设备断网期间记录")
+        disk.state.conflicts = [draft]
+        let coordinator = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = coordinator
+        await proxy.network(loseNextResponse: true)
+        await coordinator.submitConflict(draft, match: original)
+        XCTAssertNotNil(coordinator.message); XCTAssertEqual(coordinator.state.pending.count, 1)
+        XCTAssertFalse(coordinator.state.submittedConflictIDs?.contains(draft.id) == true)
+        let resumed = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = resumed
+        await resumed.synchronize()
+        XCTAssertNil(resumed.message); XCTAssertTrue(resumed.state.submittedConflictIDs?.contains(draft.id) == true)
+        XCTAssertEqual(resumed.match(id: original.id)?.serverRevision, original.serverRevision)
+        XCTAssertEqual(resumed.state.conflicts.first?.game.playedAt, draftGame.playedAt)
+        struct DraftList: Decodable { let drafts: [SharedConflictDraft] }
+        let path = TeamServiceClient.matchPath(team.teamID, original.id) + "/drafts"
+        let data = try await client.matchCommand(path: path, method: "GET", body: .object([:]))
+        let list = try JSONDecoder().decode(DraftList.self, from: JSONEncoder().encode(data))
+        XCTAssertEqual(list.drafts.count, 1)
+        let pending = try XCTUnwrap(list.drafts.first)
+        try resumed.useOfficialVersion(draft)
+        await resumed.command(try XCTUnwrap(resumed.match(id: original.id)), resource: "drafts/" + pending.id.uuidString.lowercased(), fields: ["decision": .string("discarded"), "note": .string("核对后采用球队记录")])
+        XCTAssertNil(resumed.message); XCTAssertEqual(resumed.match(id: original.id)?.serverRevision, original.serverRevision + 1)
+        XCTAssertEqual(resumed.state.resolvedConflicts?.first?.game.playedAt, draftGame.playedAt)
+        let read = try await client.matchCommand(path: path + "/" + pending.id.uuidString.lowercased(), method: "GET", body: .object([:]))
+        let finished = try JSONDecoder().decode(SharedConflictDraft.self, from: JSONEncoder().encode(read))
+        XCTAssertEqual(finished.status, "discarded"); XCTAssertEqual(finished.payload?.playedAt, draftGame.playedAt)
+        let member = try await matchPartner(client, team: team.teamID, role: .member)
+        do { _ = try await member.matchCommand(path: path, method: "GET", body: .object([:])); XCTFail("Members must not read admin drafts") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("角色")) }
+    }
+
+    func testV30ExpiredCursorRebuildKeepsDraftAndAllOfficialGames() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "iPhone")
+        let team = try await client.createTeam(name: "飞鹰", nickname: "教练", operationID: UUID())
+        let store = freshStore(), disk = V30MatchMemoryStorage(), proxy = V30UnreliableMatchService(client)
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        let game = try XCTUnwrap(store.activeStoredGame); await sync.publish(game, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+        let remote = try XCTUnwrap(sync.state.matches.first)
+        disk.state.conflicts = [MatchConflict(id: UUID(), localID: sharedCopyID, savedAt: Date(), game: try XCTUnwrap(store.games.first { $0.id == sharedCopyID }), reason: "待核对资料")]
+        let resumed = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = resumed
+        await proxy.expireNextCursor(); await resumed.synchronize()
+        XCTAssertNil(resumed.message); XCTAssertEqual(resumed.state.matches.count, 1)
+        XCTAssertEqual(resumed.match(id: remote.id)?.serverRevision, remote.serverRevision)
+        XCTAssertEqual(resumed.state.conflicts.count, 1); XCTAssertFalse(resumed.canEdit(sharedCopyID))
+        XCTAssertGreaterThan(resumed.state.cursors[team.teamID.uuidString] ?? 0, 0)
+    }
+
+    func testV30DissolutionRestorationDirectoryClearsAccessAndExposesAudit() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "iPhone 17 Pro")
+        let directory = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage())
+        await directory.connect()
+        let didCreate = await directory.submit(.create(name: "海浪", nickname: "教练", localTeamID: nil, profile: nil)); XCTAssertTrue(didCreate)
+        let team = try XCTUnwrap(directory.teams.first)
+        let page: TeamAuditPage = try await directory.securityRead("teams/\(team.id.uuidString.lowercased())/audit")
+        XCTAssertEqual(page.events.first?.nickname, "教练")
+        let dissolve = TeamSecurityCommand(path: "teams/\(team.id.uuidString.lowercased())/dissolve", method: "POST", fields: ["confirm": .bool(true), "name": .string(team.name), "baseRevision": .number(Double(team.revision))], kind: "team-dissolve", teamID: team.id)
+        let didDissolve = await directory.submit(.security(dissolve)); XCTAssertTrue(didDissolve)
+        XCTAssertTrue(directory.teams.isEmpty); XCTAssertNil(directory.state.recoveryCards?.first { $0.teamID == team.id })
+        struct Deleted: Decodable { let teams: [DissolvedTeam] }
+        let deleted: Deleted = try await directory.securityRead("dissolved-teams"); XCTAssertEqual(deleted.teams.first?.id, team.id)
+        let restore = TeamSecurityCommand(path: "teams/\(team.id.uuidString.lowercased())/restore", method: "POST", fields: ["confirm": .bool(true), "name": .string(team.name)], kind: "team-restore", teamID: team.id)
+        let didRestore = await directory.submit(.security(restore)); XCTAssertTrue(didRestore)
+        XCTAssertEqual(directory.teams.first?.id, team.id); XCTAssertEqual(directory.teams.first?.role, .admin)
+        let after: TeamAuditPage = try await directory.securityRead("teams/\(team.id.uuidString.lowercased())/audit")
+        XCTAssertTrue(after.events.contains { $0.action == "teamRestored" })
+    }
+}
+
+extension GameStoreTests {
+    func testV30RecoveryReviewPreservesAcknowledgedRecordsAndNeverReplaysOldMutation() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "原记录设备")
+        let team = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID())
+        let store = freshStore(), proxy = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage()
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        let source = try XCTUnwrap(store.activeStoredGame); await sync.publish(source, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+        let before = await proxy.operations.count
+        await proxy.simulateServerRecovery(); await sync.synchronize()
+        XCTAssertTrue(sync.state.requiresRecoveryReview); XCTAssertFalse(sync.canEdit(sharedCopyID))
+        let reconciled = await sync.reconcileAfterRecovery(); XCTAssertTrue(reconciled)
+        XCTAssertTrue(sync.state.requiresRecoveryReview, "Editing waits for both the directory and match review")
+        XCTAssertEqual(sync.state.conflicts.first?.game.state, source.state)
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        try sync.finishRecoveryReview()
+        XCTAssertFalse(sync.state.requiresRecoveryReview); XCTAssertFalse(sync.canEdit(sharedCopyID), "Preserved original still needs a match-level decision")
+        let after = await proxy.operations.count; XCTAssertEqual(after, before)
+        let resumed = SharedMatchCoordinator(store: store, service: proxy, storage: disk)
+        XCTAssertEqual(resumed.state.conflicts.count, 1); XCTAssertFalse(resumed.state.requiresRecoveryReview)
+    }
+    func testV30RestoringOlderLocalBackupRequiresReviewBeforeAnySharedUpload() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "原记录设备")
+        let team = try await client.createTeam(name: "飞鹰", nickname: "教练", operationID: UUID())
+        let store = freshStore(), proxy = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage()
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        let source = try XCTUnwrap(store.activeStoredGame); await sync.publish(source, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+        let backup = try LocalBackup(snapshot: store.makeRosterSnapshot())
+        store.openGame(id: sharedCopyID); store.startGameClock(); store.recordPitch(.ball); await sync.waitForSync(); await sync.synchronize()
+        let current = try XCTUnwrap(sync.match(localID: sharedCopyID)), count = await proxy.operations.count
+        try store.restoreBackup(backup)
+        XCTAssertTrue(sync.state.requiresRecoveryReview)
+        await sync.synchronize()
+        let stoppedCount = await proxy.operations.count; XCTAssertEqual(stoppedCount, count)
+        let remote = try await client.match(teamID: team.teamID, gameID: current.id)
+        XCTAssertEqual(remote.serverRevision, current.serverRevision); XCTAssertEqual(remote.payload?.state.balls, 1)
+        let reconciled = await sync.reconcileAfterRecovery(); XCTAssertTrue(reconciled)
+        try sync.finishRecoveryReview()
+        XCTAssertEqual(store.games.first { $0.id == sharedCopyID }?.state.balls, 1)
+        XCTAssertEqual(sync.state.conflicts.first?.game.state.balls, try backup.snapshot().games.first?.state.balls)
+        let finalCount = await proxy.operations.count; XCTAssertEqual(finalCount, count)
+    }
+
+    func testV30PortableTeamArchiveRoundTripAndCorruptionNeverRestoresCloudAuthority() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "档案导出 iPhone")
+        let store = freshStore(), source = try XCTUnwrap(store.activeStoredGame)
+        let team = try await client.createTeam(name: "海浪档案", nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: source.ourTeam))
+        let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
+        await sync.publish(source, teamID: team.teamID)
+        let url = try await client.exportTeamArchive(teamID: team.teamID)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let archive = try PortableTeamArchive.validate(url)
+        XCTAssertEqual(archive.manifest.profile.name, "海浪档案"); XCTAssertEqual(archive.records.count, 1)
+        XCTAssertEqual(archive.records.first?.payload?.state, source.state)
+        XCTAssertEqual(archive.records.first?.payload?.rules, source.rules)
+        XCTAssertNil(archive.records.first?.payload?.sharedGameID)
+        let restored = try PortableTeamArchive.restore(url); defer { try? FileManager.default.removeItem(at: restored) }
+        XCTAssertEqual(try PortableTeamArchive.validate(restored).records.first?.id, archive.records.first?.id)
+        XCTAssertEqual(store.games.count, 2, "Importing an archive does not replace the current database")
+        let data = try Data(contentsOf: url), damaged = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".bmteam")
+        defer { try? FileManager.default.removeItem(at: damaged) }
+        try data.dropLast(32).write(to: damaged); XCTAssertThrowsError(try PortableTeamArchive.validate(damaged))
+        var appended = data; appended.append(data); try appended.write(to: damaged)
+        XCTAssertThrowsError(try PortableTeamArchive.validate(damaged))
+        let member = try await matchPartner(client, team: team.teamID, role: .member)
+        do { _ = try await member.exportTeamArchive(teamID: team.teamID); XCTFail("Only administrators export a full archive") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("角色")) }
+    }
+
+    func testV30CredentialRotationKeepsEncryptedCachesReadableAndRecoversLostCommitResponse() async throws {
+        let account = "rotation-test-" + UUID().uuidString, vault = TeamDeviceKeychain(account: account)
+        defer { for suffix in ["", ".storage-key", ".rotation-pending", ".rotation-date"] {
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.jasonchen.baseballmaster.collaboration", kSecAttrAccount as String: account + suffix] as CFDictionary)
+        } }
+        let client = try TeamServiceClient(baseURL: URL(string: "http://127.0.0.1:18788/api/v3")!, vault: vault)
+        let device = try await client.enroll(deviceName: "iPhone"), old = try vault.loadOrCreate()
+        let team = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID())
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = SharedMatchFile(url: folder.appendingPathComponent("cache.sealed"), vault: vault)
+        var state = SharedMatchLocalState(); state.deviceID = device; try file.save(state)
+        let pending = try vault.beginRotation()
+        let _: MatchJSON = try await client.request("POST", path: "devices/credential-prepare", body: MatchJSON.object(["operationID": .uuid(pending.id), "newToken": .string(pending.token)]))
+        let _: MatchJSON = try await client.request("POST", path: "devices/credential-commit", body: MatchJSON.object(["rotationID": .uuid(pending.id)]), credential: pending.token)
+        XCTAssertEqual(try vault.loadOrCreate(), old, "Simulate server commit before the local receipt was saved")
+        let enrolled = try await client.enroll(deviceName: "iPhone"); XCTAssertEqual(enrolled, device)
+        XCTAssertEqual(try vault.loadOrCreate(), pending.token); XCTAssertNil(try vault.pendingRotation())
+        XCTAssertEqual(try file.load().deviceID, device)
+        let teams = try await client.teams(); XCTAssertEqual(teams.teams.first?.id, team.teamID)
+        try vault.replaceLostCredential(); XCTAssertEqual(try file.load().deviceID, device)
+        XCTAssertNotEqual(try vault.loadOrCreate(), pending.token)
+    }
+    func testV30CompleteSixInningMatchesAcrossThreeModesRoundTripWithPortableArchive() async throws {
+        for mode in [GameMode.standard, .coachPitch, .slowPitch] {
+            let store = try v30Backfill(mode)
+            store.startGameClock()
+            for _ in 0..<12 {
+                if store.game.isFinal { break }
+                store.recordPitch(.ball); store.recordPitch(.calledStrike); store.applyPlay(.single)
+                store.recordPitch(.foul); store.applyPlay(.double)
+                for _ in 0..<3 { store.recordPitch(.swingingStrike); store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays[0]) }
+            }
+            if !store.game.isFinal { store.finishGame() }
+            let game = try XCTUnwrap(store.activeStoredGame)
+            XCTAssertTrue(game.state.isFinal); XCTAssertGreaterThanOrEqual(game.state.inning, 6)
+            XCTAssertGreaterThan(game.state.scoringEvents?.count ?? 0, 100)
+            _ = try LocalBackup(snapshot: store.makeRosterSnapshot()).snapshot()
+            let client = try matchClient(); _ = try await client.enroll(deviceName: "完整比赛验证 iPhone")
+            let team = try await client.createTeam(name: "海浪", nickname: "陈教练", operationID: UUID(), profile: SharedRosterSeed(team: game.ourTeam))
+            let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
+            await sync.publish(game, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+            let saved = try XCTUnwrap(sync.match(localID: sharedCopyID)); XCTAssertEqual(saved.payload?.state, game.state)
+            let url = try await client.exportTeamArchive(teamID: team.teamID)
+            XCTAssertEqual(try PortableTeamArchive.validate(url).records.first?.payload?.state, game.state)
+            try? FileManager.default.removeItem(at: url)
+            let body = MatchJSON.object(["formatVersion": .number(1), "payload": try .encode(game), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(game).data())])
+            let capture = XCTAttachment(data: try JSONEncoder().encode(body), uniformTypeIdentifier: "public.json")
+            capture.name = "3.0-complete-match-\(mode.rawValue).json"; capture.lifetime = .keepAlways; add(capture)
+        }
+    }
+    func testV30ProductionHTTPSAppClientSyncArchiveAndClosedHistory() async throws {
+        guard ProcessInfo.processInfo.environment["BM_PRODUCTION_ACCEPTANCE"] == "1" else { throw XCTSkip("Explicit production validation only") }
+        let client = try TeamServiceClient(vault: V30MemoryTeamCredential(value: TeamDeviceKeychain.randomSecret()))
+        _ = try await client.enroll(deviceName: "3.0 发布验证 iPhone")
+        let store = freshStore(), source = try XCTUnwrap(store.activeStoredGame)
+        let team = try await client.createTeam(name: "App HTTPS 临时验证", nickname: "验证记录员", operationID: UUID(), profile: SharedRosterSeed(team: source.ourTeam))
+        do {
+            let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
+            await sync.publish(source, teamID: team.teamID)
+        let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
+        store.openGame(id: sharedCopyID)
+            let remote = try XCTUnwrap(sync.match(localID: sharedCopyID), sync.message ?? "Shared match missing")
+            XCTAssertEqual(remote.payload?.state, source.state); XCTAssertEqual(remote.accessMode, .closed)
+            store.openGame(id: sharedCopyID); store.startGameClock(); store.recordPitch(.ball); await sync.waitForSync(); await sync.synchronize()
+            let updated = try await client.match(teamID: team.teamID, gameID: remote.id); XCTAssertEqual(updated.payload?.state.balls, 1)
+            let archive = try await client.exportTeamArchive(teamID: team.teamID)
+            XCTAssertEqual(try PortableTeamArchive.validate(archive).records.first?.payload?.state.balls, 1); try? FileManager.default.removeItem(at: archive)
+            let detail = try await client.detail(teamID: team.teamID)
+            _ = try await client.securityRequest(path: "teams/\(team.teamID.uuidString.lowercased())/dissolve", method: "POST", body: .object(["operationID": .uuid(UUID()), "confirm": .bool(true), "name": .string(detail.team.name), "baseRevision": .number(Double(detail.team.revision))]))
+        } catch {
+            if let detail = try? await client.detail(teamID: team.teamID) {
+                _ = try? await client.securityRequest(path: "teams/\(team.teamID.uuidString.lowercased())/dissolve", method: "POST", body: .object(["operationID": .uuid(UUID()), "confirm": .bool(true), "name": .string(detail.team.name), "baseRevision": .number(Double(detail.team.revision))]))
+            }
+            throw error
+        }
+    }
+}
+
+extension GameStoreTests {
+    func testV301SevenLocalGamesImportFiveAndRemainEditableAcrossReload() async throws {
+        let store = freshStore(), client = try matchClient()
+        _ = try await client.enroll(deviceName: "3.0.1 QA")
+        let localTeam = try XCTUnwrap(store.currentTeam)
+        let team = try await client.createTeam(name: localTeam.name, nickname: "管理员", operationID: UUID(), profile: SharedRosterSeed(team: localTeam))
+        let directory = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage())
+        store.teamSharing = directory; await directory.connect()
+        for index in 0..<7 {
+            if index > 0 { store.startNewGame(opponent: store.opponentTeams[0], isHome: false, innings: 6, lineup: Array(localTeam.players.prefix(9))) }
+            store.finishGame()
+            let game = try XCTUnwrap(store.activeStoredGame)
+            XCTAssertTrue(store.updateCompletedGameDate(id: game.id, playedAt: Date().addingTimeInterval(Double(-index-1)*86400), timeZoneID: "Asia/Shanghai", expectedRevision: game.revision ?? 0))
+        }
+        let originals = store.recentGames
+        XCTAssertEqual(originals.count, 7)
+        let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk)
+        store.sharedMatches = sync
+        await sync.prepareHistoricalImport(Array(originals.prefix(5)), teamID: team.teamID, sourceTeamID: localTeam.id, links: [])
+        await sync.resumeHistoricalImport()
+        XCTAssertTrue(sync.state.historyImport?.finished == true, sync.message ?? "")
+        XCTAssertEqual(sync.state.matches.count, 5)
+        XCTAssertEqual(store.recentGames.count, 7)
+        XCTAssertEqual(store.teams.first { $0.id == localTeam.id }, localTeam)
+        for game in originals { XCTAssertEqual(store.games.first { $0.id == game.id }, game); XCTAssertTrue(sync.canEdit(game.id)) }
+        let reopened = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = reopened
+        await reopened.synchronize()
+        XCTAssertEqual(store.recentGames.count, 7); XCTAssertEqual(reopened.state.matches.count, 5)
+        await reopened.prepareHistoricalImport(Array(originals.prefix(5)), teamID: team.teamID, sourceTeamID: localTeam.id, links: [])
+        XCTAssertTrue(reopened.state.historyImport?.rows.allSatisfy { $0.preview?.status == "duplicate" } == true)
+        await reopened.resumeHistoricalImport()
+        XCTAssertEqual(store.recentGames.count, 7); XCTAssertEqual(reopened.state.matches.count, 5)
+    }
+
+    func testV301PublishedCopyEditsDatesDeletionAndOtherMemberNeverTouchOriginal() async throws {
+        let store = freshStore(), client = try matchClient()
+        _ = try await client.enroll(deviceName: "3.0.1 QA")
+        let team = try await client.createTeam(name: "独立副本", nickname: "管理员", operationID: UUID())
+        let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = sync
+        let original = try XCTUnwrap(store.activeStoredGame)
+        await sync.publish(original, teamID: team.teamID)
+        XCTAssertNil(sync.message)
+        let shared = try XCTUnwrap(sync.publishedMatch(sourceID: original.id, teamID: team.teamID))
+        XCTAssertNotEqual(shared.payload?.id, original.id); XCTAssertEqual(store.games.first { $0.id == original.id }, original)
+        store.recordPitch(.ball); store.finishGame()
+        let localFinished = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertTrue(store.updateCompletedGameDate(id: original.id, playedAt: Date().addingTimeInterval(-172800), timeZoneID: "Asia/Shanghai", expectedRevision: localFinished.revision ?? 0))
+        let changedOriginal = try XCTUnwrap(store.activeStoredGame)
+        await sync.synchronize()
+        XCTAssertEqual(sync.match(id: shared.id)?.payload?.state.balls, original.state.balls)
+        XCTAssertEqual(sync.match(id: shared.id)?.payload?.playedAt, original.playedAt)
+        store.openGame(id: shared.id); store.recordPitch(.swingingStrike)
+        await sync.waitForSync(); await sync.synchronize()
+        XCTAssertNil(sync.message)
+        XCTAssertEqual(store.games.first { $0.id == original.id }, changedOriginal)
+        XCTAssertEqual(sync.match(id: shared.id)?.payload?.state.strikes, 1)
+        store.finishGame(); await sync.waitForSync(); await sync.synchronize()
+        let finished = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertTrue(store.updateCompletedGameDate(id: finished.id, playedAt: Date().addingTimeInterval(-86400), timeZoneID: "Asia/Shanghai", expectedRevision: finished.revision ?? 0))
+        await sync.waitForSync(); await sync.synchronize()
+        XCTAssertEqual(store.games.first { $0.id == original.id }, changedOriginal)
+        let reader = try await matchPartner(client, team: team.teamID, role: .member), other = GameStore(persistenceURL: nil)
+        let reading = SharedMatchCoordinator(store: other, service: reader, storage: V30MatchMemoryStorage()); other.sharedMatches = reading
+        await reading.synchronize(); XCTAssertEqual(other.games.first { $0.id == shared.id }?.state.strikes, 1)
+        XCTAssertTrue(store.deleteGame(id: original.id)); await sync.synchronize(); await reading.synchronize()
+        XCTAssertNotNil(other.games.first { $0.id == shared.id })
+        await sync.command(try XCTUnwrap(sync.match(id: shared.id)), resource: "deletion", fields: ["deleted": .bool(true)])
+        XCTAssertNil(sync.message); XCTAssertNil(store.games.first { $0.id == shared.id })
+        let reload = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = reload
+        await reload.synchronize(); XCTAssertFalse(store.games.contains { $0.id == original.id })
+        await reading.synchronize(); XCTAssertFalse(other.games.contains { $0.id == shared.id })
+    }
+
+    func testV301DeletingSharedCopyPreservesSourceAndRepeatPublishIsNoOp() async throws {
+        let store = freshStore(), client = try matchClient(); _ = try await client.enroll(deviceName: "QA")
+        let team = try await client.createTeam(name: "删除隔离", nickname: "管理员", operationID: UUID())
+        let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
+        try await startV21Live(store)
+        let source = try XCTUnwrap(store.activeStoredGame)
+        let sourceLiveCode = store.liveBroadcasts.binding(for: source.id)?.code
+        await sync.publish(source, teamID: team.teamID); await sync.publish(source, teamID: team.teamID)
+        XCTAssertEqual(sync.state.matches.count, 1)
+        let copy = try XCTUnwrap(sync.state.matches.first)
+        await sync.command(copy, resource: "deletion", fields: ["deleted": .bool(true)])
+        XCTAssertEqual(store.games.first { $0.id == source.id }, source)
+        XCTAssertTrue(sync.canEdit(source.id)); store.openGame(id: source.id); store.recordPitch(.ball)
+        XCTAssertEqual(store.game.balls, 1)
+        await sync.publish(try XCTUnwrap(store.activeStoredGame), teamID: team.teamID)
+        XCTAssertEqual(sync.state.matches.count, 1); XCTAssertTrue(sync.state.matches.first?.deleted == true)
+        XCTAssertEqual(store.liveBroadcasts.binding(for: source.id)?.code, sourceLiveCode)
+        store.liveBroadcasts.close(source.id); await store.liveBroadcasts.waitForPendingSync()
+    }
+
+    func testV301LegacySharingMigrationRestoresOriginalAndKeepsSharedProgress() async throws {
+        let store = freshStore(), client = try matchClient(); _ = try await client.enroll(deviceName: "QA")
+        let team = try await client.createTeam(name: "旧版迁移", nickname: "管理员", operationID: UUID())
+        let source = try XCTUnwrap(store.activeStoredGame)
+        let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = sync
+        await sync.publish(source, teamID: team.teamID)
+        let copy = try XCTUnwrap(sync.state.matches.first)
+        var legacy = try await client.match(teamID: team.teamID, gameID: copy.id)
+        legacy.payload?.sharedGameID = copy.id; legacy.payload?.sharedTeamID = team.teamID
+        var oldGame = try XCTUnwrap(legacy.payload); oldGame.state.balls = 2
+        store.games = [oldGame]
+        disk.state.matches = [legacy]; disk.state.originalLocalGames = [source]; disk.state.isolatedCopiesVersion = nil
+        let migrated = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = migrated
+        XCTAssertNil(migrated.message)
+        XCTAssertEqual(store.games.first { $0.id == source.id }, source)
+        XCTAssertEqual(store.games.first { $0.id == copy.id }?.state.balls, 2)
+        XCTAssertTrue(migrated.canEdit(source.id)); XCTAssertFalse(migrated.isShared(source.id))
+        let again = SharedMatchCoordinator(store: store, service: client, storage: disk)
+        XCTAssertNil(again.message); XCTAssertEqual(store.games.count, 2)
+        // A member's active downloaded game moves to its new ID without becoming a local original.
+        store.games = [oldGame]; disk.state.matches = [legacy]; disk.state.originalLocalGames = []; disk.state.isolatedCopiesVersion = nil
+        let memberMigration = SharedMatchCoordinator(store: store, service: client, storage: disk)
+        XCTAssertNil(memberMigration.message); XCTAssertEqual(store.activeGameID, copy.id); XCTAssertEqual(store.games.count, 1)
+        var collision = source; collision.id = copy.id
+        store.games = [oldGame, collision]; disk.state.matches = [legacy]; disk.state.isolatedCopiesVersion = nil
+        let blocked = SharedMatchCoordinator(store: store, service: client, storage: disk)
+        XCTAssertNotNil(blocked.message); XCTAssertFalse(blocked.canEdit(source.id))
+        XCTAssertEqual(store.games, [oldGame, collision])
+    }
+
+    func testV301RefreshGateAndFixedInvitationPersistAcrossReopen() async throws {
+        let client = try matchClient(), disk = V30DirectoryMemoryStorage(), directory = TeamSharingStore(service: client, storage: disk)
+        directory.setForeground(true)
+        XCTAssertTrue(directory.needsRefresh("directory")); XCTAssertFalse(directory.needsRefresh("directory"))
+        directory.setForeground(true); XCTAssertFalse(directory.needsRefresh("directory"))
+        directory.setForeground(false); directory.setForeground(true); XCTAssertTrue(directory.needsRefresh("directory"))
+        await directory.connect()
+        let created = await directory.submit(.create(name: "固定邀请", nickname: "教练", localTeamID: nil, profile: nil)); XCTAssertTrue(created)
+        let team = try XCTUnwrap(directory.teams.first)
+        let fetched = await directory.submit(.fixedInvite(teamID: team.id, rotate: false)); XCTAssertTrue(fetched, directory.errorMessage ?? "")
+        let first = try XCTUnwrap(directory.state.fixedInvitations?.first)
+        let reopened = TeamSharingStore(service: client, storage: disk); await reopened.connect()
+        let fetchedAgain = await reopened.submit(.fixedInvite(teamID: team.id, rotate: false)); XCTAssertTrue(fetchedAgain)
+        XCTAssertEqual(reopened.state.fixedInvitations?.first?.token, first.token)
+        let rotated = await reopened.submit(.fixedInvite(teamID: team.id, rotate: true)); XCTAssertTrue(rotated)
+        XCTAssertNotEqual(reopened.state.fixedInvitations?.first?.token, first.token)
+    }
+}
+
+extension GameStoreTests {
+    func testV301ScorerSharesScheduledAndCompletedSnapshotsAndMemberCannot() async throws {
+        let admin = try matchClient(); _ = try await admin.enroll(deviceName: "管理员")
+        let team = try await admin.createTeam(name: "赛程共享", nickname: "教练", operationID: UUID())
+        let scorer = try await matchPartner(admin, team: team.teamID), reader = try await matchPartner(admin, team: team.teamID, role: .member)
+        let store = freshStore(), sync = SharedMatchCoordinator(store: store, service: scorer, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
+        store.finishGame(); let finished = try XCTUnwrap(store.activeStoredGame)
+        await sync.publish(finished, teamID: team.teamID); XCTAssertNil(sync.message)
+        let scheduledID = store.scheduleGame(ourTeam: try XCTUnwrap(store.currentTeam), opponent: store.opponentTeams[0], isHome: false, scheduledAt: Date().addingTimeInterval(86400))
+        let scheduled = try XCTUnwrap(store.games.first { $0.id == scheduledID })
+        await sync.publish(scheduled, teamID: team.teamID); XCTAssertNil(sync.message)
+        XCTAssertEqual(sync.state.matches.count, 2); XCTAssertEqual(store.games.first { $0.id == scheduled.id }, scheduled)
+        let other = GameStore(persistenceURL: nil), read = SharedMatchCoordinator(store: other, service: reader, storage: V30MatchMemoryStorage()); other.sharedMatches = read
+        await read.synchronize(); XCTAssertEqual(Set(read.state.matches.compactMap { $0.payload?.status }), [.scheduled, .completed])
+        XCTAssertEqual(store.recentGames.count, 1); XCTAssertEqual(store.scheduledGames.count, 1)
+        let forbidden = freshStore(), deny = SharedMatchCoordinator(store: forbidden, service: reader, storage: V30MatchMemoryStorage()); forbidden.sharedMatches = deny
+        await deny.publish(try XCTUnwrap(forbidden.activeStoredGame), teamID: team.teamID)
+        XCTAssertNotNil(deny.message)
+        let finalPage = try await reader.matchPage(teamID: team.teamID, cursor: 0)
+        XCTAssertEqual(finalPage.games.count, 2)
+    }
+
+    func testV301DatabaseReopenAndMigrationFailurePreserveBothCopies() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("records.sqlite")
+        let sourceStore = freshStore(), source = try XCTUnwrap(sourceStore.activeStoredGame)
+        let store = GameStore(persistenceURL: url); try store.restoreBackup(LocalBackup(snapshot: sourceStore.makeRosterSnapshot()))
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "QA")
+        let team = try await client.createTeam(name: "落盘隔离", nickname: "教练", operationID: UUID())
+        let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = sync
+        await sync.publish(source, teamID: team.teamID)
+        let shared = try XCTUnwrap(sync.state.matches.first)
+        let reopened = GameStore(persistenceURL: url)
+        XCTAssertEqual(reopened.games.first { $0.id == source.id }, source)
+        XCTAssertNotNil(reopened.games.first { $0.id == shared.id })
+        disk.state.isolatedCopiesVersion = nil; disk.failSave = true
+        let blocked = SharedMatchCoordinator(store: reopened, service: client, storage: disk)
+        XCTAssertNotNil(blocked.message); XCTAssertTrue(blocked.canEdit(source.id))
+        XCTAssertFalse(blocked.canEdit(shared.id))
+        XCTAssertEqual(reopened.games.first { $0.id == source.id }, source)
+        disk.failSave = false; await blocked.synchronize()
+        XCTAssertNil(blocked.message); XCTAssertTrue(blocked.canEdit(source.id))
+        XCTAssertEqual(GameStore(persistenceURL: url).games.count, 2)
+    }
+}
+
+extension GameStoreTests {
+    func testV301DirectoryRefreshCoalescesAndRequiresNewForegroundOrManualAction() async throws {
+        let api = V30DirectoryService(), directory = TeamSharingStore(service: api, storage: V30DirectoryMemoryStorage())
+        directory.setForeground(true)
+        async let first: Void = directory.connectOnce()
+        async let repeated: Void = directory.connectOnce()
+        _ = await (first, repeated)
+        await directory.connectOnce()
+        let initial = await api.enrollCount; XCTAssertEqual(initial, 1)
+        await directory.connect()
+        let manual = await api.enrollCount; XCTAssertEqual(manual, 2)
+        directory.setForeground(false); directory.setForeground(true)
+        await directory.connectOnce(); await directory.connectOnce()
+        let foreground = await api.enrollCount; XCTAssertEqual(foreground, 3)
+    }
+}
+
+extension GameStoreTests {
+    func testV301RestoringV30BackupSeparatesLegacyIDsWithoutOverwritingOriginalOrUploading() async throws {
+        let store = freshStore(), client = try matchClient(); _ = try await client.enroll(deviceName: "QA")
+        let team = try await client.createTeam(name: "旧备份隔离", nickname: "教练", operationID: UUID())
+        let source = try XCTUnwrap(store.activeStoredGame), disk = V30MatchMemoryStorage()
+        let sync = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = sync
+        await sync.publish(source, teamID: team.teamID)
+        let shared = try XCTUnwrap(sync.state.matches.first)
+        var legacy = source; legacy.sharedGameID = shared.id; legacy.sharedTeamID = team.teamID
+        legacy.state.balls = 2; legacy.revision = (legacy.revision ?? 0) + 1
+        let snapshot = store.makeRosterSnapshot()
+        let backup = try LocalBackup(snapshot: RosterSnapshot(teams: snapshot.teams, opponentTeams: snapshot.opponentTeams,
+            currentTeamID: snapshot.currentTeamID, seasons: snapshot.seasons, playerGameRecords: snapshot.playerGameRecords,
+            games: [legacy], archivedTeams: snapshot.archivedTeams))
+        try store.restoreBackup(backup)
+        XCTAssertEqual(store.games.first { $0.id == source.id }, source)
+        XCTAssertEqual(store.games.first { $0.id == shared.id }?.state.balls, 2)
+        XCTAssertTrue(sync.state.requiresRecoveryReview)
+        XCTAssertEqual(sync.state.conflicts.first?.localID, shared.id)
+        XCTAssertTrue(sync.canEdit(source.id)); XCTAssertFalse(sync.canEdit(shared.id))
+        await sync.publish(source, teamID: team.teamID)
+        XCTAssertNotNil(sync.message); XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertEqual(store.games.first { $0.id == source.id }, source)
+        let reconciled = await sync.reconcileAfterRecovery(); XCTAssertTrue(reconciled)
+        XCTAssertEqual(store.games.first { $0.id == source.id }, source)
+        let remote = try await client.match(teamID: team.teamID, gameID: shared.id)
+        XCTAssertEqual(remote.serverRevision, shared.serverRevision); XCTAssertEqual(remote.payload?.state.balls, 0)
+        XCTAssertEqual(sync.state.conflicts.first?.game.state.balls, 2)
     }
 }

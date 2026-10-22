@@ -18,14 +18,14 @@ struct LocalBackup: Codable {
     init(snapshot: RosterSnapshot, date: Date = Date()) throws {
         try Self.validate(snapshot)
         format = "BaseballMaster Backup"
-        version = 4
+        version = 6
         createdAt = date
         payload = try JSONEncoder().encode(snapshot)
         checksum = Self.digest(payload)
     }
 
     func snapshot() throws -> RosterSnapshot {
-        guard format == "BaseballMaster Backup", (1...4).contains(version) else {
+        guard format == "BaseballMaster Backup", (1...6).contains(version) else {
             throw LocalDataError.invalid("备份格式或版本不受支持，请使用兼容的 App 版本。")
         }
         guard checksum == Self.digest(payload) else {
@@ -81,6 +81,12 @@ struct LocalBackup: Codable {
             try validateCounts(record.batting)
         }
         for stored in snapshot.games {
+            if let date = stored.playedAt { try require(date.timeIntervalSince1970.isFinite, "比赛时间无效") }
+            if let zone = stored.playedTimeZoneID { try require(TimeZone(identifier: zone) != nil, "比赛时区无效") }
+            for revision in stored.dateRevisions ?? [] {
+                try require(revision.changedAt.timeIntervalSince1970.isFinite && revision.previousDate.timeIntervalSince1970.isFinite
+                    && revision.playedAt.timeIntervalSince1970.isFinite && TimeZone(identifier: revision.timeZoneID) != nil, "比赛时间更正记录无效")
+            }
             let game = stored.state
             try require((0...3).contains(stored.rules.startingBalls) && (0...2).contains(stored.rules.startingStrikes), "初始球数无效")
             if stored.rules.isSlowPitch {
@@ -151,5 +157,109 @@ struct LocalBackup: Codable {
                 throw LocalDataError.invalid("统计值超出支持范围，原有数据未修改。")
             }
         }
+    }
+}
+
+/// A portable, independently verifiable archive. Restoring it never installs device or sharing authority.
+struct TeamArchiveManifest: Codable {
+    struct Entry: Codable { let id: UUID; let serverRevision: Int; let deleted: Bool; let purged: Bool }
+    let format: String; let version: Int; let profile: SharedTeamProfile
+    let games: [Entry]; let recoveryEpoch: UUID; let snapshot: String
+}
+struct TeamArchiveRecord: Codable, Identifiable {
+    let id: UUID; let serverRevision: Int; let deleted: Bool; let purged: Bool
+    let payload: StoredGame?; let projection: MatchJSON?; let playerLinks: [MatchPlayerLink]; let historySourceID: UUID?
+}
+struct VerifiedTeamArchive {
+    let manifest: TeamArchiveManifest; let records: [TeamArchiveRecord]
+}
+enum PortableTeamArchive {
+    private struct Line: Codable { let kind: String; let payload: Data; let checksum: String }
+    private static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    static func line<T: Encodable>(_ kind: String, _ value: T) throws -> Data {
+        let payload = try JSONEncoder().encode(value)
+        var data = try JSONEncoder().encode(Line(kind: kind, payload: payload, checksum: digest(payload)))
+        data.append(10); return data
+    }
+    static func validate(_ url: URL) throws -> VerifiedTeamArchive {
+        let granted = url.startAccessingSecurityScopedResource(); defer { if granted { url.stopAccessingSecurityScopedResource() } }
+        let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
+        var buffer = Data(), hash = SHA256(), manifest: TeamArchiveManifest?, records: [TeamArchiveRecord] = [], ended = false
+        func invalid() -> LocalDataError { .invalid("球队档案校验失败或版本不兼容，原有资料未修改。") }
+        while let chunk = try file.read(upToCount: 65536), !chunk.isEmpty {
+            buffer.append(chunk)
+            while let end = buffer.firstIndex(of: 10) {
+                let bytes = Data(buffer.prefix(through: end)); buffer.removeSubrange(...end)
+                guard !ended, bytes.count <= 32 * 1024 * 1024 else { throw invalid() }
+                let row = try JSONDecoder().decode(Line.self, from: bytes)
+                guard row.checksum == digest(row.payload) else { throw invalid() }
+                if row.kind == "manifest" {
+                    guard manifest == nil, records.isEmpty else { throw invalid() }
+                    let value = try JSONDecoder().decode(TeamArchiveManifest.self, from: row.payload)
+                    guard value.format == "BaseballMaster Team Archive", value.version == 1,
+                          value.games.count <= 5000, Set(value.games.map(\.id)).count == value.games.count,
+                          Set(value.profile.players.map(\.id)).count == value.profile.players.count,
+                          Set(value.profile.players.map(\.sourceID)).count == value.profile.players.count else { throw invalid() }
+                    manifest = value
+                } else if row.kind == "game" {
+                    guard let manifest, records.count < manifest.games.count else { throw invalid() }
+                    let value = try JSONDecoder().decode(TeamArchiveRecord.self, from: row.payload), expected = manifest.games[records.count]
+                    guard value.id == expected.id, value.serverRevision == expected.serverRevision,
+                          value.deleted == expected.deleted, value.purged == expected.purged,
+                          value.purged ? value.payload == nil && value.projection == nil : value.payload != nil && value.projection != nil else { throw invalid() }
+                    if let game = value.payload {
+                        try LocalBackup.validate(RosterSnapshot(teams: [], currentTeamID: nil, seasons: [], playerGameRecords: [], games: [game]))
+                        let sources = Set(game.ourTeam.players.map(\.id)), targets = Set(manifest.profile.players.map(\.sourceID))
+                        guard Set(value.playerLinks.map(\.sourceID)).count == value.playerLinks.count,
+                              value.playerLinks.allSatisfy({ sources.contains($0.sourceID) && targets.contains($0.targetID) }) else { throw invalid() }
+                    }
+                    records.append(value)
+                } else if row.kind == "seal" {
+                    guard let manifest, records.count == manifest.games.count,
+                          try JSONDecoder().decode(String.self, from: row.payload) == hash.finalize().map({ String(format: "%02x", $0) }).joined() else { throw invalid() }
+                    ended = true; continue
+                } else { throw invalid() }
+                hash.update(data: bytes)
+            }
+            guard buffer.count <= 32 * 1024 * 1024 else { throw invalid() }
+        }
+        guard ended, buffer.isEmpty, let manifest else { throw invalid() }
+        return VerifiedTeamArchive(manifest: manifest, records: records)
+    }
+    static func library() throws -> URL {
+        let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("TeamArchives", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]); return root
+    }
+    static func restore(_ source: URL) throws -> URL {
+        _ = try validate(source)
+        let granted = source.startAccessingSecurityScopedResource(); defer { if granted { source.stopAccessingSecurityScopedResource() } }
+        let target = try library().appendingPathComponent(UUID().uuidString + ".bmteam")
+        try FileManager.default.copyItem(at: source, to: target)
+        do { _ = try validate(target); try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path); return target }
+        catch { try? FileManager.default.removeItem(at: target); throw error }
+    }
+}
+
+extension TeamServiceClient {
+    func exportTeamArchive(teamID: UUID) async throws -> URL {
+        let path = "teams/\(teamID.uuidString.lowercased())/archive"
+        let manifest: TeamArchiveManifest = try await request("GET", path: path, body: Optional<String>.none)
+        let target = try ReportExportFile.url(name: "BaseballMaster-球队完整档案", extension: "bmteam")
+        FileManager.default.createFile(atPath: target.path, contents: nil, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+        let file = try FileHandle(forWritingTo: target); var complete = false
+        defer { try? file.close(); if !complete { try? FileManager.default.removeItem(at: target) } }
+        var hash = SHA256()
+        let header = try PortableTeamArchive.line("manifest", manifest); try file.write(contentsOf: header); hash.update(data: header)
+        for entry in manifest.games {
+            try Task.checkCancellation()
+            let record: TeamArchiveRecord = try await request("GET", path: path + "/\(entry.id.uuidString.lowercased())?snapshot=\(manifest.snapshot)", body: Optional<String>.none)
+            let data = try PortableTeamArchive.line("game", record); try file.write(contentsOf: data); hash.update(data: data)
+        }
+        struct Finish: Encodable { let operationID: UUID; let snapshot: String }
+        struct Receipt: Decodable { let verified: Bool }
+        let receipt: Receipt = try await request("POST", path: path + "/finish", body: Finish(operationID: UUID(), snapshot: manifest.snapshot))
+        guard receipt.verified else { throw LocalDataError.invalid("完整档案尚未确认，请重试。") }
+        try file.write(contentsOf: PortableTeamArchive.line("seal", hash.finalize().map { String(format: "%02x", $0) }.joined()))
+        try file.synchronize(); _ = try PortableTeamArchive.validate(target); complete = true; return target
     }
 }

@@ -46,7 +46,7 @@ struct RosterSnapshot: Codable, Equatable {
 
 @MainActor
 final class CoreDataRosterStore {
-    static let schemaVersion = 5
+    static let schemaVersion = 7
     static var writeFault: (() throws -> Void)?
     private(set) var loadedSchemaVersion: Int?
     private(set) var migratedLegacySchema = false
@@ -357,6 +357,10 @@ final class CoreDataRosterStore {
     }
 
     private func apply(_ game: StoredGame, to object: NSManagedObject) throws {
+        // Mark the payload semantics in the same transaction so older clients cannot erase new fields.
+        if let metadata = try fetch(Entity.metadata).first {
+            metadata.setValue(Int32(Self.schemaVersion), forKey: "schemaVersion")
+        }
         let encoded = try JSONEncoder().encode(game)
         object.setValue(game.id, forKey: "id")
         object.setValue(game.updatedAt, forKey: "updatedAt")

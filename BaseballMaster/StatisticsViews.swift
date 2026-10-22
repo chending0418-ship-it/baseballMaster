@@ -16,12 +16,14 @@ struct StatsOverviewView: View {
     @State private var showGameFilter = false
     @ScaledMetric(relativeTo: .body) private var metricWidth = 92
 
+    init(initialTeamID: UUID? = nil) { _selectedTeamID = State(initialValue: initialTeamID) }
+
     private var team: Team? {
         store.statisticsTeams.first { $0.id == (selectedTeamID ?? store.currentTeam?.id) } ?? store.statisticsTeams.first
     }
     private var seasonID: String {
         store.statisticsSeasons.contains(where: { $0.id == selectedSeasonID })
-            ? selectedSeasonID : (store.statisticsSeasons.first?.id ?? "")
+            ? selectedSeasonID : MatchYear.current
     }
 
     private var eligibleGames: [StoredGame] {
@@ -42,6 +44,9 @@ struct StatsOverviewView: View {
                     Text("仅统计已结束的本队比赛；观赛、练习和进行中比赛不计入。")
                         .font(.footnote)
                         .foregroundStyle(BMTheme.secondaryText)
+                    if store.teamSharing.teams.contains(where: { $0.id == team.id }) {
+                        SharedStatisticsSyncNotice(coordinator: store.sharedMatches, teamID: team.id)
+                    }
                     if summary.pendingCount > 0 {
                         Label("有 \(summary.pendingCount) 条待确认记录，统计将随赛后复核更新。", systemImage: "exclamationmark.circle")
                             .font(.footnote)
@@ -68,7 +73,7 @@ struct StatsOverviewView: View {
                         }
                     }
                     if summary.games.isEmpty {
-                        emptyState(selectedGameIDs == nil ? "这个赛季还没有已结束的比赛" : "当前筛选范围没有比赛", detail: "可重新选择比赛；完成并保存比赛后会自动加入可选范围。", id: "stats-no-games")
+                        emptyState(selectedGameIDs == nil ? "这个年度还没有已结束的比赛" : "当前筛选范围没有比赛", detail: "可重新选择比赛；完成并保存比赛后会自动加入可选范围。", id: "stats-no-games")
                     }
                     playerControls
                     let rows = summary.filteredPlayers(
@@ -99,7 +104,7 @@ struct StatsOverviewView: View {
                         }
                     }
                     if store.playerGameRecords.contains(where: { record in
-                        record.seasonID == seasonID && team.players.contains(where: { $0.id == record.playerID })
+                        record.yearID == seasonID && team.players.contains(where: { $0.id == record.playerID })
                     }) {
                         Text("旧版个人打击记录保留在球员详情中，因缺少完整比赛信息，不计入本页球队统计。")
                             .font(.footnote)
@@ -113,12 +118,18 @@ struct StatsOverviewView: View {
         }
         .scrollDismissesKeyboard(.immediately)
         .bmScreenBackground()
+        .task(id: team?.id) {
+            if let team, store.teamSharing.teams.contains(where: { $0.id == team.id }) {
+                await store.teamSharing.connect()
+                await store.sharedMatches.synchronize(teamID: team.id)
+            }
+        }
         .navigationTitle("统计")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if let team {
-                    ReportExportButton(title: "导出 PDF", identifier: "export-team-season-pdf", previewTitle: "球队赛季报告") {
+                    ReportExportButton(title: "导出 PDF", identifier: "export-team-season-pdf", previewTitle: "球队年度报告") {
                         try TeamSeasonPDFReport(store: store, team: team, seasonID: seasonID, mode: modeFilter, gameIDs: effectiveGameIDs).write()
                     }
                 }
@@ -147,14 +158,15 @@ struct StatsOverviewView: View {
         BMCard {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("球队", selection: Binding(get: { team.id }, set: { selectedTeamID = $0 })) {
-                    ForEach(store.statisticsTeams) { Text($0.name).tag($0.id) }
+                    ForEach(store.statisticsTeams) { team in Text(team.name + (store.teamSharing.teams.contains { $0.id == team.id } ? " · 共享" : " · 本机")).tag(team.id) }
                 }
                 .accessibilityIdentifier("stats-team-picker")
                 Divider()
-                Picker("赛季", selection: Binding(get: { seasonID }, set: { selectedSeasonID = $0 })) {
+                Picker("年度", selection: Binding(get: { seasonID }, set: { selectedSeasonID = $0 })) {
                     ForEach(store.statisticsSeasons) { Text($0.name).tag($0.id) }
                 }
                 .accessibilityIdentifier("stats-season-picker")
+                Text("按比赛日期自动归入年度，无需创建或划分赛季。").font(.caption).foregroundStyle(BMTheme.secondaryText)
                 Divider()
                 HStack {
                     Button { showGameFilter = true } label: {
@@ -265,7 +277,7 @@ struct StatsOverviewView: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(row.player.name).font(.headline)
-                Text("\(row.player.numbersText) · \(row.gamesPlayed) 场\(row.isCurrentRoster ? "" : " · 历史球员")")
+                Text("\(row.player.numbersText) · \(row.gamesPlayed) 场\(row.isUnlinked ? " · 未关联球员" : row.isCurrentRoster ? "" : " · 历史球员")")
                     .font(.caption).foregroundStyle(BMTheme.secondaryText)
                 Text(category == .pitching && modeFilter == .coachPitch ? "投手数据不适用" : rowDescription(row)).font(.caption).foregroundStyle(BMTheme.secondaryText)
             }
