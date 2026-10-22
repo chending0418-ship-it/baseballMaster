@@ -7,7 +7,7 @@ from reportlab.platypus import Paragraph
 from reportlab.lib.colors import HexColor
 
 pdfmetrics.registerFont(TTFont('Chinese', '/System/Library/Fonts/Supplemental/Arial Unicode.ttf'))
-out = Path('output/pdf/BaseballMaster-3.0-更新与使用说明.pdf')
+out = Path('output/releases/3.0/guides/BaseballMaster-3.0-更新与使用说明.pdf')
 out.parent.mkdir(parents=True, exist_ok=True)
 c = canvas.Canvas(str(out), pagesize=(595.28, 841.89))
 c.setTitle('BaseballMaster 3.0 更新与使用说明')

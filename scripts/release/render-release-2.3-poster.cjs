@@ -53,7 +53,7 @@ async function render() {
     const metadata = await sharp(filename).metadata();
     if (metadata.width !== 1440 || metadata.height !== 1920 || metadata.hasAlpha) throw new Error('Invalid poster size/alpha');
     fs.writeFileSync(path.join(destination, 'manifest.json'), JSON.stringify({ created: new Date().toISOString(), appVersion: '2.3', publicationUse: 'version-feature-announcement; store availability follows App Store', width: metadata.width, height: metadata.height, hasAlpha: metadata.hasAlpha, sourceHashes: hashes, layout, sha256: crypto.createHash('sha256').update(fs.readFileSync(filename)).digest('hex') }, null, 2) + '\n');
-    const publicCopy = path.join(repo, 'website/public/assets/baseballmaster-2.3-update.png');
+    const publicCopy = path.resolve(repo, '../../website/public/assets/baseballmaster-2.3-update.png');
     fs.copyFileSync(filename, publicCopy);
     console.log(`${filename} (${metadata.width} × ${metadata.height}, RGB, reused screenshots)`);
   } finally { await browser.close(); }

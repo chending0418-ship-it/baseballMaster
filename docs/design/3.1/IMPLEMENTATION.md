@@ -1,6 +1,6 @@
 # 3.1.0 局面记录：按 V4 交互 demo 实现
 
-2026-10-20。用户本轮明确：新局面记录必须沿用已做过的交互 demo。正式交互基准为 [局面记录 V4](https://baseballmaster.cc/recording/demoReview)，以 10 月 13 日补充安打守备后的最新四份源码 `website/public/recording/demoReview/` 和 [部署／验证记录](../../../website/deploy/2026-10-13-recording-v4.md) 为准。此前先观察、再进入独立守备页的原生方案已撤回，不作为本版验收。
+2026-10-20。用户本轮明确：新局面记录必须沿用已做过的交互 demo。正式交互基准为 [局面记录 V4](https://baseballmaster.cc/recording/demoReview)，以 10 月 13 日补充安打守备后的最新四份源码 `website/public/recording/demoReview/` 和 [部署／验证记录](../../../../../website/deploy/2026-10-13-recording-v4.md) 为准。此前先观察、再进入独立守备页的原生方案已撤回，不作为本版验收。
 
 ## 两种方式
 

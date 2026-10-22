@@ -8,7 +8,7 @@
 
 **全局品牌与宣传设计约定（长期有效，2026-10-22 用户确认）**
 
-品牌规范适用于所有版本、所有渠道的品牌露出和宣传物料，不限于本次 3.1.0 或小红书。后续制作时默认执行，无需用户重复描述；开始前阅读 [Logo 品牌基准](docs/brand/BRAND.md) 和 [宣传图品牌设计规范](docs/brand/PROMOTIONAL-DESIGN.md)。
+品牌规范适用于所有版本、所有渠道的品牌露出和宣传物料，不限于本次 3.1.0 或小红书。后续制作时默认执行，无需用户重复描述；开始前阅读 [Logo 品牌基准](../../brand/BRAND.md) 和 [宣传图品牌设计规范](../../brand/PROMOTIONAL-DESIGN.md)。
 
 - 固定沿用现有 App 图标、`BASEBALL` 粗体／`MASTER` 常规字重及中文“棒球比赛记录大师”的组合。
 - 各类宣传图采用已确认的大字留白、深绿／米白双主题、清楚的视觉层级、精细产品示意、克制渐变与柔和光影。**大字标题不使用标点符号，以换行组织语义并检查视觉居中。**
@@ -16,13 +16,13 @@
 - 配图张数、尺寸、布局与行动入口按渠道及用户当次要求调整。小红书默认不放版本号、预告、站外网址或下载提示；微信群等其他渠道按实际传播用途处理。
 - 文案简短自然，默认不加 emoji。常规制作直接沿用规范；用户明确提出新的设计要求时，再更新全局规范与参考。
 
-已确认的 [参考成图与可复用源稿](docs/brand/references/promotional-2026-10-22/) 和 [机器可读设计参数](docs/brand/promotional-design-baseline.json) 已纳入 Git，后续以此为统一基准。
+已确认的 [参考成图与可复用源稿](../../brand/references/promotional-2026-10-22) 和 [机器可读设计参数](../../brand/promotional-design-baseline.json) 已纳入 Git，后续以此为统一基准。
 
-**发布计划与随手补充入口：[2.1](<2.1 发布功能计划.md>) · [2.2 现有功能优化](<2.2 发布功能计划.md>) · [2.3 慢垒与已有功能优化](<2.3 发布功能计划.md>) · [3.0 发布功能计划](<3.0 发布功能计划.md>) · [3.0.1 共享球队修复](<3.0.1 发布功能计划.md>) · [3.1.0 发布功能计划](<3.1.0 发布功能计划.md>)。**
+**发布计划与随手补充入口：[2.1](<docs/plans/2.1 发布功能计划.md>) · [2.2 现有功能优化](<docs/plans/2.2 发布功能计划.md>) · [2.3 慢垒与已有功能优化](<docs/plans/2.3 发布功能计划.md>) · [3.0 发布功能计划](<docs/plans/3.0 发布功能计划.md>) · [3.0.1 共享球队修复](<docs/plans/3.0.1 发布功能计划.md>) · [3.1.0 发布功能计划](<3.1.0 发布功能计划.md>)。**
 
 **最新安排（2026-10-20）：3.0／3.0.1 最新成果已提交并推送至 main（`82c23b4`）。3.1.0（Build 1）已完成原 3.1 规划并合并推送 main：两种记录方式、击球观察／表现图、路线姓名与球场姓名背号已接入。见 [开发交接](docs/releases/3.1.0/DEVELOPMENT.md) 与 [验证记录](docs/releases/3.1.0/ACCEPTANCE.md)。共享服务兼容更新已于 2026-10-20 先行部署；观看页及独立直播沿用现有版本，签名归档与审核材料已准备，App 尚未上传或提交审核，见 [发布交接](docs/releases/3.1.0/REVIEW-HANDOFF.md)。**
 
-**最新安排（2026-10-19）：已按用户授权在 `codex/dev-3.0.1` 开发 3.0.1（Build 1），完成本机／共享副本隔离、固定多人邀请、共享入口、刷新规则与三名管理员上限，已通过模拟器与回归验证。见 [3.0.1 TODO](<3.0.1 发布功能计划.md>) 、[验收记录](docs/releases/3.0.1/ACCEPTANCE.md) 与 [发布交接](docs/releases/3.0.1/REVIEW-HANDOFF.md)。新版兼容服务和新旧邀请共存页面已部署，3.0.1（1）签名归档及审核材料已准备，上传提交由用户执行；分享 Logo 继续沿用 10 月 14 日已部署配置，用户已于 2026-10-19 确认微信分享卡片 Logo 显示正常。**
+**最新安排（2026-10-19）：已按用户授权在 `codex/dev-3.0.1` 开发 3.0.1（Build 1），完成本机／共享副本隔离、固定多人邀请、共享入口、刷新规则与三名管理员上限，已通过模拟器与回归验证。见 [3.0.1 TODO](<docs/plans/3.0.1 发布功能计划.md>) 、[验收记录](docs/releases/3.0.1/ACCEPTANCE.md) 与 [发布交接](docs/releases/3.0.1/REVIEW-HANDOFF.md)。新版兼容服务和新旧邀请共存页面已部署，3.0.1（1）签名归档及审核材料已准备，上传提交由用户执行；分享 Logo 继续沿用 10 月 14 日已部署配置，用户已于 2026-10-19 确认微信分享卡片 Logo 显示正常。**
 
 **3.0 已完成开发和发布交付（2026-10-13）：** 当前分支 `codex/dev-3.0`，工程 **3.0（Build 1）**。球队共享、名单与比赛同步、双方确认交接、历史观看权限、设备配对／管理恢复、年度统计、历史导入、草稿核对和完整档案已完成；时间补填、背号与换投确认同步完成。网站、协作服务、独立备份和恢复验证已上线。275 个唯一 App 单元／集成方法、既有 11 个关键原生流程及本次名单权限界面验证通过，App 交付时协作服务 77 项通过，最终归档和商店材料已备齐。**Apple 上传、审核与商店上架由用户执行，当前状态以 App Store Connect 为准。** 见 [3.0 发布交接](docs/releases/3.0/REVIEW-HANDOFF.md)、[发布验证](docs/releases/3.0/ACCEPTANCE.md)、[简要更新](docs/releases/3.0/whats-new-zh-Hans.txt)。完整范围仍维护在 [3.0 单份规划](docs/plans/3.0-TEAM-COLLABORATION.md)。iPad／Duo、小组件、Android 及击球落点改版不纳入本版。
 
@@ -41,7 +41,7 @@
 - [2.2 导出、分享、阵容与统计改进 TODO](docs/releases/2.2/PRODUCT-IMPROVEMENTS-TODO.md)（第 2–8 项已实现并验证）
 - [2.2 直播 UI 独立任务](docs/releases/2.2/LIVE-UI-TODO.md)（已实现及模拟器／公网验收，Web 已部署）
 - [2.2 完整开发 TODO](docs/releases/2.2/DEVELOPMENT-TODO.md)（现有功能优化、直播 UI、联合回归与发布准备）
-- [2.3 需求与交付清单](<2.3 发布功能计划.md>)（慢垒与功能优化的任务、实施和验收记录；小组件另见后续待办）
+- [2.3 需求与交付清单](<docs/plans/2.3 发布功能计划.md>)（慢垒与功能优化的任务、实施和验收记录；小组件另见后续待办）
 - [正式发布流程](docs/releases/2.0/00-正式发布流程.md)
 - [2.1 审核提交交接](docs/releases/2.1/REVIEW-HANDOFF.md) · [商店文案与更新说明](docs/releases/2.1/APPSTORE-METADATA.md)
 - [开发与验证记录](<docs/archive/plans/1.1.1/VALIDATION.md>) · [需求与完成清单](<docs/archive/plans/1.1.1/TODO.md>)
@@ -157,7 +157,7 @@ xcodebuild \
 
 - [2.1 App Store 七张宣传图总览](output/releases/2.1/app-store/index.html)
 - [2.1 记分纠错实际截图](docs/releases/2.1/screenshots/index.html)
-- [早期界面截图归档](docs/archive/screenshots/initial-ui/)（保留供历史对照）
+- [早期界面截图归档](docs/archive/screenshots/initial-ui)（保留供历史对照）
 
 ## 2.1 文字直播（正式服务已部署）
 
@@ -175,7 +175,7 @@ xcodebuild \
 
 `website/public/` 是 `baseballmaster.cc` 首页及隐私／支持页的独立公开目录。使用现有 App 图标与示例截图，提供功能介绍、可切换界面展示、常见问题与 App Store 下载；首页展示 2.1 的四项更新与实际截图，历史部署中另设“2.2 成人慢垒预告”，现已列入 2.2 发布 TODO，待按新安排更新为 2.3；用户已确认 2.1 上线。支持桌面与手机，不依赖构建工具或第三方网页脚本。
 
-官网已于 2026-09-28 上线至 [baseballmaster.cc](https://baseballmaster.cc/)，独立目录、SSL 证书和 HTTP → HTTPS 均已验证；证书有效至 2026-12-27，当前未配置自动续期。预览、打包和维护见 [官网说明](website/README.md) 与 [上线记录](website/deploy/2026-09-28-https-deployment.md)。已添加直播前缀代理路径；不得将仓库根目录作为公开目录。
+官网已于 2026-09-28 上线至 [baseballmaster.cc](https://baseballmaster.cc/)，独立目录、SSL 证书和 HTTP → HTTPS 均已验证；证书有效至 2026-12-27，当前未配置自动续期。预览、打包和维护见 [官网说明](../../website/README.md) 与 [上线记录](../../website/deploy/2026-09-28-https-deployment.md)。已添加直播前缀代理路径；不得将仓库根目录作为公开目录。
 
 2.1 记分纠错已实现：漏记换人、换守位、局面与失误；详见 [功能说明与实际截图](docs/releases/2.1/CORRECTIONS.md)。
 

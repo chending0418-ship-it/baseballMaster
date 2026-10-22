@@ -25,7 +25,7 @@ B01–B04 与 E01–E07 已实现，当前非直播 UI 范围完成回归与截�
 | 直播服务 | 14 项 HTTP 测试通过；首次标题、队名更新、转义、多比赛隔离、关闭与到期 | [服务日志](../../../output/validation/2.2/feature-regression/live-server-tests.log) |
 | WebKit 浏览器 | 375px 浅色／深色、320px 窄屏、1440px 桌面共 4 组通过；标题、历史展开、更新、撤销、模式、终场与失效 | [浏览器日志](../../../output/validation/2.2/feature-regression/live-browser.log) |
 | 直播模拟器公网 HTTPS | 开播、系统分享、模拟断网与补传、纠错、重启、终场、恢复及删除通过；测试使用合成比赛 | [16e 界面日志](../../../output/validation/2.2/feature-regression/final-small-ui-and-unit.log) |
-| PDF | 短简版 1 页、150 次界外长简版 2 页、历史换投样张 1 页、所选两场球队报告 3 页；已渲染检查，无内容超出页面 | [报告检查](../../../output/validation/2.2/feature-regression/pdf-validation.json)、[样张](../../../output/validation/2.2/feature-regression/pdf-samples/) |
+| PDF | 短简版 1 页、150 次界外长简版 2 页、历史换投样张 1 页、所选两场球队报告 3 页；已渲染检查，无内容超出页面 | [报告检查](../../../output/validation/2.2/feature-regression/pdf-validation.json)、[样张](../../../output/validation/2.2/feature-regression/pdf-samples) |
 
 完整界面套件首次运行发现 7 项测试失败，涉及旧自动退出预期、默认空态／赛季文案兼容与直播异步状态等待。已保留默认文案、更新新的连续调整流程预期和异步等待，全部逐项复测通过；汇总逐个记录最终通过证据，不把首次失败的结果包改写为全绿。重复运行本地集成时曾触发生产默认的创建频率限制，最终使用独立高额度测试服务，默认生产限制不变，170 项全套重新通过。
 

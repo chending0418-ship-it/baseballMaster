@@ -1,0 +1,4 @@
+const sharp=require('/Users/JasonChan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/sharp');
+const fs=require('fs'),path=require('path');
+const base=path.resolve(__dirname,'..');
+(async()=>{const files=fs.readdirSync(__dirname).filter(x=>x.endsWith('.svg')).sort();const thumbs=[];for(const [i,file] of files.entries()){const out=path.join(base,'宣传图',file.replace('.svg','.png'));await sharp(path.join(__dirname,file)).png().toFile(out);thumbs.push({input:await sharp(out).resize(360,480).png().toBuffer(),left:24+(i%3)*376,top:24+Math.floor(i/3)*496});}await sharp({create:{width:1152,height:1024,channels:3,background:'#dddcd3'}}).composite(thumbs).jpeg({quality:94}).toFile(path.join(base,'六页总览.jpg'));console.log(files.length+' PNG pages and overview exported');})();

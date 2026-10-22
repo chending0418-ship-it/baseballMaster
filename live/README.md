@@ -8,7 +8,7 @@
 
 观赛入口：[baseballmaster.cc/livestreaming/novideo/](https://baseballmaster.cc/livestreaming/novideo/)。单场地址为入口加 24 位串码。开播需使用支持直播的 2.1 App；官网、隐私和技术支持页面已同步实际状态。当前生产运行记录、验收证据及回滚步骤见 [2026-09-30 部署记录](deploy/2026-09-30-production.md)。
 
-使用现有腾讯云服务器、独立域名和现有 HTTPS 证书，不重复建立站点。证书有效至 2026-12-27，当前为手动换证，详见 [官网上线记录](../website/deploy/2026-09-28-https-deployment.md)。
+使用现有腾讯云服务器、独立域名和现有 HTTPS 证书，不重复建立站点。证书有效至 2026-12-27，当前为手动换证，详见 [官网上线记录](../../../website/deploy/2026-09-28-https-deployment.md)。
 
 ## 0. 腾讯云解析与站点隔离
 
@@ -21,7 +21,7 @@
    | `@` | `A` | 默认 | 现有服务器的公网 IPv4，以服务器控制台为准 | 600 秒 |
 
    记录值只填 IP，不填网址或端口。不要使用指向旧域名的 CNAME 或 URL 转发；无需添加 `www` 即可使用当前方案。若 DNS 尚未委派给 DNSPod，先按控制台提示设置域名 DNS 服务器。新注册和解析变更需等待公共 DNS 生效。
-2. 在宝塔新建静态站点，绑定 `baseballmaster.cc`，使用独立目录（例如 `/www/wwwroot/baseballmaster.cc`）。按 [官网部署说明](../website/README.md) 只上传 `website/public/` 的内容。不要把新域名直接添加为旧站点的别名，不要把整个仓库、TODO、备份或内部网页上传到该目录。
+2. 在宝塔新建静态站点，绑定 `baseballmaster.cc`，使用独立目录（例如 `/www/wwwroot/baseballmaster.cc`）。按 [官网部署说明](../../../website/README.md) 只上传 `website/public/` 的内容。不要把新域名直接添加为旧站点的别名，不要把整个仓库、TODO、备份或内部网页上传到该目录。
 3. 为 `baseballmaster.cc` 配置独立 HTTPS 证书和自动续期，确认服务器 80／443 端口可访问。启用 HTTP → HTTPS 跳转。不要使用同时包含旧域名的证书。
 4. 旧站点的 TODO 等内部资料需登录验证或其他访问控制，不能依赖隐藏域名。检查默认站点和直接 IP 访问不会返回内部资料，也不能通过服务的其他公网端口绕过验证。共用服务器不能保证两个域名无法被关联。
 

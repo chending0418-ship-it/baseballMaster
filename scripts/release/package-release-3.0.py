@@ -28,7 +28,7 @@ if creative_guide.is_file():
     shutil.copytree(creative / 'upload', packet / 'creative-assets/upload', dirs_exist_ok=True)
     shutil.copy2(creative / 'manifest.json', packet / 'creative-assets/manifest.json')
     assert len(list((packet / 'creative-assets/upload').rglob('*.png'))) == 5
-pdf = root / 'output/pdf/BaseballMaster-3.0-更新与使用说明.pdf'
+pdf = root / 'output/releases/3.0/guides/BaseballMaster-3.0-更新与使用说明.pdf'
 for destination in (packet / pdf.name, docs / pdf.name):
     shutil.copy2(pdf, destination)
 archive = json.loads((root / 'output/validation/3.0/roster-permissions/final-archive.json').read_text())

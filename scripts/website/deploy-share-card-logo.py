@@ -10,6 +10,10 @@ import tarfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
+WORKSPACE = ROOT.parents[1]
+
+def source_path(name):
+    return (WORKSPACE if name.startswith('website/') else ROOT) / name
 FILES = [
     'live/public/index.html',
     'website/public/watch/index.html',
@@ -49,11 +53,11 @@ def main():
         return status, content_type, response.stdout
     assert public('/livestreaming/novideo/health')[0] == 200
     remote = '/root/baseballmaster-deploy/share-card-logo-' + stamp
-    manifest = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in FILES}
+    manifest = {name: hashlib.sha256(source_path(name).read_bytes()).hexdigest() for name in FILES}
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     with tarfile.open(output / 'pages.tar.gz', 'w:gz') as archive:
         for name in FILES:
-            archive.add(ROOT / name, arcname=name)
+            archive.add(source_path(name), arcname=name)
     subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
                     'jingsen-prod', 'mkdir -m 700 ' + shlex.quote(remote)], check=True, timeout=30)
     subprocess.run(['scp', str(output / 'pages.tar.gz'),
@@ -152,7 +156,7 @@ print(json.dumps(result))
             checks.append({'path': path, 'status': status, 'matchesSource': True})
         status, content_type, image = public('/assets/app-icon.png?v=20261014')
         assert status == 200 and content_type == 'image/png'
-        assert hashlib.sha256(image).hexdigest() == hashlib.sha256((ROOT/'website/public/assets/app-icon.png').read_bytes()).hexdigest()
+        assert hashlib.sha256(image).hexdigest() == hashlib.sha256((WORKSPACE/'website/public/assets/app-icon.png').read_bytes()).hexdigest()
         checks.append({'path': '/assets/app-icon.png?v=20261014', 'status': status, 'matchesBrandIcon': True})
         for path in ['/livestreaming/novideo/health', '/api/v3/health']:
             status, _, _ = public(path)
