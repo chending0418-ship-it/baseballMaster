@@ -73,22 +73,24 @@ struct TeamSeasonPDFReport {
     let team: Team
     let seasonName: String
     let summary: TeamSeasonStatistics
+    let isFiltered: Bool
 
-    init(store: GameStore, team: Team, seasonID: String, mode: GameMode? = nil) {
+    init(store: GameStore, team: Team, seasonID: String, mode: GameMode? = nil, gameIDs: Set<UUID>? = nil) {
         self.team = team
         seasonName = store.statisticsSeasons.first { $0.id == seasonID }?.name ?? seasonID
-        summary = store.seasonStatistics(for: team, seasonID: seasonID, mode: mode)
+        isFiltered = gameIDs != nil
+        summary = store.seasonStatistics(for: team, seasonID: seasonID, mode: mode, gameIDs: gameIDs)
     }
 
     func pdfData(generatedAt: Date = Date()) -> Data {
         ReportPDFCanvas.render(kind: "SEASON REPORT / 球队赛季报告", title: team.name,
-                               subtitle: "\(seasonName) · 完整球队赛季数据 · \(summary.games.count) 场已结束比赛", generatedAt: generatedAt) { canvas in
+                               subtitle: "\(seasonName) · \(isFiltered ? "所选比赛统计" : "完整球队赛季数据") · \(summary.games.count) 场已结束比赛", generatedAt: generatedAt) { canvas in
             if summary.games.contains(where: { $0.state.statisticsIncomplete == true }) { canvas.paragraph("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold: true) }
             canvas.metrics([("比赛", "\(summary.games.count)"), ("胜 / 负 / 平", "\(summary.wins) / \(summary.losses) / \(summary.ties)"),
                             ("得分", "\(summary.runs)"), ("失分", "\(summary.runsAllowed)"),
                             ("打率 AVG", ReportStatisticsTables.rate(summary.batting.average, available: summary.batting.atBats > 0)),
                             ("防御率 ERA", summary.pitching.outsRecorded > 0 ? String(format: "%.2f", summary.pitching.era) : "-")])
-            canvas.paragraph("范围：本球队、本赛季全部已结束比赛与全部球员；不受页面搜索和排序影响。观赛、练习、未来安排及进行中比赛不计入。历史参赛球员仍保留贡献；旧版独立个人记录不计入球队汇总。", size: 9, muted: true)
+            canvas.paragraph("范围：本球队、本赛季\(isFiltered ? "所选" : "全部")已结束比赛与全部球员；不受页面搜索和排序影响。观赛、练习、未来安排及进行中比赛不计入。历史参赛球员仍保留贡献；旧版独立个人记录不计入球队汇总。", size: 9, muted: true)
             if summary.pendingCount > 0 {
                 canvas.paragraph("数据待复核：当前范围内有 \(summary.pendingCount) 条待确认记录，数据可能在复核后变化。", size: 10, bold: true)
             }
@@ -126,16 +128,18 @@ struct PlayerStatisticsPDFReport {
     let games: [StoredGame]
     let summary: PlayerSeasonStatistics
 
-    init(store: GameStore, player: Player, seasonID: String, teamID: UUID?, gameIDs: Set<UUID>) {
+    init(store: GameStore, player: Player, seasonID: String, teamID: UUID?, gameIDs: Set<UUID>, scopeGameIDs: Set<UUID>? = nil) {
         self.player = player
         seasonName = store.statisticsSeasons.first { $0.id == seasonID }?.name ?? seasonID
         teamName = store.teams.first { teamID == nil ? $0.players.contains(where: { $0.id == player.id }) : $0.id == teamID }?.name ?? "历史球员"
         let seasonRecords = store.gameRecords(for: player, seasonID: seasonID, teamID: teamID)
+            .filter { scopeGameIDs == nil || scopeGameIDs!.contains($0.id) }
+        let selectedIDs = gameIDs.intersection(Set(seasonRecords.map(\.id)))
         seasonGameCount = seasonRecords.count
-        records = seasonRecords.filter { gameIDs.contains($0.id) }
+        records = seasonRecords.filter { selectedIDs.contains($0.id) }
         games = store.completedStatisticsGames(teamID: teamID, seasonID: seasonID)
-            .filter { gameIDs.contains($0.id) && $0.statisticsParticipantIDs.contains(player.id) }
-        summary = store.playerStatistics(for: player, seasonID: seasonID, teamID: teamID, gameIDs: gameIDs)
+            .filter { selectedIDs.contains($0.id) && $0.statisticsParticipantIDs.contains(player.id) }
+        summary = store.playerStatistics(for: player, seasonID: seasonID, teamID: teamID, gameIDs: selectedIDs)
     }
 
     func pdfData(generatedAt: Date = Date()) -> Data {

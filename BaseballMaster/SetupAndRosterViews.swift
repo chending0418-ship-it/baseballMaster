@@ -1987,8 +1987,7 @@ struct LineupSelectionView: View {
             Text("比赛将在 \(scheduledAt.formatted(date: .abbreviated, time: .shortened)) 显示于“即将进行”，届时可手动开始记录。")
         }
         .navigationDestination(isPresented: $showGame) {
-            ScorekeepingView()
-                .navigationBarBackButtonHidden(true)
+            ScorekeepingView(showsGameHomeButton: true)
         }
     }
 
@@ -2077,6 +2076,7 @@ struct ObservedGameLineupView: View {
     let startImmediately: Bool
     let scheduledGameID: UUID?
 
+    @State private var draggingPlayerID: UUID?
     @State private var showConfirmation = false
     @State private var showGame = false
     @State private var showScheduledCreated = false
@@ -2216,8 +2216,7 @@ struct ObservedGameLineupView: View {
             Text("未来观赛已保存，可从比赛首页的“即将进行”中开始。")
         }
         .navigationDestination(isPresented: $showGame) {
-            ScorekeepingView()
-                .navigationBarBackButtonHidden(true)
+            ScorekeepingView(showsGameHomeButton: true)
         }
     }
 
@@ -2239,6 +2238,7 @@ struct ObservedGameLineupView: View {
                             .frame(width: 29, height: 29)
                             .background(BMTheme.green)
                             .clipShape(Circle())
+                            .accessibilityIdentifier("observed-lineup-order-\(assignment.playerID)")
                         VStack(alignment: .leading, spacing: 2) {
                             Text(player.name)
                                 .font(.system(size: 14, weight: .bold))
@@ -2292,6 +2292,13 @@ struct ObservedGameLineupView: View {
                     .padding(12)
                     .background(BMTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 13))
+                    .onDrag {
+                        draggingPlayerID = assignment.playerID
+                        return NSItemProvider(object: assignment.playerID.uuidString as NSString)
+                    }
+                    .onDrop(of: [UTType.text], delegate: LineupDropDelegate(
+                        targetID: assignment.playerID, assignments: assignments,
+                        draggingPlayerID: $draggingPlayerID))
                 }
             }
         }

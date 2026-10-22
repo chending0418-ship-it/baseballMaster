@@ -111,6 +111,12 @@ struct LaunchRouterView: View {
                 PendingReviewFixtureView()
             } else if arguments.contains("--tiebreak-preview") {
                 TiebreakPreviewFixtureView()
+            } else if arguments.contains("--v22-opening-preview") {
+                V11ScorekeepingFixture(mode: .standard, showsHome: true, openingPreview: true)
+            } else if arguments.contains("--v22-coach-opening-preview") {
+                V11ScorekeepingFixture(mode: .coachPitch, showsHome: true, openingPreview: true)
+            } else if arguments.contains("--v22-statistics-preview") {
+                StatisticsPreviewFixtureView(multipleGames: true)
             } else if arguments.contains("--statistics-preview") {
                 StatisticsPreviewFixtureView()
             } else if arguments.contains("--statistics-empty-preview") {
@@ -236,6 +242,7 @@ private struct GamePosterFixtureView: View {
 }
 
 private struct StatisticsPreviewFixtureView: View {
+    var multipleGames = false
     @EnvironmentObject private var store: GameStore
     @State private var configured = false
 
@@ -253,6 +260,15 @@ private struct StatisticsPreviewFixtureView: View {
                 for _ in 0..<2 { _ = store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays[0]) }
                 store.finishGame()
 
+                if multipleGames {
+                    store.startNewGame(opponent: opponent, isHome: false, innings: 6, lineup: lineup)
+                    _ = store.applyPlay(.double); store.finishGame()
+                    store.startNewGame(opponent: opponent, isHome: true, innings: 6, lineup: lineup)
+                    _ = store.applyPlay(.single); store.finishGame()
+                    store.playerGameRecords.append(PlayerGameRecord(id: UUID(), playerID: lineup[0].id,
+                        seasonID: store.seasons[0].id, date: Date(), opponent: "旧版独立记录", result: "未记录",
+                        batting: BattingLine(plateAppearances: 100, atBats: 100, hits: 100)))
+                }
                 store.seasons.swapAt(0, 1)
                 store.startNewGame(opponent: opponent, isHome: true, innings: 6, lineup: lineup)
                 _ = store.applyPlay(.homeRun)
@@ -454,6 +470,7 @@ private struct V11ScorekeepingFixture: View {
     var finalInningPreview = false
     var longPitcherName = false
     var startsAfterRunners = false
+    var openingPreview = false
     var body: some View {
         Group {
             if showsHome { RootTabView() }
@@ -470,7 +487,7 @@ private struct V11ScorekeepingFixture: View {
                     LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: $0.element.primaryPosition)
                 }
                 store.startNewGame(opponent: store.opponentTeams[0], isHome: false, rules: rules, lineup: lineup)
-                store.game.baseRunners[.second] = team.players[1]
+                if !openingPreview { store.game.baseRunners[.second] = team.players[1] }
                 if startsAfterRunners { store.game.awayBatterIndex = 4 }
                 if limitPreview {
                     store.game.outs = 2

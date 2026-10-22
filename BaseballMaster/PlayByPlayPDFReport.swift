@@ -23,6 +23,7 @@ struct PlayByPlayPDFReport {
     let game: GameState
     let appearances: [PlateAppearanceRecord]
     let playedAt: Date?
+    var gameMode: GameMode = .standard
 
     var entries: [PlayByPlayEntry] {
         let all = game.scoringEvents ?? []
@@ -105,14 +106,37 @@ struct PlayByPlayPDFReport {
             for entry in selected {
                 let pa = entry.appearance
                 let status = pa.needsReview || !pa.isComplete ? " · \(entry.status)" : ""
-                let description = pa.events.map { event in
-                    event.title + (event.needsReview ? "（待确认）" : "")
+                var pitcherID = entry.before.flatMap(self.pitcherID(in:))
+                var descriptions = [gameMode == .coachPitch ? "投手不适用（教练投手）" : "投手：\(playerName(pitcherID))"]
+                for event in entry.events {
+                    if gameMode != .coachPitch, let before = event.beforeSituation,
+                       before.inning == pa.inning, before.isTop == pa.isTop {
+                        let actual = self.pitcherID(in: before)
+                        if actual != pitcherID {
+                            descriptions.append("投手：\(playerName(pitcherID)) → \(playerName(actual))")
+                            pitcherID = actual
+                        }
+                    }
+                    var detail = event.title + (event.needsReview ? "（待确认）" : "")
                         + (event.reviewNote.flatMap { $0.isEmpty ? nil : "（复核：\($0)）" } ?? "")
-                }.joined(separator: "；")
+                    if gameMode != .coachPitch, let before = event.beforeSituation, let after = event.afterSituation,
+                       before.inning == after.inning, before.isTop == after.isTop,
+                       before.inning == pa.inning, before.isTop == pa.isTop,
+                       self.pitcherID(in: before) != self.pitcherID(in: after) {
+                        pitcherID = self.pitcherID(in: after)
+                        detail += "（投手：\(playerName(self.pitcherID(in: before))) → \(playerName(pitcherID))）"
+                    }
+                    descriptions.append(detail)
+                }
+                let description = descriptions.joined(separator: "；")
                 canvas.textRecord(title: "\(pa.inningLabel) · \(pa.sequenceLabel) · \(pa.batter.compactName)\(status)",
                                   body: description.isEmpty ? "暂无文字描述。" : description)
             }
         }
+    }
+
+    private func pitcherID(in snapshot: GameSituationSnapshot) -> UUID? {
+        snapshot.isTop ? snapshot.activeHomePitcherID : snapshot.activeAwayPitcherID
     }
 
     private func playerName(_ id: UUID?) -> String {

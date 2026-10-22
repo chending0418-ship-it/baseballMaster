@@ -138,6 +138,7 @@ struct GameHomeView: View {
                                     recentGameContent(stored)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityIdentifier("completed-game-\(stored.id.uuidString)")
 
                                 Menu {
                                     Button("删除记录", systemImage: "trash", role: .destructive) {
@@ -289,6 +290,7 @@ struct GameHomeView: View {
         }
         .padding(.leading, 14)
         .padding(.vertical, 12)
+        .contentShape(Rectangle())
     }
 
     private func scheduledGameContent(_ stored: StoredGame) -> some View {

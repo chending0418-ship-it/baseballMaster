@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLiveServer, BASE, HOUR } from '../server.mjs';
-import { snapshot } from './fixture.mjs';
+import { snapshot, uiSnapshot } from './fixture.mjs';
 
 async function setup(t, options = {}) {
   let clock = Date.now();
@@ -21,6 +21,36 @@ async function setup(t, options = {}) {
   const create = async (s = snapshot(), extra = {}) => request('POST', undefined, { requestID: randomUUID(), createdAt: clock, snapshot: s, ...extra });
   return { ...app, origin, request, create, token, now: () => clock, advance: ms => { clock += ms; } };
 }
+test('2.2 public rules, clock, lineups, stats and per-record situations survive reads and upgrade an existing link', async t => {
+  const a = await setup(t); const c = await a.create(); const path = '/api/sessions/' + c.data.code;
+  const upgraded = uiSnapshot(2);
+  assert.equal((await a.request('PUT', path, upgraded)).status, 200);
+  assert.deepEqual((await a.request('GET', path)).data.snapshot, upgraded);
+  assert.deepEqual(upgraded.entries[0].situation.bases, [1]);
+  assert.deepEqual(upgraded.entries.at(-1).situation.bases, [1, 2]);
+  const nullable = uiSnapshot(3);
+  for (const k of ['hasStarted', 'rules', 'clock', 'batterStats', 'nextBatters']) nullable[k] = null;
+  for (const side of [nullable.home, nullable.away]) for (const k of ['shortName', 'playedInnings', 'lineup', 'pitcherID']) side[k] = null;
+  assert.equal((await a.request('PUT', path, nullable)).status, 200);
+  assert.equal((await a.request('PUT', path, snapshot(4))).status, 200);
+});
+test('2.2 nested private fields and invalid new values never replace the valid snapshot', async t => {
+  const a = await setup(t); const original = uiSnapshot(); const c = await a.create(original);
+  const path = '/api/sessions/' + c.data.code;
+  const changes = [
+    s => { s.rules.private = 'private'; }, s => { s.clock.private = 'private'; },
+    s => { s.batterStats.private = 'private'; }, s => { s.home.lineup[0].player.email = 'private'; },
+    s => { s.home.lineup[0].private = 'private'; }, s => { s.nextBatters[0].player.email = 'private'; },
+    s => { s.nextBatters[0].private = 'private'; }, s => { s.entries[0].situation.private = 'private'; },
+    s => { s.entries[0].details[0].situation.private = 'private'; },
+    s => { s.clock.elapsedSeconds = -1; }, s => { s.batterStats.hits = 3; },
+    s => { s.home.playedInnings.pop(); }, s => { s.home.lineup.push(s.home.lineup[0]); },
+    s => { s.nextBatters.push(s.nextBatters[0]); }, s => { s.entries[0].situation.bases = [1, 1]; },
+    s => { s.entries[0].situation.bases = [4]; }, s => { s.hasStarted = 'true'; }
+  ];
+  for (const change of changes) { const invalid = uiSnapshot(2); change(invalid); assert.equal((await a.request('PUT', path, invalid)).status, 400); }
+  assert.deepEqual((await a.request('GET', path)).data.snapshot, original);
+});
 test('creation, conditional reads, updates, heartbeat and no public write permission', async t => {
   const a = await setup(t); const created = await a.create(); assert.equal(created.status, 201);
   const path = '/api/sessions/' + created.data.code;
@@ -171,4 +201,26 @@ test('slow overlapping upload cannot overwrite a newer revision or revive a dele
   assert.equal((await a.request('GET', path)).data.revision, 3);
   assert.equal(await slowUpload(() => a.request('DELETE', path)), 410);
   assert.equal((await a.request('GET', path)).status, 404);
+});
+
+test('viewer and link titles follow each game, escape names, and disappear on expiry', async t => {
+  const a = await setup(t);
+  const first = snapshot(); first.away.name = '客队 & <script> $& $1'; first.home.name = '主队 "甲"';
+  const created = await a.create(first); assert.equal(created.status, 201);
+  const path = '/' + created.data.code;
+  const html = await a.request('GET', path, undefined, null);
+  assert.equal(html.headers.get('cache-control'), 'no-store');
+  assert.ok(html.data.includes('<title>客队 &amp; &lt;script&gt; $&amp; $1 vs 主队 &quot;甲&quot;｜文字直播</title>'));
+  assert.ok(html.data.includes('property="og:title" content="客队 &amp; &lt;script&gt; $&amp; $1 vs 主队 &quot;甲&quot;｜文字直播"'));
+  assert.ok(!html.data.includes(a.token));
+  const other = snapshot(); other.gameID = 'other'; other.away.name = '乙队'; other.home.name = '丙队';
+  const second = await a.create(other);
+  assert.match((await a.request('GET', '/' + second.data.code)).data, /<title>乙队 vs 丙队｜文字直播<\/title>/);
+  const updated = snapshot(2); updated.away.name = '主队 "甲"'; updated.home.name = '客队更名';
+  assert.equal((await a.request('PUT', '/api/sessions/' + created.data.code, updated)).status, 200);
+  assert.match((await a.request('GET', path)).data, /<title>主队 &quot;甲&quot; vs 客队更名｜文字直播<\/title>/);
+  await a.request('DELETE', '/api/sessions/' + created.data.code);
+  const gone = await a.request('GET', path); assert.equal(gone.status, 410); assert.ok(!gone.data.includes('客队更名'));
+  a.advance(HOUR + 1);
+  const expired = await a.request('GET', '/' + second.data.code); assert.equal(expired.status, 410); assert.ok(!expired.data.includes('乙队 vs 丙队'));
 });

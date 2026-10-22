@@ -8,18 +8,35 @@ enum AppFeatureAvailability {
     static let liveBroadcast = true
 }
 
-/// This projection is the complete public allow-list. Local rosters, backups and publisher credentials stay on device.
+/// Public match projection. Only current participants are included, never the local roster library or credentials.
 struct LiveSnapshot: Codable, Equatable {
     struct Person: Codable, Equatable {
         var id: String; var name: String; var number: String
         init(_ p: Player) { id = p.id.uuidString; name = String(p.name.prefix(200)); number = String(p.numberText.prefix(20)) }
     }
-    struct Side: Codable, Equatable { var name: String; var runs: Int; var hits: Int; var errors: Int; var innings: [Int] }
+    struct LineupPlayer: Codable, Equatable { var player: Person; var order: Int?; var position: String }
+    struct Upcoming: Codable, Equatable { var player: Person; var order: Int }
+    struct Side: Codable, Equatable {
+        var name: String; var runs: Int; var hits: Int; var errors: Int; var innings: [Int]
+        var shortName: String?; var playedInnings: [Bool]?; var lineup: [LineupPlayer]?; var pitcherID: String?
+    }
+    struct Rules: Codable, Equatable { var scheduledInnings: Int; var halfInningRunLimit: Int?; var timeLimitMinutes: Int? }
+    struct Clock: Codable, Equatable { var startedAt: Double?; var runningSince: Double?; var elapsedSeconds: Double }
+    struct BatterStats: Codable, Equatable { var atBats: Int; var hits: Int; var isComplete: Bool }
+    struct Situation: Codable, Equatable {
+        var balls: Int; var strikes: Int; var outs: Int; var bases: [Int]; var halfEnded: Bool
+        init(_ s: GameSituationSnapshot, inning: Int, isTop: Bool, endingHalf: Bool = false) {
+            balls = s.balls; strikes = s.strikes; outs = s.outs
+            halfEnded = endingHalf || s.outs >= 3 || s.inning != inning || s.isTop != isTop
+            bases = halfEnded ? [] : s.baseRunners.map { $0.base.rawValue }.sorted()
+        }
+    }
     struct Runner: Codable, Equatable { var base: Int; var player: Person }
-    struct Detail: Codable, Equatable { var id: String; var text: String }
+    struct Detail: Codable, Equatable { var id: String; var text: String; var situation: Situation? }
     struct Entry: Codable, Equatable {
         var id: String; var appearanceID: String?; var inning: Int; var isTop: Bool
         var kind: String; var label: String; var summary: String; var player: Person?; var status: String; var details: [Detail]
+        var order: Int?; var situation: Situation?
     }
     var schema = 1
     var gameID: String; var revision: Int; var mode: String; var isFinal: Bool; var endedAt: Double?
@@ -28,6 +45,8 @@ struct LiveSnapshot: Codable, Equatable {
     var batterOrder: Int?
     var appearancePitchCount: Int; var pitchLimit: Int?; var bases: [Runner]; var currentAppearanceID: String?
     var notice: String; var entries: [Entry]
+    // Additive v1 fields; absent in 2.1 snapshots and decoded as unknown, never fabricated by the viewer.
+    var hasStarted: Bool?; var rules: Rules?; var clock: Clock?; var batterStats: BatterStats?; var nextBatters: [Upcoming]?
 
     init(_ stored: StoredGame) {
         let g = stored.state
@@ -36,12 +55,52 @@ struct LiveSnapshot: Codable, Equatable {
         mode = coach ? "coachPitch" : "standard"; isFinal = g.isFinal
         endedAt = g.isFinal ? (g.endedAt ?? stored.updatedAt).timeIntervalSince1970 * 1000 : nil
         inning = g.inning; isTop = g.isTop; balls = g.balls; strikes = g.strikes; outs = g.outs
-        home = Side(name: String(g.homeTeam.name.prefix(200)), runs: g.homeScore, hits: g.homeHits, errors: g.homeErrors, innings: g.homeRunsByInning)
-        away = Side(name: String(g.awayTeam.name.prefix(200)), runs: g.awayScore, hits: g.awayHits, errors: g.awayErrors, innings: g.awayRunsByInning)
+        let events = g.scoringEvents ?? []
+        let playCategories: Set<ScoringEventCategory> = [.pitch, .battedBall, .runner, .out, .violation, .tiebreak]
+        let started = stored.startedAt != nil || g.clockRunningSince != nil || (g.clockElapsedSeconds ?? 0) > 0
+            || stored.openingPitchRecorded == true || g.inning > 1 || !g.isTop || events.contains { playCategories.contains($0.category) }
+            || g.balls > 0 || g.strikes > 0 || g.outs > 0 || !g.baseRunners.isEmpty
+            || g.homeScore > 0 || g.awayScore > 0 || g.homeHits > 0 || g.awayHits > 0
+            || g.batting.values.contains { $0.plateAppearances > 0 } || g.pitching.values.contains { $0.pitches > 0 }
+        hasStarted = started
+        rules = Rules(scheduledInnings: g.scheduledInnings, halfInningRunLimit: stored.rules.halfInningRunLimit, timeLimitMinutes: stored.rules.timeLimitMinutes)
+        clock = Clock(startedAt: stored.startedAt.map { $0.timeIntervalSince1970 * 1000 },
+                      runningSince: g.clockRunningSince.map { $0.timeIntervalSince1970 * 1000 }, elapsedSeconds: max(0, g.clockElapsedSeconds ?? 0))
+        func side(_ team: Team, isHome: Bool, runs: Int, hits: Int, errors: Int, innings: [Int]) -> Side {
+            let order = isHome ? g.homeBattingOrderIDs : g.awayBattingOrderIDs
+            let fielders = (isHome ? g.homeFieldingPlayerIDs : g.awayFieldingPlayerIDs) ?? order
+            let dh = isHome ? g.homeDesignatedHitterID : g.awayDesignatedHitterID
+            let ids = order + fielders.filter { !order.contains($0) }
+            let lineup = ids.compactMap { id -> LineupPlayer? in
+                guard let p = team.players.first(where: { $0.id == id }) else { return nil }
+                return LineupPlayer(player: Person(p), order: order.firstIndex(of: id).map { $0 + 1 },
+                                    position: dh == id ? "DH" : fielders.contains(id) ? p.primaryPosition.fullName : "打击")
+            }
+            let currentHalf = (g.inning - 1) * 2 + (g.isTop ? 0 : 1)
+            let played = innings.indices.map { index in
+                let half = index * 2 + (isHome ? 1 : 0)
+                return started && (half < currentHalf || (half == currentHalf && (!g.isFinal || events.contains {
+                    $0.inning == index + 1 && $0.isTop != isHome && playCategories.contains($0.category)
+                } || (index == 0 && !isHome && stored.startedAt != nil))) || innings[index] > 0)
+            }
+            return Side(name: String(team.name.prefix(200)), runs: runs, hits: hits, errors: errors, innings: innings,
+                        shortName: String(team.shortName.prefix(200)), playedInnings: played, lineup: lineup,
+                        pitcherID: (isHome ? g.activeHomePitcherID : g.activeAwayPitcherID)?.uuidString)
+        }
+        home = side(g.homeTeam, isHome: true, runs: g.homeScore, hits: g.homeHits, errors: g.homeErrors, innings: g.homeRunsByInning)
+        away = side(g.awayTeam, isHome: false, runs: g.awayScore, hits: g.awayHits, errors: g.awayErrors, innings: g.awayRunsByInning)
         batter = g.battingOrderPlayers.isEmpty ? nil : Person(g.currentBatter)
         batterOrder = g.isFinal || batter == nil ? nil : g.currentBattingOrder
         pitcher = g.fieldingTeam.players.isEmpty ? nil : Person(g.currentPitcher)
         pitchCount = coach || g.fieldingTeam.players.isEmpty ? nil : (g.pitching[g.currentPitcher.id]?.pitches ?? 0)
+        let line = batter.flatMap { p in g.batting.first { $0.key.uuidString == p.id }?.value } ?? BattingLine()
+        batterStats = g.isFinal || batter == nil ? nil : BatterStats(atBats: line.atBats, hits: line.hits, isComplete: g.statisticsIncomplete != true)
+        let battingLineup = g.battingOrderPlayers
+        let batterIndex = g.isTop ? g.awayBatterIndex : g.homeBatterIndex
+        nextBatters = g.isFinal || battingLineup.isEmpty ? [] : (1...2).map { offset in
+            let index = (batterIndex + offset) % battingLineup.count
+            return Upcoming(player: Person(battingLineup[index]), order: index + 1)
+        }
         appearancePitchCount = g.plateAppearancePitchCount ?? 0
         pitchLimit = coach ? (stored.rules.coachPitchLimit ?? 6) : nil
         bases = g.baseRunners.map { Runner(base: $0.key.rawValue, player: Person($0.value)) }.sorted { $0.base < $1.base }
@@ -49,12 +108,33 @@ struct LiveSnapshot: Codable, Equatable {
         notice = g.isFinal ? (g.endReason?.rawValue ?? "比赛结束") : (g.pendingDecision?.title ?? "")
         if g.statisticsIncomplete == true { notice += (notice.isEmpty ? "" : " · ") + "过程或责任待确认，统计可能不完整" }
         let players = g.homeTeam.players + g.awayTeam.players
-        let events = g.scoringEvents ?? []
         let appearances = g.plateAppearances ?? []
+        // A third-out action records the play before its separate HALF-END event.
+        // Use that boundary only when both events belong to the same saved action;
+        // a later manual half-end must not change an earlier hit's recorded bases.
+        let eventsByID = Dictionary(uniqueKeysWithValues: events.map { ($0.id, $0) })
+        var endingHalfIDs = Set(events.filter { $0.notation == "HALF-END" }.map(\.id))
+        var boundarySituations: [UUID: GameSituationSnapshot] = [:]
+        for operation in g.historyJournal?.operations ?? [] {
+            let actionEvents = operation.eventIDs.compactMap { eventsByID[$0] }
+            for index in actionEvents.indices where index > 0 && actionEvents[index].notation == "HALF-END" {
+                let previous = actionEvents[index - 1], boundary = actionEvents[index]
+                if previous.inning == boundary.inning && previous.isTop == boundary.isTop {
+                    endingHalfIDs.insert(previous.id)
+                    boundarySituations[previous.id] = boundary.afterSituation
+                }
+            }
+        }
+        func eventSituation(_ e: ScoringEventRecord) -> Situation? {
+            (boundarySituations[e.id] ?? e.afterSituation).map {
+                Situation($0, inning: e.inning, isTop: e.isTop, endingHalf: endingHalfIDs.contains(e.id))
+            }
+        }
         var sequence: [(position: Double, entry: Entry)] = []
         func person(_ id: UUID?) -> Person? { id.flatMap { id in players.first { $0.id == id }.map(Person.init) } }
         func detail(_ e: ScoringEventRecord) -> Detail {
-            Detail(id: e.id.uuidString, text: String((e.title + (e.reviewedAt != nil ? "（已复核修订）" : "")).prefix(1000)))
+            Detail(id: e.id.uuidString, text: String((e.title + (e.reviewedAt != nil ? "（已复核修订）" : "")).prefix(1000)),
+                   situation: eventSituation(e))
         }
         for (offset, appearance) in appearances.enumerated() {
             let indexed = events.enumerated().filter { $0.element.plateAppearanceID == appearance.id }
@@ -65,9 +145,22 @@ struct LiveSnapshot: Codable, Equatable {
             let summary: String
             if appearance.interrupted { summary = "\(p?.name ?? "打者")：打席未完成，因换边或终场中断" }
             else { summary = last?.title ?? "\(p?.name ?? "打者")准备打击" }
+            let historicalOrder = last?.beforeSituation.flatMap { situation -> Int? in
+                let ids = appearance.isTop ? situation.awayBattingOrderIDs : situation.homeBattingOrderIDs
+                return appearance.batterIDs.last.flatMap { ids?.firstIndex(of: $0).map { $0 + 1 } }
+            }
+            let isCurrent = appearance.id == g.currentPlateAppearanceID && !g.isFinal
+            let closure = appearance.interrupted ? events.enumerated().first { index, event in
+                index > (indexed.last?.offset ?? -1) && event.inning == appearance.inning && event.isTop == appearance.isTop
+                    && ["HALF-END", "END"].contains(event.notation ?? "")
+            }?.element : nil
+            let situation = isCurrent ? Situation(g.situationSnapshot, inning: appearance.inning, isTop: appearance.isTop)
+                : (closure ?? last).flatMap(eventSituation)
             let entry = Entry(id: appearance.id.uuidString, appearanceID: appearance.id.uuidString, inning: appearance.inning, isTop: appearance.isTop,
                               kind: "appearance", label: String((last?.notation ?? (appearance.completed ? "打席结束" : "打席")).prefix(100)),
-                              summary: String(summary.prefix(1000)), player: p, status: state, details: owned.map(detail))
+                              summary: String(summary.prefix(1000)), player: p, status: state, details: owned.map(detail),
+                              order: isCurrent ? g.currentBattingOrder : historicalOrder,
+                              situation: situation)
             // Keep independent game/clock/substitution events in their original timeline positions.
             sequence.append((Double(indexed.first?.offset ?? (events.count + offset)), entry))
         }
@@ -76,13 +169,14 @@ struct LiveSnapshot: Codable, Equatable {
             sequence.append((Double(index), Entry(id: event.id.uuidString, appearanceID: event.plateAppearanceID?.uuidString,
                 inning: event.inning, isTop: event.isTop, kind: "event", label: event.category.title,
                 summary: String(event.title.prefix(1000)), player: person(event.primaryPlayerID),
-                status: event.needsReview ? "review" : "completed", details: [detail(event)])))
+                status: event.needsReview ? "review" : "completed", details: [detail(event)], order: nil,
+                situation: eventSituation(event))))
         }
         // Older games without structured events still expose their recorded text, never invented results.
         if events.isEmpty && !g.playLog.isEmpty {
             for (index, log) in g.playLog.enumerated() {
                 sequence.append((Double(index), Entry(id: log.id.uuidString, appearanceID: nil, inning: log.inning, isTop: log.isTop,
-                    kind: "event", label: "比赛记录", summary: String(log.text.prefix(1000)), player: nil, status: "completed", details: [])))
+                    kind: "event", label: "比赛记录", summary: String(log.text.prefix(1000)), player: nil, status: "completed", details: [], order: nil, situation: nil)))
             }
         }
         entries = sequence.sorted { $0.position < $1.position }.map(\.entry)
@@ -93,10 +187,27 @@ struct LiveSnapshot: Codable, Equatable {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let raw = try encoder.encode(self)
         var object = try JSONSerialization.jsonObject(with: raw) as! [String: Any]
-        for key in ["endedAt", "batter", "batterOrder", "pitcher", "pitchCount", "pitchLimit", "currentAppearanceID"] where object[key] == nil { object[key] = NSNull() }
+        for key in ["endedAt", "batter", "batterOrder", "pitcher", "pitchCount", "pitchLimit", "currentAppearanceID", "batterStats"] where object[key] == nil { object[key] = NSNull() }
         if var rows = object["entries"] as? [[String: Any]] {
             for i in rows.indices { for key in ["appearanceID", "player"] where rows[i][key] == nil { rows[i][key] = NSNull() } }
             object["entries"] = rows
+        }
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+
+    /// Reproduce the released 2.1 projection to distinguish an additive upgrade from local history conflicts.
+    func legacyData() throws -> Data {
+        var object = try JSONSerialization.jsonObject(with: data()) as! [String: Any]
+        for key in ["hasStarted", "rules", "clock", "batterStats", "nextBatters"] { object.removeValue(forKey: key) }
+        for key in ["home", "away"] {
+            var side = object[key] as! [String: Any]
+            for field in ["shortName", "playedInnings", "lineup", "pitcherID"] { side.removeValue(forKey: field) }
+            object[key] = side
+        }
+        object["entries"] = (object["entries"] as! [[String: Any]]).map { entry in
+            var row = entry; row.removeValue(forKey: "order"); row.removeValue(forKey: "situation")
+            row["details"] = (row["details"] as! [[String: Any]]).map { detail in var d = detail; d.removeValue(forKey: "situation"); return d }
+            return row
         }
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
@@ -257,14 +368,21 @@ final class LiveBroadcastManager: ObservableObject {
                 if let expiry = b.expiresAt, expiry <= Date() {
                     try save(bindings.filter { $0.gameID != b.gameID }); messages[b.gameID] = "直播已过期，旧链接不再可用。"; continue
                 }
-                let stored = store?.games.first { $0.id == b.gameID }
+                var stored = store?.games.first { $0.id == b.gameID }
                 if stored == nil { b.closing = true; try update(b) }
                 if b.closing {
                     let body = b.code == nil ? try JSONSerialization.data(withJSONObject: ["requestID": b.requestID.uuidString]) : nil
                     _ = try await transport.send(method: "DELETE", code: b.code, token: b.token, body: body)
                     try save(bindings.filter { $0.gameID != b.gameID }); messages[b.gameID] = "直播已关闭，云端资料已删除。"; continue
                 }
-                guard let stored else { try save(bindings.filter { $0.gameID != b.gameID }); continue }
+                guard let saved = stored else { try save(bindings.filter { $0.gameID != b.gameID }); continue }
+                let projection = LiveSnapshot(saved)
+                if b.ackRevision == (saved.revision ?? 0), b.ackDigest != SHA256.hash(data: try projection.data()).map({ String(format: "%02x", $0) }).joined(),
+                   b.ackDigest == SHA256.hash(data: try projection.legacyData()).map({ String(format: "%02x", $0) }).joined() {
+                    // Persist a higher publication revision before uploading new fields to an existing 2.1 link.
+                    stored = try store?.advanceLiveProjectionRevision(for: saved.id, matching: saved.revision ?? 0)
+                }
+                guard let stored else { continue }
                 let data = try LiveSnapshot(stored).data()
                 let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
                 if b.code == nil {

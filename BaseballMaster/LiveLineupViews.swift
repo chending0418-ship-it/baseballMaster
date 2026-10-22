@@ -8,6 +8,8 @@ struct LiveLineupEditor: View {
     let onSaved: () -> Void
     @State private var editingPlayer: Player?
     @State private var replacement: LineupReplacement?
+    @State private var saved = false
+    @State private var confirmExit = false
 
     var body: some View {
         NavigationStack {
@@ -16,7 +18,11 @@ struct LiveLineupEditor: View {
                     Text("姓名与号码更正同时更新球队名单。排序保留当前／下一位打者及球数；换人接替原棒次和守位，退场球员可再次上场。")
                         .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                 }
-                Section("打序 · 点球员调整") {
+                if saved && !draft.hasChanges {
+                    Section { Label("已保存，可继续调整或点完成返回", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(BMTheme.green).accessibilityIdentifier("lineup-saved") }
+                }
+                Section("打序 · 长按右侧把手拖动") {
                     ForEach(Array(draft.battingOrderIDs.enumerated()), id: \.element) { index, id in
                         if let player = draft.player(id) {
                             HStack(spacing: 6) {
@@ -39,6 +45,7 @@ struct LiveLineupEditor: View {
                             }
                         }
                     }
+                    .onMove { offsets, destination in draft.moveBatters(from: offsets, to: destination) }
                 }
                 let defenseOnly = draft.fieldingIDs.filter { !draft.battingOrderIDs.contains($0) }
                 if !defenseOnly.isEmpty {
@@ -66,12 +73,17 @@ struct LiveLineupEditor: View {
                     Section { Text(issue).foregroundStyle(BMTheme.orange) }
                 }
             }
+            .environment(\.editMode, .constant(.active))
             .navigationTitle("\(draft.team.shortName) · 阵容")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消", action: onCancel) }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(draft.hasChanges ? "返回" : "完成") {
+                        if draft.hasChanges { confirmExit = true } else { onCancel() }
+                    }.accessibilityIdentifier("lineup-finish")
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") { if store.saveLineup(draft) { onSaved() } }
+                    Button("保存", action: save)
                         .disabled(!draft.hasChanges || draft.validationMessage != nil)
                         .accessibilityIdentifier("lineup-save")
                 }
@@ -103,8 +115,26 @@ struct LiveLineupEditor: View {
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { replacement = nil } } }
                 }
             }
+            .interactiveDismissDisabled(draft.hasChanges)
+            .confirmationDialog("还有未保存的阵容调整", isPresented: $confirmExit, titleVisibility: .visible) {
+                Button("保存并返回") { if saveDraft() { onCancel() } }
+                    .disabled(draft.validationMessage != nil)
+                Button("放弃调整并返回", role: .destructive, action: onCancel)
+                Button("继续调整", role: .cancel) {}
+            }
             .gameActionErrorAlert(store)
         }
+    }
+
+    private func save() { _ = saveDraft() }
+
+    @discardableResult
+    private func saveDraft() -> Bool {
+        guard store.saveLineup(draft) else { return false }
+        draft = store.lineupDraft(forHomeTeam: draft.isHomeTeam)
+        saved = true
+        onSaved()
+        return true
     }
 
     private func playerLabel(_ player: Player, active: Bool) -> some View {

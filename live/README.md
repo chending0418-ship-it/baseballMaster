@@ -1,6 +1,6 @@
 # BaseballMaster 2.1 文字直播 · 腾讯云域名与宝塔部署
 
-**状态：2026-09-30 文字直播网页与 API 已部署并通过公网及模拟器联调，2.1 App 直播开关已启用。App 尚未上架，暂不提交苹果审核。**
+**当前状态：2.1 App 已由用户确认上线。2.2 直播改版已在本地实现并通过模拟器验收，尚未部署新网页／服务，也未提交 2.2 审核。** 2.2 交付与兼容回滚见 [部署准备](deploy/2.2-preparation.md)，实际测试和截图见 [直播 UI 验证](../docs/releases/2.2/LIVE-UI-VALIDATION.md)。2026-09-30 的公网记录仍按当日状态保留。
 
 观赛入口：[baseballmaster.cc/livestreaming/novideo/](https://baseballmaster.cc/livestreaming/novideo/)。单场地址为入口加 24 位串码。开播需使用支持直播的 2.1 App；官网、隐私和技术支持页面已同步实际状态。当前生产运行记录、验收证据及回滚步骤见 [2026-09-30 部署记录](deploy/2026-09-30-production.md)。
 

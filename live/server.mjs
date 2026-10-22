@@ -11,27 +11,46 @@ const CODE = /^[A-F0-9]{24}$/;
 const assets = new Map([
   ['', ['index.html', 'text/html; charset=utf-8']],
   ['app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['app-icon.png', ['app-icon.png', 'image/png']],
   ['style.css', ['style.css', 'text/css; charset=utf-8']]
 ]);
 const hash = value => createHash('sha256').update(value).digest('hex');
+const escapeHTML = value => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function viewerHTML(snapshot) {
+  const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'public', 'index.html'), 'utf8');
+  if (!snapshot) return html;
+  const title = escapeHTML(`${snapshot.away.name} vs ${snapshot.home.name}｜文字直播`);
+  const description = escapeHTML(`使用 BaseballMaster 观看 ${snapshot.away.name} vs ${snapshot.home.name} 的比赛文字直播。`);
+  return html.replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+    .replace(/(<meta (?:name="description"|property="og:description") content=")[^"]*(">)/g, (_, start, end) => `${start}${description}${end}`)
+    .replace(/(<meta property="og:title" content=")[^"]*(">)/, (_, start, end) => `${start}${title}${end}`);
+}
 class HTTPError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const reject = (condition, message = '资料格式不正确') => { if (!condition) throw new HTTPError(400, message); };
 const str = (s, max = 200) => typeof s === 'string' && s.length <= max;
 const int = (n, min = 0, max = 100000) => Number.isSafeInteger(n) && n >= min && n <= max;
 const person = p => p === null || (p && str(p.id, 50) && str(p.name) && str(p.number, 20));
 const keys = (obj, allowed) => obj && Object.keys(obj).every(k => allowed.includes(k));
+const optional = (value, check) => value === undefined || value === null || check(value);
+const publicPerson = p => p && person(p) && keys(p, ['id', 'name', 'number']);
+const bases = list => Array.isArray(list) && list.length <= 3 && new Set(list).size === list.length && list.every(b => int(b, 1, 3));
+const situation = s => keys(s, ['balls', 'strikes', 'outs', 'bases', 'halfEnded']) && int(s.balls, 0, 20) && int(s.strikes, 0, 3) && int(s.outs, 0, 3) && bases(s.bases) && typeof s.halfEnded === 'boolean';
 // Strict, versioned public projection: never accept an entire local game/roster as a snapshot.
 export function validateSnapshot(s) {
-  reject(keys(s, ['schema', 'gameID', 'revision', 'mode', 'isFinal', 'endedAt', 'inning', 'isTop', 'balls', 'strikes', 'outs', 'home', 'away', 'batter', 'batterOrder', 'pitcher', 'pitchCount', 'appearancePitchCount', 'pitchLimit', 'bases', 'currentAppearanceID', 'notice', 'entries']));
+  reject(keys(s, ['schema', 'gameID', 'revision', 'mode', 'isFinal', 'endedAt', 'inning', 'isTop', 'balls', 'strikes', 'outs', 'home', 'away', 'batter', 'batterOrder', 'pitcher', 'pitchCount', 'appearancePitchCount', 'pitchLimit', 'bases', 'currentAppearanceID', 'notice', 'entries', 'hasStarted', 'rules', 'clock', 'batterStats', 'nextBatters']));
   reject(s.schema === 1 && str(s.gameID, 50) && int(s.revision) && ['standard', 'coachPitch'].includes(s.mode));
   reject(typeof s.isFinal === 'boolean' && typeof s.isTop === 'boolean' && int(s.inning, 1, 999));
   reject(int(s.balls, 0, 20) && int(s.strikes, 0, 3) && int(s.outs, 0, 3));
   reject(s.endedAt === null || (Number.isFinite(s.endedAt) && s.endedAt > 0));
   reject(!s.isFinal || s.endedAt !== null);
   for (const t of [s.home, s.away]) {
-    reject(keys(t, ['name', 'runs', 'hits', 'errors', 'innings']) && str(t.name));
+    reject(keys(t, ['name', 'runs', 'hits', 'errors', 'innings', 'shortName', 'playedInnings', 'lineup', 'pitcherID']) && str(t.name));
     reject(int(t.runs) && int(t.hits) && int(t.errors) && Array.isArray(t.innings) && t.innings.length <= 999 && t.innings.every(n => int(n)));
     reject(t.runs === t.innings.reduce((a, b) => a + b, 0));
+    reject(optional(t.shortName, v => str(v)) && optional(t.pitcherID, v => str(v, 50)));
+    reject(optional(t.playedInnings, v => Array.isArray(v) && v.length === t.innings.length && v.every(n => typeof n === 'boolean')));
+    reject(optional(t.lineup, v => Array.isArray(v) && v.length <= 100 && new Set(v.map(p => p?.player?.id)).size === v.length && v.every(p =>
+      keys(p, ['player', 'order', 'position']) && publicPerson(p.player) && optional(p.order, n => int(n, 1, 999)) && str(p.position, 30))));
   }
   for (const p of [s.batter, s.pitcher]) reject(person(p) && (p === null || keys(p, ['id', 'name', 'number'])));
   // Additive v1 field: older development snapshots may omit the batting-order label.
@@ -40,18 +59,27 @@ export function validateSnapshot(s) {
   reject(int(s.appearancePitchCount) && (s.pitchLimit === null || int(s.pitchLimit, 1, 20)));
   reject(s.currentAppearanceID === null || str(s.currentAppearanceID, 50));
   reject(str(s.notice, 500));
+  reject(optional(s.hasStarted, v => typeof v === 'boolean'));
+  reject(optional(s.rules, r => keys(r, ['scheduledInnings', 'halfInningRunLimit', 'timeLimitMinutes']) && int(r.scheduledInnings, 1, 999)
+    && optional(r.halfInningRunLimit, v => int(v, 1, 100000)) && optional(r.timeLimitMinutes, v => int(v, 1, 100000))));
+  reject(optional(s.clock, c => keys(c, ['startedAt', 'runningSince', 'elapsedSeconds'])
+    && optional(c.startedAt, v => Number.isFinite(v) && v > 0) && optional(c.runningSince, v => Number.isFinite(v) && v > 0)
+    && Number.isFinite(c.elapsedSeconds) && c.elapsedSeconds >= 0));
+  reject(optional(s.batterStats, b => keys(b, ['atBats', 'hits', 'isComplete']) && int(b.atBats) && int(b.hits, 0, b.atBats) && typeof b.isComplete === 'boolean'));
+  reject(optional(s.nextBatters, v => Array.isArray(v) && v.length <= 2 && v.every(p => keys(p, ['player', 'order']) && publicPerson(p.player) && int(p.order, 1, 999))));
   reject(Array.isArray(s.bases) && s.bases.length <= 3 && new Set(s.bases.map(b => b.base)).size === s.bases.length);
   for (const b of s.bases) reject(keys(b, ['base', 'player']) && int(b.base, 1, 3) && b.player && person(b.player) && keys(b.player, ['id', 'name', 'number']));
   reject(Array.isArray(s.entries) && s.entries.length <= 10000);
   const ids = new Set();
   for (const e of s.entries) {
-    reject(keys(e, ['id', 'appearanceID', 'inning', 'isTop', 'kind', 'label', 'summary', 'player', 'status', 'details']));
+    reject(keys(e, ['id', 'appearanceID', 'inning', 'isTop', 'kind', 'label', 'summary', 'player', 'status', 'details', 'order', 'situation']));
+    reject(optional(e.order, v => int(v, 1, 999)) && optional(e.situation, situation));
     reject(str(e.id, 80) && e.id.length > 0 && !ids.has(e.id)); ids.add(e.id);
     reject(e.appearanceID === null || str(e.appearanceID, 50));
     reject(int(e.inning, 1, 999) && typeof e.isTop === 'boolean' && ['appearance', 'event'].includes(e.kind));
     reject(str(e.label, 100) && str(e.summary, 1000) && person(e.player) && (e.player === null || keys(e.player, ['id', 'name', 'number'])));
     reject(['current', 'completed', 'interrupted', 'review'].includes(e.status));
-    reject(Array.isArray(e.details) && e.details.length <= 2000 && e.details.every(d => keys(d, ['id', 'text']) && str(d.id, 50) && str(d.text, 1000)));
+    reject(Array.isArray(e.details) && e.details.length <= 2000 && e.details.every(d => keys(d, ['id', 'text', 'situation']) && str(d.id, 50) && str(d.text, 1000) && optional(d.situation, situation)));
   }
   return s;
 }
@@ -173,8 +201,11 @@ export function createLiveServer({ dbPath = ':memory:', now = Date.now, trustPro
         const part = path.slice(BASE.length).replace(/^\//, '');
         const asset = assets.get(part) || (CODE.test(part.toUpperCase()) ? assets.get('') : null);
         if (asset) {
-          res.writeHead(CODE.test(part.toUpperCase()) && !get.get(part.toUpperCase()) ? 410 : 200, { 'Content-Type': asset[1] });
-          res.end(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'public', asset[0]))); return;
+          const isGame = CODE.test(part.toUpperCase());
+          const row = isGame ? get.get(part.toUpperCase()) : null;
+          res.writeHead(isGame && !row ? 410 : 200, { 'Content-Type': asset[1], ...(asset[0] === 'index.html' ? { 'Cache-Control': 'no-store' } : {}) });
+          res.end(asset[0] === 'index.html' ? viewerHTML(row ? JSON.parse(row.payload) : null)
+            : readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'public', asset[0]))); return;
         }
       }
       throw new HTTPError(404, '页面不存在');

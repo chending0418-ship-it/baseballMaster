@@ -74,7 +74,7 @@ struct LiveBroadcastSheet: View {
                     #endif
                     VStack(alignment: .leading, spacing: 10) {
                         Text("分享与保留说明").font(.headline)
-                        Text("开启后公开本场球队名称、球员姓名及背号、比分和比赛过程。任何持有链接的人都能观看，请确认适合分享。")
+                        Text("开启后公开本场球队名称、当前双方阵容与守位、球员姓名及背号、投打表现、比分、规则、计时和比赛过程。任何持有链接的人都能观看，请确认适合分享。")
                         Text("终场一小时后，链接和云端记录自动删除，不保留回放；连续一小时未同步也会关闭。本地比赛记录和备份不受影响。")
                         Text("记分时请保持 App 在前台并联网。断网不影响本地记分，恢复后自动补传。终场请等待“终场已同步”；停止直播后可重新开启，但需要分享新链接。")
                         Text("服务中断可能使链接提前失效；服务器重启后需要重新开播。请勿公开未经授权的球员资料，未成年人资料尤其需要适当授权。")
@@ -88,7 +88,10 @@ struct LiveBroadcastSheet: View {
                 Button("关闭直播", role: .destructive) { manager.close(gameID) }
             }
             .sheet(isPresented: $showShare) {
-                if let url = manager.url(for: gameID) { LiveActivityShareSheet(items: ["用 BaseballMaster 观看这场比赛", url]) { showShare = false } }
+                if let url = manager.url(for: gameID) {
+                    let title = stored.map { "\($0.state.awayTeam.name) vs \($0.state.homeTeam.name)｜文字直播" } ?? "文字直播 · BaseballMaster"
+                    LiveActivityShareSheet(items: [title, url]) { showShare = false }
+                }
             }
             .onAppear {
                 #if DEBUG

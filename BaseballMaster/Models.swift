@@ -324,7 +324,7 @@ struct StoredGame: Identifiable, Equatable, Codable {
     let seasonID: String
     let ourTeamID: UUID?
     let opponentTeamID: UUID?
-    let isHome: Bool
+    var isHome: Bool
     let isSpectator: Bool?
     var rules: GameRules
     var lineup: [LineupAssignment]
@@ -332,6 +332,7 @@ struct StoredGame: Identifiable, Equatable, Codable {
     var status: StoredGameStatus
     var state: GameState
     /// Stored outside undoable game state; publishing revisions never decrease.
+    var openingPitchRecorded: Bool? = nil
     var revision: Int? = nil
     var publicationState: String? = nil
     var pendingPublicationRevisions: [Int]? = nil
@@ -368,6 +369,7 @@ struct StoredGame: Identifiable, Equatable, Codable {
         self.secondaryLineup = secondaryLineup
         self.status = status
         self.state = state
+        self.openingPitchRecorded = false
     }
 
     var ourScore: Int { isHome ? state.homeScore : state.awayScore }
@@ -1324,6 +1326,19 @@ struct LiveLineupDraft {
         let id = battingOrderIDs.remove(at: sourceIndex)
         battingOrderIDs.insert(id, at: targetIndex)
         if !changes.contains("调整棒次（当前打者不变）") { changes.append("调整棒次（当前打者不变）") }
+    }
+
+    mutating func moveBatters(from offsets: IndexSet, to destination: Int) {
+        guard !offsets.isEmpty, offsets.allSatisfy({ battingOrderIDs.indices.contains($0) }),
+              (0...battingOrderIDs.count).contains(destination) else { return }
+        let original = battingOrderIDs
+        let moved = offsets.sorted().map { original[$0] }
+        for index in offsets.sorted().reversed() { battingOrderIDs.remove(at: index) }
+        let target = destination - offsets.filter { $0 < destination }.count
+        battingOrderIDs.insert(contentsOf: moved, at: target)
+        if battingOrderIDs != original, !changes.contains("调整棒次（当前打者不变）") {
+            changes.append("调整棒次（当前打者不变）")
+        }
     }
 
     mutating func changePosition(playerID: UUID, to position: FieldPosition) {
