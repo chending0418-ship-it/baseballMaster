@@ -14,12 +14,12 @@
   "reference": "docs/brand/references/promotional-2026-10-22/overview.png",
   "renderer": "docs/brand/references/promotional-2026-10-22/source/render.cjs",
   "assets": {
-    "docs/brand/references/promotional-2026-10-22/overview.png": "2f6fb5429d30ee4cc2c1d77945db3d3fcfbfd073414f267cb2fa9385709debec",
-    "docs/brand/references/promotional-2026-10-22/images/01-每一球都有迹可循.png": "31d27ec81de87f2e786e40d993288dbb5c476ed1f6bc5336ea29bc8710233f6e",
-    "docs/brand/references/promotional-2026-10-22/images/02-两种方式一种顺手.png": "8199d07f940adc35c21526d21d86f9fdd7782c1640133cbb0d5c4f33b7b3862a",
-    "docs/brand/references/promotional-2026-10-22/images/03-从落点到传球.png": "6c6bdef017f38ceead76bad7b2f7342f944b69b307cab9980f386882e56b5109",
-    "docs/brand/references/promotional-2026-10-22/images/04-看见本场也看见进步.png": "90ed7236de5f46938bda3d2d2a036ccecdfcac20b1dc0cc8bc4dc98767b30eab",
-    "docs/brand/references/promotional-2026-10-22/source/render.cjs": "dfefd888c9411da3527bd9efc481fa196372dd30038db99e42283be80dedcca6"
+    "docs/brand/references/promotional-2026-10-22/overview.png": "640965cbe0835851a87c4f5a9041fa455cd5500d14abca7aa91db67f916d545f",
+    "docs/brand/references/promotional-2026-10-22/images/01-每一球都有迹可循.png": "fa4e173df92cfc4d224030163e2dd691fc721546d70a8b3ac8e4514ae3119913",
+    "docs/brand/references/promotional-2026-10-22/images/02-两种方式一种顺手.png": "948aaf134f99297b9e192c4f84c2b951e297f547b27c425e609f5bdd37754155",
+    "docs/brand/references/promotional-2026-10-22/images/03-从落点到传球.png": "217cb7cab4d2d8fc56a89840e514d61ed164670a3d22781961c02580c41de016",
+    "docs/brand/references/promotional-2026-10-22/images/04-看见本场也看见进步.png": "3049fa2a50bd51ffb28966ad73cd57307da9d9473ab0c31cc6a437cff301c7f4",
+    "docs/brand/references/promotional-2026-10-22/source/render.cjs": "b67272334fe060bd6ed95cb65cc62bfe73d6e24cd717fbe08ff003622973585d"
   },
   "palette": {
     "brandBackground": "#092a2a",
@@ -45,7 +45,8 @@
     "introSize": 27,
     "introLineHeight": 1.7,
     "eyebrowSize": 24,
-    "footerSize": 16
+    "footerSize": 16,
+    "headlinePunctuation": "none; organize meaning with line breaks; keep optical centering"
   },
   "composition": {
     "brand": "centered; dark brand plate on light artwork",
@@ -66,5 +67,7 @@
     },
     "otherChannels": "Adapt factual release labels, calls to action and format to the channel and user request."
   },
-  "existingLogoBaseline": "docs/brand/brand-baseline.json"
+  "existingLogoBaseline": "docs/brand/brand-baseline.json",
+  "refinedOn": "2026-10-22",
+  "refinementQuote": "四张图的大字标题不要用标点符号，这样显得不是居中。重新来一下"
 }
