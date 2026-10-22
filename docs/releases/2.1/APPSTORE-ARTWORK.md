@@ -12,7 +12,7 @@
 6. 阵容调整：展示 2.0 已有的比赛中调整功能。
 7. 数据统计／PDF 战报：按用户选择展示 2.0 已有功能，不宣称在 2.1 新增。
 
-本机交付目录：`/Users/JasonChan/Documents/BaseballMaster/output/releases/2.1/app-store/`。生成图片不纳入 Git；下方文件名均相对此目录。
+本机交付目录：`/Users/JasonChan/Documents/BaseballMaster-2.2/output/releases/2.1/app-store/`。生成图片不纳入 Git；下方文件名均相对此目录。
 
 ## 文件
 

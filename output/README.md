@@ -37,3 +37,13 @@
 历史 `.log`、`.xcresult`、签名归档和源码压缩包保留原始内容，其中出现的旧路径按 [迁移对照表](validation/maintenance/2026-09-29/moves.json) 查找。源码、文档和生成入口的现用路径已更新。历史文件名中用于辨别运行次数或版本的编号保留。
 
 本次整理的文件清单、哈希验证和备份分别位于 `validation/maintenance/2026-09-29/` 与 `backups/maintenance/2026-09-29/`。本目录中的生成文件主要是本机材料，其他 Git 工作区不自动复制它们。
+
+## 2.2 发布交付
+
+当前唯一项目目录为 `/Users/JasonChan/Documents/BaseballMaster-2.2`。
+
+- `releases/2.2/`：两套截图、预览、商店文案、签名归档及素材 ZIP。
+- `validation/2.2/release-preparation/`：发布阶段模拟器、公网、官网和迁移后构建证据。
+- `backups/maintenance/2026-10-03/`：单目录收拢前完整 Git 备份及逐文件迁移校验。
+
+原 2.1 及更早版本的交付／验证内容已保留在相应分类，详见 `docs/maintenance/2026-10-03-single-project.md`。

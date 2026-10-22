@@ -56,4 +56,4 @@
 
 ## Git 与目录执行记录
 
-发布提交及 main 推送、单目录迁移完成后在此补记实际结果；原签名归档、测试证据、宣传图、源码备份与完整 Git 历史均须保留。
+2.2 代码提交 `433373b` 已推送 `codex/dev-2.2` 并快进合入／推送 main；远端 SHA 核对一致。单目录迁移与文档收尾另随提交保存。现在只保留 `/Users/JasonChan/Documents/BaseballMaster-2.2`，完整 Git、原签名归档、测试证据、宣传图与源码备份已保留并校验，迁移后 Release 编译通过。详见 [迁移维护记录](../../maintenance/2026-10-03-single-project.md) 与 [版本目录说明](../../BRANCHES.md)。
