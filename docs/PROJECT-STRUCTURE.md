@@ -6,7 +6,8 @@
 
 ```text
 BaseballMaster/
-├── 2.1 发布功能计划.md       日常补充需求与发布计划
+├── 2.1 发布功能计划.md       2.1 维护与发布计划
+├── 2.2 发布功能计划.md       2.2 新功能计划，当前 ready to dev
 ├── README.md                项目入口
 ├── TODO.md                  开发与发布状态
 ├── AGENTS.md                协作约定
