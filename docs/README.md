@@ -12,6 +12,7 @@
 | --- | --- |
 | [PROJECT-STRUCTURE.md](PROJECT-STRUCTURE.md) | 项目目录、命名和输出位置约定 |
 | [BRANCHES.md](BRANCHES.md) | 当前分支、唯一项目目录及后续版本的开发约定 |
+| [历史 PR 索引](maintenance/2026-10-22-pr-history.md) | 全部历史提交的补录 PR 与覆盖关系；后续改动均通过 PR 合入 main |
 | [releases/2.1/](releases/2.1/) | 已上线 2.1 的功能、验证、截图、宣传材料及审核准备记录 |
 | [正式直播部署](../live/deploy/2026-09-30-production.md) | 公网服务、模拟器联调、运维与回滚 |
 | [releases/2.2/](releases/2.2/) | 完整开发 TODO；导航、导出／标题／阵容／统计、直播 UI、回归与发布 |
