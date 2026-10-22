@@ -1,0 +1,12 @@
+[Unit]
+Description=Volatile BaseballMaster live data (no disk or swap)
+Before=baseballmaster-live.service
+
+[Mount]
+What=tmpfs
+Where=/www/server/baseballmaster-live-data
+Type=tmpfs
+Options=noswap,nosuid,nodev,noexec,size=1536M,mode=0700,uid=@LIVE_UID@,gid=@LIVE_GID@
+
+[Install]
+WantedBy=multi-user.target

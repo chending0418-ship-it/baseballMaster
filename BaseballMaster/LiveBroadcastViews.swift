@@ -8,6 +8,9 @@ struct LiveBroadcastSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var confirmClose = false
     @State private var showShare = false
+    #if DEBUG
+    @State private var integrationOffline = false
+    #endif
 
     init(store: GameStore, gameID: UUID) {
         self.store = store; self.gameID = gameID
@@ -39,7 +42,9 @@ struct LiveBroadcastSheet: View {
                                         .accessibilityLabel("观赛链接二维码")
                                 }
                                 Text(binding.code ?? "").font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+                                    .accessibilityIdentifier("live-view-code")
                                 Text(url.absoluteString).font(.caption).textSelection(.enabled).multilineTextAlignment(.center)
+                                    .accessibilityIdentifier("live-view-url")
                                 Button { showShare = true } label: { Label("分享观赛链接", systemImage: "square.and.arrow.up") }
                                     .buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("share-live-link")
                             }.frame(maxWidth: .infinity)
@@ -58,11 +63,22 @@ struct LiveBroadcastSheet: View {
                         if stored?.status != .ongoing { Text("进行中的正式比赛可以开启直播。").font(.caption).foregroundStyle(.secondary) }
                     }
                     Divider()
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--live-production-persistent-test") {
+                        Button(integrationOffline ? "恢复测试网络" : "模拟测试断网") {
+                            integrationOffline.toggle()
+                            LiveIntegrationTransport.shared.offline = integrationOffline
+                            manager.retry(gameID)
+                        }.accessibilityIdentifier("live-integration-network")
+                    }
+                    #endif
                     VStack(alignment: .leading, spacing: 10) {
                         Text("分享与保留说明").font(.headline)
                         Text("开启后公开本场球队名称、球员姓名及背号、比分和比赛过程。任何持有链接的人都能观看，请确认适合分享。")
                         Text("终场一小时后，链接和云端记录自动删除，不保留回放；连续一小时未同步也会关闭。本地比赛记录和备份不受影响。")
                         Text("记分时请保持 App 在前台并联网。断网不影响本地记分，恢复后自动补传。终场请等待“终场已同步”；停止直播后可重新开启，但需要分享新链接。")
+                        Text("服务中断可能使链接提前失效；服务器重启后需要重新开播。请勿公开未经授权的球员资料，未成年人资料尤其需要适当授权。")
+                        Link("隐私政策", destination: URL(string: "https://baseballmaster.cc/privacy.html")!)
                     }.font(.footnote).foregroundStyle(.secondary)
                 }.padding(22)
             }
@@ -74,7 +90,12 @@ struct LiveBroadcastSheet: View {
             .sheet(isPresented: $showShare) {
                 if let url = manager.url(for: gameID) { LiveActivityShareSheet(items: ["用 BaseballMaster 观看这场比赛", url]) { showShare = false } }
             }
-            .onAppear { manager.requestSync() }
+            .onAppear {
+                #if DEBUG
+                integrationOffline = LiveIntegrationTransport.shared.offline
+                #endif
+                manager.requestSync()
+            }
         }
     }
     private func qrImage(_ text: String) -> UIImage? {

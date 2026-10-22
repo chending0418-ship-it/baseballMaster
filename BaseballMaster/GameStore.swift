@@ -21,6 +21,9 @@ final class GameStore: ObservableObject {
 
     lazy var liveBroadcasts: LiveBroadcastManager = {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--live-production-persistent-test") {
+            return LiveBroadcastManager(store: self, transport: LiveIntegrationTransport.shared, enabled: AppFeatureAvailability.liveBroadcast)
+        }
         if sourceDatabaseURL == nil && ProcessInfo.processInfo.arguments.contains("--live-local-test") {
             let base = URL(string: "http://127.0.0.1:18088/livestreaming/novideo")!
             // Release artwork uses the configured public URL while all demo traffic remains local.

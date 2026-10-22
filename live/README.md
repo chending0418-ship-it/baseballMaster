@@ -1,10 +1,10 @@
 # BaseballMaster 2.1 文字直播 · 腾讯云域名与宝塔部署
 
-**2026-09-28 版本定位：当前版本为 2.0，文字直播计划随 2.1 上线。** 用户已在腾讯云购买 `baseballmaster.cc`，继续使用现有服务器。旧 V1.2.1 文档编号仅作为历史需求标识。
+**状态：2026-09-30 文字直播网页与 API 已部署并通过公网及模拟器联调，2.1 App 直播开关已启用。App 尚未上架，暂不提交苹果审核。**
 
-**状态：2026-09-28 根域名解析、官网独立站点及 HTTPS 已部署并通过公网验证；文字直播服务尚未部署。** 当前 App 的直播开关仍关闭，2.1 启用前需更新隐私资料、申报、版本和打包内容。证书有效至 2026-12-27，暂为手动换证，详见 [官网上线记录](../website/deploy/2026-09-28-https-deployment.md)。
+观赛入口：[baseballmaster.cc/livestreaming/novideo/](https://baseballmaster.cc/livestreaming/novideo/)。单场地址为入口加 24 位串码。开播需使用支持直播的 2.1 App；官网、隐私和技术支持页面已同步实际状态。当前生产运行记录、验收证据及回滚步骤见 [2026-09-30 部署记录](deploy/2026-09-30-production.md)。
 
-部署目标：`https://baseballmaster.cc/livestreaming/novideo/<24位串码>`。用户于 2026-09-28 确认文字直播统一使用 `/livestreaming/novideo/`，替代旧 `/baseballmaster/live/` 路径。这是 2.1 的配套服务，包含网页和 API；**直播当前只在本地准备，生产服务器仅部署了官网与证书**。域名首页提供独立的 [App 官网](../website/README.md)。
+使用现有腾讯云服务器、独立域名和现有 HTTPS 证书，不重复建立站点。证书有效至 2026-12-27，当前为手动换证，详见 [官网上线记录](../website/deploy/2026-09-28-https-deployment.md)。
 
 ## 0. 腾讯云解析与站点隔离
 
@@ -34,82 +34,48 @@
 - 删除任务每秒执行，也在每次请求和服务启动前执行。到期即禁止读取；服务停机期间无法物理执行删除，恢复时先清理再提供服务。
 - 删除仅作用于服务器；**手机中的原比赛、统计和备份保留**。不做云端直播备份，不接入 CDN 内容缓存，不存浏览器本地数据库，不保留回放。
 
-## 2. 在宝塔准备 Node 环境
+## 2. 当前生产运行方式
 
-1. 在宝塔“软件商店”安装／打开 **Node.js 版本管理器**，安装 Node **24.x（≥24.12）**。本项目使用内置 SQLite，不能套用旧教程中的 Node 18/20。
-2. 在终端确认 `node --version` 为上述版本；使用宝塔“网站 → Node 项目”的版本选择，使项目实际运行版本也一致。
-3. 上传本目录的部署包到 **`/www/server/baseballmaster-live/`**，解压后此目录直接包含 `server.mjs`、`package.json`、`public/`、`test/`、`demo.mjs` 和 `ecosystem.config.cjs`。
-4. 创建独立数据目录 `/www/server/baseballmaster-live-data/`。不要放在现有网站可直接访问的静态目录中。通过宝塔文件权限设置，让运行 Node 的用户（建议 `www`，不要以 root 运行）拥有程序目录的读取权限及数据目录的写入权限；数据目录权限设置为 `700`。
-5. **从宝塔备份任务、整目录同步、云磁盘快照和 CDN 缓存中排除直播数据目录。** 程序发布包可保留，直播数据库不做备份；否则定时删除数据库内记录并不能删除外部备份中的副本。
+本机通过 `ssh jingsen-prod` 管理现有服务器，使用 **systemd** 守护，未安装 PM2，也不改变其他服务的 Node 环境。
 
-先在终端进入程序目录执行：
-
-```sh
-node --version
-npm test
-```
-
-出现 `node:sqlite` 的 ExperimentalWarning 是本地测试的 Node 24.12 的正常提示。测试应全部通过。
-
-## 3. 启动并守护 Node 服务
-
-宝塔不同版本的菜单名称稍有区别，使用“网站 → Node 项目 → 添加项目”或 PM2 项目管理均可。填写：
-
-| 项目 | 值 |
+| 项目 | 当前值 |
 | --- | --- |
-| 名称 | `baseballmaster-live` |
-| 项目目录 | `/www/server/baseballmaster-live` |
-| Node 版本 | 24.x，至少 24.12 |
-| 启动文件／命令 | `server.mjs` / `node server.mjs`（或 npm 的 `start`） |
-| 运行用户 | `www` 或专用普通用户 |
-| 端口 | `8088`，只绑定 `127.0.0.1` |
-| 进程 | 1 个，fork 模式；启用异常重启、开机启动 |
+| Node | 官方 Node 24.21.0 Linux x64，SHA-256 已验证；24.x ≥24.12 |
+| 运行时 | `/www/server/baseballmaster-node/node-v24.21.0-linux-x64/bin/node` |
+| 程序 | `/www/server/baseballmaster-live/current`，链接到独立 release 目录 |
+| 服务 | `baseballmaster-live.service`，开机启动、失败自动重启 |
+| 运行用户 | `baseballmaster-live`，普通不可登录账户；程序文件由 root 管理 |
+| 地址 | `127.0.0.1:18088`，不对公网开放；8088 属于其他现有服务 |
+| 数据 | `/www/server/baseballmaster-live-data/live.sqlite`，tmpfs，noswap，目录 700、库 600 |
 
-设置以下环境变量：
+服务文件：[baseballmaster-live.service](deploy/baseballmaster-live.service)。内存挂载模板：[live-data.mount.template](deploy/live-data.mount.template)，部署时将 `@LIVE_UID@`、`@LIVE_GID@` 替换成运行用户的数字 UID/GID，文件名为 `www-server-baseballmaster\x2dlive\x2ddata.mount`。服务依赖该挂载；挂载失败时不会降级到磁盘存储。需要 Linux 6.4+ 的 tmpfs `noswap` 支持，当前生产内核为 6.6。
 
-```text
-NODE_ENV=production
-HOST=127.0.0.1
-PORT=8088
-TRUST_PROXY=1
-LIVE_DB=/www/server/baseballmaster-live-data/live.sqlite
-```
+内存目录限额 1536 MiB，服务总内存上限 2 GiB，禁用服务交换及 core dump。这样直播数据库不会进入云磁盘快照。不得手动或通过文件备份任务复制直播数据目录。当前服务器定时任务已核查，无直播目录备份；未来新增备份须继续排除该目录。
 
-如果使用 PM2 配置文件，仓库的 `ecosystem.config.cjs` 已写好以上值，确认 PM2 使用 Node 24 后，在程序目录执行：
+**服务进程重启保留当前直播；整台服务器重启清空当前直播，旧链接失效，需重新开播。** 手机原比赛始终保留。此取舍已写入公开隐私政策、技术支持及开播说明。
+
+## 3. 健康检查与守护
 
 ```sh
-pm2 start ecosystem.config.cjs
-pm2 save
+systemctl is-active baseballmaster-live.service
+systemctl is-enabled baseballmaster-live.service
+findmnt -T /www/server/baseballmaster-live-data
+curl --fail http://127.0.0.1:18088/livestreaming/novideo/health
 ```
 
-**面板创建和 PM2 命令二选一，不要重复启动。** 开机守护按面板设置开启；自行管理 PM2 时，用 `pm2 startup` 按它输出的本机指令配置，并确保启动用户一致。
+期望服务为 active/enabled、挂载类型为 tmpfs 且含 noswap，健康返回 `{"ok":true}`。运行环境由 service 文件固定：`NODE_ENV=production`、`HOST=127.0.0.1`、`PORT=18088`、`TRUST_PROXY=1`，`LIVE_DB` 指向内存目录。
 
-检查本机服务：
+PM2 配置仅作为其他环境的参考，不能与当前 systemd 服务同时启动。不要直接以 root 启动服务，或为 18088 新增安全组开放规则。
 
-```sh
-curl --fail http://127.0.0.1:8088/livestreaming/novideo/health
-```
+## 4. HTTPS 与公开路径
 
-应返回 `{"ok":true}`。8088 不需要对公网开放，云安全组和系统防火墙保持关闭该端口。
+已在现有 `/www/server/panel/vhost/nginx/baseballmaster.cc.conf` 的 HTTPS server 中合并 [nginx-location.conf](deploy/nginx-location.conf)，`proxy_pass http://127.0.0.1:18088` 不加尾部 `/`。仅直播前缀转发到 Node，官网仍从独立静态目录提供，其他路径默认 404。
 
-## 4. 将新域名的直播路径代理到服务
+当前域名的 HTTP、HTTPS 和 www 跳转均关闭访问／错误路径日志，避免在跳转阶段泄漏观赛串码。Node 只记录启动及不含比赛资料的错误类别。直播响应 `no-store`、`no-referrer`、`noindex`，Nginx 不使用代理缓存，当前解析直接指向服务器，未走 CDN。
 
-先备份当前 `/www/server/panel/vhost/nginx/baseballmaster.cc.conf`，再将 [nginx-location.conf](deploy/nginx-location.conf) 的两个直播 `location` 块合并到 **同一新站点的 HTTPS `server { ... }` 内部**，保留已上线的 [官网静态配置](../website/deploy/nginx-homepage.conf)。此次站点通过 SSH 配置，尚未导入宝塔网站列表；若后续在宝塔维护，先按 [上线记录](../website/deploy/2026-09-28-https-deployment.md) 导入现有站点，避免覆盖当前配置。
+变更前备份配置，执行 `nginx -t` 成功后再 `systemctl reload nginx`。不修改其他站点、HTTPS 证书、ACME 规则或现有 8088 服务。后续若接入 CDN，必须让全部直播页面／API 绕过缓存，不能注入分析、广告脚本或记录串码。
 
-- 使用新站点的独立根目录，保留证书及证书验证配置；不继承旧站点的 PHP、静态文件或路径代理规则。
-- 如果已经存在相同路径的 `location`，修改那一个，避免重复。
-- `/` 提供 App 官网，公开静态文件仅限官网配置列出的页面和资源；`/livestreaming/novideo/` 代理直播服务，其他路径默认返回 404。证书续期所需的 `/.well-known/` 验证规则需单独保留并核验。旧的首页跳转规则应替换为官网规则。
-- `proxy_pass http://127.0.0.1:8088;` **末尾不加 `/`**，否则转发路径可能被截断。
-- 不要通过面板再生成覆盖整个域名的 `/` 代理规则；我们只使用 `/livestreaming/novideo/`。
-- 保留／启用此站点 HTTPS 证书和 HTTP → HTTPS 跳转；App 生产环境只连接 HTTPS，不接受自签证书。
-- 若使用 CDN，给 `/livestreaming/novideo/*` 配置绕过缓存，API 同时不得缓存。不要为该路径注入分析或广告脚本。
-
-在宝塔检查 Nginx 配置语法后重载 Nginx。通过浏览器访问：
-
-- [观赛入口](https://baseballmaster.cc/livestreaming/novideo/)
-- [健康检查](https://baseballmaster.cc/livestreaming/novideo/health)
-
-直播入口应显示串码输入框，健康检查返回 `ok`，域名首页显示 App 介绍。新域名的 `/TODO.md`、`/.git/config` 等未开放路径应返回 404 或 403，不能返回任何内部资料；旧站点的内部内容应要求验证。检查页面、接口、跳转、二维码及证书均不引用旧域名。
+公开检查：[观赛入口](https://baseballmaster.cc/livestreaming/novideo/) · [健康检查](https://baseballmaster.cc/livestreaming/novideo/health) · [隐私政策](https://baseballmaster.cc/privacy.html) · [技术支持](https://baseballmaster.cc/support.html)。
 
 ## 5. 上线前验收
 
@@ -129,7 +95,7 @@ LIVE_BASE=https://baseballmaster.cc/livestreaming/novideo node demo.mjs
 
 终端会给出示例链接。保持进程运行，输入 `ball`、`undo` 可查看十秒轮询效果，`finish` 显示终场，`reopen` 恢复，`expire` 将该合成比赛设为已终场 59 分 45 秒（约 15 秒后删除），`quit` 关闭并删除。命令不显示或写盘保存发布密钥。示例不是常驻审核回放，链接不能永久使用。
 
-完成 [2.1 隐私资料](PRIVACY-RELEASE.md) 更新并启用直播后，构建安装 2.1 测试 App，在**测试比赛**中完成（当前 2.0 直播开关仍关闭）：
+安装已启用直播的 2.1 测试 App，按 [2.1 隐私资料](PRIVACY-RELEASE.md) 核对后，在**测试比赛**中完成（2.1 直播开关已启用）：
 
 1. 现场记分右上角天线按钮 → 开启文字直播 → 分享链接，在另一部手机打开。
 2. 记录投球、安打、换人、得分；网页约 10 秒后看到同一局面和对应打席；普通投手显示本场球数，教练模式显示本打席球数。
@@ -139,13 +105,13 @@ LIVE_BASE=https://baseballmaster.cc/livestreaming/novideo node demo.mjs
 6. 手动关闭直播，确认旧链接失效、手机比赛仍在。
 7. 在 Safari 和微信内置浏览器检查小屏、展开逐球记录、历史半局跳转以及“有新记录”提示。
 
-前台网络上传已实现；iOS 不保证后台或锁屏后的持续执行，因此实际记分应保持 App 前台。官网和证书已经上线，直播服务部署、直播接口公网验收、域名 CDN 核查与真机微信验证仍未完成，不能用本地模拟器测试代替。
+前台网络上传已实现；iOS 不保证后台或锁屏后的持续执行，因此实际记分应保持 App 前台。服务、网页和公网接口已验收，模拟器直接连接正式 HTTPS 完成联调。模拟器断网使用开发构建中受控的网络错误注入，恢复后仍走正式 HTTPS；真机蜂窝／Wi-Fi、Safari／微信分享与使用体验仍待实测。不得将模拟器结果写成真机验收。
 
 ## 6. 更新、回滚与维护
 
-- 仅替换程序文件，保持 `LIVE_DB` 指向原数据目录。`pm2 restart baseballmaster-live --update-env` 或面板重启即可。停机期观众会看到重试，重启后过期场次先清除。
+- 仅替换程序文件，保持 `LIVE_DB` 指向原数据目录。`systemctl restart baseballmaster-live.service` 即可。停机期观众会看到重试，重启后过期场次先清除。
 - 回滚程序用上一份部署包；**不回滚／恢复直播数据库**，避免恢复已经删除的比赛。若未来改变数据库格式，先安排无直播时的升级窗口；此版只包含一个初始 schema。
-- 基础监控只需每分钟请求 `/health` 并检查进程、内存和磁盘；不记录观赛串码、Authorization、请求体或球员资料。健康检查路径本身无比赛资料。
+- 如需配置监控，可每分钟请求 `/health` 并检查进程、内存和磁盘；不记录观赛串码、Authorization、请求体或球员资料。健康检查路径本身无比赛资料。
 - 服务默认最多同时 500 场，每 IP 每小时最多创建 30 场、每分钟最多 6000 次请求，单场写入每分钟 180 次；单份投影上限 2 MiB、10000 个时间线条目。超限会明确报错，不会裁掉本地比赛内容。
 - 250 人每十秒刷新约 **25 次读取／秒**。本地验证了 250 请求集中读取无错误，但这不等于香港到生产服务器的网络表现；部署后再用真实网络检查延迟。建议从现有服务器的空闲资源开始，无需现在采购新机器。
 - 服务单进程、SQLite 单库，不要直接设为 PM2 cluster 或多副本。规模明显增长时再进行数据库和发布鉴权扩展。

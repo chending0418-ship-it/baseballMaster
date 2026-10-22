@@ -353,10 +353,14 @@ struct AppAboutView: View {
                         Label("隐私与数据", systemImage: "lock.shield.fill")
                             .font(.system(size: 17, weight: .bold))
                             .foregroundStyle(BMTheme.navy)
-                        Text("球队、球员、赛季和逐场统计保存在本机，不启用 CloudKit，也不要求用户账号。当前版本暂不提供文字直播，不向开发者服务器上传比赛资料。报表与备份仅在你主动导出或分享时交给所选位置或接收方。")
+                        Text("球队、球员、赛季和逐场统计保存在本机，不启用 CloudKit，也不要求用户账号。只有你主动开启文字直播时，才会上传本场球队名称、球员姓名及背号、比分和比赛过程；任何持有观赛链接的人都能观看。关闭成功、终场一小时后或连续一小时未同步，云端直播内容自动删除，本地比赛保留。报表与备份仅在你主动导出或分享时交给所选位置或接收方。")
                             .accessibilityIdentifier("about-privacy-description")
                             .font(.system(size: 14))
                             .foregroundStyle(BMTheme.secondaryText)
+                        Link("查看完整隐私政策", destination: URL(string: "https://baseballmaster.cc/privacy.html")!)
+                            .accessibilityIdentifier("about-privacy-policy")
+                        Link("技术支持与使用指南", destination: URL(string: "https://baseballmaster.cc/support.html")!)
+                            .accessibilityIdentifier("about-support")
                     }
                 }
 

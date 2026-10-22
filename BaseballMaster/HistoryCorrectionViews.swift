@@ -365,7 +365,7 @@ private struct HistoryOperationEditor: View {
                     ForEach(kind == .error ? ["击球结果", "附加失误"] : ["一球", "击球结果", "跑者事件", "仅修正局面", "补充说明"], id: \.self) { Text($0) }
                 }.onChange(of: mode) { _ in resetMoves() }
                 if mode == "补充说明" { TextField("补充已知信息，不改比分与统计", text: $supplementalNote, axis: .vertical) }
-                if mode == "一球" { Picker("球", selection: $pitch) { ForEach(PitchAction.allCases) { Text($0.rawValue).tag($0) } } }
+                if mode == "一球" { Picker("球", selection: $pitch) { ForEach(PitchAction.allCases) { Text($0.rawValue).tag($0) } }.accessibilityIdentifier("history-pitch") }
                 if mode == "击球结果" || (mode == "附加失误" && !extraOnly) {
                     Picker("击球结果", selection: $outcome) { ForEach(PlayOutcome.allCases) { Text($0.rawValue).tag($0) } }
                         .onChange(of: outcome) { _ in resetMoves() }

@@ -192,6 +192,6 @@ export function createLiveServer({ dbPath = ':memory:', now = Date.now, trustPro
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.umask(0o077);
   const { server } = createLiveServer({ dbPath: process.env.LIVE_DB || './data/live.sqlite', trustProxy: process.env.TRUST_PROXY === '1' });
-  server.listen(Number(process.env.PORT || 8088), process.env.HOST || '127.0.0.1', () => console.log('BaseballMaster live service ready'));
+  server.listen(Number(process.env.PORT || 18088), process.env.HOST || '127.0.0.1', () => console.log('BaseballMaster live service ready'));
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
 }

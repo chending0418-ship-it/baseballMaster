@@ -18,7 +18,25 @@ struct BaseballMasterApp: App {
 
     init() {
         let isPreviewRun = AppLaunchArguments.values.contains { $0.hasSuffix("-preview") }
-        let initialStore = isPreviewRun ? GameStore(persistenceURL: nil) : GameStore()
+        let initialStore: GameStore
+        #if DEBUG
+        if AppLaunchArguments.values.contains("--live-production-persistent-test") {
+            // An isolated on-disk synthetic match exercises normal Keychain/relaunch behavior.
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let runID = AppLaunchArguments.values.first(where: { $0.hasPrefix("--live-integration-store=") })?.split(separator: "=").last.flatMap { UUID(uuidString: String($0)) }
+            initialStore = GameStore(persistenceURL: documents.appendingPathComponent("LiveIntegration/\(runID?.uuidString ?? "game").json"))
+            if initialStore.activeStoredGame == nil, let team = initialStore.currentTeam {
+                let lineup = team.players.prefix(9).enumerated().map {
+                    LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: $0.element.primaryPosition)
+                }
+                initialStore.startNewGame(opponent: initialStore.opponentTeams[0], isHome: false, rules: GameRules(), lineup: lineup)
+            }
+        } else {
+            initialStore = isPreviewRun ? GameStore(persistenceURL: nil) : GameStore()
+        }
+        #else
+        initialStore = GameStore()
+        #endif
         #if DEBUG
         initialStore.runUpgradeReleaseAuditIfRequested()
         #endif
@@ -61,6 +79,8 @@ struct LaunchRouterView: View {
         Group {
             if store.requiresDataRecovery {
                 NavigationStack { BackupManagementView() }
+            } else if arguments.contains("--live-production-persistent-test") {
+                NavigationStack { ScorekeepingView() }
             } else if arguments.contains("--correction-preview") {
                 HistoryCorrectionFixture()
             } else if arguments.contains("--v11-coach-preview") {

@@ -37,9 +37,9 @@ python3 -m http.server 8321 --bind 127.0.0.1 --directory website/public
 3. 将 `public/` 里面的文件上传至这个根目录，确保 `index.html` 直接位于站点根目录。可使用下方命令生成的 ZIP，解压后同样检查目录层级。
 4. 备份新站点配置，合并 [nginx-homepage.conf](deploy/nginx-homepage.conf) 到该站点 HTTPS `server` 块。已有相同 `location` 时替换，不重复添加。保留 SSL 和证书验证路径，启用 HTTP → HTTPS。首页不再跳转到直播入口。
 5. 在服务器执行 `nginx -t` 后重载。打开首页、隐私页、支持页，确认图片加载、下载地址及手机菜单正常；`/TODO.md`、`/.git/config`、`/README.md`、`/assets/` 均应返回 404／403。
-6. 本次仅首页可以独立发布。2.1 直播准备完成后，额外合并 [直播路径配置](../live/deploy/nginx-location.conf)，保留首页静态路由与 404 兜底。内部旧站点的访问验证仍须单独配置。
+6. 本次仅首页可以独立发布。2026-09-30 已额外合并 [直播路径配置](../live/deploy/nginx-location.conf)，保留首页静态路由与 404 兜底。内部旧站点的访问验证仍须单独配置。
 
-完整服务器与域名步骤见 [直播部署说明](../live/README.md)。以上为从零配置的参考；当前官网已通过 SSH 安装独立 Nginx 配置，不应重复创建或覆盖现有站点。文字直播服务尚未部署。
+完整服务器与域名步骤见 [直播部署说明](../live/README.md)。以上为从零配置的参考；当前官网已通过 SSH 安装独立 Nginx 配置，不应重复创建或覆盖现有站点。文字直播 Web／API 已部署，见 [正式部署与模拟器验收](../live/deploy/2026-09-30-production.md)。
 
 ## 打包
 
