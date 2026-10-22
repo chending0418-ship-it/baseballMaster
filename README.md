@@ -2,6 +2,8 @@
 
 [文档索引](docs/README.md) · [项目目录说明](docs/PROJECT-STRUCTURE.md) · [输出文件入口](output/README.md)
 
+**Git 协作约定（2026-10-22）：所有改动通过 PR 合入 main，不再直接推送 main，包括文档和发布材料。** 见 [流程](docs/BRANCHES.md#main-合入流程) 与 [完整历史 PR 索引](docs/maintenance/2026-10-22-pr-history.md)。
+
 **发布计划与随手补充入口：[2.1](<2.1 发布功能计划.md>) · [2.2 现有功能优化](<2.2 发布功能计划.md>) · [2.3 慢垒与已有功能优化](<2.3 发布功能计划.md>) · [3.0 发布功能计划](<3.0 发布功能计划.md>) · [3.0.1 共享球队修复](<3.0.1 发布功能计划.md>) · [3.1 击球记录改版](docs/plans/3.1-BATTED-BALL.md)。**
 
 **最新安排（2026-10-20）：3.0／3.0.1 最新成果已提交并推送至 main（`82c23b4`）。3.1.0（Build 1）已完成原 3.1 规划并合并推送 main：两种记录方式、击球观察／表现图、路线姓名与球场姓名背号已接入。见 [开发交接](docs/releases/3.1.0/DEVELOPMENT.md) 与 [验证记录](docs/releases/3.1.0/ACCEPTANCE.md)。共享服务兼容更新已于 2026-10-20 先行部署；观看页及独立直播沿用现有版本，签名归档与审核材料已准备，App 尚未上传或提交审核，见 [发布交接](docs/releases/3.1.0/REVIEW-HANDOFF.md)。**
