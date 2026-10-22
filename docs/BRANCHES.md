@@ -1,3 +1,7 @@
+# 3.1.1 开发分支（2026-10-22）
+
+用户已确认产品深绿 BM 开机图并授权接入 3.1.1；当前分支为 `codex/dev-3.1.1`，从当前工作区资料整理基线 `3eb09df` 建立，工程为 3.1.1（Build 1）。实现、验证与发布边界见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)，当前入口仍为 [CURRENT](CURRENT.md)。本轮不直接改 main，原迁移和版本历史记录保留如下。
+
 # 本次迁移分支（2026-10-22）
 
 目录整理在 codex/workspace-migration-20261022 进行，所有原分支和 main 提交保留。最新品牌规范已先保存为提交 6b0fc97。当前资料与工作区路径见 [CURRENT.md](CURRENT.md) 及 [迁移记录](../../../management/MIGRATION.md)。本次未直接修改 main。

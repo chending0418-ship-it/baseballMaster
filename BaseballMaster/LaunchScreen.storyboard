@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="24112" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="launch-controller">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24110"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="Named colors" minToolsVersion="9.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="launch-scene">
+            <objects>
+                <viewController id="launch-controller" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="launch-view">
+                        <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFill" image="LaunchArtwork" translatesAutoresizingMaskIntoConstraints="NO" id="launch-artwork">
+                                <rect key="frame" x="0.0" y="0.0" width="402" height="874"/>
+                            </imageView>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="LaunchIdentity" translatesAutoresizingMaskIntoConstraints="NO" id="launch-identity">
+                                <rect key="frame" x="71" y="299" width="260" height="223"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="260" id="identity-width"/>
+                                    <constraint firstAttribute="height" constant="223" id="identity-height"/>
+                                </constraints>
+                            </imageView>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="LaunchSignoff" translatesAutoresizingMaskIntoConstraints="NO" id="launch-signoff">
+                                <rect key="frame" x="111" y="736" width="180" height="53"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="180" id="signoff-width"/>
+                                    <constraint firstAttribute="height" constant="53" id="signoff-height"/>
+                                </constraints>
+                            </imageView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="launch-safe-area"/>
+                        <color key="backgroundColor" name="LaunchBackground"/>
+                        <constraints>
+                            <constraint firstItem="launch-artwork" firstAttribute="top" secondItem="launch-view" secondAttribute="top" id="artwork-top"/>
+                            <constraint firstItem="launch-artwork" firstAttribute="leading" secondItem="launch-view" secondAttribute="leading" id="artwork-leading"/>
+                            <constraint firstAttribute="trailing" secondItem="launch-artwork" secondAttribute="trailing" id="artwork-trailing"/>
+                            <constraint firstAttribute="bottom" secondItem="launch-artwork" secondAttribute="bottom" id="artwork-bottom"/>
+                            <constraint firstItem="launch-identity" firstAttribute="centerX" secondItem="launch-view" secondAttribute="centerX" id="identity-center-x"/>
+                            <constraint firstItem="launch-identity" firstAttribute="centerY" secondItem="launch-view" secondAttribute="centerY" multiplier="0.93936" id="identity-center-y"/>
+                            <constraint firstItem="launch-signoff" firstAttribute="centerX" secondItem="launch-view" secondAttribute="centerX" id="signoff-center-x"/>
+                            <constraint firstItem="launch-safe-area" firstAttribute="bottom" secondItem="launch-signoff" secondAttribute="bottom" constant="51" id="signoff-bottom"/>
+                        </constraints>
+                    </view>
+                    <simulatedStatusBarMetrics key="simulatedStatusBarMetrics" statusBarStyle="lightContent"/>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="launch-first-responder" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="0.0" y="0.0"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="LaunchArtwork" width="402" height="874"/>
+        <image name="LaunchIdentity" width="260" height="223"/>
+        <image name="LaunchSignoff" width="180" height="53"/>
+        <namedColor name="LaunchBackground">
+            <color red="0.03529411764705882" green="0.16470588235294117" blue="0.16470588235294117" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+    </resources>
+</document>

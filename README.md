@@ -46,7 +46,7 @@
 - [2.1 审核提交交接](docs/releases/2.1/REVIEW-HANDOFF.md) · [商店文案与更新说明](docs/releases/2.1/APPSTORE-METADATA.md)
 - [开发与验证记录](<docs/archive/plans/1.1.1/VALIDATION.md>) · [需求与完成清单](<docs/archive/plans/1.1.1/TODO.md>)
 
-当前开发工程 Version 为 **3.1.0**，Build 为 **1**。3.0 已上架，3.0.1 尚未提交；各版交付记录按对应发布交接保留。
+当前开发工程 Version 为 **3.1.1**，Build 为 **1**，本轮接入已确认的产品深绿 BM 开机图；当前验证和发布边界以 [CURRENT](docs/CURRENT.md) 与 [3.1.1 开发记录](docs/releases/3.1.1/DEVELOPMENT.md) 为准。各版历史交付记录按对应发布交接保留。
 
 一个面向非专业家长记分员的中文棒球记分 SwiftUI App。球队、球员、对手名单、未来比赛、进行中比赛、历史比赛和球员逐场统计均使用本地持久化，持续验证低门槛的“创建 → 记录 → 结果 → 统计”流程。
 
