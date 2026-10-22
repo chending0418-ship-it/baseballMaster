@@ -47,6 +47,7 @@ struct LiveSnapshot: Codable, Equatable {
         bases = g.baseRunners.map { Runner(base: $0.key.rawValue, player: Person($0.value)) }.sorted { $0.base < $1.base }
         currentAppearanceID = g.currentPlateAppearanceID?.uuidString
         notice = g.isFinal ? (g.endReason?.rawValue ?? "比赛结束") : (g.pendingDecision?.title ?? "")
+        if g.statisticsIncomplete == true { notice += (notice.isEmpty ? "" : " · ") + "过程或责任待确认，统计可能不完整" }
         let players = g.homeTeam.players + g.awayTeam.players
         let events = g.scoringEvents ?? []
         let appearances = g.plateAppearances ?? []

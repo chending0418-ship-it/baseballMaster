@@ -418,7 +418,7 @@ enum Base: Int, CaseIterable, Hashable, Codable {
     }
 }
 
-enum PitchAction: String, CaseIterable, Identifiable {
+enum PitchAction: String, CaseIterable, Identifiable, Codable {
     case ball = "坏球"
     case calledStrike = "看振"
     case swingingStrike = "挥空"
@@ -628,7 +628,7 @@ enum ViolationResolution: Equatable {
     case recordForReview
 }
 
-enum PreviousPlayDisposition: String, CaseIterable, Identifiable {
+enum PreviousPlayDisposition: String, CaseIterable, Identifiable, Codable {
     case notApplicable = "不涉及上一比赛结果"
     case keep = "保留上一比赛结果"
     case cancel = "取消上一比赛结果"
@@ -636,7 +636,7 @@ enum PreviousPlayDisposition: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum PlateAppearanceDisposition: String, CaseIterable, Identifiable {
+enum PlateAppearanceDisposition: String, CaseIterable, Identifiable, Codable {
     case continueAtBat = "继续当前打席"
     case batterOut = "打者出局"
     case batterFirst = "打者上一垒"
@@ -644,7 +644,7 @@ enum PlateAppearanceDisposition: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum AdjudicationBattingCredit: String, CaseIterable, Identifiable {
+enum AdjudicationBattingCredit: String, CaseIterable, Identifiable, Codable {
     case none = "不另记打击结果"
     case single = "一垒安打"
     case double = "二垒安打"
@@ -678,7 +678,7 @@ enum AdjudicationBattingCredit: String, CaseIterable, Identifiable {
 /// violation supplies a fast default, while this value allows the scorer to
 /// reproduce the actual award when a ruling affects several runners or
 /// supersedes the immediately preceding play.
-struct ViolationAdjudication {
+struct ViolationAdjudication: Equatable, Codable {
     var ballStatus: BallStatus
     var previousPlayDisposition: PreviousPlayDisposition
     var plateAppearanceDisposition: PlateAppearanceDisposition
@@ -772,7 +772,7 @@ enum ViolationKind: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-struct DefensivePlay: Identifiable, Hashable {
+struct DefensivePlay: Identifiable, Hashable, Codable {
     let id: String
     let title: String
     let notation: String
@@ -855,7 +855,7 @@ struct DefensivePlay: Identifiable, Hashable {
     }
 }
 
-enum RunnerOrigin: Hashable {
+enum RunnerOrigin: Hashable, Codable {
     case batter
     case base(Base)
 
@@ -867,7 +867,7 @@ enum RunnerOrigin: Hashable {
     }
 }
 
-enum RunnerDestination: Hashable {
+enum RunnerDestination: Hashable, Codable {
     case hold
     case base(Base)
     case score
@@ -883,7 +883,7 @@ enum RunnerDestination: Hashable {
     }
 }
 
-struct RunnerDecision: Identifiable, Hashable {
+struct RunnerDecision: Identifiable, Hashable, Codable {
     let id: UUID
     let player: Player
     let origin: RunnerOrigin
@@ -898,11 +898,11 @@ struct RunnerDecision: Identifiable, Hashable {
 }
 
 struct PlayLogEntry: Identifiable, Equatable, Codable {
-    let id: UUID
+    var id: UUID
     let inning: Int
     let isTop: Bool
     var text: String
-    let timestamp: Date
+    var timestamp: Date
     var isIncomplete: Bool
     var reviewNote: String?
 
@@ -984,17 +984,19 @@ struct GameSituationSnapshot: Equatable, Codable {
     // Present after a live lineup edit, so index-based historical situations keep their original order.
     var homeBattingOrderIDs: [UUID]? = nil
     var awayBattingOrderIDs: [UUID]? = nil
+    var runnerPitcherIDs: [UUID: UUID]? = nil
+    var unearnedRunnerIDs: [UUID]? = nil
 }
 
 /// Machine-readable companion to the Chinese play log. This is stored inside
 /// the existing Core Data game payload so later stat corrections do not need to
 /// parse display text.
 struct ScoringEventRecord: Identifiable, Equatable, Codable {
-    let id: UUID
-    let logEntryID: UUID?
+    var id: UUID
+    var logEntryID: UUID?
     let inning: Int
     let isTop: Bool
-    let timestamp: Date
+    var timestamp: Date
     var category: ScoringEventCategory
     var title: String
     var notation: String?
@@ -1086,7 +1088,7 @@ struct PlateAppearanceRecord: Identifiable, Equatable {
 }
 
 struct PlateAppearanceIdentity: Identifiable, Equatable, Codable {
-    let id: UUID
+    var id: UUID
     let inning: Int
     let isTop: Bool
     var batterIDs: [UUID]
@@ -1160,6 +1162,13 @@ struct GameState: Equatable, Codable {
     var halfEndedAwaitingDecision: Bool? = nil
     var canResumePrecisely: Bool? = nil
     var recordsLineupSnapshots: Bool? = nil
+    var historyJournal: HistoryJournal? = nil
+    var correctionRevisions: [GameCorrectionRevision]? = nil
+    var statisticsIncomplete: Bool? = nil
+    var runnerPitcherIDs: [UUID: UUID]? = nil
+    var unearnedRunnerIDs: [UUID]? = nil
+    var walkResponsiblePitcherID: UUID? = nil
+    var strikeoutResponsibleBatterID: UUID? = nil
 
     init(
         homeTeam: Team,
@@ -1230,7 +1239,9 @@ struct GameState: Equatable, Codable {
             activeHomePitcherID: activeHomePitcherID,
             activeAwayPitcherID: activeAwayPitcherID,
             homeBattingOrderIDs: recordsLineupSnapshots == true ? homeBattingOrderIDs : nil,
-            awayBattingOrderIDs: recordsLineupSnapshots == true ? awayBattingOrderIDs : nil
+            awayBattingOrderIDs: recordsLineupSnapshots == true ? awayBattingOrderIDs : nil,
+            runnerPitcherIDs: runnerPitcherIDs,
+            unearnedRunnerIDs: unearnedRunnerIDs
         )
     }
 }

@@ -1165,3 +1165,103 @@ extension BaseballMasterUITests {
         }
     }
 }
+
+extension BaseballMasterUITests {
+    func testHistoryCorrectionDraftPreviewAndFourScreenshots() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--correction-preview"]; app.launch()
+        XCTAssertTrue(app.buttons["history-kind-漏记换人"].waitForExistence(timeout: 10))
+        captureHistory(app, name: "2.1-01-四类纠错入口")
+        app.buttons["history-kind-漏记换人"].tap()
+        XCTAssertTrue(app.buttons["此前补录"].firstMatch.waitForExistence(timeout: 5))
+        captureHistory(app, name: "2.1-02-历史事件与局面")
+        revealStatisticsControl(app.buttons["此前补录"].firstMatch, in: app)
+        app.buttons["此前补录"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["history-add-draft"].waitForExistence(timeout: 5))
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "换上球员")).firstMatch.tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "周亦辰")).firstMatch.tap()
+        captureHistory(app, name: "2.1-03-补记换投")
+        app.buttons["history-add-draft"].tap()
+        XCTAssertTrue(app.buttons["history-preview"].waitForExistence(timeout: 5))
+        app.buttons["history-preview"].tap()
+        XCTAssertTrue(app.buttons["history-save"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["history-save"].isEnabled)
+        captureHistory(app, name: "2.1-04-保存前影响预览")
+        app.buttons["history-save"].tap()
+    }
+
+    func testHistoryPositionAndErrorEditors() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--correction-preview"]; app.launch()
+        XCTAssertTrue(app.buttons["history-kind-漏记换守位"].waitForExistence(timeout: 10))
+        revealStatisticsControl(app.buttons["history-kind-漏记换守位"], in: app)
+        app.buttons["history-kind-漏记换守位"].tap()
+        revealStatisticsControl(app.buttons["此前补录"].firstMatch, in: app); app.buttons["此前补录"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["history-add-draft"].waitForExistence(timeout: 5))
+        captureHistory(app, name: "2.1-05-历史守位调整")
+        app.buttons["取消"].tap(); app.buttons["更换类型"].tap()
+        revealStatisticsControl(app.buttons["history-kind-漏记失误"], in: app); app.buttons["history-kind-漏记失误"].tap()
+        revealStatisticsControl(app.buttons["此前补录"].firstMatch, in: app)
+        app.buttons["此前补录"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["history-add-draft"].waitForExistence(timeout: 5))
+        captureHistory(app, name: "2.1-06-失误与实际进垒")
+    }
+
+    func testAppStore21ScoringLineupAndStatisticsScreenshots() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v111-bases-preview", "-appAppearance", "light"]
+        app.launch()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["open-history-correction"].exists)
+        captureHistory(app, name: "AppStore-01-现场记分")
+        app.buttons["open-substitutions"].tap()
+        XCTAssertTrue(app.buttons["edit-away-lineup"].waitForExistence(timeout: 5))
+        app.buttons["edit-away-lineup"].tap()
+        XCTAssertTrue(app.buttons["lineup-save"].waitForExistence(timeout: 5))
+        captureHistory(app, name: "AppStore-06-阵容调整")
+        app.terminate()
+        app.launchArguments = ["--statistics-preview", "-appAppearance", "light"]
+        app.launch()
+        XCTAssertTrue(app.buttons["export-team-season-pdf"].waitForExistence(timeout: 10))
+        captureHistory(app, name: "AppStore-07-数据统计")
+        app.buttons["export-team-season-pdf"].tap()
+        XCTAssertTrue(app.navigationBars["球队赛季报告"].waitForExistence(timeout: 10))
+        captureHistory(app, name: "AppStore-08-PDF战报")
+    }
+
+    func testAppStore21SituationScreenshot() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--correction-preview", "-appAppearance", "light"]
+        app.launch()
+        XCTAssertTrue(app.buttons["history-kind-漏记局面"].waitForExistence(timeout: 10))
+        revealStatisticsControl(app.buttons["history-kind-漏记局面"], in: app)
+        app.buttons["history-kind-漏记局面"].tap()
+        revealStatisticsControl(app.buttons["此前补录"].firstMatch, in: app)
+        app.buttons["此前补录"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["history-add-draft"].waitForExistence(timeout: 5))
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "记录类型")).firstMatch.tap()
+        app.buttons["仅修正局面"].tap()
+        captureHistory(app, name: "AppStore-04-补记局面")
+    }
+
+    func testAppStore21LiveSharingScreenshot() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v111-bases-preview", "--live-local-test", "--live-release-preview", "-appAppearance", "light"]
+        app.launch()
+        let open = app.buttons["open-live-broadcast"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        captureHistory(app, name: "AppStore-01-现场记分含直播入口")
+        open.tap()
+        let start = app.buttons["start-live-broadcast"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5)); start.tap()
+        let share = app.buttons["share-live-link"]
+        XCTAssertTrue(share.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "https://baseballmaster.cc/livestreaming/novideo/")).firstMatch.exists)
+        captureHistory(app, name: "AppStore-03-直播分享")
+        share.tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
+        captureHistory(app, name: "AppStore-03b-系统分享")
+    }
+
+    private func captureHistory(_ app: XCUIApplication, name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+}

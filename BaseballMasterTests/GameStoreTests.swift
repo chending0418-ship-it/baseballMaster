@@ -1631,10 +1631,13 @@ final class GameStoreTests: XCTestCase {
         XCTAssertTrue(store.game.automaticRunnerIDs?.contains(pinchRunner.id) == true)
         XCTAssertFalse(store.game.automaticRunnerIDs?.contains(firstAutomatic.id) == true)
 
+        let originalPitcher = store.currentPitcher
         let newPitcher = store.game.fieldingTeam.players[1]
         store.changePitcher(to: newPitcher)
         XCTAssertTrue(store.applyPlay(.homeRun))
-        XCTAssertEqual(store.pitchingLine(for: newPitcher).runs, 3)
+        XCTAssertEqual(store.pitchingLine(for: newPitcher).runs, 1)
+        XCTAssertEqual(store.pitchingLine(for: originalPitcher).runs, 2)
+        XCTAssertEqual(store.pitchingLine(for: originalPitcher).earnedRuns, 0)
         XCTAssertEqual(store.pitchingLine(for: newPitcher).earnedRuns, 1)
     }
 
@@ -3494,5 +3497,344 @@ extension GameStoreTests {
         store.game.pitching[store.currentPitcher.id] = PitchingLine(pitches: 3)
         XCTAssertEqual(store.ruleNoticeSummary(), "还有 3 球")
         XCTAssertTrue(store.ruleNotices().contains { $0.contains("达到 2 局投球限制") })
+    }
+}
+
+extension GameStoreTests {
+    func testHistoryNoEditReplayPreservesScoresStatsAndIDs() throws {
+        let store = freshStore()
+        store.recordPitch(.ball); store.recordPitch(.calledStrike)
+        XCTAssertTrue(store.applyPlay(.single))
+        XCTAssertTrue(store.applyPlay(.double))
+        for _ in 0..<3 { XCTAssertTrue(store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays.first)) }
+        let draft = try store.makeCorrectionDraft()
+        let preview = store.previewCorrection(draft)
+        XCTAssertNil(preview.conflict)
+        XCTAssertTrue(preview.game.historyScoreEquivalent(to: store.game))
+        XCTAssertEqual(preview.game.scoringEvents?.map(\.id), store.game.scoringEvents?.map(\.id))
+        XCTAssertEqual(preview.game.plateAppearances?.map(\.id), store.game.plateAppearances?.map(\.id))
+        XCTAssertEqual(preview.game.currentPlateAppearanceID, store.game.currentPlateAppearanceID)
+        XCTAssertEqual(store.previewCorrection(draft).game, preview.game, "Preview must be deterministic")
+    }
+
+    func testHistoryMissedPitcherPreservesInheritedRunnerAndSaveRevert() throws {
+        let store = freshStore()
+        let firstPitcher = store.currentPitcher
+        XCTAssertTrue(store.applyPlay(.single))
+        let boundary = store.game.historyJournal!.operations.count
+        let before = store.game
+        let newPitcher = try XCTUnwrap(store.availablePitchers.first { $0.id != firstPitcher.id })
+        store.recordPitch(.ball)
+        XCTAssertTrue(store.applyPlay(.homeRun))
+        let original = store.game
+        var draft = try store.makeCorrectionDraft()
+        draft.journal.operations.insert(HistoryOperation(command: .pitcher(newPitcher.id), before: before, inserted: true), at: boundary)
+        let preview = store.previewCorrection(draft)
+        XCTAssertNil(preview.conflict)
+        XCTAssertEqual(store.game, original, "Preview cannot mutate official scoring")
+        XCTAssertEqual(preview.game.pitching[firstPitcher.id]?.pitches, 1)
+        XCTAssertEqual(preview.game.pitching[newPitcher.id]?.pitches, 2)
+        XCTAssertEqual(preview.game.pitching[firstPitcher.id]?.runs, 1)
+        XCTAssertEqual(preview.game.pitching[newPitcher.id]?.runs, 1)
+        XCTAssertEqual(preview.game.awayScore, 2)
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+        store.recordPitch(.calledStrike)
+        let revision = try XCTUnwrap(store.game.correctionRevisions?.last)
+        let revert = try store.draftRevertingCorrection(revision)
+        XCTAssertTrue(store.saveCorrection(revert), store.actionErrorMessage ?? "")
+        XCTAssertEqual(store.game.strikes, 1, "Reverting correction preserves subsequent pitches")
+        XCTAssertEqual(store.game.pitching[firstPitcher.id]?.pitches, 4)
+        XCTAssertEqual(store.game.correctionRevisions?.count, 2)
+    }
+
+    func testHistoryPositionsReassignOnlyLaterDefenseWithoutBattingChanges() throws {
+        let store = freshStore()
+        let shortstop = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .shortstop })
+        let second = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .secondBase })
+        XCTAssertTrue(store.applyPlay(.error, defensivePlay: .error(at: .shortstop)))
+        let before = store.game, boundary = store.game.historyJournal!.operations.count
+        XCTAssertTrue(store.applyPlay(.error, defensivePlay: .error(at: .shortstop)))
+        var draft = try store.makeCorrectionDraft()
+        draft.journal.operations.insert(HistoryOperation(command: .position(shortstop.id, .secondBase), before: before, inserted: true), at: boundary)
+        let preview = store.previewCorrection(draft)
+        XCTAssertNil(preview.conflict)
+        XCTAssertEqual(preview.game.fielding[shortstop.id]?.errors, 1)
+        XCTAssertEqual(preview.game.fielding[second.id]?.errors, 1)
+        XCTAssertEqual(preview.game.homeBattingOrderIDs, store.game.homeBattingOrderIDs)
+        XCTAssertEqual(preview.game.homeExitedPlayerIDs, store.game.homeExitedPlayerIDs)
+    }
+
+    func testHistoryHitToErrorAndAdditionalErrorsCanBeRevertedExactly() throws {
+        let store = freshStore()
+        XCTAssertTrue(store.applyPlay(.single))
+        let batter = store.game.baseRunners[.first]!
+        let original = store.game
+        var draft = try store.makeCorrectionDraft()
+        let i = try XCTUnwrap(draft.journal.operations.firstIndex { if case .play = $0.command { return true }; return false })
+        guard case .play(_, _, let moves, _) = draft.journal.operations[i].command else { return XCTFail() }
+        draft.journal.operations[i].command = .play(.error, .error(at: .shortstop), moves, nil)
+        draft.journal.operations[i].edited = true
+        let preview = store.previewCorrection(draft)
+        XCTAssertNil(preview.conflict)
+        XCTAssertEqual(preview.game.awayHits, 0); XCTAssertEqual(preview.game.homeErrors, 1)
+        XCTAssertEqual(preview.game.batting[batter.id]?.plateAppearances, 1)
+        XCTAssertEqual(preview.game.pitching[store.currentPitcher.id]?.pitches, 1)
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+        XCTAssertTrue(store.saveCorrection(try store.draftRevertingCorrection(store.game.correctionRevisions!.last!)))
+        XCTAssertTrue(store.game.historyScoreEquivalent(to: original))
+        var extra = try store.makeCorrectionDraft()
+        extra.journal.operations[i].errors = [HistoryErrorCredit(playerID: store.activeFielders[1].id), HistoryErrorCredit(playerID: store.activeFielders[2].id, count: 2)]
+        extra.journal.operations[i].edited = true
+        XCTAssertTrue(store.saveCorrection(extra), store.actionErrorMessage ?? "")
+        XCTAssertEqual(store.game.awayHits, 1); XCTAssertEqual(store.game.homeErrors, 3)
+        XCTAssertEqual(store.game.batting[batter.id]?.plateAppearances, 1)
+    }
+
+    func testHistoryExtraBallConflictIsLocalizedAndCanBeRepairedInDraft() throws {
+        let store = freshStore()
+        for _ in 0..<3 { store.recordPitch(.ball) }
+        store.recordPitch(.calledStrike)
+        var draft = try store.makeCorrectionDraft()
+        let first = try XCTUnwrap(store.previewCorrection(draft).statesBefore[draft.journal.operations[0].id])
+        draft.journal.operations.insert(HistoryOperation(command: .pitch(.ball), before: first, inserted: true), at: 0)
+        let conflict = store.previewCorrection(draft)
+        XCTAssertNotNil(conflict.conflictID)
+        XCTAssertFalse(store.saveCorrection(draft))
+        let i = try XCTUnwrap(draft.journal.operations.firstIndex { $0.id == conflict.conflictID })
+        draft.journal.operations[i].acceptsNewContext = true
+        XCTAssertNil(store.previewCorrection(draft).conflict)
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+        XCTAssertEqual(store.game.balls, 0); XCTAssertEqual(store.game.strikes, 1)
+        XCTAssertEqual(store.game.baseRunners.count, 1)
+    }
+
+    func testHistoryFinishedGameStaysFinishedBackupAndStaleDraft() throws {
+        let store = freshStore()
+        XCTAssertTrue(store.applyPlay(.single)); store.finishGame()
+        let endedAt = store.game.endedAt
+        var draft = try store.makeCorrectionDraft()
+        let i = try XCTUnwrap(draft.journal.operations.firstIndex { if case .play = $0.command { return true }; return false })
+        draft.journal.operations[i].errors = [HistoryErrorCredit(playerID: store.activeFielders[1].id)]
+        draft.journal.operations[i].edited = true
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+        XCTAssertTrue(store.game.isFinal); XCTAssertEqual(store.game.endedAt, endedAt); XCTAssertNil(store.game.clockRunningSince)
+        XCTAssertFalse(store.saveCorrection(draft), "Old revision cannot overwrite new scoring")
+        let restored = GameStore(persistenceURL: nil)
+        try restored.restoreBackup(LocalBackup.read(store.exportBackup()))
+        restored.openGame(id: store.activeStoredGame!.id)
+        XCTAssertEqual(restored.game, store.game)
+        XCTAssertNil(restored.previewCorrection(try restored.makeCorrectionDraft()).conflict)
+    }
+
+    func testHistoryTwoStrikePinchHitterAndTwoBallPitcherCountResponsibility() throws {
+        let store = freshStore()
+        let firstBatter = store.currentBatter
+        store.recordPitch(.calledStrike); store.recordPitch(.calledStrike)
+        let pinch = try XCTUnwrap(store.battingBenchPlayers.first)
+        store.replaceCurrentBatter(with: pinch)
+        store.recordPitch(.swingingStrike)
+        XCTAssertEqual(store.game.batting[firstBatter.id]?.strikeouts, 1)
+        XCTAssertEqual(store.game.batting[pinch.id, default: BattingLine()].plateAppearances, 0)
+        let pitcher = store.currentPitcher
+        store.recordPitch(.ball); store.recordPitch(.ball)
+        let replacement = try XCTUnwrap(store.availablePitchers.first { $0.id != pitcher.id })
+        store.changePitcher(to: replacement)
+        store.recordPitch(.ball); store.recordPitch(.ball)
+        XCTAssertEqual(store.game.pitching[pitcher.id]?.walks, 1)
+        XCTAssertEqual(store.game.pitching[replacement.id, default: PitchingLine()].walks, 0)
+        XCTAssertEqual(store.game.runnerPitcherIDs?[store.game.baseRunners[.first]!.id], pitcher.id)
+    }
+}
+
+extension GameStoreTests {
+    func testHistoryFailedAtomicSaveRetriesAndSurvivesDiskRestart() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("scores.sqlite")
+        let store = GameStore(persistenceURL: url)
+        try store.restoreBackup(LocalBackup.read(freshStore().exportBackup()))
+        store.recordPitch(.ball)
+        var draft = try store.makeCorrectionDraft()
+        draft.journal.operations[0].command = .pitch(.calledStrike); draft.journal.operations[0].edited = true
+        let original = store.game, revision = store.activeStoredGame!.revision
+        CoreDataRosterStore.writeFault = { throw CocoaError(.fileWriteOutOfSpace) }
+        XCTAssertFalse(store.saveCorrection(draft))
+        XCTAssertEqual(store.game, original); XCTAssertEqual(store.activeStoredGame!.revision, revision)
+        CoreDataRosterStore.writeFault = nil
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+        let reopened = GameStore(persistenceURL: url)
+        XCTAssertEqual(reopened.game, store.game)
+        XCTAssertEqual(reopened.game.correctionRevisions?.count, 1)
+        reopened.undo()
+        XCTAssertEqual(reopened.game.correctionRevisions?.count, 1, "Persistent audit cannot disappear through the live undo button")
+    }
+
+    func testHistoryOldStructuredReplayOrHonestLocalFallback() throws {
+        let store = freshStore()
+        store.recordPitch(.ball); store.recordPitch(.calledStrike); XCTAssertTrue(store.applyPlay(.single))
+        let original = store.game
+        store.game.historyJournal = nil
+        let draft = try store.makeCorrectionDraft()
+        XCTAssertNil(draft.compatibilityNote)
+        XCTAssertFalse(draft.journal.operations.isEmpty)
+        let preview = store.previewCorrection(draft)
+        XCTAssertNil(preview.conflict)
+        XCTAssertTrue(preview.game.historyScoreEquivalent(to: original))
+        store.recordSubstitution("旧版仅文字换人")
+        store.game.historyJournal = nil
+        let limited = try store.makeCorrectionDraft()
+        XCTAssertNotNil(limited.compatibilityNote)
+        XCTAssertTrue(limited.journal.legacyPrefix)
+        XCTAssertTrue(limited.journal.operations.isEmpty)
+        XCTAssertTrue(store.previewCorrection(limited).game.historyScoreEquivalent(to: store.game))
+    }
+
+    func testHistoryPinchRunnerReentryAndMissedScoreKeepOnePlateAppearance() throws {
+        let store = v111Store(rules: GameRules())
+        let a = store.currentBatter
+        XCTAssertTrue(store.applyPlay(.single))
+        let b = try XCTUnwrap(store.battingBenchPlayers.first)
+        let firstBoundary = store.game.historyJournal!.operations.count
+        let before = store.game
+        let moves = [RunnerDecision(player: a, origin: .base(.first), destination: .base(.third)), RunnerDecision(player: store.currentBatter, origin: .batter, destination: .base(.first))]
+        XCTAssertTrue(store.applyPlay(.single, decisions: moves))
+        let boundary2 = store.game.historyJournal!.operations.count, before2 = store.game
+        XCTAssertTrue(store.applyPlay(.homeRun))
+        var draft = try store.makeCorrectionDraft()
+        draft.journal.operations.insert(HistoryOperation(command: .pinchRunner(.third, a.id), before: before2, inserted: true), at: boundary2)
+        draft.journal.operations.insert(HistoryOperation(command: .pinchRunner(.first, b.id), before: before, inserted: true), at: firstBoundary)
+        let preview = store.previewCorrection(draft)
+        XCTAssertNil(preview.conflict)
+        XCTAssertEqual(preview.game.awayScore, 3)
+        XCTAssertEqual(preview.game.batting[a.id]?.runs, 1)
+        XCTAssertEqual(preview.game.batting[b.id, default: BattingLine()].plateAppearances, 0)
+        XCTAssertEqual(preview.game.awayBattingOrderIDs[0], a.id)
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+    }
+
+    func testHistoryErrorManualResponsibilityAndIncompleteSituationExports() throws {
+        let store = freshStore()
+        XCTAssertTrue(store.applyPlay(.triple))
+        XCTAssertTrue(store.applyPlay(.single))
+        var draft = try store.makeCorrectionDraft()
+        let i = draft.journal.operations.count - 1
+        draft.journal.operations[i].errors = [HistoryErrorCredit(playerID: store.activeFielders[1].id)]
+        draft.journal.operations[i].edited = true
+        let uncertain = store.previewCorrection(draft)
+        XCTAssertTrue(uncertain.game.statisticsIncomplete == true)
+        draft.journal.operations[i].statisticsRuling = HistoryStatisticsRuling(runsBattedIn: 1, earnedRuns: [store.currentPitcher.id: 1], unearnedRunnerIDs: [])
+        let reviewed = store.previewCorrection(draft)
+        XCTAssertNil(reviewed.conflict); XCTAssertNotEqual(reviewed.game.statisticsIncomplete, true)
+        XCTAssertTrue(store.saveCorrection(draft))
+        var incomplete = try store.makeCorrectionDraft()
+        var state = HistorySituation(store.game); state.outs = 1; state.awayScore = 3
+        incomplete.journal.operations.append(HistoryOperation(command: .situation(state), before: store.game, inserted: true))
+        XCTAssertTrue(store.saveCorrection(incomplete), store.actionErrorMessage ?? "")
+        XCTAssertTrue(store.game.statisticsIncomplete == true)
+        XCTAssertEqual(store.game.awayHits, 2, "Unknown process must not fabricate additional hits")
+        let exporter = GameExportService(game: store.game, rules: store.activeRules, plateAppearances: store.plateAppearanceRecords(), gameEvents: store.nonPlateAppearanceGameEvents())
+        XCTAssertTrue(exporter.completeRecordText().contains("统计可能不完整"))
+        XCTAssertTrue(LiveSnapshot(store.activeStoredGame!).notice.contains("统计可能不完整"))
+        let data = PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: nil).pdfData(style: .textOnly)
+        XCTAssertTrue(try reportText(data, portrait: true).contains("统计可能不完整"))
+    }
+
+    func testHistoryNoEditCannotCreateSpuriousRevisionAndThirdOutDoesNotMoveHistory() throws {
+        let store = freshStore()
+        for _ in 0..<2 { XCTAssertTrue(store.applyPlay(.groundOut)) }
+        store.recordPitch(.ball)
+        var draft = try store.makeCorrectionDraft()
+        XCTAssertFalse(store.saveCorrection(draft))
+        XCTAssertEqual(store.game.correctionRevisions?.count ?? 0, 0)
+        let last = draft.journal.operations.last!
+        let before = store.previewCorrection(draft).statesBefore[last.id]!
+        let worker = store.historyWorker(store.activeStoredGame!, state: before)
+        draft.journal.operations.insert(HistoryOperation(command: .play(.groundOut, nil, worker.suggestedRunnerDecisions(for: .groundOut), nil), before: before, inserted: true), at: draft.journal.operations.count - 1)
+        let result = store.previewCorrection(draft)
+        XCTAssertEqual(result.conflictID, last.id)
+        XCTAssertFalse(store.saveCorrection(draft))
+        XCTAssertTrue(store.game.isTop); XCTAssertEqual(store.game.outs, 2)
+    }
+
+    func testHistorySharedReplayCoversCoachDHLineupAndTiebreak() throws {
+        for mode in [GameMode.standard, .coachPitch] {
+            var rules = GameRules(); rules.mode = mode; rules.coachPitchLimit = 3
+            let store = v111Store(rules: rules)
+            store.recordPitch(.ball); store.recordPitch(.calledStrike); store.recordPitch(.foul)
+            if mode == .standard {
+                var lineup = store.lineupDraft(forHomeTeam: true)
+                let first = lineup.fieldingIDs[3], second = lineup.fieldingIDs[5]
+                let ai = lineup.players.firstIndex { $0.id == first }!, bi = lineup.players.firstIndex { $0.id == second }!
+                let pos = lineup.players[ai].primaryPosition
+                lineup.players[ai].primaryPosition = lineup.players[bi].primaryPosition; lineup.players[bi].primaryPosition = pos
+                lineup.changes = ["两人交换"]
+                XCTAssertTrue(store.saveLineup(lineup))
+                store.enableTiebreakFromCurrentInning(runnerBases: [.second])
+                store.placeTiebreakRunner(try XCTUnwrap(store.recommendedTiebreakRunner), on: .second)
+            }
+            let preview = store.previewCorrection(try store.makeCorrectionDraft())
+            XCTAssertNil(preview.conflict)
+            XCTAssertTrue(preview.game.historyScoreEquivalent(to: store.game))
+        }
+    }
+}
+
+extension GameStoreTests {
+    func testHistoryCancelledActionAndPendingReviewReplayRemainConsistent() throws {
+        let store = freshStore()
+        let batter = store.currentBatter
+        XCTAssertTrue(store.applyPlay(.single))
+        let ruling = ViolationAdjudication(ballStatus: .dead, previousPlayDisposition: .cancel, plateAppearanceDisposition: .batterOut,
+            runnerDecisions: [RunnerDecision(player: batter, origin: .batter, destination: .out)], countsAsAtBat: true, isFinalRuling: true)
+        XCTAssertTrue(store.recordViolation(.batterInterference, adjudication: ruling))
+        let preview = store.previewCorrection(try store.makeCorrectionDraft())
+        XCTAssertNil(preview.conflict)
+        XCTAssertTrue(preview.game.historyScoreEquivalent(to: store.game))
+        XCTAssertEqual(preview.game.scoringEvents?.map(\.id), store.game.scoringEvents?.map(\.id))
+        XCTAssertTrue(store.applyPlay(.pending))
+        let event = try XCTUnwrap(store.game.scoringEvents?.last)
+        XCTAssertTrue(store.reviewPendingEvent(id: event.id, title: "一垒安打已确认", category: .battedBall, notation: "1B", primaryPlayerID: event.primaryPlayerID,
+            secondaryPlayerID: event.secondaryPlayerID, ballStatus: .live, resolvedOutcome: .single, note: "复核"))
+        let afterReview = store.previewCorrection(try store.makeCorrectionDraft())
+        XCTAssertNil(afterReview.conflict)
+        XCTAssertTrue(afterReview.game.historyScoreEquivalent(to: store.game))
+    }
+
+    func testHistoryDHAndDoubleSwitchReplayPreservesParticipation() throws {
+        let store = GameStore(persistenceURL: nil)
+        let lineup = store.currentTeam!.players.prefix(9).enumerated().map { LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: FieldPosition.allCases[$0.offset]) }
+        store.startNewGame(opponent: store.opponentTeams[0], isHome: true, rules: GameRules(usesDesignatedHitter: true, allowsTwoWayPlayer: true), lineup: lineup)
+        let original = store.currentPitcher, relief = try XCTUnwrap(store.fieldingBenchPlayers.first)
+        store.recordPitch(.ball)
+        var roster = store.lineupDraft(forHomeTeam: true)
+        XCTAssertTrue(roster.replace(original.id, with: relief.id, pitchingOnly: true)); XCTAssertTrue(store.saveLineup(roster))
+        store.recordPitch(.calledStrike)
+        roster = store.lineupDraft(forHomeTeam: true)
+        XCTAssertTrue(roster.replace(relief.id, with: original.id)); XCTAssertTrue(store.saveLineup(roster))
+        let preview = store.previewCorrection(try store.makeCorrectionDraft())
+        XCTAssertNil(preview.conflict)
+        XCTAssertTrue(preview.game.historyScoreEquivalent(to: store.game))
+        XCTAssertEqual(preview.game.homeDesignatedHitterID, store.game.homeDesignatedHitterID)
+        let other = v111Store(rules: GameRules())
+        let old = other.currentPitcher, catcher = other.activeFielders.first { $0.primaryPosition == .catcher }!, bench = other.fieldingBenchPlayers
+        XCTAssertTrue(other.performDoubleSwitch(firstOut: old, firstIn: bench[0], firstPosition: .pitcher, secondOut: catcher, secondIn: bench[1], secondPosition: .catcher))
+        other.recordPitch(.ball)
+        let replay = other.previewCorrection(try other.makeCorrectionDraft())
+        XCTAssertNil(replay.conflict); XCTAssertTrue(replay.game.historyScoreEquivalent(to: other.game))
+    }
+}
+
+extension GameStoreTests {
+    func testHistoryFielderChoicePreservesReplacedInheritedRunnerResponsibility() throws {
+        let store = v111Store(rules: GameRules())
+        let oldPitcher = store.currentPitcher, runner = store.currentBatter
+        XCTAssertTrue(store.applyPlay(.single))
+        let newPitcher = try XCTUnwrap(store.fieldingBenchPlayers.first)
+        store.changePitcher(to: newPitcher)
+        let batter = store.currentBatter
+        XCTAssertTrue(store.applyPlay(.fieldersChoice, decisions: [RunnerDecision(player: runner, origin: .base(.first), destination: .out), RunnerDecision(player: batter, origin: .batter, destination: .base(.first))]))
+        XCTAssertEqual(store.game.runnerPitcherIDs?[batter.id], oldPitcher.id)
+        XCTAssertTrue(store.applyPlay(.homeRun))
+        XCTAssertEqual(store.pitchingLine(for: oldPitcher).runs, 1)
+        XCTAssertEqual(store.pitchingLine(for: newPitcher).runs, 1)
+        XCTAssertTrue(store.previewCorrection(try store.makeCorrectionDraft()).game.historyScoreEquivalent(to: store.game))
     }
 }
