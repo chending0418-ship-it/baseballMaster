@@ -382,5 +382,77 @@
     "BaseballMaster/StatisticsPDFReports.swift": "7ec65b3df46278eac46ed91d3de472e5dc97a828a6cf843f79a2b1e23ec1b468",
     "BaseballMaster/StatisticsViews.swift": "b5d252ddfee27b72b71134bab546740ddd0eab75b606aa83fd104090a4815bea",
     "BaseballMaster/UpgradeProtection.swift": "05a4d203cdd14f3d01acd00121c232c32ffa2a032c5da4b9027e653b8744f8cf"
+  },
+  "screenshotSupplement": {
+    "checkedAt": "2026-10-09T03:38:05.672119+00:00",
+    "displaySlot": "iPhone 6.1 / 6.3 inches (Dynamic Island medium display)",
+    "screenshotSize": [
+      1206,
+      2622
+    ],
+    "count": 7,
+    "format": "8-bit RGB PNG, no alpha",
+    "visualReviewPassed": true,
+    "existing14PNGsUnchanged": true,
+    "source": "Existing approved HTML/CSS template and original app screenshots; UI not redrawn",
+    "files": [
+      {
+        "file": "iphone-6.3/01-成人慢垒记分.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/01.png",
+        "sha256": "83f8c904a1254990103670e6a771af7d840309f95805b3a5591f261e5b4b4bca"
+      },
+      {
+        "file": "iphone-6.3/02-双方阵容.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/02.png",
+        "sha256": "f793e96829c0984f249f4050f082b24da5379a5c18df95a5199445be5bdd8711"
+      },
+      {
+        "file": "iphone-6.3/03-本场慢垒规则.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/03.png",
+        "sha256": "ec66ce39050f1592f9148898141f525ef99cb75189b8d0f6a804185644a0f0ec"
+      },
+      {
+        "file": "iphone-6.3/04-Illegal裁判结果.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/04.png",
+        "sha256": "873aebea0b6bff66101aabe45857031a1b2876cdfa7fc211cb8babe1218d7a54"
+      },
+      {
+        "file": "iphone-6.3/05-慢垒文字直播.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/05.png",
+        "sha256": "7071b2f355bfdccfe108edf7ac1679eca9064b7b298988df21efe14dd2ab4337"
+      },
+      {
+        "file": "iphone-6.3/06-历史纠错.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/06.png",
+        "sha256": "1a5c938e54a1d549556075f013575a158b466225251dcf970847f1ff0cc8ded7"
+      },
+      {
+        "file": "iphone-6.3/07-完整战报.png",
+        "width": 1206,
+        "height": 2622,
+        "alpha": false,
+        "source": "raw/07.png",
+        "sha256": "85fcfe1aacb9b2f8012365a35fabd337851c7d6fffcc6935693ed4ed94f531ab"
+      }
+    ],
+    "reference": "https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications"
   }
 }

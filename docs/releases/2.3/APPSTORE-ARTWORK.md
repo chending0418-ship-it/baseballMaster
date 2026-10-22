@@ -1,6 +1,6 @@
 # 2.3 商店截图与宣传图片
 
-2026-10-08。沿用用户已确认的 App 图标、深绿色品牌底色、BASEBALL 粗体＋MASTER 常规字重及中文副标题。画面使用本版实际 App 与正式配套观赛网页，全部为合成比赛，不重绘界面。
+2026-10-09 补充 6.1／6.3 英寸栏目适用截图。沿用用户已确认的 App 图标、深绿色品牌底色、BASEBALL 粗体＋MASTER 常规字重及中文副标题。画面使用本版实际 App 与正式配套观赛网页，全部为合成比赛，不重绘界面。
 
 | 编号 | 内容 |
 | --- | --- |
@@ -12,8 +12,17 @@
 | 06 | 历史纠错：既有四类入口，2.3 继续适配三种模式 |
 | 07 | 完整比赛与战报：实际记录六个出局，两队投手各 1.0 局 |
 
-- 主上传：`output/releases/2.3/app-store/iphone-6.9/`，七张 1320 × 2868 RGB PNG。
-- 备用：`output/releases/2.3/app-store/iphone-6.5/`，七张 1242 × 2688 RGB PNG。
+按 App Store Connect 当前选中的显示屏栏目选择对应尺寸，不能混用：
+
+| 显示屏栏目 | 素材目录（相对 `output/releases/2.3/app-store/`） | 每套七张 PNG 的尺寸 |
+| --- | --- | --- |
+| iPhone 6.1／6.3 英寸（灵动岛中尺寸） | `iphone-6.3/` | 1206 × 2622 |
+| iPhone 6.9 英寸（灵动岛大尺寸） | `iphone-6.9/` | 1320 × 2868 |
+| iPhone 6.5 英寸（面容 ID 大尺寸） | `iphone-6.5/` | 1242 × 2688 |
+
+- 当前 6.1／6.3 英寸栏目可直接上传的纯 PNG 文件夹：`output/releases/2.3/upload-iphone-6.1-6.3/`。
+- 同尺寸独立压缩包：`output/releases/2.3/BaseballMaster-2.3-iPhone-6.1-6.3.zip`。
+- 886 × 1920 与 1920 × 886 是 App 预览视频的尺寸，不用于这组静态截图。
 - 总览：同目录 `index.html` 与 `overview.png`，可点击预览，不作为商店设备截图上传。
 - 原图与来源：同目录 `raw/`、`manifest.json`；2.3 原始 App 图来自 iPhone 17 Pro Max／iOS 26.1 当前构建的 XCTest 附件，网页从正式 HTTPS 采集。
 - 传播图：`output/marketing/2.3/release-poster/baseballmaster-2.3-update.png`，1440 × 1920 RGB PNG；官网公开副本为 `website/public/assets/baseballmaster-2.3-update.png`。
