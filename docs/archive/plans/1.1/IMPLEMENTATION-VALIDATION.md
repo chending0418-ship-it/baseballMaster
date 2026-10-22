@@ -27,7 +27,7 @@
 
 ## 自动化验证
 
-- 单元测试 107 项，0 失败。最终结果：`/tmp/BM11-unit-final.xcresult`；[保留的测试摘要](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/unit-test-summary.json)。
+- 单元测试 107 项，0 失败。最终结果：`/tmp/BM11-unit-final.xcresult`；[保留的测试摘要](../../../../output/validation/1.1/implementation/qa/unit-test-summary.json)。
 - 覆盖既有计分、统计、报告和备份；新增空名单与 00 往返、双方删除保护、无本队观赛、打席 ID 撤销重做／重启、跨半局分段、代打身份、得分封顶、挤分打点、教练末球／真实三振、禁用规则、恢复统计，以及升级逐字段比较和各阶段故障重试。
 - 升级故障测试在复制后、迁移后、校验后、切换前注入空间不足；另测打席补写失败以及记分事务保存失败。实际进程被系统终止的验证留在真机发布验收中。
 - UI：iPhone SE（第 3 代）通过教练投手终场恢复、半局上限提示／继续／手动换边、满垒浅色／深色；iPhone 17 Pro 通过教练终场恢复、满垒浅色／深色、首页进入记分／隐藏导航／返回、空姓名与 00 编辑。
@@ -52,12 +52,12 @@ xcodebuild -project BaseballMaster.xcodeproj -scheme BaseballMaster \
 
 | 场景 | 实际截图 |
 | --- | --- |
-| 大屏从首页进入，左上角返回、底部导航隐藏 | [大屏记分](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/large-scoring-navigation.png) |
-| 大屏满垒浅色／深色 | [浅色](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/large-bases-light.png) · [深色](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/large-bases-dark.png) |
-| 大屏教练模式、二垒单跑者 | [教练记分](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/large-coach-second-base.png) |
-| 小屏去掉场地图、满垒浅色／深色 | [浅色](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/small-bases-light.png) · [深色](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/small-bases-dark.png) |
-| 小屏从首页进入，保留返回入口 | [小屏记分](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/small-scoring-navigation.png) |
-| 小屏教练模式／二垒单跑者 | [教练记分](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/small-coach-second-base.png) · [深色](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/small-second-base-dark.png) |
+| 大屏从首页进入，左上角返回、底部导航隐藏 | [大屏记分](../../../../output/validation/1.1/implementation/qa/large-scoring-navigation.png) |
+| 大屏满垒浅色／深色 | [浅色](../../../../output/validation/1.1/implementation/qa/large-bases-light.png) · [深色](../../../../output/validation/1.1/implementation/qa/large-bases-dark.png) |
+| 大屏教练模式、二垒单跑者 | [教练记分](../../../../output/validation/1.1/implementation/qa/large-coach-second-base.png) |
+| 小屏去掉场地图、满垒浅色／深色 | [浅色](../../../../output/validation/1.1/implementation/qa/small-bases-light.png) · [深色](../../../../output/validation/1.1/implementation/qa/small-bases-dark.png) |
+| 小屏从首页进入，保留返回入口 | [小屏记分](../../../../output/validation/1.1/implementation/qa/small-scoring-navigation.png) |
+| 小屏教练模式／二垒单跑者 | [教练记分](../../../../output/validation/1.1/implementation/qa/small-coach-second-base.png) · [深色](../../../../output/validation/1.1/implementation/qa/small-second-base-dark.png) |
 
 除“从首页进入”的截图外，规则场景使用直达记分页的测试入口，因此这些截图没有上一级返回按钮；真实导航已另行验证。
 
@@ -78,4 +78,4 @@ xcodebuild -project BaseballMaster.xcodeproj -scheme BaseballMaster \
 - 针对性数据测试：普通球员投球计数／换投／撤销重做／重启，以及教练模式不产生球员投手数据，2 项通过（`/tmp/BM11-pitch-count-check.xcresult`）。
 - iPhone 17 Pro 和 iPhone SE（第 3 代）各通过 1 项完整 UI 验证：初始 0 球、投至 3 球、撤销／重做、换投为 0 球、投球增加、撤销换投恢复原球数；确认操作按钮在屏内、底部导航隐藏，教练模式不出现球员累计球数。
 - 结果：`/tmp/BM11-live-pitches-large-final.xcresult`、`/tmp/BM11-live-pitches-small-final.xcresult`。
-- 最新截图：[大屏用球数](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/large-pitch-count.png) · [小屏用球数](/Users/JasonChan/Documents/BaseballMaster/output/v1.1/qa/small-pitch-count.png)。
+- 最新截图：[大屏用球数](../../../../output/validation/1.1/implementation/qa/large-pitch-count.png) · [小屏用球数](../../../../output/validation/1.1/implementation/qa/small-pitch-count.png)。

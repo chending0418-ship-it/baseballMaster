@@ -1,6 +1,6 @@
 # TestFlight 1.6（1）交付目录
 
-按仓库根目录的 [发布交接](../../../RELEASE_REVIEW.md) 操作。开发签名归档位于 `output/build/BaseballMaster-1.6-1.xcarchive`；当前没有成功导出的 `.ipa`，没有上传或分发。
+按仓库根目录的 [发布交接](../2.0/RELEASE-HANDOFF.md) 操作。开发签名归档位于 `output/releases/1.6-1-live-draft/archives/BaseballMaster-1.6-1-live-draft.xcarchive`；当前没有成功导出的 `.ipa`，没有上传或分发。
 
 | 文件 | 使用方式 |
 | --- | --- |
@@ -15,4 +15,4 @@
 | `screenshots/` | 1.6 的 1284 × 2778 原始模拟器截图及总览，无裁切／重画 |
 | `qa/` | 回归结果、合成升级前后对照、归档核验、服务端日志及限制说明 |
 
-本次目标为 TestFlight，正式 App Store 上架另行处理。旧 `output/app-store/` 的 1.5 截图仍保留，不将其当成 1.6 新截图。`screenshots/` 用独立内存示例打开实际页面，部分页面作为预览根页面，因此没有前级导航返回按钮；正常比赛返回路径另由 UI 回归验证。现有八张是页面与布局验收素材，直播分享界面另保存在 `qa/ui-screenshots/`，其中的本机地址不是线上观赛链接。
+本次目标为 TestFlight，正式 App Store 上架另行处理。旧 `output/releases/1.5-3/app-store/` 的 1.5 截图仍保留，不将其当成 1.6 新截图。`screenshots/` 用独立内存示例打开实际页面，部分页面作为预览根页面，因此没有前级导航返回按钮；正常比赛返回路径另由 UI 回归验证。现有八张是页面与布局验收素材，直播分享界面另保存在 `qa/ui-screenshots/`，其中的本机地址不是线上观赛链接。

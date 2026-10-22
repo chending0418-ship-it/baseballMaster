@@ -27,7 +27,7 @@ xcodebuild -project BaseballMaster.xcodeproj -scheme BaseballMaster \
   -derivedDataPath /tmp/BaseballMaster-website-2.0 CODE_SIGNING_ALLOWED=NO build
 ```
 
-原始 PNG、构建日志、二进制 SHA-256、采集入口记录保存在 `output/website/baseballmaster-home/screenshots-2.0/`。这些开发记录不进入公开部署包。
+原始 PNG、构建日志、二进制 SHA-256、采集入口记录保存在 `output/deployments/website/baseballmaster-home/screenshots-2.0/`。这些开发记录不进入公开部署包。
 
 ## 2.1 文字直播预览
 
@@ -40,4 +40,4 @@ xcodebuild -project BaseballMaster.xcodeproj -scheme BaseballMaster \
 
 采集后已关闭临时服务；发布的仅是静态 PNG，未部署直播 API、开放观赛入口或启用 App 直播功能。官网与放大弹窗均标注开发版／2.1 预览。
 
-原始截图、导航和页面预览、来源文件哈希、响应式检查记录位于 `output/website/baseballmaster-home/live-preview/`，不进入公开部署包。
+原始截图、导航和页面预览、来源文件哈希、响应式检查记录位于 `output/deployments/website/baseballmaster-home/live-preview/`，不进入公开部署包。

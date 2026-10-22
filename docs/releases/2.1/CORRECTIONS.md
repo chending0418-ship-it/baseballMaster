@@ -62,7 +62,7 @@
 - 真机 Release 编译验证与 2.2 同步回归见本目录的 `validation.json`。
 - 真机覆盖安装、签名归档和 App Store 上传仍按发布流程执行，不由模拟器截图代替。
 
-本机原始证据在 `output/history-complete-small.xcresult`、`output/history-release-validation.xcresult` 和 `output/correction-delivery-large.xcresult`，生成目录不纳入 Git。
+本机原始证据在 `output/validation/2.1/corrections/history-complete-small.xcresult`、`output/validation/2.1/corrections/history-release-validation.xcresult` 和 `output/validation/2.1/corrections/correction-delivery-large.xcresult`，生成目录不纳入 Git。
 
 ## 实际截图
 

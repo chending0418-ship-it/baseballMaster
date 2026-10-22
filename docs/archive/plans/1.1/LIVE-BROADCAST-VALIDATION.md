@@ -16,7 +16,7 @@
 - `BaseballMaster/LiveBroadcastViews.swift`：开启、二维码、系统分享、同步与关闭。
 - `GameStore` 在本地保存成功后触发发布，App 前台每十秒心跳；新增字段不替换旧本地资料库，不要求用户联网迁移。
 - `live/server.mjs`：HTTP + SQLite、字段校验、发布鉴权、修订控制、到期清理；`live/public/` 为无框架观赛页。
-- 协议：[PROTOCOL.md](../live/PROTOCOL.md)；部署：[README.md](../live/README.md)；隐私交接：[PRIVACY-RELEASE.md](../live/PRIVACY-RELEASE.md)。
+- 协议：[PROTOCOL.md](../../../../live/PROTOCOL.md)；部署：[README.md](../../../../live/README.md)；隐私交接：[PRIVACY-RELEASE.md](../../../../live/PRIVACY-RELEASE.md)。
 
 ## 验证结果
 
@@ -34,7 +34,7 @@
 | 大小屏导航 | 新增直播按钮后，一屏主要操作、隐藏底部导航及左上返回 UI 回归通过 |
 | 本地资料 | 原迁移／备份／恢复回归通过；直播写入凭证不进入比赛备份，关闭云端不删除本地比赛 |
 
-可保留证据在 `output/v1.1/live-qa/`：App 测试摘要、大小屏分享截图、服务端测试日志。详细 Xcode 结果位于本机 `/tmp/BM11-live-verification.xcresult` 和 `/tmp/BM11-live-ui-small-final.xcresult`。
+可保留证据在 `output/validation/1.1/implementation/live-qa/`：App 测试摘要、大小屏分享截图、服务端测试日志。详细 Xcode 结果位于本机 `/tmp/BM11-live-verification.xcresult` 和 `/tmp/BM11-live-ui-small-final.xcresult`。
 
 中间失败已处理：初轮单元测试暴露恢复后删除被旧退避时间延后的问题，已清除退避并通过重测；小屏系统分享需要显式结束回调，已修复并通过重测；长记录测试中共享对象引用污染了测试样例，调整样例后严格字段校验和跨比赛保护均通过。未用旧失败结果作为最终通过证据。
 
