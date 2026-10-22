@@ -22,6 +22,15 @@ struct TeamRosterView: View {
             VStack(alignment: .leading, spacing: 18) {
                 SectionHeader(title: "球队管理", subtitle: "\(store.teams.count) 支球队")
 
+                if store.teams.isEmpty {
+                    BMCard {
+                        VStack(spacing: 12) {
+                            Text("还没有球队，历史比赛和统计仍可查看。")
+                            Button("创建第一支球队") { editorContext = TeamEditorContext(team: nil) }
+                                .buttonStyle(PrimaryButtonStyle())
+                        }
+                    }
+                }
                 LazyVStack(spacing: 12) {
                     ForEach(store.teams) { team in
                         HStack(spacing: 0) {
@@ -30,10 +39,10 @@ struct TeamRosterView: View {
                                     TeamMark(team: team, size: 52)
                                     VStack(alignment: .leading, spacing: 5) {
                                         HStack(spacing: 7) {
-                                            Text(team.name)
+                                            Text(team.name + (team.isDemo == true ? " · Demo" : ""))
                                                 .font(.system(size: 18, weight: .bold))
                                                 .foregroundStyle(BMTheme.navy)
-                                            if team.id == store.currentTeam.id {
+                                            if team.id == store.currentTeam?.id {
                                                 Text("当前")
                                                     .font(.system(size: 10, weight: .black))
                                                     .foregroundStyle(BMTheme.green)
@@ -59,7 +68,7 @@ struct TeamRosterView: View {
                             .accessibilityIdentifier("team-card-\(team.shortName)")
 
                             Menu {
-                                if team.id != store.currentTeam.id {
+                                if team.id != store.currentTeam?.id {
                                     Button {
                                         store.setCurrentTeam(id: team.id)
                                     } label: {
@@ -76,7 +85,6 @@ struct TeamRosterView: View {
                                 } label: {
                                     Label("删除球队", systemImage: "trash")
                                 }
-                                .disabled(store.teams.count <= 1)
                             } label: {
                                 Image(systemName: "ellipsis.circle")
                                     .font(.system(size: 20))
@@ -99,6 +107,11 @@ struct TeamRosterView: View {
         }
         .bmScreenBackground()
         .navigationTitle("球队")
+        .alert("球队暂不能删除", isPresented: Binding(get: { store.actionErrorMessage != nil }, set: { if !$0 { store.actionErrorMessage = nil } })) {
+            Button("查看比赛／赛程") { store.selectedTab = 0; store.actionErrorMessage = nil }
+            Button("知道了", role: .cancel) { store.actionErrorMessage = nil }
+        } message: { Text(store.actionErrorMessage ?? "") }
+
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -131,7 +144,7 @@ struct TeamRosterView: View {
                 teamPendingDeletion = nil
             }
         } message: { team in
-            Text("球队及名单中的 \(team.players.count) 名球员会被删除，此操作无法撤销。")
+            Text("球队及名单中的 \(team.players.count) 名球员会被删除；历史比赛和统计保留。")
         }
     }
 }
@@ -153,7 +166,7 @@ struct TeamDetailView: View {
                             HStack(spacing: 14) {
                                 TeamMark(team: team, size: 60)
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(team.name)
+                                    Text(team.name + (team.isDemo == true ? " · Demo" : ""))
                                         .font(.system(size: 23, weight: .black))
                                         .foregroundStyle(BMTheme.navy)
                                     Text("\(team.city) · 简称 \(team.shortName)")
@@ -203,7 +216,7 @@ struct TeamDetailView: View {
                             }
                         } else {
                             LazyVStack(spacing: 10) {
-                                ForEach(team.players) { player in
+                                ForEach(team.sortedPlayers) { player in
                                     HStack(spacing: 0) {
                                         NavigationLink(destination: PlayerDetailView(player: player)) {
                                             PlayerRow(player: player)
@@ -390,7 +403,7 @@ struct PlayerEditorSheet: View {
         _englishName = State(initialValue: player?.englishName ?? "")
         let inputs: [JerseyNumberInput]
         if let player, !player.numbers.isEmpty {
-            inputs = player.numbers.map { JerseyNumberInput(text: String($0)) }
+            inputs = player.numberTexts.map { JerseyNumberInput(text: $0) }
         } else {
             inputs = [JerseyNumberInput(text: "")]
         }
@@ -431,9 +444,13 @@ struct PlayerEditorSheet: View {
                     }
                 }
 
+                if duplicateNumberWarning {
+                    Text("同队已有相同背号，仍可保存；请确认姓名或其他号码以便区分。")
+                        .foregroundStyle(BMTheme.orange)
+                }
                 if !numbersAreValid {
                     Section {
-                        Label("背号需为 0–99 的数字，且不能重复。", systemImage: "exclamationmark.triangle.fill")
+                        Label("背号需为 0–99 或 00；0 与 00 不同，同一球员的号码不能重复。", systemImage: "exclamationmark.triangle.fill")
                             .font(.footnote)
                             .foregroundStyle(BMTheme.orange)
                     }
@@ -463,26 +480,22 @@ struct PlayerEditorSheet: View {
         }
     }
 
-    private var parsedNumbers: [Int]? {
-        let trimmed = numberInputs.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard !trimmed.isEmpty, trimmed.allSatisfy({ !$0.isEmpty }) else { return nil }
-        let numbers = trimmed.compactMap(Int.init)
-        guard numbers.count == trimmed.count,
-              numbers.allSatisfy({ (0...99).contains($0) }),
-              Set(numbers).count == numbers.count else { return nil }
-        return numbers
+    private var parsedNumberTexts: [String]? {
+        let texts = numberInputs.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return Player.validNumberTexts(texts) ? texts : nil
     }
-
-    private var numbersAreValid: Bool { parsedNumbers != nil }
-
-    private var isValid: Bool {
-        !chineseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !englishName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && numbersAreValid
+    private var numbersAreValid: Bool { parsedNumberTexts != nil }
+    private var isValid: Bool { numbersAreValid }
+    private var duplicateNumberWarning: Bool {
+        let roster = isOpponent ? store.opponentTeam(withID: teamID) : store.team(withID: teamID)
+        return roster?.players.contains { other in
+            other.id != player?.id && !Set(other.numberTexts).isDisjoint(with: parsedNumberTexts ?? [])
+        } ?? false
     }
 
     private func save() {
-        guard let numbers = parsedNumbers else { return }
+        guard let labels = parsedNumberTexts else { return }
+        let numbers = labels.compactMap(Int.init)
         if let player {
             if isOpponent {
                 store.updateOpponentPlayer(
@@ -490,7 +503,8 @@ struct PlayerEditorSheet: View {
                     playerID: player.id,
                     chineseName: chineseName,
                     englishName: englishName,
-                    numbers: numbers
+                    numbers: numbers,
+                    numberTexts: labels
                 )
             } else {
                 store.updatePlayer(
@@ -498,7 +512,8 @@ struct PlayerEditorSheet: View {
                     playerID: player.id,
                     chineseName: chineseName,
                     englishName: englishName,
-                    numbers: numbers
+                    numbers: numbers,
+                    numberTexts: labels
                 )
             }
         } else {
@@ -507,14 +522,16 @@ struct PlayerEditorSheet: View {
                     to: teamID,
                     chineseName: chineseName,
                     englishName: englishName,
-                    numbers: numbers
+                    numbers: numbers,
+                    numberTexts: labels
                 )
             } else {
                 store.addPlayer(
                     to: teamID,
                     chineseName: chineseName,
                     englishName: englishName,
-                    numbers: numbers
+                    numbers: numbers,
+                    numberTexts: labels
                 )
             }
         }
@@ -541,6 +558,7 @@ struct NewGameSetupView: View {
     @State private var spectatorAwayTeamID: UUID?
     @State private var spectatorHomeTeamID: UUID?
     @State private var isHome = false
+    @State private var versionRules = GameRules()
     @State private var innings = 6
     @State private var fieldersCount = 9
     @State private var hasTimeLimit = false
@@ -588,7 +606,7 @@ struct NewGameSetupView: View {
     }
 
     private var rules: GameRules {
-        GameRules(
+        var value = GameRules(
             scheduledInnings: innings,
             fieldersCount: fieldersCount,
             timeLimitMinutes: hasTimeLimit ? timeLimitMinutes : nil,
@@ -599,6 +617,10 @@ struct NewGameSetupView: View {
             usesDesignatedHitter: usesDesignatedHitter,
             allowsTwoWayPlayer: usesDesignatedHitter && allowsTwoWayPlayer
         )
+        value.mode = versionRules.mode
+        value.halfInningRunLimit = versionRules.halfInningRunLimit
+        value.coachPitchLimit = versionRules.coachPitchLimit
+        return value
     }
 
     private var validationMessages: [String] {
@@ -792,6 +814,7 @@ struct NewGameSetupView: View {
                             Divider().padding(.leading, 42)
 
                             Toggle("启用指定打击 DH", isOn: $usesDesignatedHitter)
+                                .disabled(versionRules.gameMode == .coachPitch)
                                 .font(.system(size: 15, weight: .semibold))
                                 .tint(BMTheme.green)
                                 .frame(minHeight: 54)
@@ -805,6 +828,13 @@ struct NewGameSetupView: View {
                         }
                     }
 
+                    BM11RulesControls(rules: $versionRules)
+                        .onChange(of: versionRules.gameMode) { mode in
+                            if mode == .coachPitch {
+                                usesDesignatedHitter = false; allowsTwoWayPlayer = false
+                                hasPitchLimit = false; hasPitcherInningsLimit = false
+                            }
+                        }
                     SectionHeader(title: "时间与投球提醒", subtitle: "只提醒，不自动结束比赛")
                     BMCard {
                         VStack(spacing: 0) {
@@ -832,6 +862,7 @@ struct NewGameSetupView: View {
                             Divider()
 
                             Toggle("单投手球数限制", isOn: $hasPitchLimit)
+                                .disabled(versionRules.gameMode == .coachPitch)
                                 .font(.system(size: 15, weight: .semibold))
                                 .tint(BMTheme.green)
                                 .frame(minHeight: 54)
@@ -855,6 +886,7 @@ struct NewGameSetupView: View {
                             Divider()
 
                             Toggle("单投手局数限制", isOn: $hasPitcherInningsLimit)
+                                .disabled(versionRules.gameMode == .coachPitch)
                                 .font(.system(size: 15, weight: .semibold))
                                 .tint(BMTheme.green)
                                 .frame(minHeight: 54)
@@ -912,7 +944,7 @@ struct NewGameSetupView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if selectedTeamID == nil || !store.teams.contains(where: { $0.id == selectedTeamID }) {
-                selectedTeamID = store.currentTeam.id
+                selectedTeamID = store.currentTeam?.id
             }
             if selectedOpponentID == nil || !store.opponentTeams.contains(where: { $0.id == selectedOpponentID }) {
                 selectedOpponentID = store.opponentTeams.first?.id
@@ -1032,7 +1064,7 @@ struct OpponentTeamsView: View {
                                 HStack(spacing: 12) {
                                     TeamMark(team: team, size: 46)
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(team.name)
+                                        Text(team.name + (team.isDemo == true ? " · Demo" : ""))
                                             .font(.system(size: 17, weight: .bold))
                                             .foregroundStyle(BMTheme.navy)
                                         Text("\(team.city) · \(team.players.count) 名球员")
@@ -1073,6 +1105,10 @@ struct OpponentTeamsView: View {
         }
         .bmScreenBackground()
         .navigationTitle("对手管理")
+        .alert("球队暂不能删除", isPresented: Binding(get: { store.actionErrorMessage != nil }, set: { if !$0 { store.actionErrorMessage = nil } })) {
+            Button("查看比赛／赛程") { store.selectedTab = 0; store.actionErrorMessage = nil }
+            Button("知道了", role: .cancel) { store.actionErrorMessage = nil }
+        } message: { Text(store.actionErrorMessage ?? "") }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -1121,7 +1157,7 @@ struct OpponentTeamDetailView: View {
                             HStack {
                                 TeamMark(team: team, size: 52)
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(team.name)
+                                    Text(team.name + (team.isDemo == true ? " · Demo" : ""))
                                         .font(.system(size: 20, weight: .black))
                                         .foregroundStyle(BMTheme.navy)
                                     Text("\(team.city) · \(team.players.count) 名球员")
@@ -1162,7 +1198,7 @@ struct OpponentTeamDetailView: View {
                                     .frame(maxWidth: .infinity, minHeight: 80)
                             }
                         } else {
-                            ForEach(team.players) { player in
+                            ForEach(team.sortedPlayers) { player in
                                 HStack {
                                     PlayerRow(player: player)
                                     Menu {
@@ -1480,6 +1516,7 @@ private struct GameRulesEditor: View {
         SectionHeader(title: "比赛规则")
         BMCard {
             VStack(spacing: 0) {
+            BM11RulesControls(rules: $rules)
                 settingPickerRow(title: "规定局数", icon: "number.circle.fill") {
                     Picker("规定局数", selection: $rules.scheduledInnings) {
                         ForEach(1...9, id: \.self) { Text("\($0) 局").tag($0) }
@@ -1495,6 +1532,7 @@ private struct GameRulesEditor: View {
                 }
                 Divider().padding(.leading, 42)
                 Toggle("启用指定打击 DH", isOn: usesDesignatedHitter)
+                    .disabled(rules.gameMode == .coachPitch)
                     .font(.system(size: 15, weight: .semibold))
                     .tint(BMTheme.green)
                     .frame(minHeight: 54)
@@ -1546,6 +1584,7 @@ private struct GameRulesEditor: View {
 
                 Divider()
                 Toggle("单投手球数限制", isOn: hasPitchLimit)
+                    .disabled(rules.gameMode == .coachPitch)
                     .font(.system(size: 15, weight: .semibold))
                     .tint(BMTheme.green)
                     .frame(minHeight: 54)
@@ -1580,6 +1619,7 @@ private struct GameRulesEditor: View {
 
                 Divider()
                 Toggle("单投手局数限制", isOn: hasPitcherInningsLimit)
+                    .disabled(rules.gameMode == .coachPitch)
                     .font(.system(size: 15, weight: .semibold))
                     .tint(BMTheme.green)
                     .frame(minHeight: 54)
@@ -1671,11 +1711,11 @@ struct LineupSelectionView: View {
     }
 
     private var lineupTeam: Team {
-        lineupTeamID.flatMap(store.team(withID:)) ?? store.currentTeam
+        lineupTeamID.flatMap(store.team(withID:)) ?? store.currentTeam ?? Team(name: "请选择球队", shortName: "", city: "", players: [])
     }
 
     private var benchPlayers: [Player] {
-        lineupTeam.players.filter { player in
+        lineupTeam.sortedPlayers.filter { player in
             !assignments.contains(where: { $0.playerID == player.id })
         }
     }
@@ -1850,7 +1890,7 @@ struct LineupSelectionView: View {
                                     Text(rules.twoWayPlayerEnabled ? "投手兼任 DH（大谷条款）" : "指定打击 DH")
                                         .font(.system(size: 14, weight: .bold))
                                         .foregroundStyle(BMTheme.navy)
-                                    Text("#\(designatedHitter.number) \(designatedHitter.name) · 实际进入打序，投手保留守备身份")
+                                    Text("#\(designatedHitter.numberText) \(designatedHitter.name) · 实际进入打序，投手保留守备身份")
                                         .font(.system(size: 12))
                                         .foregroundStyle(BMTheme.secondaryText)
                                 }
@@ -1912,9 +1952,9 @@ struct LineupSelectionView: View {
                         startImmediately: startImmediately
                     )
                     if startImmediately {
-                        showGame = true
+                        showGame = createdGameID != nil
                     } else {
-                        showScheduledCreated = true
+                        showScheduledCreated = createdGameID != nil
                     }
                 }
             }
@@ -2187,7 +2227,7 @@ struct ObservedGameLineupView: View {
         assignments: Binding<[LineupAssignment]>
     ) -> some View {
         let selectedIDs = Set(assignments.wrappedValue.map(\.playerID))
-        let bench = team.players.filter { !selectedIDs.contains($0.id) }
+        let bench = team.sortedPlayers.filter { !selectedIDs.contains($0.id) }
         return VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: role, subtitle: team.name)
             ForEach(Array(assignments.wrappedValue.enumerated()), id: \.element.playerID) { index, assignment in
@@ -2349,4 +2389,37 @@ private struct LineupDropDelegate: DropDelegate {
         LineupSelectionView(opponent: store.opponentTeams[0], isHome: false, innings: 6)
     }
     .environmentObject(store)
+}
+
+struct BM11RulesControls: View {
+    @Binding var rules: GameRules
+    var body: some View {
+        BMCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("比赛模式", selection: Binding(get: { rules.gameMode }, set: { mode in
+                    rules.mode = mode
+                    if mode == .coachPitch {
+                        rules.usesDesignatedHitter = false; rules.allowsTwoWayPlayer = false
+                        rules.pitchLimit = nil; rules.pitchWarningRemaining = nil; rules.pitcherInningsLimit = nil
+                        rules.coachPitchLimit = rules.coachPitchLimit ?? 6
+                    }
+                })) {
+                    ForEach(GameMode.allCases) { Text($0.title).tag($0) }
+                }
+                .accessibilityIdentifier("game-mode")
+                if rules.gameMode == .coachPitch {
+                    Stepper("每打席最多 \(rules.coachPitchLimit ?? 6) 球", value: Binding(get: { rules.coachPitchLimit ?? 6 }, set: { rules.coachPitchLimit = $0 }), in: 1...20)
+                    Text("末球界外或球数用尽出局；触身继续并计球，不四坏保送。P 位球员只记录打击与守备。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                }
+                Toggle("每半局得分上限", isOn: Binding(get: { rules.halfInningRunLimit != nil }, set: { rules.halfInningRunLimit = $0 ? 6 : nil }))
+                    .accessibilityIdentifier("half-run-limit")
+                if rules.halfInningRunLimit != nil {
+                    Stepper("每半局最多 \(rules.halfInningRunLimit ?? 6) 分", value: Binding(get: { rules.halfInningRunLimit ?? 6 }, set: { rules.halfInningRunLimit = $0 }), in: 1...99)
+                    Text("超额分不计；达限后确认换边，适用于最后一局和延长局。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                }
+            }
+        }
+    }
 }

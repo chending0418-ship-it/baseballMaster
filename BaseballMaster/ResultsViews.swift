@@ -5,7 +5,9 @@ struct BoxScoreView: View {
     @EnvironmentObject private var store: GameStore
     @State private var selectedSection = 0
     @State private var showEndReasonSheet = false
+    @State private var confirmLegacyReopen = false
     @State private var showShareSheet = false
+    @State private var showLiveBroadcast = false
     @State private var shareURLs: [URL] = []
     @State private var exportErrorMessage: String?
     private let sections = ["打击", "投手", "守备", "记录"]
@@ -26,7 +28,8 @@ struct BoxScoreView: View {
                 Group {
                     switch selectedSection {
                     case 0: battingTable
-                    case 1: pitchingTable
+                    case 1:
+                        if store.isCoachPitch { Text("教练投手模式：投手数据不适用") } else { pitchingTable }
                     case 2: fieldingTable
                     default: playLog
                     }
@@ -34,6 +37,13 @@ struct BoxScoreView: View {
 
                 exportActions
 
+                if store.game.isFinal {
+                    Button("恢复为进行中") {
+                        if store.game.canResumePrecisely == true { _ = store.reopenGame() }
+                        else { confirmLegacyReopen = true }
+                    }.buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("reopen-game")
+                }
                 if !store.game.isFinal {
                     Button {
                         showEndReasonSheet = true
@@ -49,6 +59,24 @@ struct BoxScoreView: View {
         .bmScreenBackground()
         .navigationTitle("比赛结果")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if store.liveBroadcasts.isEnabled, store.activeStoredGame != nil {
+                    Button { showLiveBroadcast = true } label: { Image(systemName: "antenna.radiowaves.left.and.right") }
+                        .accessibilityLabel("文字直播与分享")
+                        .accessibilityIdentifier("open-live-broadcast")
+                }
+            }
+        }
+        .sheet(isPresented: $showLiveBroadcast) {
+            if store.liveBroadcasts.isEnabled, let id = store.activeStoredGame?.id { LiveBroadcastSheet(store: store, gameID: id) }
+        }
+        .alert("核对旧比赛恢复局面", isPresented: $confirmLegacyReopen) {
+            Button("已核对，恢复继续") { _ = store.reopenGame(confirmedLegacySituation: true) }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("第 \(store.game.inning) 局\(store.game.isTop ? "上" : "下")，\(store.game.outs) 出局，打者 \(store.currentBatter.compactName)，垒上 \(store.game.baseRunners.count) 人。旧版本未保存完整的结束阶段，请核对后恢复；需要调整时使用现场局面修正。")
+        }
         .sheet(isPresented: $showEndReasonSheet) {
             GameEndReasonSheet()
                 .environmentObject(store)
@@ -78,7 +106,7 @@ struct BoxScoreView: View {
                         ForEach(battingPlayers(for: team)) { player in
                             let line = store.battingLine(for: player)
                             tableRow([
-                                "#\(player.number) \(player.name)",
+                                "#\(player.numberText) \(player.name)",
                                 "\(line.plateAppearances)", "\(line.atBats)", "\(line.runs)", "\(line.hits)",
                                 "\(line.runsBattedIn)", "\(line.walks)", "\(line.strikeouts)", statText(line.average)
                             ], emphasized: 0)
@@ -101,7 +129,7 @@ struct BoxScoreView: View {
                         ForEach(pitchersToDisplay(for: team)) { player in
                             let line = store.pitchingLine(for: player)
                             tableRow([
-                                "#\(player.number) \(player.name)", line.inningsText, "\(line.battersFaced)", "\(line.hits)",
+                                "#\(player.numberText) \(player.name)", line.inningsText, "\(line.battersFaced)", "\(line.hits)",
                                 "\(line.runs)", "\(line.earnedRuns)", "\(line.walks)", "\(line.strikeouts)",
                                 "\(line.pitches)-\(line.strikes)", String(format: "%.2f", line.era)
                             ], emphasized: 0)
@@ -124,7 +152,7 @@ struct BoxScoreView: View {
                         ForEach(fieldingPlayers(for: team)) { player in
                             let line = store.fieldingLine(for: player)
                             tableRow([
-                                "#\(player.number) \(player.name)", player.primaryPosition.shortName,
+                                "#\(player.numberText) \(player.name)", player.primaryPosition.shortName,
                                 "\(line.putouts)", "\(line.assists)", "\(line.errors)", "\(line.doublePlays)"
                             ], emphasized: 0)
                         }
@@ -188,7 +216,7 @@ struct BoxScoreView: View {
                             .background(appearance.needsReview ? BMTheme.orangeSoft : BMTheme.greenSoft)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("第 \(appearance.sequence) 打席 · #\(appearance.batter.number) \(appearance.batter.name)")
+                            Text("第 \(appearance.sequence) 打席 · #\(appearance.batter.numberText) \(appearance.batter.name)")
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(BMTheme.navy)
                             Text(appearance.events.map(\.title).joined(separator: "；"))
@@ -376,6 +404,8 @@ struct BoxScoreView: View {
 struct GameEndReasonSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore
+    @State private var selectedReason: GameEndReason?
+    @State private var showConfirmation = false
 
     private let reasons: [GameEndReason] = [
         .regulation, .timeLimit, .mercyRule, .forfeit,
@@ -395,8 +425,8 @@ struct GameEndReasonSheet: View {
 
                     ForEach(reasons) { reason in
                         Button {
-                            store.finishGame(reason: reason)
-                            dismiss()
+                            selectedReason = reason
+                            showConfirmation = true
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: reason == .suspended ? "pause.circle.fill" : "checkmark.seal.fill")
@@ -425,6 +455,13 @@ struct GameEndReasonSheet: View {
                 .padding(18)
             }
             .bmScreenBackground()
+            .confirmationDialog(selectedReason == .suspended ? "确认中断比赛？" : "确认结束比赛？", isPresented: $showConfirmation, titleVisibility: .visible) {
+                Button("确认保存") {
+                    if let selectedReason { store.finishGame(reason: selectedReason) }
+                    if store.storageErrorMessage == nil { dismiss() }
+                }
+                Button("取消", role: .cancel) { selectedReason = nil }
+            }
             .navigationTitle("结束或中断比赛")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -534,15 +571,16 @@ struct GameExportService {
             lines.append("球员\tPA\tAB\tR\tH\t2B\t3B\tHR\tRBI\tBB\tSO\tAVG")
             for player in battingPlayers(for: team) {
                 let value = game.batting[player.id, default: BattingLine()]
-                lines.append("#\(player.number) \(player.name)\t\(value.plateAppearances)\t\(value.atBats)\t\(value.runs)\t\(value.hits)\t\(value.doubles)\t\(value.triples)\t\(value.homeRuns)\t\(value.runsBattedIn)\t\(value.walks)\t\(value.strikeouts)\t\(statText(value.average))")
+                lines.append("#\(player.numberText) \(player.name)\t\(value.plateAppearances)\t\(value.atBats)\t\(value.runs)\t\(value.hits)\t\(value.doubles)\t\(value.triples)\t\(value.homeRuns)\t\(value.runsBattedIn)\t\(value.walks)\t\(value.strikeouts)\t\(statText(value.average))")
             }
 
             lines.append("")
             lines.append("【\(team.shortName)投手】")
+            if rules?.gameMode == .coachPitch { lines.append("教练投手模式：不适用") }
             lines.append("投手\tIP\tBF\tH\tR\tER\tBB\tSO\tP-S\tERA")
-            for player in pitchingPlayers(for: team) {
+            for player in (rules?.gameMode == .coachPitch ? [] : pitchingPlayers(for: team)) {
                 let value = game.pitching[player.id, default: PitchingLine()]
-                lines.append("#\(player.number) \(player.name)\t\(value.inningsText)\t\(value.battersFaced)\t\(value.hits)\t\(value.runs)\t\(value.earnedRuns)\t\(value.walks)\t\(value.strikeouts)\t\(value.pitches)-\(value.strikes)\t\(String(format: "%.2f", value.era))")
+                lines.append("#\(player.numberText) \(player.name)\t\(value.inningsText)\t\(value.battersFaced)\t\(value.hits)\t\(value.runs)\t\(value.earnedRuns)\t\(value.walks)\t\(value.strikeouts)\t\(value.pitches)-\(value.strikes)\t\(String(format: "%.2f", value.era))")
             }
 
             lines.append("")
@@ -550,7 +588,7 @@ struct GameExportService {
             lines.append("球员\t守位\tPO\tA\tE\tDP")
             for player in fieldingPlayers(for: team) {
                 let value = game.fielding[player.id, default: FieldingLine()]
-                lines.append("#\(player.number) \(player.name)\t\(player.primaryPosition.shortName)\t\(value.putouts)\t\(value.assists)\t\(value.errors)\t\(value.doublePlays)")
+                lines.append("#\(player.numberText) \(player.name)\t\(player.primaryPosition.shortName)\t\(value.putouts)\t\(value.assists)\t\(value.errors)\t\(value.doublePlays)")
             }
         }
 
@@ -659,6 +697,7 @@ struct PlayerDetailView: View {
     @State private var selectedSeasonID: String
     @State private var selectedGameIDs = Set<UUID>()
     @State private var showGameFilter = false
+    @State private var modeFilter: GameMode?
 
     init(
         player: Player, initialSeasonID: String = "", statisticsTeamID: UUID? = nil,
@@ -671,12 +710,14 @@ struct PlayerDetailView: View {
     }
 
     private var seasonGames: [PlayerGameRecord] {
-        store.gameRecords(for: player, seasonID: selectedSeasonID, teamID: statisticsTeamID)
+        store.gameRecords(for: player, seasonID: selectedSeasonID, teamID: statisticsTeamID).filter { record in
+            modeFilter == nil || (store.games.first { $0.id == record.id }?.rules.gameMode ?? .standard) == modeFilter
+        }
     }
 
     private var selectedStatistics: PlayerSeasonStatistics {
         store.playerStatistics(for: player, seasonID: selectedSeasonID,
-                               teamID: statisticsTeamID, gameIDs: selectedGameIDs)
+                               teamID: statisticsTeamID, gameIDs: Set(selectedGames.map(\.id)))
     }
 
     private var selectedGames: [PlayerGameRecord] {
@@ -691,7 +732,7 @@ struct PlayerDetailView: View {
         ScrollView {
             VStack(spacing: 18) {
                 VStack(spacing: 10) {
-                    Text(player.numbers.first.map(String.init) ?? "—")
+                    Text(player.numberText)
                         .font(.system(size: 34, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
                         .frame(width: 78, height: 78)
@@ -756,6 +797,8 @@ struct PlayerDetailView: View {
                     }
                 }
 
+                GameModeFilter(selection: $modeFilter)
+                    .onChange(of: modeFilter) { _ in selectedGameIDs = Set(seasonGames.map(\.id)) }
                 Picker("球员统计分类", selection: $category) {
                     ForEach(StatisticsCategory.allCases) { Text($0.rawValue).tag($0) }
                 }
@@ -797,6 +840,8 @@ struct PlayerDetailView: View {
                         performanceSummary(title: "本赛季", records: seasonGames)
                     }
 
+                } else if modeFilter == .coachPitch && category == .pitching {
+                    Text("教练投手模式：投手数据不适用")
                 } else {
                     StatisticsMetricsGrid(category: category, row: selectedStatistics)
                     Text("投手与守备数据来自所选已结束比赛；旧版个人记录仅含打击数据。")
@@ -905,6 +950,7 @@ struct PlayerDetailView: View {
         switch category {
         case .batting: return "\(record.batting.hits)-\(record.batting.atBats)"
         case .pitching:
+            if stored?.rules.gameMode == .coachPitch { return "投手数据不适用" }
             guard let line = stored?.state.pitching[player.id] else { return "无投手记录" }
             return "\(line.inningsText) 局 · \(line.strikeouts) 三振"
         case .fielding:
@@ -1050,6 +1096,6 @@ private func gameDateText(_ date: Date) -> String {
 
 #Preview("球员详情") {
     let store = GameStore()
-    NavigationStack { PlayerDetailView(player: store.currentTeam.players[0]) }
+    NavigationStack { PlayerDetailView(player: store.currentTeam!.players[0]) }
         .environmentObject(store)
 }

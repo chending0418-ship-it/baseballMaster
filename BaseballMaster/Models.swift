@@ -47,6 +47,8 @@ struct Player: Identifiable, Hashable, Codable {
     var chineseName: String
     var englishName: String
     var numbers: [Int]
+    /// Original labels distinguish 0 from 00; absent in pre-1.1 payloads.
+    var jerseyNumbers: [String]? = nil
 
     // The live scoring state stores the current defensive assignment on the
     // player. It is intentionally not exposed as roster/profile information.
@@ -77,15 +79,33 @@ struct Player: Identifiable, Hashable, Codable {
     }
 
     var name: String {
-        chineseName.isEmpty ? englishName : chineseName
+        if !chineseName.isEmpty { return chineseName }
+        if !englishName.isEmpty { return englishName }
+        return "#\(numberText)"
     }
 
     var number: Int {
         numbers.first ?? 0
     }
 
+    var numberTexts: [String] { jerseyNumbers ?? numbers.map(String.init) }
+    var numberText: String { numberTexts.first ?? "—" }
     var numbersText: String {
-        numbers.isEmpty ? "暂无背号" : numbers.map { "#\($0)" }.joined(separator: " / ")
+        numberTexts.isEmpty ? "暂无背号" : numberTexts.map { "#\($0)" }.joined(separator: " / ")
+    }
+
+    static func validNumberTexts(_ texts: [String]) -> Bool {
+        !texts.isEmpty && Set(texts).count == texts.count && texts.allSatisfy { text in
+            if text == "00" { return true }
+            guard let value = Int(text), (0...99).contains(value) else { return false }
+            return String(value) == text
+        }
+    }
+
+    static func rosterOrder(_ lhs: Player, _ rhs: Player) -> Bool {
+        if lhs.number != rhs.number { return lhs.number < rhs.number }
+        if lhs.numberText != rhs.numberText { return lhs.numberText < rhs.numberText }
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 
     var compactName: String { "\(numbersText) \(name)" }
@@ -97,6 +117,9 @@ struct Team: Identifiable, Hashable, Codable {
     var shortName: String
     var city: String
     var players: [Player]
+    var isDemo: Bool? = nil
+
+    var sortedPlayers: [Player] { players.sorted(by: Player.rosterOrder) }
 
     init(id: UUID = UUID(), name: String, shortName: String, city: String, players: [Player]) {
         self.id = id
@@ -223,6 +246,23 @@ enum GameEndReason: String, CaseIterable, Identifiable, Codable {
     var isCompletedResult: Bool { self != .suspended }
 }
 
+enum GameMode: String, CaseIterable, Identifiable, Codable {
+    case standard, coachPitch
+    var id: String { rawValue }
+    var title: String { self == .standard ? "普通比赛" : "教练投手" }
+}
+
+enum GameDecision: String, Codable {
+    case runLimit, regulationHalf, walkOff
+    var title: String {
+        switch self {
+        case .runLimit: "已达到半局得分上限"
+        case .regulationHalf: "本半局已结束，是否结束比赛？"
+        case .walkOff: "主队取得领先，是否结束比赛？"
+        }
+    }
+}
+
 struct GameRules: Equatable, Codable {
     var scheduledInnings: Int
     var fieldersCount: Int
@@ -235,6 +275,11 @@ struct GameRules: Equatable, Codable {
     /// two-way-player ("Ohtani") exception. They do not change ordinary games.
     var usesDesignatedHitter: Bool?
     var allowsTwoWayPlayer: Bool?
+    var mode: GameMode? = nil
+    var halfInningRunLimit: Int? = nil
+    var coachPitchLimit: Int? = nil
+
+    var gameMode: GameMode { mode ?? .standard }
 
     init(
         scheduledInnings: Int = 6,
@@ -258,7 +303,7 @@ struct GameRules: Equatable, Codable {
         self.allowsTwoWayPlayer = allowsTwoWayPlayer
     }
 
-    var designatedHitterEnabled: Bool { usesDesignatedHitter == true }
+    var designatedHitterEnabled: Bool { gameMode == .standard && usesDesignatedHitter == true }
     var twoWayPlayerEnabled: Bool { designatedHitterEnabled && allowsTwoWayPlayer == true }
 }
 
@@ -286,6 +331,10 @@ struct StoredGame: Identifiable, Equatable, Codable {
     var secondaryLineup: [LineupAssignment]?
     var status: StoredGameStatus
     var state: GameState
+    /// Stored outside undoable game state; publishing revisions never decrease.
+    var revision: Int? = nil
+    var publicationState: String? = nil
+    var pendingPublicationRevisions: [Int]? = nil
 
     init(
         id: UUID = UUID(),
@@ -932,6 +981,9 @@ struct GameSituationSnapshot: Equatable, Codable {
     let baseRunners: [RecordedBaseOccupancy]
     let activeHomePitcherID: UUID?
     let activeAwayPitcherID: UUID?
+    // Present after a live lineup edit, so index-based historical situations keep their original order.
+    var homeBattingOrderIDs: [UUID]? = nil
+    var awayBattingOrderIDs: [UUID]? = nil
 }
 
 /// Machine-readable companion to the Chinese play log. This is stored inside
@@ -952,6 +1004,8 @@ struct ScoringEventRecord: Identifiable, Equatable, Codable {
     /// from the primary/secondary participants because a runner or fielder can
     /// be the principal actor while another player's plate appearance is live.
     var plateAppearanceBatterID: UUID?
+    var plateAppearanceID: UUID? = nil
+    var effectiveScorerIDs: [UUID]? = nil
     let runnerMovements: [RecordedRunnerMovement]
     var needsReview: Bool
     var ballStatus: BallStatus?
@@ -1023,8 +1077,18 @@ struct PlateAppearanceRecord: Identifiable, Equatable {
     var resultText: String { events.last?.title ?? "打席进行中" }
     var chineseRecord: String {
         let details = events.map(\.title).joined(separator: "；")
-        return "\(inningLabel)，第\(sequence)打席，#\(batter.number) \(batter.name)：\(details)"
+        return "\(inningLabel)，第\(sequence)打席，#\(batter.numberText) \(batter.name)：\(details)"
     }
+}
+
+struct PlateAppearanceIdentity: Identifiable, Equatable, Codable {
+    let id: UUID
+    let inning: Int
+    let isTop: Bool
+    var batterIDs: [UUID]
+    var completed: Bool
+    var interrupted: Bool
+    var previousSegmentID: UUID?
 }
 
 struct GameState: Equatable, Codable {
@@ -1081,6 +1145,17 @@ struct GameState: Equatable, Codable {
     var clockDisplayMode: GameClockDisplayMode? = nil
     var endedAt: Date? = nil
     var endReason: GameEndReason? = nil
+    var plateAppearances: [PlateAppearanceIdentity]? = nil
+    var currentPlateAppearanceID: UUID? = nil
+    var awayInterruptedAppearanceID: UUID? = nil
+    var homeInterruptedAppearanceID: UUID? = nil
+    var plateAppearancePitchCount: Int? = nil
+    var pendingDecision: GameDecision? = nil
+    var dismissedRunLimitHalf: String? = nil
+    var dismissedWalkOffHalf: String? = nil
+    var halfEndedAwaitingDecision: Bool? = nil
+    var canResumePrecisely: Bool? = nil
+    var recordsLineupSnapshots: Bool? = nil
 
     init(
         homeTeam: Team,
@@ -1094,8 +1169,12 @@ struct GameState: Equatable, Codable {
         self.scheduledInnings = scheduledInnings
         self.homeRunsByInning = Array(repeating: 0, count: scheduledInnings)
         self.awayRunsByInning = Array(repeating: 0, count: scheduledInnings)
-        self.activeHomePitcherID = homeTeam.players.first(where: { $0.primaryPosition == .pitcher })?.id
-        self.activeAwayPitcherID = awayTeam.players.first(where: { $0.primaryPosition == .pitcher })?.id
+        self.activeHomePitcherID = homeTeam.players.first {
+            $0.primaryPosition == .pitcher && (homeBattingOrderIDs?.contains($0.id) ?? true)
+        }?.id
+        self.activeAwayPitcherID = awayTeam.players.first {
+            $0.primaryPosition == .pitcher && (awayBattingOrderIDs?.contains($0.id) ?? true)
+        }?.id
         self.homeBattingOrderIDs = homeBattingOrderIDs ?? homeTeam.players.map(\.id)
         self.awayBattingOrderIDs = awayBattingOrderIDs ?? awayTeam.players.map(\.id)
     }
@@ -1123,7 +1202,7 @@ struct GameState: Equatable, Codable {
     var currentPitcher: Player {
         let activeID = isTop ? activeHomePitcherID : activeAwayPitcherID
         return fieldingTeam.players.first(where: { $0.id == activeID })
-            ?? fieldingTeam.players.first(where: { $0.primaryPosition == .pitcher })
+            ?? fieldingTeam.players.first(where: { fieldingPlayerIDs.contains($0.id) && $0.primaryPosition == .pitcher })
             ?? fieldingTeam.players[0]
     }
     var halfLabel: String { "\(isTop ? "上" : "下")半局" }
@@ -1141,7 +1220,139 @@ struct GameState: Equatable, Codable {
             baseRunners: baseRunners.map { RecordedBaseOccupancy(base: $0.key, playerID: $0.value.id) }
                 .sorted { $0.base.rawValue < $1.base.rawValue },
             activeHomePitcherID: activeHomePitcherID,
-            activeAwayPitcherID: activeAwayPitcherID
+            activeAwayPitcherID: activeAwayPitcherID,
+            homeBattingOrderIDs: recordsLineupSnapshots == true ? homeBattingOrderIDs : nil,
+            awayBattingOrderIDs: recordsLineupSnapshots == true ? awayBattingOrderIDs : nil
         )
+    }
+}
+
+/// An unsaved, match-only lineup. Stable player IDs and batter anchors survive edits.
+struct LiveLineupDraft {
+    let source: GameState
+    let isHomeTeam: Bool
+    let allowsTwoWayPlayer: Bool
+    var players: [Player]
+    var battingOrderIDs: [UUID]
+    var fieldingIDs: [UUID]
+    var designatedHitterID: UUID?
+    var pitcherID: UUID?
+    var batterAnchorID: UUID?
+    var runners: [Base: Player]
+    var automaticRunnerIDs: [UUID]?
+    var changes: [String] = []
+
+    init(game: GameState, isHomeTeam: Bool, allowsTwoWayPlayer: Bool) {
+        source = game
+        self.isHomeTeam = isHomeTeam
+        self.allowsTwoWayPlayer = allowsTwoWayPlayer
+        players = (isHomeTeam ? game.homeTeam : game.awayTeam).players
+        battingOrderIDs = isHomeTeam ? game.homeBattingOrderIDs : game.awayBattingOrderIDs
+        fieldingIDs = (isHomeTeam ? game.homeFieldingPlayerIDs : game.awayFieldingPlayerIDs) ?? battingOrderIDs
+        designatedHitterID = isHomeTeam ? game.homeDesignatedHitterID : game.awayDesignatedHitterID
+        pitcherID = isHomeTeam ? game.activeHomePitcherID : game.activeAwayPitcherID
+        let index = isHomeTeam ? game.homeBatterIndex : game.awayBatterIndex
+        batterAnchorID = battingOrderIDs.isEmpty ? nil : battingOrderIDs[index % battingOrderIDs.count]
+        runners = game.baseRunners
+        automaticRunnerIDs = game.automaticRunnerIDs
+    }
+
+    var team: Team { isHomeTeam ? source.homeTeam : source.awayTeam }
+    func player(_ id: UUID) -> Player? { players.first { $0.id == id } }
+    var bench: [Player] {
+        let occupied = Set(battingOrderIDs + fieldingIDs + runners.values.map(\.id))
+        return players.sorted(by: Player.rosterOrder).filter { !occupied.contains($0.id) }
+    }
+    func replacementCandidates(for outgoingID: UUID) -> [Player] {
+        var candidates = bench
+        if allowsTwoWayPlayer, outgoingID == pitcherID, let dh = designatedHitterID, dh != outgoingID,
+           !fieldingIDs.contains(dh), let player = player(dh) { candidates.append(player) }
+        return candidates
+    }
+    var hasChanges: Bool { !changes.isEmpty }
+    var validationMessage: String? {
+        let rosterIDs = Set(players.map(\.id))
+        let originalOrder = isHomeTeam ? source.homeBattingOrderIDs : source.awayBattingOrderIDs
+        let originalDefense = (isHomeTeam ? source.homeFieldingPlayerIDs : source.awayFieldingPlayerIDs) ?? originalOrder
+        guard rosterIDs.count == players.count, rosterIDs == Set(team.players.map(\.id)),
+              battingOrderIDs.count == originalOrder.count, !battingOrderIDs.isEmpty,
+              Set(battingOrderIDs).count == battingOrderIDs.count,
+              Set(battingOrderIDs).isSubset(of: rosterIDs),
+              fieldingIDs.count == originalDefense.count, Set(fieldingIDs).count == fieldingIDs.count,
+              Set(fieldingIDs).isSubset(of: rosterIDs) else { return "阵容人数或球员身份不一致，请重新选择。" }
+        let fielders = fieldingIDs.compactMap(player)
+        guard Set(fielders.map(\.primaryPosition)).count == fielders.count else { return "同一个守位不能同时安排两名球员。" }
+        guard let pitcherID, fielders.first(where: { $0.primaryPosition == .pitcher })?.id == pitcherID else {
+            return "请在守位菜单中确认本场投手；已记录的投手统计不会自动转移。"
+        }
+        guard fielders.count < 2 || fielders.contains(where: { $0.primaryPosition == .catcher }) else { return "场上阵容需要一名捕手。" }
+        if let dh = designatedHitterID {
+            guard battingOrderIDs.contains(dh), !fieldingIDs.contains(dh) || (allowsTwoWayPlayer && dh == pitcherID) else {
+                return "DH 与守备身份不一致，请保留原规则下的阵容关系。"
+            }
+        }
+        guard let batterAnchorID, battingOrderIDs.contains(batterAnchorID) else { return "请保留当前或下一位打者的身份。" }
+        if source.isTop != isHomeTeam {
+            guard Set(runners.values.map(\.id)).count == runners.count,
+                  runners.values.allSatisfy({ battingOrderIDs.contains($0.id) }),
+                  !runners.values.contains(where: { $0.id == batterAnchorID }) else { return "打者与垒上跑者发生重复，请检查换人。" }
+        }
+        return nil
+    }
+
+    mutating func moveBatter(from sourceIndex: Int, to targetIndex: Int) {
+        guard battingOrderIDs.indices.contains(sourceIndex), battingOrderIDs.indices.contains(targetIndex), sourceIndex != targetIndex else { return }
+        let id = battingOrderIDs.remove(at: sourceIndex)
+        battingOrderIDs.insert(id, at: targetIndex)
+        if !changes.contains("调整棒次（当前打者不变）") { changes.append("调整棒次（当前打者不变）") }
+    }
+
+    mutating func changePosition(playerID: UUID, to position: FieldPosition) {
+        guard fieldingIDs.contains(playerID), let index = players.firstIndex(where: { $0.id == playerID }) else { return }
+        let previous = players[index].primaryPosition
+        if let other = players.firstIndex(where: { fieldingIDs.contains($0.id) && $0.id != playerID && $0.primaryPosition == position }) {
+            players[other].primaryPosition = previous
+        }
+        players[index].primaryPosition = position
+        pitcherID = players.first { fieldingIDs.contains($0.id) && $0.primaryPosition == .pitcher }?.id
+        if let dh = designatedHitterID, fieldingIDs.contains(dh), dh != pitcherID { designatedHitterID = nil }
+        changes.append("#\(players[index].numberText) \(players[index].name) 改守\(position.fullName)")
+    }
+
+    @discardableResult
+    mutating func updateProfile(playerID: UUID, chineseName: String, englishName: String, numberTexts: [String]) -> Bool {
+        guard Player.validNumberTexts(numberTexts), let index = players.firstIndex(where: { $0.id == playerID }) else { return false }
+        let previous = players[index]
+        players[index].chineseName = chineseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        players[index].englishName = englishName.trimmingCharacters(in: .whitespacesAndNewlines)
+        players[index].numbers = numberTexts.compactMap(Int.init)
+        players[index].jerseyNumbers = numberTexts
+        let updated = players[index]
+        for base in Base.allCases where runners[base]?.id == playerID { runners[base] = updated }
+        if previous != updated { changes.append("资料更正：\(previous.numbersText) \(previous.name) → \(updated.numbersText) \(updated.name)（已有文字保留原文）") }
+        return true
+    }
+
+    @discardableResult
+    mutating func replace(_ outgoingID: UUID, with incomingID: UUID, pitchingOnly: Bool = false) -> Bool {
+        guard let outgoing = player(outgoingID), replacementCandidates(for: outgoingID).contains(where: { $0.id == incomingID }),
+              battingOrderIDs.contains(outgoingID) || fieldingIDs.contains(outgoingID),
+              let index = players.firstIndex(where: { $0.id == incomingID }) else { return false }
+        let keepsDH = pitchingOnly && allowsTwoWayPlayer && outgoingID == designatedHitterID && outgoingID == pitcherID
+        if fieldingIDs.contains(outgoingID) {
+            players[index].primaryPosition = outgoing.primaryPosition
+            fieldingIDs = fieldingIDs.map { $0 == outgoingID ? incomingID : $0 }
+        }
+        if !keepsDH {
+            battingOrderIDs = battingOrderIDs.map { $0 == outgoingID ? incomingID : $0 }
+            if batterAnchorID == outgoingID { batterAnchorID = incomingID }
+            if designatedHitterID == outgoingID { designatedHitterID = incomingID }
+            for base in Base.allCases where runners[base]?.id == outgoingID { runners[base] = players[index] }
+            automaticRunnerIDs = automaticRunnerIDs?.map { $0 == outgoingID ? incomingID : $0 }
+        }
+        if pitcherID == outgoingID { pitcherID = incomingID }
+        let incoming = players[index]
+        changes.append("#\(incoming.numberText) \(incoming.name) 替换 #\(outgoing.numberText) \(outgoing.name)" + (keepsDH ? "登板，原投手继续 DH" : "，接替本场棒次与守位"))
+        return true
     }
 }

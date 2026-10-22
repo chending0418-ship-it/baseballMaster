@@ -1,21 +1,23 @@
 import CoreData
 import Foundation
 
-struct RosterSnapshot: Codable {
+struct RosterSnapshot: Codable, Equatable {
     let teams: [Team]
     let opponentTeams: [Team]
-    let currentTeamID: UUID
+    let currentTeamID: UUID?
     let seasons: [Season]
     let playerGameRecords: [PlayerGameRecord]
     let games: [StoredGame]
+    var archivedTeams: [Team] = []
 
     init(
         teams: [Team],
         opponentTeams: [Team] = [],
-        currentTeamID: UUID,
+        currentTeamID: UUID?,
         seasons: [Season],
         playerGameRecords: [PlayerGameRecord],
-        games: [StoredGame] = []
+        games: [StoredGame] = [],
+        archivedTeams: [Team] = []
     ) {
         self.teams = teams
         self.opponentTeams = opponentTeams
@@ -23,26 +25,29 @@ struct RosterSnapshot: Codable {
         self.seasons = seasons
         self.playerGameRecords = playerGameRecords
         self.games = games
+        self.archivedTeams = archivedTeams
     }
 
     private enum CodingKeys: String, CodingKey {
-        case teams, opponentTeams, currentTeamID, seasons, playerGameRecords, games
+        case teams, opponentTeams, currentTeamID, seasons, playerGameRecords, games, archivedTeams
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         teams = try container.decode([Team].self, forKey: .teams)
         opponentTeams = try container.decodeIfPresent([Team].self, forKey: .opponentTeams) ?? []
-        currentTeamID = try container.decode(UUID.self, forKey: .currentTeamID)
+        currentTeamID = try container.decodeIfPresent(UUID.self, forKey: .currentTeamID)
         seasons = try container.decode([Season].self, forKey: .seasons)
         playerGameRecords = try container.decode([PlayerGameRecord].self, forKey: .playerGameRecords)
         games = try container.decodeIfPresent([StoredGame].self, forKey: .games) ?? []
+        archivedTeams = try container.decodeIfPresent([Team].self, forKey: .archivedTeams) ?? []
     }
 }
 
 @MainActor
 final class CoreDataRosterStore {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
+    static var writeFault: (() throws -> Void)?
     private(set) var loadedSchemaVersion: Int?
     private(set) var migratedLegacySchema = false
 
@@ -55,10 +60,13 @@ final class CoreDataRosterStore {
         static let game = "StoredGame"
     }
 
+    let resolvedURL: URL?
     private let container: NSPersistentContainer
     private var context: NSManagedObjectContext { container.viewContext }
 
-    init(storeURL: URL?) throws {
+    init(storeURL: URL?, protectsUpgrade: Bool = true) throws {
+        let storeURL = try storeURL.map { protectsUpgrade ? try Self.protectAndMigrate(at: $0) : $0 }
+        self.resolvedURL = storeURL
         let managedObjectModel = Self.makeManagedObjectModel()
         if let storeURL {
             try FileManager.default.createDirectory(
@@ -99,7 +107,7 @@ final class CoreDataRosterStore {
 
     func loadSnapshot() throws -> RosterSnapshot? {
         let teamObjects = try fetch(Entity.team, sortedBy: "sortOrder")
-        if teamObjects.isEmpty {
+        if try teamObjects.isEmpty && fetch(Entity.metadata).isEmpty {
             for entity in [Entity.player, Entity.game, Entity.gameRecord, Entity.season, Entity.metadata] {
                 if try !fetch(entity).isEmpty { throw LocalDataError.invalid("数据库缺少球队但仍有历史数据，原文件已保留。") }
             }
@@ -111,20 +119,20 @@ final class CoreDataRosterStore {
             object.value(forKey: "rosterTeamID") as? UUID
         }
 
-        let decodedTeams = teamObjects.compactMap { object -> (team: Team, isOpponent: Bool)? in
+        let decodedTeams = try teamObjects.map { object -> (team: Team, isOpponent: Bool) in
             guard let id = object.value(forKey: "id") as? UUID,
                   let name = object.value(forKey: "name") as? String,
                   let shortName = object.value(forKey: "shortName") as? String,
-                  let city = object.value(forKey: "city") as? String else { return nil }
+                  let city = object.value(forKey: "city") as? String else { throw LocalDataError.invalid("球队资料损坏") }
 
-            let players = (playersByTeam[id] ?? []).compactMap(Self.player(from:))
-            let team = Team(id: id, name: name, shortName: shortName, city: city, players: players)
+            let players = try (playersByTeam[id] ?? []).map(Self.player(from:))
+            var team = Team(id: id, name: name, shortName: shortName, city: city, players: players)
+            team.isDemo = object.value(forKey: "isDemo") as? Bool
             let isOpponent = (object.value(forKey: "isOpponent") as? NSNumber)?.boolValue ?? false
             return (team, isOpponent)
         }
         let teams = decodedTeams.filter { !$0.isOpponent }.map(\.team)
         let opponentTeams = decodedTeams.filter { $0.isOpponent }.map(\.team)
-        guard !teams.isEmpty else { throw LocalDataError.invalid("数据库缺少本队，原文件已保留。") }
 
         let seasonObjects = try fetch(Entity.season, sortedBy: "sortOrder")
         let seasons = seasonObjects.compactMap { object -> Season? in
@@ -143,7 +151,7 @@ final class CoreDataRosterStore {
         }
 
         let metadata = try fetch(Entity.metadata).first
-        let currentTeamID = metadata?.value(forKey: "currentTeamID") as? UUID ?? teams[0].id
+        let currentTeamID = metadata?.value(forKey: "currentTeamID") as? UUID ?? teams.first?.id
         loadedSchemaVersion = metadata?.value(forKey: "schemaVersion") as? Int
         if let version = metadata?.value(forKey: "schemaVersion") as? Int, version > Self.schemaVersion {
             throw LocalDataError.invalid("此数据库由较新版本创建，请更新 App。")
@@ -167,7 +175,8 @@ final class CoreDataRosterStore {
             currentTeamID: currentTeamID,
             seasons: seasons,
             playerGameRecords: records,
-            games: games
+            games: games,
+            archivedTeams: try (metadata?.value(forKey: "archivedTeamsData") as? Data).map { try JSONDecoder().decode([Team].self, from: $0) } ?? []
         )
         try LocalBackup.validate(snapshot)
         return snapshot
@@ -186,6 +195,9 @@ final class CoreDataRosterStore {
     }
 
     func replaceAll(with snapshot: RosterSnapshot) throws {
+        try LocalBackup.validate(snapshot)
+        var committed = false
+        defer { if !committed { context.rollback() } }
         for entityName in [Entity.game, Entity.gameRecord, Entity.player, Entity.team, Entity.season, Entity.metadata] {
             for object in try fetch(entityName) {
                 context.delete(object)
@@ -195,18 +207,19 @@ final class CoreDataRosterStore {
         let metadata = NSEntityDescription.insertNewObject(forEntityName: Entity.metadata, into: context)
         metadata.setValue("main", forKey: "id")
         metadata.setValue(snapshot.currentTeamID, forKey: "currentTeamID")
+        metadata.setValue(try JSONEncoder().encode(snapshot.archivedTeams), forKey: "archivedTeamsData")
         metadata.setValue(Int32(Self.schemaVersion), forKey: "schemaVersion")
 
         for (teamIndex, team) in snapshot.teams.enumerated() {
             insertTeam(team, sortOrder: teamIndex, isOpponent: false)
             for (playerIndex, player) in team.players.enumerated() {
-                insertPlayer(player, rosterTeamID: team.id, sortOrder: playerIndex)
+                try insertPlayer(player, rosterTeamID: team.id, sortOrder: playerIndex)
             }
         }
         for (teamIndex, team) in snapshot.opponentTeams.enumerated() {
             insertTeam(team, sortOrder: teamIndex, isOpponent: true)
             for (playerIndex, player) in team.players.enumerated() {
-                insertPlayer(player, rosterTeamID: team.id, sortOrder: playerIndex)
+                try insertPlayer(player, rosterTeamID: team.id, sortOrder: playerIndex)
             }
         }
         for (index, season) in snapshot.seasons.enumerated() {
@@ -219,9 +232,10 @@ final class CoreDataRosterStore {
             insertGameRecord(record)
         }
         for game in snapshot.games {
-            insertGame(game)
+            try insertGame(game)
         }
         try save()
+        committed = true
     }
 
     func upsertTeam(_ team: Team, sortOrder: Int, isOpponent: Bool = false) throws {
@@ -234,7 +248,7 @@ final class CoreDataRosterStore {
     func upsertGame(_ game: StoredGame) throws {
         let object = try object(withID: game.id, in: Entity.game)
             ?? NSEntityDescription.insertNewObject(forEntityName: Entity.game, into: context)
-        apply(game, to: object)
+        try apply(game, to: object)
         try save()
     }
 
@@ -245,28 +259,25 @@ final class CoreDataRosterStore {
         try save()
     }
 
-    func deleteTeam(id: UUID, playerIDs: Set<UUID>, currentTeamID: UUID) throws {
+    func deleteTeam(id: UUID, playerIDs: Set<UUID>, currentTeamID: UUID?) throws {
         if let team = try object(withID: id, in: Entity.team) {
             context.delete(team)
         }
         for player in try objects(withIDs: playerIDs, in: Entity.player) {
             context.delete(player)
         }
-        for record in try objects(matching: NSPredicate(format: "playerID IN %@", Array(playerIDs)), in: Entity.gameRecord) {
-            context.delete(record)
-        }
         try setCurrentTeamID(currentTeamID, shouldSave: false)
         try save()
     }
 
-    func setCurrentTeamID(_ id: UUID) throws {
+    func setCurrentTeamID(_ id: UUID?) throws {
         try setCurrentTeamID(id, shouldSave: true)
     }
 
     func upsertPlayer(_ player: Player, rosterTeamID: UUID, sortOrder: Int) throws {
         let object = try object(withID: player.id, in: Entity.player)
             ?? NSEntityDescription.insertNewObject(forEntityName: Entity.player, into: context)
-        apply(player, rosterTeamID: rosterTeamID, to: object, sortOrder: sortOrder)
+        try apply(player, rosterTeamID: rosterTeamID, to: object, sortOrder: sortOrder)
         try save()
     }
 
@@ -274,13 +285,10 @@ final class CoreDataRosterStore {
         if let player = try object(withID: id, in: Entity.player) {
             context.delete(player)
         }
-        for record in try objects(matching: NSPredicate(format: "playerID == %@", id as CVarArg), in: Entity.gameRecord) {
-            context.delete(record)
-        }
         try save()
     }
 
-    private func setCurrentTeamID(_ id: UUID, shouldSave: Bool) throws {
+    private func setCurrentTeamID(_ id: UUID?, shouldSave: Bool) throws {
         let metadata = try fetch(Entity.metadata).first
             ?? NSEntityDescription.insertNewObject(forEntityName: Entity.metadata, into: context)
         metadata.setValue("main", forKey: "id")
@@ -301,19 +309,20 @@ final class CoreDataRosterStore {
         object.setValue(team.city, forKey: "city")
         object.setValue(Int32(sortOrder), forKey: "sortOrder")
         object.setValue(isOpponent, forKey: "isOpponent")
+        object.setValue(team.isDemo, forKey: "isDemo")
     }
 
-    private func insertPlayer(_ player: Player, rosterTeamID: UUID, sortOrder: Int) {
+    private func insertPlayer(_ player: Player, rosterTeamID: UUID, sortOrder: Int) throws {
         let object = NSEntityDescription.insertNewObject(forEntityName: Entity.player, into: context)
-        apply(player, rosterTeamID: rosterTeamID, to: object, sortOrder: sortOrder)
+        try apply(player, rosterTeamID: rosterTeamID, to: object, sortOrder: sortOrder)
     }
 
-    private func apply(_ player: Player, rosterTeamID: UUID, to object: NSManagedObject, sortOrder: Int) {
+    private func apply(_ player: Player, rosterTeamID: UUID, to object: NSManagedObject, sortOrder: Int) throws {
         object.setValue(player.id, forKey: "id")
         object.setValue(rosterTeamID, forKey: "rosterTeamID")
         object.setValue(player.chineseName, forKey: "chineseName")
         object.setValue(player.englishName, forKey: "englishName")
-        object.setValue(try? JSONEncoder().encode(player.numbers), forKey: "numbersData")
+        object.setValue(try JSONEncoder().encode(player), forKey: "numbersData")
         object.setValue(Int16(player.primaryPosition.rawValue), forKey: "primaryPosition")
         object.setValue(Int32(sortOrder), forKey: "sortOrder")
     }
@@ -342,32 +351,37 @@ final class CoreDataRosterStore {
         object.setValue(Int32(record.batting.sacrifices), forKey: "sacrifices")
     }
 
-    private func insertGame(_ game: StoredGame) {
+    private func insertGame(_ game: StoredGame) throws {
         let object = NSEntityDescription.insertNewObject(forEntityName: Entity.game, into: context)
-        apply(game, to: object)
+        try apply(game, to: object)
     }
 
-    private func apply(_ game: StoredGame, to object: NSManagedObject) {
+    private func apply(_ game: StoredGame, to object: NSManagedObject) throws {
+        let encoded = try JSONEncoder().encode(game)
         object.setValue(game.id, forKey: "id")
         object.setValue(game.updatedAt, forKey: "updatedAt")
         object.setValue(Int16(game.status.rawValue), forKey: "status")
-        object.setValue(try? JSONEncoder().encode(game), forKey: "payloadData")
+        object.setValue(encoded, forKey: "payloadData")
     }
 
-    private static func player(from object: NSManagedObject) -> Player? {
+    private static func player(from object: NSManagedObject) throws -> Player {
         guard let id = object.value(forKey: "id") as? UUID,
               let chineseName = object.value(forKey: "chineseName") as? String,
-              let englishName = object.value(forKey: "englishName") as? String else { return nil }
-        let numbersData = object.value(forKey: "numbersData") as? Data
-        let numbers = numbersData.flatMap { try? JSONDecoder().decode([Int].self, from: $0) } ?? []
-        let positionRawValue = (object.value(forKey: "primaryPosition") as? NSNumber)?.intValue ?? 1
-        return Player(
-            id: id,
-            chineseName: chineseName,
-            englishName: englishName,
-            numbers: numbers,
-            primaryPosition: FieldPosition(rawValue: positionRawValue) ?? .pitcher
-        )
+              let englishName = object.value(forKey: "englishName") as? String,
+              let data = object.value(forKey: "numbersData") as? Data,
+              let raw = (object.value(forKey: "primaryPosition") as? NSNumber)?.intValue,
+              let position = FieldPosition(rawValue: raw) else {
+            throw LocalDataError.invalid("球员资料损坏，原数据库已保留。")
+        }
+        let json = try JSONSerialization.jsonObject(with: data)
+        if json is [Any] {
+            let numbers = try JSONDecoder().decode([Int].self, from: data)
+            return Player(id: id, chineseName: chineseName, englishName: englishName, numbers: numbers, primaryPosition: position)
+        }
+        let player = try JSONDecoder().decode(Player.self, from: data)
+        guard player.id == id, player.chineseName == chineseName, player.englishName == englishName,
+              player.primaryPosition == position else { throw LocalDataError.invalid("球员字段不一致") }
+        return player
     }
 
     private static func gameRecord(from object: NSManagedObject) -> PlayerGameRecord? {
@@ -410,6 +424,7 @@ final class CoreDataRosterStore {
     private func save() throws {
         guard context.hasChanges else { return }
         do {
+            try Self.writeFault?()
             try context.save()
         } catch {
             context.rollback()
@@ -452,9 +467,9 @@ final class CoreDataRosterStore {
         return objects
     }
 
-    private static func makeManagedObjectModel() -> NSManagedObjectModel {
+    static func makeManagedObjectModel(version: Int = 3) -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
-        model.versionIdentifiers = ["RosterSchemaV2"]
+        model.versionIdentifiers = ["RosterSchemaV\(version)"]
 
         let metadata = entity(Entity.metadata, attributes: [
             attribute("id", .stringAttributeType),
@@ -522,6 +537,13 @@ final class CoreDataRosterStore {
             attribute("payloadData", .binaryDataAttributeType, allowsExternalStorage: true)
         ], uniquenessConstraints: [["id"]])
 
+        if version >= 3 {
+            metadata.attributesByName["currentTeamID"]?.isOptional = true
+            let archived = attribute("archivedTeamsData", .binaryDataAttributeType); archived.isOptional = true
+            metadata.properties.append(archived)
+            let demo = attribute("isDemo", .booleanAttributeType); demo.isOptional = true
+            team.properties.append(demo)
+        }
         model.entities = [metadata, team, player, season, gameRecord, game]
         return model
     }
@@ -540,8 +562,7 @@ final class CoreDataRosterStore {
             return false
         }
 
-        let sourceModel = makeV1ManagedObjectModel()
-        guard sourceModel.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata) else {
+        guard let sourceModel = [makeV1ManagedObjectModel(), makeManagedObjectModel(version: 2)].first(where: { $0.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata) }) else {
             throw NSError(
                 domain: "BaseballMaster.CoreDataMigration",
                 code: 1,
@@ -582,7 +603,7 @@ final class CoreDataRosterStore {
         return true
     }
 
-    private static func makeV1ManagedObjectModel() -> NSManagedObjectModel {
+    static func makeV1ManagedObjectModel() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
         model.versionIdentifiers = ["RosterSchemaV1"]
 

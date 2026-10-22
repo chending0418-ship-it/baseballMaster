@@ -5,12 +5,13 @@ import Foundation
 final class GameStore: ObservableObject {
     @Published var teams: [Team]
     @Published var opponentTeams: [Team]
-    @Published var currentTeam: Team
+    @Published var currentTeam: Team?
     @Published var game: GameState {
         didSet { persistCurrentGameIfNeeded() }
     }
     @Published var seasons: [Season]
     @Published var playerGameRecords: [PlayerGameRecord]
+    @Published var archivedTeams: [Team] = []
     @Published var games: [StoredGame]
     @Published var storageErrorMessage: String?
     @Published var actionErrorMessage: String?
@@ -18,11 +19,29 @@ final class GameStore: ObservableObject {
     @Published var selectedTab = 0
     @Published var gameNavigationID = UUID()
 
+    lazy var liveBroadcasts: LiveBroadcastManager = {
+        #if DEBUG
+        if sourceDatabaseURL == nil && ProcessInfo.processInfo.arguments.contains("--live-local-test") {
+            let base = URL(string: "http://127.0.0.1:18088/baseballmaster/live")!
+            return LiveBroadcastManager(store: self, vault: LivePreviewCredentials(), transport: LiveHTTPClient(baseURL: base), enabled: true, viewBaseURL: base)
+        }
+        #endif
+        return LiveBroadcastManager(store: self, enabled: AppFeatureAvailability.liveBroadcast && sourceDatabaseURL != nil)
+    }()
+
+    private var actionDepth = 0
+    private var actionOriginal: GameState?
+    private var actionOriginalGames: [StoredGame] = []
+    private var actionOriginalActiveID: UUID?
+    private var actionUndo: [GameState] = []
+    private var actionRedo: [GameState] = []
+    private var actionEffectiveScorers: [UUID]?
     private var undoStack: [GameState] = []
     private var redoStack: [GameState] = []
     private var nextEventBeforeSituation: GameSituationSnapshot?
     private var persistenceStore: CoreDataRosterStore
-    private let databaseURL: URL?
+    private var databaseURL: URL?
+    private let sourceDatabaseURL: URL?
     private var activeGameID: UUID?
 
     convenience init() {
@@ -38,6 +57,14 @@ final class GameStore: ObservableObject {
         var databaseSnapshot: RosterSnapshot?
         var openedStore: CoreDataRosterStore?
         do {
+            if let legacyJSONURL, FileManager.default.fileExists(atPath: legacyJSONURL.path) {
+                let original = try Data(contentsOf: legacyJSONURL)
+                let archive = legacyJSONURL.deletingLastPathComponent().appendingPathComponent("legacy-before-v3.json")
+                if !FileManager.default.fileExists(atPath: archive.path) {
+                    try original.write(to: archive, options: .atomic)
+                    guard try Data(contentsOf: archive) == original else { throw LocalDataError.invalid("旧 JSON 备份校验失败") }
+                }
+            }
             let opened = try CoreDataRosterStore(storeURL: persistenceURL)
             openedStore = opened
             databaseSnapshot = try opened.loadSnapshot()
@@ -49,9 +76,10 @@ final class GameStore: ObservableObject {
             initialStorageError = "本地数据无法完整读取，原文件已保留。请从备份恢复后继续使用。"
         }
 
-        let waves = Self.makeWaves()
-        let falcons = Self.makeFalcons()
-        let rockets = Self.makeRockets()
+        var waves = Self.makeWaves()
+        var falcons = Self.makeFalcons()
+        var rockets = Self.makeRockets()
+        waves.isDemo = true; falcons.isDemo = true; rockets.isDemo = true
         let defaultSeasons = Self.makeSeasons()
         let legacySnapshot = databaseSnapshot == nil && initialStorageError == nil
             ? legacyJSONURL.flatMap(Self.loadLegacyRosterData(from:))
@@ -61,20 +89,21 @@ final class GameStore: ObservableObject {
             initialStorageError = "旧版数据文件无法读取，原文件已保留。请导入有效备份后继续。"
         }
         let persisted = databaseSnapshot ?? legacySnapshot
-        let loadedTeams = persisted?.teams.isEmpty == false ? persisted!.teams : [waves]
+        let loadedTeams = persisted?.teams ?? (initialStorageError == nil ? [waves] : [])
         let needsLegacyDatabaseDefaults = databaseStore.migratedLegacySchema
             || (databaseStore.loadedSchemaVersion.map { $0 < CoreDataRosterStore.schemaVersion } ?? false)
-        let loadedOpponentTeams = needsLegacyDatabaseDefaults && persisted?.opponentTeams.isEmpty == true
-            ? [falcons, rockets] : (persisted?.opponentTeams ?? [falcons, rockets])
-        let loadedCurrentTeam = loadedTeams.first(where: { $0.id == persisted?.currentTeamID }) ?? loadedTeams[0]
-        let loadedSeasons = persisted?.seasons.isEmpty == false ? persisted!.seasons : defaultSeasons
+        let loadedOpponentTeams = persisted?.opponentTeams ?? (initialStorageError == nil ? [falcons, rockets] : [])
+        let loadedCurrentTeam = loadedTeams.first(where: { $0.id == persisted?.currentTeamID }) ?? loadedTeams.first
+        let loadedSeasons = persisted?.seasons ?? defaultSeasons
         // A new formal installation starts with no fabricated box scores.
         // Player statistics are created only from locally recorded games.
         let loadedRecords = persisted?.playerGameRecords ?? []
         let loadedGames = persisted?.games.sorted { $0.updatedAt > $1.updatedAt } ?? []
 
         self.persistenceStore = databaseStore
-        self.databaseURL = persistenceURL
+        self.sourceDatabaseURL = persistenceURL
+        self.databaseURL = databaseStore.resolvedURL ?? persistenceURL
+        self.archivedTeams = persisted?.archivedTeams ?? []
         self.teams = loadedTeams
         self.opponentTeams = loadedOpponentTeams
         self.currentTeam = loadedCurrentTeam
@@ -97,7 +126,7 @@ final class GameStore: ObservableObject {
                 self.game.clockDisplayMode = .elapsed
             }
         } else {
-            let initialAway = loadedCurrentTeam.players.count >= 9 ? loadedCurrentTeam : waves
+            let initialAway = (loadedCurrentTeam?.players.count ?? 0) >= 9 ? loadedCurrentTeam! : waves
             let initialHome = loadedOpponentTeams.first(where: { $0.players.count >= 9 }) ?? falcons
             self.game = GameState(homeTeam: initialHome, awayTeam: initialAway, scheduledInnings: 6)
             self.activeGameID = nil
@@ -111,10 +140,43 @@ final class GameStore: ObservableObject {
                 }
             } catch {
                 NSLog("Unable to initialize the local Core Data store: %@", String(describing: error))
-                storageErrorMessage = "初始化本地数据库失败，本次更改可能不会在重启后保留。"
+                requiresDataRecovery = true
+                storageErrorMessage = "初始化本地数据库失败，已停止写入并保留原资料。"
             }
         }
-        if !requiresDataRecovery { createAutomaticBackup() }
+        if !requiresDataRecovery {
+            do {
+                try migrateStoredAppearanceIdentities()
+                createAutomaticBackup()
+            } catch {
+                requiresDataRecovery = true
+                storageErrorMessage = "打席资料升级未能保存，已停止写入并保留原资料。请重试或从备份恢复。"
+            }
+        }
+    }
+
+    private func migrateStoredAppearanceIdentities() throws {
+        let originalGames = games
+        let initialGame = game
+        let storedID = activeGameID
+        activeGameID = nil
+        for index in games.indices {
+            game = games[index].state
+            migrateAppearanceIdentities()
+            if games[index].status == .ongoing { ensureCurrentAppearance() }
+            games[index].state = game
+        }
+        game = storedID.flatMap { id in games.first { $0.id == id }?.state } ?? initialGame
+        activeGameID = storedID
+        do {
+            if games != originalGames { try persistenceStore.replaceAll(with: makeRosterSnapshot()) }
+        } catch {
+            activeGameID = nil
+            games = originalGames
+            game = initialGame
+            activeGameID = storedID
+            throw error
+        }
     }
 
     var canUndo: Bool { !undoStack.isEmpty }
@@ -155,11 +217,10 @@ final class GameStore: ObservableObject {
         guard !lineup.isEmpty else { return nil }
         let currentIndex = game.isTop ? game.awayBatterIndex : game.homeBatterIndex
         let occupiedIDs = Set(game.baseRunners.values.map(\.id))
-        let exitedIDs = exitedPlayerIDs(forHomeTeam: !game.isTop)
         for offset in 1..<lineup.count {
             let index = (currentIndex - offset + lineup.count) % lineup.count
             let player = lineup[index]
-            if !occupiedIDs.contains(player.id), !exitedIDs.contains(player.id) {
+            if !occupiedIDs.contains(player.id) {
                 return player
             }
         }
@@ -170,7 +231,6 @@ final class GameStore: ObservableObject {
         return game.battingOrderPlayers.filter { player in
             player.id != batterID
                 && !(game.baseRunners.values.contains { $0.id == player.id })
-                && !exitedPlayerIDs(forHomeTeam: !game.isTop).contains(player.id)
         }
     }
     var battingBenchPlayers: [Player] {
@@ -179,10 +239,20 @@ final class GameStore: ObservableObject {
     var fieldingBenchPlayers: [Player] {
         availableBenchPlayers(forHomeTeam: game.isTop)
     }
+    var availablePitchers: [Player] {
+        var players = activeFielders.filter { $0.id != currentPitcher.id } + fieldingBenchPlayers
+        let dh = game.isTop ? game.homeDesignatedHitterID : game.awayDesignatedHitterID
+        if activeRulesOrDefault.twoWayPlayerEnabled, let dh, dh != currentPitcher.id,
+           !players.contains(where: { $0.id == dh }), let player = game.fieldingTeam.players.first(where: { $0.id == dh }) {
+            players.append(player)
+        }
+        return players
+    }
+
     var activeFielders: [Player] {
         let team = game.fieldingTeam
         let ids = activeFieldingPlayerIDs(forHomeTeam: game.isTop)
-        return team.players.filter { ids.contains($0.id) }
+        return team.sortedPlayers.filter { ids.contains($0.id) }
     }
     var tiebreakRunnerBases: [Base] {
         let configured = game.tiebreakRunnerBases ?? [.second]
@@ -241,6 +311,8 @@ final class GameStore: ObservableObject {
     }
 
     func startGameClock(at date: Date = Date()) {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         guard !game.isFinal, game.clockRunningSince == nil else { return }
         finalizeLatestEventSituation()
         nextEventBeforeSituation = game.situationSnapshot
@@ -263,6 +335,8 @@ final class GameStore: ObservableObject {
     }
 
     func pauseGameClock(at date: Date = Date()) {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         guard let runningSince = game.clockRunningSince else { return }
         finalizeLatestEventSituation()
         nextEventBeforeSituation = game.situationSnapshot
@@ -273,6 +347,8 @@ final class GameStore: ObservableObject {
     }
 
     func toggleGameClockDisplayMode() {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         guard canShowRemainingGameTime else {
             game.clockDisplayMode = .elapsed
             return
@@ -378,9 +454,9 @@ final class GameStore: ObservableObject {
         lineup: [LineupAssignment],
         scheduledAt: Date = Date(),
         startImmediately: Bool = true
-    ) -> UUID {
+    ) -> UUID? {
         let orderedLineup = lineup.sorted { $0.battingOrder < $1.battingOrder }
-        var ourTeam = currentTeam
+        guard var ourTeam = currentTeam, !requiresDataRecovery else { actionErrorMessage = "请先创建并选择球队。"; return nil }
         for assignment in orderedLineup {
             if let index = ourTeam.players.firstIndex(where: { $0.id == assignment.playerID }) {
                 ourTeam.players[index].primaryPosition = assignment.position
@@ -422,7 +498,7 @@ final class GameStore: ObservableObject {
             scheduledAt: scheduledAt,
             startedAt: nil,
             seasonID: seasons.first?.id ?? "unspecified",
-            ourTeamID: currentTeam.id,
+            ourTeamID: currentTeam?.id,
             opponentTeamID: opponent.id,
             isHome: isHome,
             rules: rules,
@@ -430,14 +506,16 @@ final class GameStore: ObservableObject {
             status: startImmediately ? .ongoing : .scheduled,
             state: newState
         )
+        do { try persistenceStore.upsertGame(stored) }
+        catch { storageErrorMessage = error.localizedDescription; return nil }
         games.insert(stored, at: 0)
-        persist { try persistenceStore.upsertGame(stored) }
         if startImmediately {
             activeGameID = nil
             game = newState
             undoStack.removeAll()
             redoStack.removeAll()
             activeGameID = stored.id
+            initializeAppearanceForOpenedGame()
         }
         return stored.id
     }
@@ -451,7 +529,7 @@ final class GameStore: ObservableObject {
         homeLineup requestedHomeLineup: [LineupAssignment]? = nil,
         scheduledAt: Date = Date(),
         startImmediately: Bool = true
-    ) -> UUID {
+    ) -> UUID? {
         let awayLineup = (requestedAwayLineup ?? defaultAssignments(for: awayTeam, count: rules.fieldersCount))
             .sorted { $0.battingOrder < $1.battingOrder }
         let homeLineup = (requestedHomeLineup ?? defaultAssignments(for: homeTeam, count: rules.fieldersCount))
@@ -492,14 +570,16 @@ final class GameStore: ObservableObject {
             status: startImmediately ? .ongoing : .scheduled,
             state: state
         )
+        do { try persistenceStore.upsertGame(stored) }
+        catch { storageErrorMessage = error.localizedDescription; return nil }
         games.insert(stored, at: 0)
-        persist { try persistenceStore.upsertGame(stored) }
         if startImmediately {
             activeGameID = nil
             game = state
             undoStack.removeAll()
             redoStack.removeAll()
             activeGameID = stored.id
+            initializeAppearanceForOpenedGame()
         }
         return stored.id
     }
@@ -535,8 +615,9 @@ final class GameStore: ObservableObject {
             players: []
         )
         teams.append(team)
+        if currentTeam == nil { currentTeam = team }
         persist {
-            try persistenceStore.upsertTeam(team, sortOrder: teams.count - 1)
+            try persistenceStore.replaceAll(with: makeRosterSnapshot())
         }
         return team.id
     }
@@ -546,7 +627,7 @@ final class GameStore: ObservableObject {
         teams[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         teams[index].shortName = shortName.trimmingCharacters(in: .whitespacesAndNewlines)
         teams[index].city = city.trimmingCharacters(in: .whitespacesAndNewlines)
-        if currentTeam.id == id {
+        if currentTeam?.id == id {
             currentTeam = teams[index]
         }
         let updatedTeam = teams[index]
@@ -557,22 +638,46 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func deleteTeam(id: UUID) -> Bool {
-        guard teams.count > 1,
-              let index = teams.firstIndex(where: { $0.id == id }) else { return false }
-        let playerIDs = Set(teams[index].players.map(\.id))
+        guard !requiresDataRecovery, let index = teams.firstIndex(where: { $0.id == id }) else { return false }
+        if let reason = teamDeletionIssue(id) { actionErrorMessage = reason; return false }
+        let original = makeRosterSnapshot()
+        var archived = teams[index]
+        if let previous = archivedTeams.first(where: { $0.id == id }) {
+            archived.players += previous.players.filter { old in !archived.players.contains { $0.id == old.id } }
+        }
+        archivedTeams.removeAll { $0.id == id }
+        archivedTeams.append(archived)
         teams.remove(at: index)
-        playerGameRecords.removeAll { playerIDs.contains($0.playerID) }
-        if currentTeam.id == id, let replacement = teams.first {
-            currentTeam = replacement
-        }
-        persist {
-            try persistenceStore.deleteTeam(
-                id: id,
-                playerIDs: playerIDs,
-                currentTeamID: currentTeam.id
-            )
-        }
+        if currentTeam?.id == id { currentTeam = teams.first }
+        do { try persistenceStore.replaceAll(with: makeRosterSnapshot()) }
+        catch { teams = original.teams; archivedTeams = original.archivedTeams
+            currentTeam = teams.first { $0.id == original.currentTeamID }
+            storageErrorMessage = error.localizedDescription; return false }
         return true
+    }
+
+    func teamDeletionIssue(_ id: UUID) -> String? {
+        let linked = games.filter { $0.status != .completed && ($0.state.homeTeam.id == id || $0.state.awayTeam.id == id) }
+        guard !linked.isEmpty else { return nil }
+        return "球队有未结束的比赛，不能删除。请先在比赛／赛程中处理：" + linked.map {
+            "\($0.state.awayTeam.name) 对 \($0.state.homeTeam.name)"
+        }.joined(separator: "、")
+    }
+
+    var statisticsTeams: [Team] {
+        var result = teams + archivedTeams.filter { archived in !teams.contains { $0.id == archived.id } }
+        for stored in games where !stored.isObservation && stored.ourTeamID != nil {
+            if !result.contains(where: { $0.id == stored.ourTeam.id }) { result.append(stored.ourTeam) }
+        }
+        return result
+    }
+
+    func historicalPersonalPlayers(teamID: UUID) -> [Player] {
+        let ids = Set(playerGameRecords.map(\.playerID))
+        var players = (teams + archivedTeams).filter { $0.id == teamID }.flatMap(\.players)
+        var seen = Set<UUID>()
+        players = players.filter { ids.contains($0.id) && seen.insert($0.id).inserted }
+        return players.sorted(by: Player.rosterOrder)
     }
 
     func setCurrentTeam(id: UUID) {
@@ -611,16 +716,11 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func deleteOpponentTeam(id: UUID) -> Bool {
-        guard let index = opponentTeams.firstIndex(where: { $0.id == id }) else { return false }
-        let playerIDs = Set(opponentTeams[index].players.map(\.id))
-        opponentTeams.remove(at: index)
-        persist {
-            try persistenceStore.deleteTeam(
-                id: id,
-                playerIDs: playerIDs,
-                currentTeamID: currentTeam.id
-            )
-        }
+        guard !requiresDataRecovery, let index = opponentTeams.firstIndex(where: { $0.id == id }) else { return false }
+        if let reason = teamDeletionIssue(id) { actionErrorMessage = reason; return false }
+        let team = opponentTeams.remove(at: index)
+        do { try persistenceStore.replaceAll(with: makeRosterSnapshot()) }
+        catch { opponentTeams.insert(team, at: index); storageErrorMessage = error.localizedDescription; return false }
         return true
     }
 
@@ -629,16 +729,18 @@ final class GameStore: ObservableObject {
         to teamID: UUID,
         chineseName: String,
         englishName: String,
-        numbers: [Int]
+        numbers: [Int],
+        numberTexts: [String]? = nil
     ) -> UUID? {
         guard let teamIndex = opponentTeams.firstIndex(where: { $0.id == teamID }) else { return nil }
         let position = FieldPosition.allCases[opponentTeams[teamIndex].players.count % FieldPosition.allCases.count]
-        let player = Player(
+        var player = Player(
             chineseName: chineseName.trimmingCharacters(in: .whitespacesAndNewlines),
             englishName: englishName.trimmingCharacters(in: .whitespacesAndNewlines),
-            numbers: normalizedNumbers(numbers),
+            numbers: numberTexts?.compactMap(Int.init) ?? normalizedNumbers(numbers),
             primaryPosition: position
         )
+        player.jerseyNumbers = numberTexts
         opponentTeams[teamIndex].players.append(player)
         persist {
             try persistenceStore.upsertPlayer(
@@ -655,13 +757,15 @@ final class GameStore: ObservableObject {
         playerID: UUID,
         chineseName: String,
         englishName: String,
-        numbers: [Int]
+        numbers: [Int],
+        numberTexts: [String]? = nil
     ) {
         guard let teamIndex = opponentTeams.firstIndex(where: { $0.id == teamID }),
               let playerIndex = opponentTeams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else { return }
         opponentTeams[teamIndex].players[playerIndex].chineseName = chineseName.trimmingCharacters(in: .whitespacesAndNewlines)
         opponentTeams[teamIndex].players[playerIndex].englishName = englishName.trimmingCharacters(in: .whitespacesAndNewlines)
-        opponentTeams[teamIndex].players[playerIndex].numbers = normalizedNumbers(numbers)
+        opponentTeams[teamIndex].players[playerIndex].numbers = numberTexts?.compactMap(Int.init) ?? normalizedNumbers(numbers)
+        opponentTeams[teamIndex].players[playerIndex].jerseyNumbers = numberTexts
         let updated = opponentTeams[teamIndex].players[playerIndex]
         persist {
             try persistenceStore.upsertPlayer(updated, rosterTeamID: teamID, sortOrder: playerIndex)
@@ -679,16 +783,18 @@ final class GameStore: ObservableObject {
         to teamID: UUID,
         chineseName: String,
         englishName: String,
-        numbers: [Int]
+        numbers: [Int],
+        numberTexts: [String]? = nil
     ) -> UUID? {
         guard let teamIndex = teams.firstIndex(where: { $0.id == teamID }) else { return nil }
         let position = FieldPosition.allCases[teams[teamIndex].players.count % FieldPosition.allCases.count]
-        let player = Player(
+        var player = Player(
             chineseName: chineseName.trimmingCharacters(in: .whitespacesAndNewlines),
             englishName: englishName.trimmingCharacters(in: .whitespacesAndNewlines),
-            numbers: normalizedNumbers(numbers),
+            numbers: numberTexts?.compactMap(Int.init) ?? normalizedNumbers(numbers),
             primaryPosition: position
         )
+        player.jerseyNumbers = numberTexts
         teams[teamIndex].players.append(player)
         syncCurrentTeamIfNeeded(teamID)
         persist {
@@ -706,13 +812,15 @@ final class GameStore: ObservableObject {
         playerID: UUID,
         chineseName: String,
         englishName: String,
-        numbers: [Int]
+        numbers: [Int],
+        numberTexts: [String]? = nil
     ) {
         guard let teamIndex = teams.firstIndex(where: { $0.id == teamID }),
               let playerIndex = teams[teamIndex].players.firstIndex(where: { $0.id == playerID }) else { return }
         teams[teamIndex].players[playerIndex].chineseName = chineseName.trimmingCharacters(in: .whitespacesAndNewlines)
         teams[teamIndex].players[playerIndex].englishName = englishName.trimmingCharacters(in: .whitespacesAndNewlines)
-        teams[teamIndex].players[playerIndex].numbers = normalizedNumbers(numbers)
+        teams[teamIndex].players[playerIndex].numbers = numberTexts?.compactMap(Int.init) ?? normalizedNumbers(numbers)
+        teams[teamIndex].players[playerIndex].jerseyNumbers = numberTexts
         syncCurrentTeamIfNeeded(teamID)
         let updatedPlayer = teams[teamIndex].players[playerIndex]
         persist {
@@ -726,15 +834,18 @@ final class GameStore: ObservableObject {
 
     func deletePlayer(from teamID: UUID, playerID: UUID) {
         guard let teamIndex = teams.firstIndex(where: { $0.id == teamID }) else { return }
+        var archive = archivedTeams.first { $0.id == teamID } ?? teams[teamIndex]
+        if let player = teams[teamIndex].players.first(where: { $0.id == playerID }), !archive.players.contains(where: { $0.id == playerID }) { archive.players.append(player) }
+        archivedTeams.removeAll { $0.id == teamID }; archivedTeams.append(archive)
         teams[teamIndex].players.removeAll { $0.id == playerID }
-        playerGameRecords.removeAll { $0.playerID == playerID }
         syncCurrentTeamIfNeeded(teamID)
         persist {
-            try persistenceStore.deletePlayer(id: playerID)
+            try persistenceStore.replaceAll(with: makeRosterSnapshot())
         }
     }
 
     func addPlayer(name: String, number: Int, position: FieldPosition) {
+        guard let currentTeam else { return }
         guard let playerID = addPlayer(
             to: currentTeam.id,
             chineseName: name,
@@ -755,7 +866,14 @@ final class GameStore: ObservableObject {
     }
 
     func recordPitch(_ action: PitchAction) {
+        guard canRecordAction else { return }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         pushUndo(startsClock: true)
+        guard canRecordAction else { return }
+        let appearance = game.currentPlateAppearanceID
+        game.plateAppearancePitchCount = (game.plateAppearancePitchCount ?? 0) + 1
+        defer { if isCoachPitch, game.currentPlateAppearanceID == appearance { checkCoachPitchLimit() } }
         let batter = game.currentBatter
         let pitcher = game.currentPitcher
         updatePitcher(pitcher.id) { line in
@@ -765,22 +883,22 @@ final class GameStore: ObservableObject {
 
         switch action {
         case .ball:
-            game.balls += 1
+            game.balls = isCoachPitch ? 0 : game.balls + 1
             addLog(
                 "\(batter.name)：坏球（\(game.balls)坏 \(game.strikes)好）",
                 category: .pitch,
                 notation: "B",
-                primaryPlayerID: pitcher.id,
+                primaryPlayerID: isCoachPitch ? nil : pitcher.id,
                 secondaryPlayerID: batter.id
             )
-            if game.balls >= 4 { applyWalkWithoutUndo() }
+            if !isCoachPitch && game.balls >= 4 { applyWalkWithoutUndo() }
         case .calledStrike:
             game.strikes += 1
             addLog(
                 "\(batter.name)：看振（\(game.balls)坏 \(game.strikes)好）",
                 category: .pitch,
                 notation: "C",
-                primaryPlayerID: pitcher.id,
+                primaryPlayerID: isCoachPitch ? nil : pitcher.id,
                 secondaryPlayerID: batter.id
             )
             if game.strikes >= 3 { applyStrikeoutWithoutUndo(swinging: false) }
@@ -790,7 +908,7 @@ final class GameStore: ObservableObject {
                 "\(batter.name)：挥空（\(game.balls)坏 \(game.strikes)好）",
                 category: .pitch,
                 notation: "S",
-                primaryPlayerID: pitcher.id,
+                primaryPlayerID: isCoachPitch ? nil : pitcher.id,
                 secondaryPlayerID: batter.id
             )
             if game.strikes >= 3 { applyStrikeoutWithoutUndo(swinging: true) }
@@ -800,7 +918,7 @@ final class GameStore: ObservableObject {
                 "\(batter.name)：界外球（\(game.balls)坏 \(game.strikes)好）",
                 category: .pitch,
                 notation: "F",
-                primaryPlayerID: pitcher.id,
+                primaryPlayerID: isCoachPitch ? nil : pitcher.id,
                 secondaryPlayerID: batter.id
             )
         }
@@ -892,7 +1010,8 @@ final class GameStore: ObservableObject {
     }
 
     var canReachOnDroppedThirdStrike: Bool {
-        game.outs == 2 || game.baseRunners[.first] == nil
+        if isCoachPitch { return false }
+        return         game.outs == 2 || game.baseRunners[.first] == nil
     }
 
     func availableDestinations(for decision: RunnerDecision) -> [RunnerDestination] {
@@ -990,6 +1109,25 @@ final class GameStore: ObservableObject {
         return nil
     }
 
+    /// Nil means the ordinary runner/timing flow is still needed.
+    func halfEndingRunnerOutCount(for outcome: PlayOutcome) -> Int? {
+        if game.outs == 2, [.groundOut, .flyOut, .lineOut, .foulFlyOut, .pendingOut].contains(outcome) { return 0 }
+        if game.outs == 1, outcome == .doublePlay, !game.baseRunners.isEmpty { return 1 }
+        if game.outs == 0, outcome == .triplePlay, game.baseRunners.count >= 2 { return 2 }
+        return nil
+    }
+
+    func halfEndingDecisions(for outcome: PlayOutcome, runnerOutIDs: Set<UUID> = []) -> [RunnerDecision]? {
+        guard let count = halfEndingRunnerOutCount(for: outcome), runnerOutIDs.count == count,
+              runnerOutIDs.isSubset(of: Set(game.baseRunners.values.map(\.id))) else { return nil }
+        var decisions = Base.allCases.compactMap { base -> RunnerDecision? in
+            guard let runner = game.baseRunners[base] else { return nil }
+            return RunnerDecision(player: runner, origin: .base(base), destination: runnerOutIDs.contains(runner.id) ? .out : .hold)
+        }
+        decisions.append(RunnerDecision(player: game.currentBatter, origin: .batter, destination: .out))
+        return decisions
+    }
+
     func playNeedsTimingDecision(_ outcome: PlayOutcome, decisions: [RunnerDecision]) -> Bool {
         let outs = decisions.filter { $0.destination == .out }.count
         let runs = decisions.filter { $0.destination == .score }.count
@@ -997,12 +1135,22 @@ final class GameStore: ObservableObject {
     }
 
     @discardableResult
-    func applyPlay(
+    func applyPlay(_ outcome: PlayOutcome, defensivePlay: DefensivePlay? = nil, decisions: [RunnerDecision]? = nil, timingRunCounts: Bool? = nil) -> Bool {
+        beginAtomicAction()
+        let result = applyPlayOperation(outcome, defensivePlay: defensivePlay, decisions: decisions, timingRunCounts: timingRunCounts)
+        commitAtomicAction()
+        return result && actionErrorMessage == nil
+    }
+
+    private func applyPlayOperation(
         _ outcome: PlayOutcome,
         defensivePlay: DefensivePlay? = nil,
         decisions: [RunnerDecision]? = nil,
         timingRunCounts: Bool? = nil
     ) -> Bool {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
+        guard canRecordAction else { return false }
         actionErrorMessage = nil
         let proposedDecisions = decisions ?? suggestedRunnerDecisions(for: outcome)
         if let issue = playPreconditionError(outcome) {
@@ -1020,6 +1168,7 @@ final class GameStore: ObservableObject {
         pushUndo(startsClock: true)
         let batter = game.currentBatter
         let pitcher = game.currentPitcher
+        game.plateAppearancePitchCount = (game.plateAppearancePitchCount ?? 0) + 1
         let finalDecisions = proposedDecisions
         var battingLine = game.batting[batter.id, default: BattingLine()]
         var pitchingLine = game.pitching[pitcher.id, default: PitchingLine()]
@@ -1059,9 +1208,11 @@ final class GameStore: ObservableObject {
         )
         if thirdOutCancelsRuns {
             resolution = (runs: 0, outs: resolution.outs, scorers: [])
+            actionEffectiveScorers = []
         }
         if outcome == .runnerTagOut, timingRunCounts == false {
             resolution = (runs: 0, outs: resolution.outs, scorers: [])
+            actionEffectiveScorers = []
         }
         battingLine.runsBattedIn += [.error, .pendingOut, .pending, .other].contains(outcome) ? 0 : resolution.runs
         pitchingLine.runs += resolution.runs
@@ -1070,7 +1221,7 @@ final class GameStore: ObservableObject {
             : max(0, resolution.runs - automaticRunnerRuns)
         pitchingLine.outsRecorded += resolution.outs
         game.batting[batter.id] = battingLine
-        game.pitching[pitcher.id] = pitchingLine
+        if !isCoachPitch { game.pitching[pitcher.id] = pitchingLine }
 
         for scorer in resolution.scorers {
             updateBatter(scorer.id) { $0.runs += 1 }
@@ -1086,7 +1237,7 @@ final class GameStore: ObservableObject {
             category: .battedBall,
             notation: defensivePlay?.notation ?? outcome.notation,
             primaryPlayerID: batter.id,
-            secondaryPlayerID: pitcher.id,
+            secondaryPlayerID: isCoachPitch ? nil : pitcher.id,
             runnerDecisions: finalDecisions,
             resolvedOutcome: outcome,
             automaticRunnerRuns: automaticRunnerRuns
@@ -1098,12 +1249,24 @@ final class GameStore: ObservableObject {
     }
 
     func recordSubstitution(_ text: String) {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         pushUndo()
         addLog(text, category: .substitution)
     }
 
     func recordHitByPitch() {
+        guard canRecordAction else { return }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         pushUndo(startsClock: true)
+        guard canRecordAction else { return }
+        if isCoachPitch {
+            game.plateAppearancePitchCount = (game.plateAppearancePitchCount ?? 0) + 1
+            addLog("触身球，继续打击（计入投球数）", category: .pitch, notation: "HBP-CONTINUE", secondaryPlayerID: game.currentBatter.id)
+            checkCoachPitchLimit()
+            return
+        }
         let batter = game.currentBatter
         let pitcher = game.currentPitcher
         updateBatter(batter.id) {
@@ -1119,6 +1282,7 @@ final class GameStore: ObservableObject {
         let decisions = forcedAdvanceDecisions(for: batter)
         let automaticRunnerRuns = automaticRunnerRunCount(in: decisions)
         let resolution = resolveRunners(decisions)
+        updateBatter(batter.id) { $0.runsBattedIn += resolution.runs }
         addRunsAndPitcherResponsibility(
             resolution,
             pitcherID: pitcher.id,
@@ -1130,7 +1294,7 @@ final class GameStore: ObservableObject {
             category: .battedBall,
             notation: "HBP",
             primaryPlayerID: batter.id,
-            secondaryPlayerID: pitcher.id,
+            secondaryPlayerID: isCoachPitch ? nil : pitcher.id,
             runnerDecisions: decisions
         )
         if evaluateWalkOff() { return }
@@ -1138,6 +1302,9 @@ final class GameStore: ObservableObject {
     }
 
     func recordIntentionalWalk() {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
+        guard canRecordAction, !isCoachPitch else { actionErrorMessage = "教练投手模式不适用故意保送。"; return }
         pushUndo(startsClock: true)
         let batter = game.currentBatter
         let pitcher = game.currentPitcher
@@ -1153,6 +1320,7 @@ final class GameStore: ObservableObject {
         let decisions = forcedAdvanceDecisions(for: batter)
         let automaticRunnerRuns = automaticRunnerRunCount(in: decisions)
         let resolution = resolveRunners(decisions)
+        updateBatter(batter.id) { $0.runsBattedIn += resolution.runs }
         addRunsAndPitcherResponsibility(
             resolution,
             pitcherID: pitcher.id,
@@ -1164,7 +1332,7 @@ final class GameStore: ObservableObject {
             category: .battedBall,
             notation: "IBB",
             primaryPlayerID: batter.id,
-            secondaryPlayerID: pitcher.id,
+            secondaryPlayerID: isCoachPitch ? nil : pitcher.id,
             runnerDecisions: decisions
         )
         if evaluateWalkOff() { return }
@@ -1173,6 +1341,9 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func recordDroppedThirdStrike(decisions: [RunnerDecision]) -> Bool {
+        guard canRecordAction else { return false }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         actionErrorMessage = nil
         guard canReachOnDroppedThirdStrike else {
             actionErrorMessage = "一垒有人且不足两出局，打者不能因第三好球未接住而上一垒。"
@@ -1211,13 +1382,25 @@ final class GameStore: ObservableObject {
             category: .out,
             notation: "K WP/PB",
             primaryPlayerID: batter.id,
-            secondaryPlayerID: pitcher.id,
+            secondaryPlayerID: isCoachPitch ? nil : pitcher.id,
             runnerDecisions: decisions
         )
         if evaluateWalkOff() { return true }
         advanceBatter()
         if resolution.outs > 0 { registerOuts(resolution.outs) }
         return true
+    }
+
+    func halfEndingRunnerDecisions(for kind: RunnerEventKind, outID: UUID, scorerIDs: Set<UUID>) -> [RunnerDecision]? {
+        let ids = Set(game.baseRunners.values.map(\.id))
+        guard game.outs == 2, kind.group == .out, ids.contains(outID),
+              scorerIDs.isSubset(of: ids), !scorerIDs.contains(outID),
+              kind != .forceOut || scorerIDs.isEmpty else { return nil }
+        return Base.allCases.compactMap { base in
+            guard let runner = game.baseRunners[base] else { return nil }
+            return RunnerDecision(player: runner, origin: .base(base),
+                                  destination: runner.id == outID ? .out : scorerIDs.contains(runner.id) ? .score : .hold)
+        }
     }
 
     func runnerEventNeedsTimingDecision(_ kind: RunnerEventKind, decisions: [RunnerDecision]) -> Bool {
@@ -1230,11 +1413,21 @@ final class GameStore: ObservableObject {
     }
 
     @discardableResult
-    func recordRunnerEvent(
+    func recordRunnerEvent(_ kind: RunnerEventKind, decisions: [RunnerDecision], timingRunCounts: Bool? = nil) -> Bool {
+        beginAtomicAction()
+        let result = recordRunnerEventOperation(kind, decisions: decisions, timingRunCounts: timingRunCounts)
+        commitAtomicAction()
+        return result && actionErrorMessage == nil
+    }
+
+    private func recordRunnerEventOperation(
         _ kind: RunnerEventKind,
         decisions: [RunnerDecision],
         timingRunCounts: Bool? = nil
     ) -> Bool {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
+        guard canRecordAction, allowedRunnerEvents.contains(kind) else { actionErrorMessage = "教练投手模式不适用此跑垒事件。"; return false }
         actionErrorMessage = nil
         guard !decisions.isEmpty else {
             actionErrorMessage = "当前没有可记录的跑者变化。"
@@ -1255,6 +1448,7 @@ final class GameStore: ObservableObject {
         let thirdOutIsForce = kind == .forceOut && game.outs + resolution.outs >= 3
         if thirdOutIsForce || timingRunCounts == false {
             resolution = (runs: 0, outs: resolution.outs, scorers: [])
+            actionEffectiveScorers = []
         }
 
         switch kind {
@@ -1288,7 +1482,7 @@ final class GameStore: ObservableObject {
             incomplete: kind == .uncertainLooseBall || kind == .defensiveErrorAdvance,
             category: kind.group == .out ? .out : .runner,
             notation: kind.notation,
-            primaryPlayerID: pitcher.id,
+            primaryPlayerID: isCoachPitch ? nil : pitcher.id,
             runnerDecisions: decisions,
             ballStatus: kind.ballStatus
         )
@@ -1351,6 +1545,9 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func recordViolation(_ violation: ViolationKind, decisions: [RunnerDecision] = []) -> Bool {
+        guard canRecordAction, !isCoachPitch || violation.category != .pitcher else { actionErrorMessage = "此模式不适用投手犯规。"; return false }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         actionErrorMessage = nil
         let batter = game.currentBatter
         let pitcher = game.currentPitcher
@@ -1381,7 +1578,7 @@ final class GameStore: ObservableObject {
                     "裁判判罚：\(violation.rawValue)，垒上无人，记一坏球",
                     category: .violation,
                     notation: "IP-B",
-                    primaryPlayerID: pitcher.id,
+                    primaryPlayerID: isCoachPitch ? nil : pitcher.id,
                     secondaryPlayerID: batter.id,
                     ballStatus: violation.ballStatus
                 )
@@ -1400,7 +1597,7 @@ final class GameStore: ObservableObject {
                     "裁判判罚：\(violation.rawValue)；\(runnerSummary(finalDecisions))",
                     category: .violation,
                     notation: "BALK",
-                    primaryPlayerID: pitcher.id,
+                    primaryPlayerID: isCoachPitch ? nil : pitcher.id,
                     runnerDecisions: finalDecisions,
                     ballStatus: violation.ballStatus
                 )
@@ -1417,7 +1614,7 @@ final class GameStore: ObservableObject {
                 $0.outsRecorded += 1
             }
             addLog(
-                "裁判判罚：\(violation.rawValue)，打者 #\(batter.number) \(batter.name) 出局",
+                "裁判判罚：\(violation.rawValue)，打者 #\(batter.numberText) \(batter.name) 出局",
                 category: .violation,
                 notation: "INT/ILLEGAL",
                 primaryPlayerID: batter.id,
@@ -1484,6 +1681,9 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func recordViolation(_ violation: ViolationKind, adjudication: ViolationAdjudication) -> Bool {
+        guard canRecordAction, !isCoachPitch || violation.category != .pitcher else { actionErrorMessage = "此模式不适用投手犯规。"; return false }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         actionErrorMessage = nil
         finalizeLatestEventSituation()
         let originalGame = game
@@ -1563,6 +1763,7 @@ final class GameStore: ObservableObject {
         if adjudication.plateAppearanceDisposition == .batterOut,
            game.outs + resolution.outs >= 3 {
             resolution = (runs: 0, outs: resolution.outs, scorers: [])
+            actionEffectiveScorers = []
         }
 
         switch adjudication.plateAppearanceDisposition {
@@ -1597,7 +1798,7 @@ final class GameStore: ObservableObject {
             updateFielder(fielderID) { $0.errors += 1 }
             if game.isTop { game.homeErrors += 1 } else { game.awayErrors += 1 }
         }
-        updateBatter(batter.id) { $0.runsBattedIn += adjudication.runsBattedIn }
+        updateBatter(batter.id) { $0.runsBattedIn += min(adjudication.runsBattedIn, resolution.runs) }
         addRunsAndPitcherResponsibility(
             resolution,
             pitcherID: pitcher.id,
@@ -1606,7 +1807,7 @@ final class GameStore: ObservableObject {
         )
         updatePitcher(pitcher.id) {
             $0.outsRecorded += resolution.outs
-            $0.earnedRuns += adjudication.earnedRuns
+            $0.earnedRuns += min(adjudication.earnedRuns, max(0, resolution.runs - automaticRunnerRuns))
         }
 
         let runnerText = runnerSummary(decisions)
@@ -1617,15 +1818,15 @@ final class GameStore: ObservableObject {
             ? "，打席继续"
             : "，\(adjudication.plateAppearanceDisposition.rawValue)"
         let statisticalText = adjudication.battingCredit == .none
-            ? "，统计责任：不另记打击结果，\(adjudication.runsBattedIn) 打点，\(adjudication.earnedRuns) 自责分"
-            : "，统计责任：\(adjudication.battingCredit.rawValue)，\(adjudication.runsBattedIn) 打点，\(adjudication.earnedRuns) 自责分"
+            ? "，统计责任：不另记打击结果，\(min(adjudication.runsBattedIn, resolution.runs)) 打点，\(min(adjudication.earnedRuns, max(0, resolution.runs - automaticRunnerRuns))) 自责分"
+            : "，统计责任：\(adjudication.battingCredit.rawValue)，\(min(adjudication.runsBattedIn, resolution.runs)) 打点，\(min(adjudication.earnedRuns, max(0, resolution.runs - automaticRunnerRuns))) 自责分"
         addLog(
             "裁判最终宣判：\(violation.rawValue)（\(adjudication.ballStatus.rawValue)）\(previousText)\(plateText)\(runnerText.isEmpty ? "" : "；\(runnerText)")\(statisticalText)",
             incomplete: !adjudication.isFinalRuling,
             category: .violation,
             notation: adjudication.battingCredit.outcome?.notation ?? "RULING",
             primaryPlayerID: batter.id,
-            secondaryPlayerID: pitcher.id,
+            secondaryPlayerID: isCoachPitch ? nil : pitcher.id,
             runnerDecisions: decisions,
             ballStatus: adjudication.ballStatus,
             resolvedOutcome: adjudication.battingCredit.outcome,
@@ -1638,6 +1839,9 @@ final class GameStore: ObservableObject {
     }
 
     func recordFoulBuntStrikeout() {
+        guard canRecordAction else { return }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         guard game.strikes == 2 else { return }
         pushUndo(startsClock: true)
         let batter = game.currentBatter
@@ -1661,7 +1865,7 @@ final class GameStore: ObservableObject {
             category: .out,
             notation: "K-BUNT",
             primaryPlayerID: batter.id,
-            secondaryPlayerID: pitcher.id
+            secondaryPlayerID: isCoachPitch ? nil : pitcher.id
         )
         advanceBatter()
         registerOuts(1)
@@ -1680,6 +1884,8 @@ final class GameStore: ObservableObject {
         pitcherID: UUID?,
         baseRunners: [Base: Player]
     ) -> Bool {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         actionErrorMessage = nil
         let runnerIDs = baseRunners.values.map(\.id)
         guard inning >= 1,
@@ -1697,11 +1903,9 @@ final class GameStore: ObservableObject {
         }
         let battingTeam = isTop ? game.awayTeam : game.homeTeam
         let battingOrder = isTop ? game.awayBattingOrderIDs : game.homeBattingOrderIDs
-        let battingIsHome = !isTop
         for runnerID in runnerIDs {
             guard battingTeam.players.contains(where: { $0.id == runnerID }),
-                  battingOrder.contains(runnerID),
-                  !exitedPlayerIDs(forHomeTeam: battingIsHome).contains(runnerID) else {
+                  battingOrder.contains(runnerID) else {
                 actionErrorMessage = "垒上跑者必须是当前进攻方仍在比赛中的球员。"
                 return false
             }
@@ -1710,8 +1914,7 @@ final class GameStore: ObservableObject {
             let fieldingTeam = isTop ? game.homeTeam : game.awayTeam
             let fieldingIsHome = isTop
             guard fieldingTeam.players.contains(where: { $0.id == pitcherID }),
-                  activeFieldingPlayerIDs(forHomeTeam: fieldingIsHome).contains(pitcherID),
-                  !exitedPlayerIDs(forHomeTeam: fieldingIsHome).contains(pitcherID) else {
+                  activeFieldingPlayerIDs(forHomeTeam: fieldingIsHome).contains(pitcherID) else {
                 actionErrorMessage = "当前投手必须是防守方仍在比赛中的球员。"
                 return false
             }
@@ -1756,6 +1959,8 @@ final class GameStore: ObservableObject {
         resolvedOutcome: PlayOutcome?,
         note: String
     ) -> Bool {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         actionErrorMessage = nil
         finalizeLatestEventSituation()
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1944,6 +2149,8 @@ final class GameStore: ObservableObject {
     /// mutates the live game and identifies the first incompatible event.
     @discardableResult
     func replacePendingEventSituation(id: UUID, with corrected: GameSituationSnapshot) -> Bool {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         actionErrorMessage = nil
         finalizeLatestEventSituation()
         guard var events = game.scoringEvents,
@@ -1983,10 +2190,12 @@ final class GameStore: ObservableObject {
     }
 
     func changePitcher(to player: Player) {
+        guard canRecordAction else { return }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         let isHomeTeam = game.isTop
         let activeIDs = activeFieldingPlayerIDs(forHomeTeam: isHomeTeam)
-        guard game.fieldingTeam.players.contains(where: { $0.id == player.id }),
-              !exitedPlayerIDs(forHomeTeam: isHomeTeam).contains(player.id),
+        guard availablePitchers.contains(where: { $0.id == player.id }),
               player.id != game.currentPitcher.id else { return }
         pushUndo()
         var team = game.fieldingTeam
@@ -2026,8 +2235,8 @@ final class GameStore: ObservableObject {
             game.activeAwayPitcherID = player.id
         }
         addLog(
-            "换投手：#\(player.number) \(player.name) 替换 #\(previous.number) \(previous.name) 登板"
-                + (twoWayPitcherContinuesAsDH ? "；#\(previous.number) \(previous.name) 继续以 DH 身份打击" : ""),
+            "换投手：#\(player.numberText) \(player.name) 替换 #\(previous.numberText) \(previous.name) 登板"
+                + (twoWayPitcherContinuesAsDH ? "；#\(previous.numberText) \(previous.name) 继续以 DH 身份打击" : ""),
             category: .substitution,
             primaryPlayerID: player.id,
             secondaryPlayerID: previous.id
@@ -2036,12 +2245,15 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func replaceFielder(_ previous: Player, with replacement: Player) -> Bool {
+        guard canRecordAction else { return false }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         actionErrorMessage = nil
         let isHomeTeam = game.isTop
         guard activeFieldingPlayerIDs(forHomeTeam: isHomeTeam).contains(previous.id),
               fieldingBenchPlayers.contains(where: { $0.id == replacement.id }),
               previous.id != replacement.id else {
-            actionErrorMessage = "请选择一名场上守备员和一名尚未上场的替补球员。"
+            actionErrorMessage = "请选择一名场上守备员和一名当前未上场的球员。"
             return false
         }
         pushUndo()
@@ -2058,6 +2270,7 @@ final class GameStore: ObservableObject {
         if activeLineupPlayerIDs(forHomeTeam: isHomeTeam).contains(previous.id) {
             replaceLineupPlayer(previous.id, with: replacement.id, forHomeTeam: isHomeTeam)
         }
+        replaceDesignatedHitterIfNeeded(previous.id, with: replacement.id, forHomeTeam: isHomeTeam)
         markPlayerExited(previous.id, forHomeTeam: isHomeTeam)
         if game.isTop {
             game.homeTeam = team
@@ -2067,7 +2280,7 @@ final class GameStore: ObservableObject {
             if position == .pitcher { game.activeAwayPitcherID = replacement.id }
         }
         addLog(
-            "守备换人：#\(replacement.number) \(replacement.name) 替换 #\(previous.number) \(previous.name)，守\(position.fullName)",
+            "守备换人：#\(replacement.numberText) \(replacement.name) 替换 #\(previous.numberText) \(previous.name)，守\(position.fullName)",
             category: .substitution,
             primaryPlayerID: replacement.id,
             secondaryPlayerID: previous.id
@@ -2084,6 +2297,8 @@ final class GameStore: ObservableObject {
         secondIn: Player,
         secondPosition: FieldPosition
     ) -> Bool {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         actionErrorMessage = nil
         let isHomeTeam = game.isTop
         let active = activeFieldingPlayerIDs(forHomeTeam: isHomeTeam)
@@ -2135,7 +2350,7 @@ final class GameStore: ObservableObject {
             if secondPosition == .pitcher { game.activeAwayPitcherID = secondIn.id }
         }
         addLog(
-            "双重换人：#\(firstIn.number) \(firstIn.name) 替换 #\(firstOut.number) \(firstOut.name) 守\(firstPosition.fullName)；#\(secondIn.number) \(secondIn.name) 替换 #\(secondOut.number) \(secondOut.name) 守\(secondPosition.fullName)，两人分别接管原棒次",
+            "双重换人：#\(firstIn.numberText) \(firstIn.name) 替换 #\(firstOut.numberText) \(firstOut.name) 守\(firstPosition.fullName)；#\(secondIn.numberText) \(secondIn.name) 替换 #\(secondOut.numberText) \(secondOut.name) 守\(secondPosition.fullName)，两人分别接管原棒次",
             category: .substitution,
             primaryPlayerID: firstIn.id,
             secondaryPlayerID: secondIn.id
@@ -2144,6 +2359,9 @@ final class GameStore: ObservableObject {
     }
 
     func replaceRunner(on base: Base, with player: Player) {
+        guard canRecordAction else { return }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         let isHomeTeam = !game.isTop
         guard let previous = game.baseRunners[base],
               battingBenchPlayers.contains(where: { $0.id == player.id }) else { return }
@@ -2162,7 +2380,7 @@ final class GameStore: ObservableObject {
             game.automaticRunnerIDs = Array(automaticRunnerIDs)
         }
         addLog(
-            "代跑：#\(player.number) \(player.name) 替换 #\(previous.number) \(previous.name)，接管原棒次",
+            "代跑：#\(player.numberText) \(player.name) 替换 #\(previous.numberText) \(previous.name)，接管原棒次",
             category: .substitution,
             primaryPlayerID: player.id,
             secondaryPlayerID: previous.id
@@ -2170,6 +2388,9 @@ final class GameStore: ObservableObject {
     }
 
     func replaceCurrentBatter(with player: Player) {
+        guard canRecordAction else { return }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         let team = game.battingTeam
         let currentIndex = game.isTop ? game.awayBatterIndex : game.homeBatterIndex
         var battingOrder = game.battingOrderIDs
@@ -2194,7 +2415,7 @@ final class GameStore: ObservableObject {
         replaceDesignatedHitterIfNeeded(previous.id, with: player.id, forHomeTeam: isHomeTeam)
         markPlayerExited(previous.id, forHomeTeam: isHomeTeam)
         addLog(
-            "代打：#\(player.number) \(player.name) 替换 #\(previous.number) \(previous.name)，接管原棒次",
+            "代打：#\(player.numberText) \(player.name) 替换 #\(previous.numberText) \(previous.name)，接管原棒次",
             category: .substitution,
             primaryPlayerID: player.id,
             secondaryPlayerID: previous.id
@@ -2202,6 +2423,9 @@ final class GameStore: ObservableObject {
     }
 
     func changeFieldingPosition(for player: Player, to position: FieldPosition) {
+        guard canRecordAction else { return }
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         var team = game.fieldingTeam
         let isHomeTeam = game.isTop
         guard activeFieldingPlayerIDs(forHomeTeam: isHomeTeam).contains(player.id),
@@ -2209,26 +2433,75 @@ final class GameStore: ObservableObject {
         pushUndo()
 
         let oldPosition = team.players[playerIndex].primaryPosition
-        if let otherIndex = team.players.firstIndex(where: { $0.primaryPosition == position && $0.id != player.id }) {
+        let activeIDs = activeFieldingPlayerIDs(forHomeTeam: isHomeTeam)
+        if let otherIndex = team.players.firstIndex(where: { activeIDs.contains($0.id) && $0.primaryPosition == position && $0.id != player.id }) {
             team.players[otherIndex].primaryPosition = oldPosition
         }
         team.players[playerIndex].primaryPosition = position
 
         if game.isTop {
             game.homeTeam = team
-            if position == .pitcher { game.activeHomePitcherID = player.id }
+            game.activeHomePitcherID = team.players.first { activeIDs.contains($0.id) && $0.primaryPosition == .pitcher }?.id
         } else {
             game.awayTeam = team
-            if position == .pitcher { game.activeAwayPitcherID = player.id }
+            game.activeAwayPitcherID = team.players.first { activeIDs.contains($0.id) && $0.primaryPosition == .pitcher }?.id
+        }
+        let dh = isHomeTeam ? game.homeDesignatedHitterID : game.awayDesignatedHitterID
+        let pitcher = isHomeTeam ? game.activeHomePitcherID : game.activeAwayPitcherID
+        if let dh, activeIDs.contains(dh), dh != pitcher {
+            if isHomeTeam { game.homeDesignatedHitterID = nil } else { game.awayDesignatedHitterID = nil }
         }
         addLog(
-            "守位调整：#\(player.number) \(player.name) 改守\(position.fullName)",
+            "守位调整：#\(player.numberText) \(player.name) 改守\(position.fullName)",
             category: .substitution,
             primaryPlayerID: player.id
         )
     }
 
+    func lineupDraft(forHomeTeam isHomeTeam: Bool) -> LiveLineupDraft {
+        LiveLineupDraft(game: game, isHomeTeam: isHomeTeam, allowsTwoWayPlayer: activeRulesOrDefault.twoWayPlayerEnabled)
+    }
+
+    @discardableResult
+    func saveLineup(_ draft: LiveLineupDraft) -> Bool {
+        guard canRecordAction else { actionErrorMessage = "请先完成当前比赛决定，再调整阵容。"; return false }
+        guard draft.source == game else { actionErrorMessage = "比赛局面已变化，请重新打开阵容后修改。"; return false }
+        if let issue = draft.validationMessage { actionErrorMessage = issue; return false }
+        guard draft.hasChanges else { return true }
+        beginAtomicAction()
+        actionErrorMessage = nil
+        pushUndo()
+        let isHomeTeam = draft.isHomeTeam
+        let beforeIDs = activeLineupPlayerIDs(forHomeTeam: isHomeTeam).union(activeFieldingPlayerIDs(forHomeTeam: isHomeTeam))
+        let afterIDs = Set(draft.battingOrderIDs + draft.fieldingIDs)
+        for id in beforeIDs.subtracting(afterIDs) { markPlayerExited(id, forHomeTeam: isHomeTeam) }
+        let index = draft.battingOrderIDs.firstIndex(of: draft.batterAnchorID!)!
+        if isHomeTeam {
+            game.homeTeam.players = draft.players
+            game.homeBattingOrderIDs = draft.battingOrderIDs
+            game.homeFieldingPlayerIDs = draft.fieldingIDs
+            game.homeDesignatedHitterID = draft.designatedHitterID
+            game.activeHomePitcherID = draft.pitcherID
+            game.homeBatterIndex = index
+        } else {
+            game.awayTeam.players = draft.players
+            game.awayBattingOrderIDs = draft.battingOrderIDs
+            game.awayFieldingPlayerIDs = draft.fieldingIDs
+            game.awayDesignatedHitterID = draft.designatedHitterID
+            game.activeAwayPitcherID = draft.pitcherID
+            game.awayBatterIndex = index
+        }
+        game.baseRunners = draft.runners
+        game.automaticRunnerIDs = draft.automaticRunnerIDs
+        game.recordsLineupSnapshots = true
+        addLog("阵容调整（\(draft.team.shortName)）：" + draft.changes.joined(separator: "；"), category: .substitution, notation: "LINEUP")
+        commitAtomicAction()
+        return actionErrorMessage == nil
+    }
+
     func confirmExtraInning(useTiebreak: Bool, runnerBases: [Base] = [.second]) {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         guard canConfirmExtraInning else { return }
         pushUndo()
         game.extraInningConfirmed = true
@@ -2246,6 +2519,8 @@ final class GameStore: ObservableObject {
     }
 
     func enableTiebreakFromCurrentInning(runnerBases: [Base] = [.second]) {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         guard canEnableTiebreak else { return }
         pushUndo()
         game.extraInningConfirmed = true
@@ -2259,6 +2534,8 @@ final class GameStore: ObservableObject {
     }
 
     func placeTiebreakRunner(_ player: Player, on requestedBase: Base? = nil) {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         let targetBase = requestedBase ?? nextTiebreakRunnerBase
         guard requiresTiebreakRunnerPlacement,
               eligibleTiebreakRunners.contains(where: { $0.id == player.id }),
@@ -2274,7 +2551,7 @@ final class GameStore: ObservableObject {
         automaticRunnerIDs.insert(player.id)
         game.automaticRunnerIDs = Array(automaticRunnerIDs)
         addLog(
-            "TB 放人：#\(player.number) \(player.name) 作为自动跑者置于\(targetBase.title)",
+            "TB 放人：#\(player.numberText) \(player.name) 作为自动跑者置于\(targetBase.title)",
             category: .tiebreak,
             notation: "TB-R\(targetBase.rawValue)",
             primaryPlayerID: player.id
@@ -2282,6 +2559,8 @@ final class GameStore: ObservableObject {
     }
 
     func skipTiebreakRunnerForCurrentHalf() {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         guard requiresTiebreakRunnerPlacement else { return }
         pushUndo()
         var keys = game.tiebreakPlacementKeys ?? []
@@ -2298,6 +2577,8 @@ final class GameStore: ObservableObject {
     }
 
     func undo() {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         finalizeLatestEventSituation()
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(game)
@@ -2307,6 +2588,8 @@ final class GameStore: ObservableObject {
     }
 
     func redo() {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         finalizeLatestEventSituation()
         guard let restored = redoStack.popLast() else { return }
         undoStack.append(game)
@@ -2316,6 +2599,8 @@ final class GameStore: ObservableObject {
     }
 
     func finishGame(reason: GameEndReason = .scorerDecision, at date: Date = Date()) {
+        beginAtomicAction()
+        defer { commitAtomicAction() }
         pushUndo()
         if !reason.isCompletedResult {
             freezeGameClock(at: date)
@@ -2342,6 +2627,8 @@ final class GameStore: ObservableObject {
         guard let index = games.firstIndex(where: { $0.id == id && $0.status == .scheduled }) else {
             return false
         }
+        actionErrorMessage = nil
+        beginAtomicAction()
         activeGameID = nil
         games[index].status = .ongoing
         games[index].startedAt = nil
@@ -2354,8 +2641,9 @@ final class GameStore: ObservableObject {
         undoStack.removeAll()
         redoStack.removeAll()
         activeGameID = stored.id
-        persist { try persistenceStore.upsertGame(stored) }
-        return true
+        ensureCurrentAppearance()
+        commitAtomicAction()
+        return actionErrorMessage == nil
     }
 
     @discardableResult
@@ -2409,6 +2697,8 @@ final class GameStore: ObservableObject {
             PlayLogEntry(inning: 1, isTop: true, text: "已进入现场记分：\(away.shortName) 对 \(home.shortName)，等待 Play Ball")
         )
 
+        actionErrorMessage = nil
+        beginAtomicAction()
         activeGameID = nil
         games[index].rules = rules
         games[index].lineup = orderedLineup
@@ -2422,8 +2712,9 @@ final class GameStore: ObservableObject {
         undoStack.removeAll()
         redoStack.removeAll()
         activeGameID = stored.id
-        persist { try persistenceStore.upsertGame(stored) }
-        return true
+        ensureCurrentAppearance()
+        commitAtomicAction()
+        return actionErrorMessage == nil
     }
 
     @discardableResult
@@ -2476,6 +2767,8 @@ final class GameStore: ObservableObject {
             PlayLogEntry(inning: 1, isTop: true, text: "已进入观赛记分：\(awayTeam.shortName) 对 \(homeTeam.shortName)，等待 Play Ball")
         )
 
+        actionErrorMessage = nil
+        beginAtomicAction()
         activeGameID = nil
         games[index].rules = rules
         games[index].lineup = awayLineup
@@ -2489,16 +2782,19 @@ final class GameStore: ObservableObject {
         undoStack.removeAll()
         redoStack.removeAll()
         activeGameID = stored.id
-        persist { try persistenceStore.upsertGame(stored) }
-        return true
+        ensureCurrentAppearance()
+        commitAtomicAction()
+        return actionErrorMessage == nil
     }
 
     @discardableResult
     func deleteGame(id: UUID) -> Bool {
-        guard games.contains(where: { $0.id == id }) else { return false }
+        guard !requiresDataRecovery, games.contains(where: { $0.id == id }) else { return false }
+        do { try persistenceStore.deleteGame(id: id) }
+        catch { storageErrorMessage = error.localizedDescription; return false }
         if activeGameID == id { activeGameID = nil }
         games.removeAll { $0.id == id }
-        persist { try persistenceStore.deleteGame(id: id) }
+        liveBroadcasts.close(id)
         return true
     }
 
@@ -2510,15 +2806,42 @@ final class GameStore: ObservableObject {
             .lineup
     }
 
+    var currentBattingOrder: Int {
+        let index = game.isTop ? game.awayBatterIndex : game.homeBatterIndex
+        return index % max(1, game.battingOrderIDs.count) + 1
+    }
+
+    private struct RuleNotice {
+        let summary: String
+        let detail: String
+        var pitcherID: UUID? = nil
+        var limitReached = false
+    }
+
     func ruleNotices(at date: Date = Date()) -> [String] {
+        detailedRuleNotices(at: date).map(\.detail)
+    }
+
+    /// The badge sits beside the current pitcher, so another pitcher's limit must be explicit.
+    func ruleNoticeSummary(at date: Date = Date()) -> String? {
+        let notices = detailedRuleNotices(at: date)
+        if let current = notices.first(where: { $0.pitcherID == currentPitcher.id }) {
+            return current.summary
+        }
+        if notices.contains(where: { $0.pitcherID != nil && $0.limitReached }) { return "其他达限" }
+        return notices.first?.summary
+    }
+
+    private func detailedRuleNotices(at date: Date) -> [RuleNotice] {
         guard let activeGameID,
               let stored = games.first(where: { $0.id == activeGameID }),
               stored.status == .ongoing else { return [] }
-        var notices: [String] = []
+        var notices: [RuleNotice] = []
+        var reachedLimits: [RuleNotice] = []
         if game.inning == stored.rules.scheduledInnings {
-            notices.append("当前为规定的最后一局")
+            notices.append(RuleNotice(summary: "比赛末局", detail: "当前为规定的最后一局"))
         } else if game.inning > stored.rules.scheduledInnings {
-            notices.append("比赛已进入延长局")
+            notices.append(RuleNotice(summary: "延长局", detail: "比赛已进入延长局"))
         }
         if hasStartedGameClock,
            let limit = stored.rules.timeLimitMinutes,
@@ -2526,26 +2849,42 @@ final class GameStore: ObservableObject {
             let elapsed = max(0, Int(elapsedGameTime(at: date) / 60))
             let remaining = limit - elapsed
             if remaining <= warning {
-                notices.append(remaining > 0 ? "比赛时间剩余约 \(remaining) 分钟" : "已到 \(limit) 分钟时间限制")
+                notices.append(RuleNotice(summary: remaining > 0 ? "余 \(remaining) 分钟" : "时间已到",
+                    detail: remaining > 0 ? "比赛时间剩余约 \(remaining) 分钟" : "已到 \(limit) 分钟时间限制"))
             }
         }
-        if let limit = stored.rules.pitchLimit,
-           let warning = stored.rules.pitchWarningRemaining {
-            let pitches = pitchingLine(for: currentPitcher).pitches
-            let remaining = limit - pitches
-            if remaining <= warning {
-                notices.append(remaining > 0 ? "\(currentPitcher.name) 距投球限制还剩 \(remaining) 球" : "\(currentPitcher.name) 已达到 \(limit) 球限制")
+        if !isCoachPitch {
+            // Keep reached limits visible after the third out or a pitching change.
+            for team in [game.fieldingTeam, game.battingTeam] {
+                for player in team.players {
+                    let line = pitchingLine(for: player)
+                    let isCurrent = player.id == currentPitcher.id
+                    let name = "\(team.shortName) · #\(player.numberText) \(player.name)"
+                    if let limit = stored.rules.pitchLimit {
+                        let remaining = limit - line.pitches
+                        if remaining <= 0 {
+                            reachedLimits.append(RuleNotice(summary: "球数达限",
+                                detail: "\(name) 已达到 \(limit) 球限制（已投 \(line.pitches) 球）",
+                                pitcherID: player.id, limitReached: true))
+                        } else if isCurrent, let warning = stored.rules.pitchWarningRemaining, remaining <= warning {
+                            notices.append(RuleNotice(summary: "还有 \(remaining) 球",
+                                detail: "\(name) 距投球限制还剩 \(remaining) 球（\(line.pitches)/\(limit)）", pitcherID: player.id))
+                        }
+                    }
+                    if let limit = stored.rules.pitcherInningsLimit {
+                        if line.outsRecorded >= limit * 3 {
+                            reachedLimits.append(RuleNotice(summary: "局数达限",
+                                detail: "\(name) 已达到 \(limit) 局投球限制（\(line.inningsText) 局）",
+                                pitcherID: player.id, limitReached: true))
+                        } else if isCurrent, line.outsRecorded >= max(0, limit - 1) * 3 {
+                            notices.append(RuleNotice(summary: "最后一局",
+                                detail: "\(name) 已进入允许的最后一局（已投 \(line.inningsText) / \(limit) 局）", pitcherID: player.id))
+                        }
+                    }
+                }
             }
         }
-        if let limit = stored.rules.pitcherInningsLimit {
-            let outsRecorded = pitchingLine(for: currentPitcher).outsRecorded
-            if outsRecorded >= limit * 3 {
-                notices.append("\(currentPitcher.name) 已达到 \(limit) 局投球限制")
-            } else if outsRecorded >= max(0, limit - 1) * 3 {
-                notices.append("\(currentPitcher.name) 已进入允许的最后一局")
-            }
-        }
-        return notices
+        return reachedLimits + notices
     }
 
     func battingLine(for player: Player) -> BattingLine {
@@ -2553,51 +2892,14 @@ final class GameStore: ObservableObject {
     }
 
     func plateAppearanceRecords() -> [PlateAppearanceRecord] {
-        let events = game.scoringEvents ?? []
-        var result: [PlateAppearanceRecord] = []
-        var currentEvents: [ScoringEventRecord] = []
-        var currentBatter: Player?
-        var currentComplete = false
-
-        func appendCurrent() {
-            guard let batter = currentBatter, let first = currentEvents.first else { return }
-            result.append(
-                PlateAppearanceRecord(
-                    id: first.id,
-                    sequence: result.count + 1,
-                    inning: first.inning,
-                    isTop: first.isTop,
-                    batter: batter,
-                    events: currentEvents,
-                    isComplete: currentComplete
-                )
-            )
+        (game.plateAppearances ?? []).enumerated().compactMap { offset, identity in
+            let team = identity.isTop ? game.awayTeam : game.homeTeam
+            guard let batter = team.players.first(where: { $0.id == identity.batterIDs.last }) else { return nil }
+            return PlateAppearanceRecord(id: identity.id, sequence: offset + 1, inning: identity.inning,
+                isTop: identity.isTop, batter: batter,
+                events: (game.scoringEvents ?? []).filter { $0.plateAppearanceID == identity.id },
+                isComplete: identity.completed)
         }
-
-        for event in events where isPlateAppearanceEvent(event) {
-            let eventBatter = plateAppearanceBatter(for: event)
-            if !currentEvents.isEmpty,
-               let resolvedBatter = eventBatter,
-               let groupedBatter = currentBatter,
-               resolvedBatter.id != groupedBatter.id {
-                appendCurrent()
-                currentEvents = []
-                currentBatter = resolvedBatter
-                currentComplete = false
-            }
-            if currentBatter == nil { currentBatter = eventBatter }
-            guard currentBatter != nil else { continue }
-            currentEvents.append(event)
-            currentComplete = eventEndsPlateAppearance(event)
-            if currentComplete {
-                appendCurrent()
-                currentEvents = []
-                currentBatter = nil
-                currentComplete = false
-            }
-        }
-        appendCurrent()
-        return result
     }
 
     func nonPlateAppearanceGameEvents() -> [ScoringEventRecord] {
@@ -2629,7 +2931,7 @@ final class GameStore: ObservableObject {
         // Legacy records predate full game snapshots and contain batting only.
         let legacy = playerGameRecords.filter {
             $0.playerID == player.id && $0.seasonID == seasonID && !gameIDs.contains($0.id)
-                && (teamID == nil || teams.first(where: { $0.id == teamID })?.players.contains(where: { $0.id == player.id }) == true)
+                && (teamID == nil || (teams + archivedTeams).contains(where: { $0.id == teamID && $0.players.contains(where: { $0.id == player.id }) }))
         }
         return (derived + legacy).sorted {
             $0.date == $1.date ? $0.id.uuidString < $1.id.uuidString : $0.date > $1.date
@@ -2682,7 +2984,7 @@ final class GameStore: ObservableObject {
             return player
         }
         guard let snapshot = event.beforeSituation ?? event.afterSituation else { return nil }
-        let order = event.isTop ? game.awayBattingOrderIDs : game.homeBattingOrderIDs
+        let order = event.isTop ? (snapshot.awayBattingOrderIDs ?? game.awayBattingOrderIDs) : (snapshot.homeBattingOrderIDs ?? game.homeBattingOrderIDs)
         guard !order.isEmpty else { return nil }
         let index = event.isTop ? snapshot.awayBatterIndex : snapshot.homeBatterIndex
         let id = order[index % order.count]
@@ -2692,7 +2994,7 @@ final class GameStore: ObservableObject {
     private func eventEndsPlateAppearance(_ event: ScoringEventRecord) -> Bool {
         if event.resolvedOutcome != nil { return true }
         let terminalNotations: Set<String> = [
-            "BB", "IBB", "HBP", "K", "ꓘ", "K-BUNT", "K WP/PB", "CI", "INT/ILLEGAL"
+            "BB", "IBB", "HBP", "K", "ꓘ", "K-BUNT", "K WP/PB", "CI", "INT/ILLEGAL", "PITCH-LIMIT"
         ]
         if let notation = event.notation, terminalNotations.contains(notation) { return true }
         if event.category == .violation,
@@ -2700,7 +3002,7 @@ final class GameStore: ObservableObject {
             return true
         }
         guard let before = event.beforeSituation, let after = event.afterSituation else { return false }
-        if before.inning != after.inning || before.isTop != after.isTop { return true }
+        if before.inning != after.inning || before.isTop != after.isTop { return false }
         return event.isTop
             ? before.awayBatterIndex != after.awayBatterIndex
             : before.homeBatterIndex != after.homeBatterIndex
@@ -2715,8 +3017,8 @@ final class GameStore: ObservableObject {
         let team = isHomeTeam ? game.homeTeam : game.awayTeam
         let unavailable = activeLineupPlayerIDs(forHomeTeam: isHomeTeam)
             .union(activeFieldingPlayerIDs(forHomeTeam: isHomeTeam))
-            .union(exitedPlayerIDs(forHomeTeam: isHomeTeam))
-        return team.players.filter { !unavailable.contains($0.id) }
+            .union(game.baseRunners.values.map(\.id))
+        return team.sortedPlayers.filter { !unavailable.contains($0.id) }
     }
 
     private func replaceLineupPlayer(_ previousID: UUID, with replacementID: UUID, forHomeTeam isHomeTeam: Bool) {
@@ -2760,7 +3062,13 @@ final class GameStore: ObservableObject {
         guard let oldIndex = team.players.firstIndex(where: { $0.id == previous.id }),
               let newIndex = team.players.firstIndex(where: { $0.id == replacement.id }) else { return }
         team.players[newIndex].primaryPosition = team.players[oldIndex].primaryPosition
-        if isHomeTeam { game.homeTeam = team } else { game.awayTeam = team }
+        if isHomeTeam {
+            game.homeTeam = team
+            if game.activeHomePitcherID == previous.id { game.activeHomePitcherID = replacement.id }
+        } else {
+            game.awayTeam = team
+            if game.activeAwayPitcherID == previous.id { game.activeAwayPitcherID = replacement.id }
+        }
     }
 
     private func markPlayerExited(_ playerID: UUID, forHomeTeam isHomeTeam: Bool) {
@@ -2804,7 +3112,8 @@ final class GameStore: ObservableObject {
     private typealias TeamParticipation = (
         battingOrder: [UUID],
         fieldingPlayers: [UUID],
-        designatedHitterID: UUID?
+        designatedHitterID: UUID?,
+        pitcherID: UUID?
     )
 
     private func configuredParticipation(
@@ -2814,20 +3123,20 @@ final class GameStore: ObservableObject {
     ) -> TeamParticipation {
         let ordered = assignments.sorted { $0.battingOrder < $1.battingOrder }
         let fieldingPlayers = ordered.map(\.playerID)
-        guard rules.designatedHitterEnabled,
-              let pitcherID = ordered.first(where: { $0.position == .pitcher })?.playerID else {
-            return (fieldingPlayers, fieldingPlayers, nil)
+        let selectedPitcherID = ordered.first(where: { $0.position == .pitcher })?.playerID
+        guard rules.designatedHitterEnabled, let pitcherID = selectedPitcherID else {
+            return (fieldingPlayers, fieldingPlayers, nil, selectedPitcherID)
         }
         if rules.twoWayPlayerEnabled {
-            return (fieldingPlayers, fieldingPlayers, pitcherID)
+            return (fieldingPlayers, fieldingPlayers, pitcherID, pitcherID)
         }
         guard let hitter = team.players.first(where: { !fieldingPlayers.contains($0.id) }),
               let pitcherSlot = fieldingPlayers.firstIndex(of: pitcherID) else {
-            return (fieldingPlayers, fieldingPlayers, nil)
+            return (fieldingPlayers, fieldingPlayers, nil, pitcherID)
         }
         var battingOrder = fieldingPlayers
         battingOrder[pitcherSlot] = hitter.id
-        return (battingOrder, fieldingPlayers, hitter.id)
+        return (battingOrder, fieldingPlayers, hitter.id, pitcherID)
     }
 
     private func applyParticipation(
@@ -2836,9 +3145,11 @@ final class GameStore: ObservableObject {
         to state: inout GameState
     ) {
         if isHomeTeam {
+            state.activeHomePitcherID = participation.pitcherID
             state.homeFieldingPlayerIDs = participation.fieldingPlayers
             state.homeDesignatedHitterID = participation.designatedHitterID
         } else {
+            state.activeAwayPitcherID = participation.pitcherID
             state.awayFieldingPlayerIDs = participation.fieldingPlayers
             state.awayDesignatedHitterID = participation.designatedHitterID
         }
@@ -2855,7 +3166,7 @@ final class GameStore: ObservableObject {
     }
 
     private func syncCurrentTeamIfNeeded(_ teamID: UUID) {
-        guard currentTeam.id == teamID,
+        guard currentTeam?.id == teamID,
               let updated = team(withID: teamID) else { return }
         currentTeam = updated
     }
@@ -2875,6 +3186,7 @@ final class GameStore: ObservableObject {
         var decisions = forcedAdvanceDecisions(for: batter)
         let automaticRunnerRuns = automaticRunnerRunCount(in: decisions)
         let resolution = resolveRunners(decisions)
+        updateBatter(batter.id) { $0.runsBattedIn += resolution.runs }
         addRuns(resolution.runs)
         for scorer in resolution.scorers { updateBatter(scorer.id) { $0.runs += 1 } }
         updatePitcher(pitcher.id) {
@@ -2886,7 +3198,7 @@ final class GameStore: ObservableObject {
             category: .battedBall,
             notation: "BB",
             primaryPlayerID: batter.id,
-            secondaryPlayerID: pitcher.id,
+            secondaryPlayerID: isCoachPitch ? nil : pitcher.id,
             runnerDecisions: decisions
         )
         if evaluateWalkOff() { return }
@@ -2912,7 +3224,7 @@ final class GameStore: ObservableObject {
             category: .out,
             notation: swinging ? "K" : "ꓘ",
             primaryPlayerID: batter.id,
-            secondaryPlayerID: pitcher.id
+            secondaryPlayerID: isCoachPitch ? nil : pitcher.id
         )
         advanceBatter()
         registerOuts(1)
@@ -2992,14 +3304,14 @@ final class GameStore: ObservableObject {
         }
         game.baseRunners = newBases
         game.automaticRunnerIDs = Array(automaticRunnerIDs)
+        scorers = Array(scorers.prefix(remainingHalfRuns))
+        actionEffectiveScorers = scorers.map(\.id)
         return (scorers.count, outs, scorers)
     }
 
     private func automaticRunnerRunCount(in decisions: [RunnerDecision]) -> Int {
         let automaticRunnerIDs = Set(game.automaticRunnerIDs ?? [])
-        return decisions.filter {
-            $0.destination == .score && automaticRunnerIDs.contains($0.player.id)
-        }.count
+        return decisions.filter { $0.destination == .score }.prefix(remainingHalfRuns).filter { automaticRunnerIDs.contains($0.player.id) }.count
     }
 
     private func runnerSummary(_ decisions: [RunnerDecision]) -> String {
@@ -3008,7 +3320,7 @@ final class GameStore: ObservableObject {
                 if case .hold = decision.destination { return false }
                 return true
             }
-            .map { "\($0.player.name)\($0.destination.title)" }
+            .map { "\($0.player.name)\($0.destination == .score && !(actionEffectiveScorers ?? []).contains($0.player.id) ? "回本垒（不计分）" : $0.destination.title)" }
             .joined(separator: "，")
     }
 
@@ -3041,44 +3353,18 @@ final class GameStore: ObservableObject {
     }
 
     private func registerOuts(_ newOuts: Int) {
-        game.outs += newOuts
+        game.outs = min(3, game.outs + newOuts)
         guard game.outs >= 3 else { return }
-        game.outs = 0
-        game.balls = 0
-        game.strikes = 0
-        game.baseRunners.removeAll()
-        game.automaticRunnerIDs = []
-        if game.isTop {
-            if game.inning >= game.scheduledInnings && game.homeScore > game.awayScore {
-                markGameFinal(reason: .regulation)
-                addLog("三出局，主队领先，无需进行下半局，比赛结束")
-                return
-            }
-            addLog("三出局，攻守交换")
-            game.isTop = false
-        } else {
-            if game.inning >= game.scheduledInnings && game.homeScore != game.awayScore {
-                markGameFinal(reason: .regulation)
-                addLog("三出局，规定局数完成，比赛结束")
-                return
-            }
-            addLog("三出局，攻守交换")
-            game.isTop = true
-            game.inning += 1
-            ensureInningCapacity()
-        }
+        endHalfWithoutUndo(reason: "三出局，攻守交换")
     }
 
     @discardableResult
     private func evaluateWalkOff() -> Bool {
-        guard !game.isTop,
-              game.inning >= game.scheduledInnings,
-              game.homeScore > game.awayScore else { return false }
-        markGameFinal(reason: .walkOff)
-        game.balls = 0
-        game.strikes = 0
-        addLog("主队取得领先，比赛结束")
-        return true
+        if !game.isTop, game.inning >= game.scheduledInnings,
+           game.homeScore > game.awayScore, game.dismissedWalkOffHalf != currentHalfKey {
+            game.pendingDecision = .walkOff
+        }
+        return false
     }
 
     private func markGameFinal(reason: GameEndReason, at date: Date = Date()) {
@@ -3086,9 +3372,12 @@ final class GameStore: ObservableObject {
         game.isFinal = true
         game.endedAt = date
         game.endReason = reason
+        game.canResumePrecisely = true
+        game.pendingDecision = nil
     }
 
     private func advanceBatter() {
+        closeAppearance(completed: true)
         let lineupCount = max(1, game.battingOrderIDs.count)
         if game.isTop {
             game.awayBatterIndex = (game.awayBatterIndex + 1) % lineupCount
@@ -3163,6 +3452,7 @@ final class GameStore: ObservableObject {
     }
 
     private func updatePitcher(_ id: UUID, _ change: (inout PitchingLine) -> Void) {
+        guard !isCoachPitch else { return }
         var line = game.pitching[id, default: PitchingLine()]
         change(&line)
         game.pitching[id] = line
@@ -3257,9 +3547,14 @@ final class GameStore: ObservableObject {
         guard runnerIDs.allSatisfy({ id in battingTeam.players.contains(where: { $0.id == id }) }) else {
             return "垒上存在不属于进攻方的球员"
         }
+        for (order, team) in [(snapshot.homeBattingOrderIDs, game.homeTeam), (snapshot.awayBattingOrderIDs, game.awayTeam)] {
+            if let order, order.isEmpty || Set(order).count != order.count || !Set(order).isSubset(of: Set(team.players.map(\.id))) {
+                return "棒次包含重复或不属于该队的球员"
+            }
+        }
         let battingOrderCount = snapshot.isTop
-            ? game.awayBattingOrderIDs.count
-            : game.homeBattingOrderIDs.count
+            ? (snapshot.awayBattingOrderIDs ?? game.awayBattingOrderIDs).count
+            : (snapshot.homeBattingOrderIDs ?? game.homeBattingOrderIDs).count
         let batterIndex = snapshot.isTop ? snapshot.awayBatterIndex : snapshot.homeBatterIndex
         guard battingOrderCount > 0,
               batterIndex >= 0,
@@ -3290,6 +3585,8 @@ final class GameStore: ObservableObject {
         state.outs = snapshot.outs
         state.homeRunsByInning = snapshot.homeRunsByInning
         state.awayRunsByInning = snapshot.awayRunsByInning
+        if let order = snapshot.homeBattingOrderIDs { state.homeBattingOrderIDs = order }
+        if let order = snapshot.awayBattingOrderIDs { state.awayBattingOrderIDs = order }
         state.homeBatterIndex = snapshot.homeBatterIndex
         state.awayBatterIndex = snapshot.awayBatterIndex
         state.baseRunners = runners
@@ -3299,6 +3596,7 @@ final class GameStore: ObservableObject {
     }
 
     private func pushUndo(startsClock: Bool = false) {
+        ensureCurrentAppearance()
         finalizeLatestEventSituation()
         if startsClock, activeGameID != nil, !hasStartedGameClock {
             startGameClock()
@@ -3334,7 +3632,7 @@ final class GameStore: ObservableObject {
             RecordedRunnerMovement(
                 playerID: $0.player.id,
                 origin: $0.origin.title,
-                destination: $0.destination.title
+                destination: $0.destination == .score && !(actionEffectiveScorers ?? []).contains($0.player.id) ? "回本垒（不计分）" : $0.destination.title
             )
         }
         let undoSituation = undoStack.last?.situationSnapshot
@@ -3346,7 +3644,7 @@ final class GameStore: ObservableObject {
         case .game, .clock, .substitution, .tiebreak, .correction:
             nil
         }
-        let event = ScoringEventRecord(
+        var event = ScoringEventRecord(
             logEntryID: logEntry.id,
             inning: game.inning,
             isTop: game.isTop,
@@ -3365,6 +3663,11 @@ final class GameStore: ObservableObject {
             beforeSituation: beforeSituation,
             afterSituation: game.situationSnapshot
         )
+        if plateAppearanceBatterID != nil {
+            ensureCurrentAppearance()
+            event.plateAppearanceID = game.currentPlateAppearanceID
+            event.effectiveScorerIDs = actionEffectiveScorers
+        }
         var events = game.scoringEvents ?? []
         events.append(event)
         game.scoringEvents = events
@@ -3391,12 +3694,257 @@ final class GameStore: ObservableObject {
     }
 
     private func persistActiveStoredGameMetadata() {
+        guard actionDepth == 0, !requiresDataRecovery else { return }
         guard let activeGameID,
               let index = games.firstIndex(where: { $0.id == activeGameID }) else { return }
         games[index].state = game
         games[index].updatedAt = Date()
         let stored = games[index]
         persist { try persistenceStore.upsertGame(stored) }
+    }
+
+    var isCoachPitch: Bool { activeRules?.gameMode == .coachPitch }
+    var coachPitchLimit: Int { min(20, max(1, activeRules?.coachPitchLimit ?? 6)) }
+    var canRecordAction: Bool { !requiresDataRecovery && !game.isFinal && game.pendingDecision == nil }
+    var remainingHalfRuns: Int {
+        guard let limit = activeRules?.halfInningRunLimit else { return Int.max }
+        let values = game.isTop ? game.awayRunsByInning : game.homeRunsByInning
+        return max(0, limit - (values.indices.contains(game.inning - 1) ? values[game.inning - 1] : 0))
+    }
+    var allowedRunnerEvents: [RunnerEventKind] {
+        RunnerEventKind.allCases.filter {
+            !isCoachPitch || ![.stolenBase, .doubleSteal, .delayedSteal, .caughtStealing, .leftEarly,
+                .wildPitch, .passedBall, .uncertainLooseBall, .balk].contains($0)
+        }
+    }
+
+    private func beginAtomicAction() {
+        if actionDepth == 0 {
+            actionOriginal = game
+            actionOriginalGames = games
+            actionOriginalActiveID = activeGameID
+            actionUndo = undoStack; actionRedo = redoStack
+            actionEffectiveScorers = nil
+        }
+        actionDepth += 1
+    }
+
+    private func commitAtomicAction() {
+        guard actionDepth > 0 else { return }
+        if actionDepth > 1 { actionDepth -= 1; return }
+        defer { actionDepth = 0; actionOriginal = nil; actionOriginalGames = []; actionUndo = []; actionRedo = [] }
+        guard let original = actionOriginal else { return }
+        if requiresDataRecovery { game = original; return }
+        guard game != original || games != actionOriginalGames else { return }
+        finalizeLatestEventSituation()
+        if !game.isFinal, game.pendingDecision == nil,
+           game.inning == original.inning, game.isTop == original.isTop,
+           activeRules?.halfInningRunLimit != nil, remainingHalfRuns == 0,
+           game.dismissedRunLimitHalf != currentHalfKey {
+            game.pendingDecision = .runLimit
+        }
+        if !game.isFinal, game.halfEndedAwaitingDecision != true { ensureCurrentAppearance() }
+        guard let id = activeGameID, let index = games.firstIndex(where: { $0.id == id }) else { return }
+        games[index].state = game
+        games[index].status = game.isFinal ? .completed : .ongoing
+        games[index].updatedAt = Date()
+        games[index].revision = (actionOriginalGames.first { $0.id == id }?.revision ?? 0) + 1
+        if games[index].publicationState == "publishing" {
+            games[index].pendingPublicationRevisions = [games[index].revision!]
+        }
+        let originalTeams = teams, originalOpponents = opponentTeams, originalArchived = archivedTeams
+        let originalCurrentTeam = currentTeam
+        let profilesChanged = activeGameID == actionOriginalActiveID && synchronizeChangedProfiles(from: original)
+        do {
+            try LocalBackup.validate(makeRosterSnapshot())
+            if profilesChanged { try persistenceStore.replaceAll(with: makeRosterSnapshot()) }
+            else { try persistenceStore.upsertGame(games[index]) }
+            liveBroadcasts.requestSync()
+        } catch {
+            teams = originalTeams; opponentTeams = originalOpponents; archivedTeams = originalArchived
+            currentTeam = originalCurrentTeam
+            activeGameID = actionOriginalActiveID
+            game = original; games = actionOriginalGames
+            undoStack = actionUndo; redoStack = actionRedo
+            nextEventBeforeSituation = original.situationSnapshot
+            storageErrorMessage = "本次操作未保存，已恢复操作前局面：\(error.localizedDescription)"
+            actionErrorMessage = storageErrorMessage
+        }
+    }
+
+    /// Identity is stable; only edited profile fields propagate to the team's roster.
+    /// Used by lineup save and undo/redo, in the same database transaction as the game.
+    private func synchronizeChangedProfiles(from original: GameState) -> Bool {
+        var changed = false
+        for (before, after) in [(original.homeTeam, game.homeTeam), (original.awayTeam, game.awayTeam)] where before.id == after.id {
+            let updates = after.players.filter { player in
+                guard let old = before.players.first(where: { $0.id == player.id }) else { return false }
+                return old.chineseName != player.chineseName || old.englishName != player.englishName
+                    || old.numberTexts != player.numberTexts
+            }
+            guard !updates.isEmpty else { continue }
+            func update(_ collection: inout [Team]) {
+                guard let index = collection.firstIndex(where: { $0.id == after.id }) else { return }
+                for player in updates {
+                    guard let p = collection[index].players.firstIndex(where: { $0.id == player.id }) else { continue }
+                    collection[index].players[p].chineseName = player.chineseName
+                    collection[index].players[p].englishName = player.englishName
+                    collection[index].players[p].numbers = player.numbers
+                    collection[index].players[p].jerseyNumbers = player.jerseyNumbers
+                    changed = true
+                }
+            }
+            update(&teams); update(&opponentTeams); update(&archivedTeams)
+        }
+        if changed, let id = currentTeam?.id { currentTeam = teams.first { $0.id == id } }
+        return changed
+    }
+
+    private func initializeAppearanceForOpenedGame() {
+        beginAtomicAction()
+        ensureCurrentAppearance()
+        commitAtomicAction()
+    }
+
+    private func ensureCurrentAppearance() {
+        guard !game.isFinal, game.halfEndedAwaitingDecision != true, !game.battingOrderPlayers.isEmpty else { return }
+        if let id = game.currentPlateAppearanceID,
+           let index = game.plateAppearances?.firstIndex(where: { $0.id == id }),
+           game.plateAppearances?[index].inning == game.inning,
+           game.plateAppearances?[index].isTop == game.isTop {
+            if game.plateAppearances?[index].batterIDs.last != game.currentBatter.id {
+                game.plateAppearances?[index].batterIDs.append(game.currentBatter.id)
+            }
+            return
+        }
+        if game.currentPlateAppearanceID != nil { closeAppearance(completed: false) }
+        let previous = game.isTop ? game.awayInterruptedAppearanceID : game.homeInterruptedAppearanceID
+        let identity = PlateAppearanceIdentity(id: UUID(), inning: game.inning, isTop: game.isTop,
+            batterIDs: [game.currentBatter.id], completed: false, interrupted: false, previousSegmentID: previous)
+        game.plateAppearances = (game.plateAppearances ?? []) + [identity]
+        game.currentPlateAppearanceID = identity.id
+        game.plateAppearancePitchCount = 0
+        if game.isTop { game.awayInterruptedAppearanceID = nil } else { game.homeInterruptedAppearanceID = nil }
+    }
+
+    private func closeAppearance(completed: Bool) {
+        if let id = game.currentPlateAppearanceID,
+           let index = game.plateAppearances?.firstIndex(where: { $0.id == id }) {
+            game.plateAppearances?[index].completed = completed
+            game.plateAppearances?[index].interrupted = !completed
+            if !completed {
+                if game.plateAppearances?[index].isTop == true { game.awayInterruptedAppearanceID = id } else { game.homeInterruptedAppearanceID = id }
+            }
+        }
+        game.currentPlateAppearanceID = nil
+        game.plateAppearancePitchCount = 0
+    }
+
+    private func migrateAppearanceIdentities() {
+        guard game.plateAppearances == nil, var events = game.scoringEvents else { return }
+        var identities: [PlateAppearanceIdentity] = []
+        var current: UUID?
+        for index in events.indices where isPlateAppearanceEvent(events[index]) {
+            let event = events[index]
+            guard let batter = plateAppearanceBatter(for: event) else { continue }
+            if let last = identities.last, last.inning != event.inning || last.isTop != event.isTop {
+                if !last.completed { identities[identities.count - 1].interrupted = true }
+                current = nil
+            }
+            if current == nil {
+                // Deterministic legacy seed, persisted once; future aggregation never assigns identity.
+                current = event.id
+                identities.append(PlateAppearanceIdentity(id: event.id, inning: event.inning, isTop: event.isTop,
+                    batterIDs: [batter.id], completed: false, interrupted: false))
+            }
+            if identities[identities.count - 1].batterIDs.last != batter.id {
+                identities[identities.count - 1].batterIDs.append(batter.id)
+            }
+            events[index].plateAppearanceID = current
+            if eventEndsPlateAppearance(event) {
+                identities[identities.count - 1].completed = true
+                current = nil
+            }
+        }
+        game.scoringEvents = events
+        game.plateAppearances = identities
+        if let last = identities.last, last.inning == game.inning, last.isTop == game.isTop, !last.completed, !game.isFinal {
+            game.currentPlateAppearanceID = current
+        }
+    }
+
+    private func checkCoachPitchLimit() {
+        guard isCoachPitch, (game.plateAppearancePitchCount ?? 0) >= coachPitchLimit else { return }
+        let batter = game.currentBatter
+        updateBatter(batter.id) { $0.plateAppearances += 1; $0.atBats += 1 }
+        addLog("\(batter.name)：规定投球数用尽，打者出局（不记三振）", category: .out,
+            notation: "PITCH-LIMIT", primaryPlayerID: batter.id)
+        advanceBatter()
+        registerOuts(1)
+    }
+
+    private func endHalfWithoutUndo(reason: String) {
+        closeAppearance(completed: false)
+        addLog("\(reason)，本半局结束（实际 \(game.outs) 出局）", category: .game, notation: "HALF-END")
+        let needsDecision = game.inning >= game.scheduledInnings && (!game.isTop || game.homeScore > game.awayScore)
+        if needsDecision {
+            game.pendingDecision = .regulationHalf
+            game.halfEndedAwaitingDecision = true
+        } else { switchHalfWithoutUndo() }
+    }
+
+    private func switchHalfWithoutUndo() {
+        game.outs = 0; game.balls = 0; game.strikes = 0
+        game.baseRunners = [:]; game.automaticRunnerIDs = []
+        game.pendingDecision = nil; game.halfEndedAwaitingDecision = nil
+        if game.isTop { game.isTop = false }
+        else { game.isTop = true; game.inning += 1; ensureInningCapacity() }
+        game.currentPlateAppearanceID = nil
+        game.plateAppearancePitchCount = 0
+        ensureCurrentAppearance()
+    }
+
+    func endCurrentHalf() {
+        guard canRecordAction else { return }
+        beginAtomicAction(); defer { commitAtomicAction() }
+        pushUndo()
+        endHalfWithoutUndo(reason: "记录员结束半局")
+    }
+
+    func resolveGameDecision(finish: Bool) {
+        guard let decision = game.pendingDecision, !requiresDataRecovery else { return }
+        beginAtomicAction(); defer { commitAtomicAction() }
+        pushUndo()
+        game.pendingDecision = nil
+        switch decision {
+        case .runLimit:
+            game.dismissedRunLimitHalf = currentHalfKey
+            if finish { endHalfWithoutUndo(reason: "达到半局得分上限") }
+            else { addLog("达到得分上限，继续本半局，后续回本垒不再计分", notation: "CAP-CONTINUE") }
+        case .regulationHalf:
+            if finish { markGameFinal(reason: .regulation); addLog("确认结束比赛", notation: "END") }
+            else { switchHalfWithoutUndo(); addLog("确认继续比赛", notation: "CONTINUE") }
+        case .walkOff:
+            game.dismissedWalkOffHalf = currentHalfKey
+            if finish { markGameFinal(reason: .walkOff); addLog("确认再见结束比赛", notation: "END") }
+            else { addLog("取得领先后继续本半局", notation: "CONTINUE") }
+        }
+    }
+
+    func reopenGame(confirmedLegacySituation: Bool = false) -> Bool {
+        guard game.isFinal, !requiresDataRecovery else { return false }
+        guard game.canResumePrecisely == true || confirmedLegacySituation else {
+            actionErrorMessage = "旧比赛缺少恢复阶段，请先核对局次、棒次及垒况，再确认恢复。"
+            return false
+        }
+        beginAtomicAction(); defer { commitAtomicAction() }
+        pushUndo()
+        game.isFinal = false; game.endedAt = nil; game.endReason = nil
+        game.clockRunningSince = nil; game.pendingDecision = nil
+        game.dismissedWalkOffHalf = currentHalfKey
+        if game.halfEndedAwaitingDecision == true { switchHalfWithoutUndo() }
+        addLog("比赛恢复为进行中，计时暂停", notation: "REOPEN")
+        return true
     }
 
     private static var applicationDataDirectory: URL? {
@@ -3438,15 +3986,16 @@ final class GameStore: ObservableObject {
         RosterSnapshot(
             teams: teams,
             opponentTeams: opponentTeams,
-            currentTeamID: currentTeam.id,
+            currentTeamID: currentTeam?.id,
             seasons: seasons,
             playerGameRecords: playerGameRecords,
-            games: games
+            games: games,
+            archivedTeams: archivedTeams
         )
     }
 
     var backupDirectory: URL? {
-        databaseURL?.deletingLastPathComponent().appendingPathComponent("Backups", isDirectory: true)
+        sourceDatabaseURL?.deletingLastPathComponent().appendingPathComponent("Backups", isDirectory: true)
     }
 
     var automaticBackupURLs: [URL] {
@@ -3454,6 +4003,28 @@ final class GameStore: ObservableObject {
         return ((try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.pathExtension == "bmbackup" && $0.lastPathComponent.hasPrefix("automatic-") }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
+    var upgradeBackupURLs: [URL] {
+        guard let root = sourceDatabaseURL?.deletingLastPathComponent(),
+              let files = FileManager.default.enumerator(at: root.appendingPathComponent("UpgradeArchives"), includingPropertiesForKeys: nil) else { return [] }
+        return files.compactMap { $0 as? URL }.filter { $0.lastPathComponent == "verified.bmbackup" }.sorted { $0.path < $1.path }
+    }
+
+    func exportOriginalData() throws -> URL {
+        guard let root = sourceDatabaseURL?.deletingLastPathComponent(),
+              let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else {
+            throw LocalDataError.invalid("没有可导出的原始资料")
+        }
+        var contents: [String: Data] = [:]
+        for case let file as URL in files {
+            guard try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
+            contents[String(file.path.dropFirst(root.path.count + 1))] = try Data(contentsOf: file)
+        }
+        let url = try ReportExportFile.url(name: "BaseballMaster-原始恢复资料", extension: "bmrecovery")
+        let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
+        try encoder.encode(contents).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        return url
     }
 
     func exportBackup() throws -> URL {
@@ -3479,34 +4050,31 @@ final class GameStore: ObservableObject {
 
     func restoreBackup(_ backup: LocalBackup) throws {
         let snapshot = try backup.snapshot()
-        if let databaseURL {
-            let directory = databaseURL.deletingLastPathComponent()
-            let stagingDirectory = directory.appendingPathComponent("Restore-\(UUID().uuidString)", isDirectory: true)
+        if let sourceDatabaseURL {
+            let directory = sourceDatabaseURL.deletingLastPathComponent()
+            let stagingDirectory = directory.appendingPathComponent("RestoredStores/\(UUID().uuidString)", isDirectory: true)
             let stagingURL = stagingDirectory.appendingPathComponent("BaseballMaster.sqlite")
-            defer { try? FileManager.default.removeItem(at: stagingDirectory) }
-            let staging = try CoreDataRosterStore(storeURL: stagingURL)
+            let staging = try CoreDataRosterStore(storeURL: stagingURL, protectsUpgrade: false)
             try staging.replaceAll(with: snapshot)
-            guard try staging.loadSnapshot()?.games.count == snapshot.games.count else {
+            guard try staging.loadSnapshot() == snapshot else {
                 throw LocalDataError.invalid("恢复校验失败，原数据未修改。")
             }
             try staging.close()
-            // Preserve SQLite, WAL, SHM and external binary storage together.
             let archive = directory.appendingPathComponent("Recovery/\(UUID().uuidString)", isDirectory: true)
-            try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
             try persistenceStore.close()
             do {
-                let stem = databaseURL.deletingPathExtension().lastPathComponent
-                for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
-                    if url.lastPathComponent.hasPrefix(databaseURL.lastPathComponent) || url.lastPathComponent == ".\(stem)_SUPPORT" {
-                        try FileManager.default.copyItem(at: url, to: archive.appendingPathComponent(url.lastPathComponent))
-                    }
+                if let databaseURL, FileManager.default.fileExists(atPath: databaseURL.path) {
+                    try CoreDataRosterStore.copyStoreFamily(databaseURL, to: archive)
                 }
-                try CoreDataRosterStore.replaceDatabase(at: databaseURL, from: stagingURL)
-                persistenceStore = try CoreDataRosterStore(storeURL: databaseURL)
+                let candidate = try CoreDataRosterStore(storeURL: stagingURL, protectsUpgrade: false)
+                let relative = String(stagingURL.path.dropFirst(directory.path.count + 1))
+                try JSONEncoder().encode(relative).write(to: directory.appendingPathComponent("active-store-v3.json"), options: .atomic)
+                persistenceStore = candidate
+                databaseURL = stagingURL
             } catch {
                 persistenceStore = try CoreDataRosterStore(storeURL: nil)
                 requiresDataRecovery = true
-                storageErrorMessage = "恢复未完成，原文件保留在恢复归档中，请重新导入备份。"
+                storageErrorMessage = "恢复未完成，当前资料及原文件已保留，请重试。"
                 throw error
             }
         } else {
@@ -3515,10 +4083,12 @@ final class GameStore: ObservableObject {
         activeGameID = nil
         teams = snapshot.teams
         opponentTeams = snapshot.opponentTeams
-        currentTeam = teams.first(where: { $0.id == snapshot.currentTeamID }) ?? teams[0]
-        seasons = snapshot.seasons.isEmpty ? Self.makeSeasons() : snapshot.seasons
+        currentTeam = teams.first(where: { $0.id == snapshot.currentTeamID }) ?? teams.first
+        archivedTeams = snapshot.archivedTeams
+        seasons = snapshot.seasons
         playerGameRecords = snapshot.playerGameRecords
         games = snapshot.games.sorted { $0.updatedAt > $1.updatedAt }
+        liveBroadcasts.detachAfterRestore()
         if let ongoing = games.first(where: { $0.status == .ongoing }) {
             game = ongoing.state
             activeGameID = ongoing.id
@@ -3532,10 +4102,17 @@ final class GameStore: ObservableObject {
         storageErrorMessage = nil
         selectedTab = 0
         gameNavigationID = UUID()
+        do { try migrateStoredAppearanceIdentities() }
+        catch {
+            requiresDataRecovery = true
+            storageErrorMessage = "备份已保留，但打席资料升级未能保存。请重试恢复。"
+            throw error
+        }
         createAutomaticBackup()
     }
 
     private func persist(_ operation: () throws -> Void) {
+        guard !requiresDataRecovery else { return }
         do {
             try operation()
         } catch {
@@ -3545,13 +4122,21 @@ final class GameStore: ObservableObject {
     }
 
     private func persistCurrentGameIfNeeded() {
+        guard actionDepth == 0, !requiresDataRecovery else { return }
         guard let activeGameID,
               let index = games.firstIndex(where: { $0.id == activeGameID }) else { return }
+        let original = games[index]
         games[index].state = game
         games[index].updatedAt = Date()
         games[index].status = game.isFinal ? .completed : .ongoing
-        let stored = games[index]
-        persist { try persistenceStore.upsertGame(stored) }
+        games[index].revision = (original.revision ?? 0) + 1
+        do {
+            try persistenceStore.upsertGame(games[index])
+            liveBroadcasts.requestSync()
+        } catch {
+            games[index] = original
+            storageErrorMessage = "本次修改未能保存，直播仍保留上次已保存的局面。"
+        }
     }
 
     func prepareScorekeepingPreview() {
@@ -3643,3 +4228,32 @@ final class GameStore: ObservableObject {
     }
 
 }
+
+
+#if DEBUG
+// Opt-in simulator release audit. Excluded entirely from the distributed app.
+// Uses the normal on-disk store so installing over an older app tests the actual upgrade path.
+extension GameStore {
+    func runUpgradeReleaseAuditIfRequested() {
+        let arguments = ProcessInfo.processInfo.arguments
+        let phase: String
+        if arguments.contains("--upgrade-audit-continue") { phase = "continued" }
+        else if arguments.contains("--upgrade-audit-restore") { phase = "restored" }
+        else if arguments.contains("--upgrade-audit-export") { phase = "after" }
+        else { return }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        do {
+            guard !requiresDataRecovery else { throw LocalDataError.invalid(storageErrorMessage ?? "Recovery required") }
+            if phase == "continued" { recordPitch(.ball) }
+            if phase == "restored" { try restoreBackup(LocalBackup.read(exportBackup())) }
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+            try encoder.encode(makeRosterSnapshot()).write(to: documents.appendingPathComponent("UpgradeFixture-\(phase).json"), options: .atomic)
+            let settings: [String: String] = ["sentinel": UserDefaults.standard.string(forKey: "upgradeAuditSentinel") ?? "", "appearance": UserDefaults.standard.string(forKey: "appAppearance") ?? ""]
+            try encoder.encode(settings).write(to: documents.appendingPathComponent("UpgradeFixture-settings.json"), options: .atomic)
+            _ = try exportBackup()
+        } catch {
+            try? Data(error.localizedDescription.utf8).write(to: documents.appendingPathComponent("UpgradeFixture-error.txt"))
+        }
+    }
+}
+#endif

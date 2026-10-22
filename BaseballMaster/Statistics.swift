@@ -186,10 +186,11 @@ extension GameStore {
         return result
     }
 
-    func completedStatisticsGames(teamID: UUID? = nil, seasonID: String) -> [StoredGame] {
+    func completedStatisticsGames(teamID: UUID? = nil, seasonID: String, mode: GameMode? = nil) -> [StoredGame] {
         games.filter {
             $0.status == .completed && !$0.isObservation && $0.ourTeamID != nil
                 && (teamID == nil || $0.ourTeamID == teamID) && $0.seasonID == seasonID
+                && (mode == nil || $0.rules.gameMode == mode)
         }.sorted {
             let lhsDate = $0.startedAt ?? $0.scheduledAt ?? $0.createdAt
             let rhsDate = $1.startedAt ?? $1.scheduledAt ?? $1.createdAt
@@ -197,8 +198,8 @@ extension GameStore {
         }
     }
 
-    func seasonStatistics(for team: Team, seasonID: String) -> TeamSeasonStatistics {
-        let completed = completedStatisticsGames(teamID: team.id, seasonID: seasonID)
+    func seasonStatistics(for team: Team, seasonID: String, mode: GameMode? = nil) -> TeamSeasonStatistics {
+        let completed = completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: mode)
         var players = Dictionary(uniqueKeysWithValues: team.players.map {
             ($0.id, PlayerSeasonStatistics(player: $0))
         })
@@ -208,7 +209,7 @@ extension GameStore {
                 var row = players[player.id] ?? PlayerSeasonStatistics(player: player, isCurrentRoster: false)
                 row.gamesPlayed += 1
                 row.batting.add(stored.state.batting[player.id] ?? BattingLine())
-                row.pitching = .aggregate([row.pitching, stored.state.pitching[player.id] ?? PitchingLine()])
+                if stored.rules.gameMode == .standard { row.pitching = .aggregate([row.pitching, stored.state.pitching[player.id] ?? PitchingLine()]) }
                 row.fielding = .aggregate([row.fielding, stored.state.fielding[player.id] ?? FieldingLine()])
                 players[player.id] = row
             }
@@ -226,7 +227,7 @@ extension GameStore {
         return PlayerSeasonStatistics(
             player: player, gamesPlayed: records.count,
             batting: .aggregate(records.map(\.batting)),
-            pitching: .aggregate(completed.compactMap { $0.state.pitching[player.id] }),
+            pitching: .aggregate(completed.filter { $0.rules.gameMode == .standard }.compactMap { $0.state.pitching[player.id] }),
             fielding: .aggregate(completed.compactMap { $0.state.fielding[player.id] })
         )
     }

@@ -760,3 +760,407 @@ final class BaseballMasterUITests: XCTestCase {
         XCTAssertTrue(app.buttons["confirm-observed-lineup"].isEnabled)
     }
 }
+
+extension BaseballMasterUITests {
+    func testLivePitchCountTracksCurrentPitcherAndUndo() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let game = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(game.waitForExistence(timeout: 5))
+        game.tap()
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        XCTAssertTrue(pitcher.waitForExistence(timeout: 5))
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        app.buttons["pitch-坏球"].tap()
+        app.buttons["pitch-坏球"].tap()
+        app.buttons["pitch-看振"].tap()
+        XCTAssertTrue(pitcher.label.contains("本场已投 3 球"))
+        app.buttons["undo-last-play"].tap()
+        XCTAssertTrue(pitcher.label.contains("本场已投 2 球"))
+        app.buttons["redo-last-play"].tap()
+        XCTAssertTrue(pitcher.label.contains("本场已投 3 球"))
+        app.buttons["open-substitutions"].tap()
+        app.buttons["substitution-pitcher"].tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "高博文")).firstMatch.tap()
+        XCTAssertTrue(pitcher.label.contains("高博文"))
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        app.buttons["pitch-坏球"].tap()
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"))
+        app.buttons["undo-last-play"].tap()
+        app.buttons["undo-last-play"].tap()
+        XCTAssertTrue(pitcher.label.contains("赵一鸣"))
+        XCTAssertTrue(pitcher.label.contains("本场已投 3 球"))
+        XCTAssertTrue(app.buttons["ball-in-play"].isHittable)
+        XCTAssertTrue(app.buttons["结束比赛"].isHittable)
+        XCTAssertFalse(app.tabBars.firstMatch.isHittable)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "V1.1-现场投手累计用球"; attachment.lifetime = .keepAlways; add(attachment)
+
+        app.launchArguments = ["--v11-coach-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["coach-pitch-count"].waitForExistence(timeout: 5))
+        XCTAssertFalse(pitcher.label.contains("已投"))
+    }
+
+    func testV11ScoringHidesDockAndKeepsBackNavigation() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let game = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(game.waitForExistence(timeout: 5))
+        game.tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.tabBars.firstMatch.isHittable)
+        for id in ["pitch-坏球", "pitch-界外", "open-runner-events", "open-substitutions"] {
+            XCTAssertTrue(app.buttons[id].isHittable)
+        }
+        XCTAssertTrue(app.buttons["结束半局"].isHittable)
+        XCTAssertTrue(app.buttons["结束比赛"].isHittable)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "V1.1-记分全屏与返回"; attachment.lifetime = .keepAlways; add(attachment)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(game.exists)
+    }
+
+    func testV11FullBasesContrast() {
+        for appearance in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--v11-bases-preview", "-appAppearance", appearance]
+            app.launch()
+            XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+            for base in 1...3 {
+                XCTAssertTrue(app.descendants(matching: .any)["base-\(base)-occupied"].firstMatch.exists)
+            }
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "V1.1-满垒-\(appearance)"; attachment.lifetime = .keepAlways; add(attachment)
+        }
+    }
+
+    func testV11CoachLimitAndReopenFlow() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-coach-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["coach-pitch-count"].waitForExistence(timeout: 5))
+        for _ in 0..<6 { app.buttons["pitch-坏球"].tap() }
+        XCTAssertTrue(app.staticTexts["coach-pitch-count"].label.contains("0 / 6"))
+        XCTAssertTrue(app.buttons["结束比赛"].isHittable)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "V1.1-教练投手-二垒跑者"; image.lifetime = .keepAlways; add(image)
+        app.buttons["结束比赛"].tap()
+        let finishReason = app.buttons["finish-reason-记录员结束记录"]
+        revealStatisticsControl(finishReason, in: app)
+        finishReason.tap()
+        app.buttons["确认保存"].tap()
+        XCTAssertTrue(app.buttons["view-final-results"].waitForExistence(timeout: 3))
+        app.buttons["view-final-results"].tap()
+        let reopen = app.buttons["reopen-game"]
+        revealStatisticsControl(reopen, in: app)
+        XCTAssertTrue(reopen.exists)
+        reopen.tap()
+        XCTAssertTrue(app.buttons["open-finish-game"].waitForExistence(timeout: 3))
+    }
+
+    func testV11RunLimitPromptAndManualHalfInDarkMode() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-cap-preview", "-appAppearance", "dark"]
+        app.launch()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "V1.1-深色-二垒跑者"; image.lifetime = .keepAlways; add(image)
+        app.buttons["ball-in-play"].tap()
+        app.buttons["arrival-打者得分"].tap()
+        app.buttons["cause-本垒打"].tap()
+        let confirm = app.buttons["confirm-runners"]
+        revealStatisticsControl(confirm, in: app)
+        confirm.tap()
+        XCTAssertTrue(app.buttons["继续本半局（不再加分）"].waitForExistence(timeout: 5))
+        app.buttons["继续本半局（不再加分）"].tap()
+        app.buttons["结束半局"].tap()
+        app.buttons["确认交换攻守"].tap()
+        XCTAssertTrue(app.buttons["pitch-坏球"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["pitch-坏球"].isHittable)
+        let after = XCTAttachment(screenshot: app.screenshot())
+        after.name = "V1.1-手动换边"; after.lifetime = .keepAlways; add(after)
+    }
+
+    func testV11OptionalNamesAndDoubleZeroEditor() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--team-preview"]
+        app.launch()
+        app.buttons["team-card-海浪"].tap()
+        app.buttons["add-player"].tap()
+        app.textFields["背号"].tap(); app.textFields["背号"].typeText("00")
+        XCTAssertTrue(app.buttons["保存"].isEnabled)
+        app.buttons["保存"].tap()
+        XCTAssertTrue(app.buttons["player-card-#00"].waitForExistence(timeout: 3))
+    }
+}
+
+extension BaseballMasterUITests {
+    func testLiveBroadcastStartShareAndCloseWithLocalService() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-bases-preview", "--live-local-test"]
+        app.launch()
+        let open = app.buttons["open-live-broadcast"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5)); XCTAssertTrue(open.isHittable)
+        XCTAssertTrue(app.buttons["结束比赛"].isHittable)
+        open.tap()
+        let start = app.buttons["start-live-broadcast"]
+        XCTAssertTrue(start.waitForExistence(timeout: 3)); XCTAssertTrue(start.isEnabled); start.tap()
+        let share = app.buttons["share-live-link"]
+        XCTAssertTrue(share.waitForExistence(timeout: 10), app.debugDescription)
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "文字直播分享"; screenshot.lifetime = .keepAlways; add(screenshot)
+        share.tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 3))
+        // Close the system share sheet through its native close button, never select an external recipient.
+        let closeShare = app.buttons["Close"]
+        if closeShare.exists { closeShare.tap() } else if app.buttons["关闭"].exists { app.buttons["关闭"].tap() } else { app.swipeDown() }
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.otherElements["ActivityListView"])
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
+        let close = app.buttons["close-live-broadcast"]
+        if !close.isHittable { app.swipeUp() }
+        XCTAssertTrue(close.waitForExistence(timeout: 3)); close.tap()
+        app.buttons["关闭直播"].tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["完成"].tap()
+        XCTAssertTrue(open.waitForExistence(timeout: 3)); XCTAssertTrue(app.buttons["结束比赛"].isHittable)
+    }
+}
+
+
+extension BaseballMasterUITests {
+    func testOfflineReleaseHidesLiveInScoringAndResultsAndDescribesLocalPrivacy() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let game = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(game.waitForExistence(timeout: 5)); game.tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["open-live-broadcast"].exists)
+        let scoring = XCTAttachment(screenshot: app.screenshot()); scoring.name = "1.6-离线记分"; scoring.lifetime = .keepAlways; add(scoring)
+        app.buttons["open-box-score"].tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["open-live-broadcast"].exists)
+        app.terminate(); app.launchArguments = ["--profile-preview"]; app.launch()
+        let about = app.buttons["open-app-about"]
+        revealStatisticsControl(about, in: app); about.tap()
+        XCTAssertTrue(app.staticTexts["版本 1.6（1）"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["about-privacy-description"].label.contains("当前版本暂不提供文字直播"))
+        let privacy = XCTAttachment(screenshot: app.screenshot()); privacy.name = "1.6-离线隐私说明"; privacy.lifetime = .keepAlways; add(privacy)
+    }
+}
+
+extension BaseballMasterUITests {
+    private func captureV111(_ name: String, app: XCUIApplication) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    func testV111LineupReorderProfilesBothTeamsAndCancel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let game = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(game.waitForExistence(timeout: 5)); game.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        XCTAssertTrue(batter.waitForExistence(timeout: 5))
+        XCTAssertTrue(batter.label.contains("第 1 棒"))
+        app.buttons["pitch-坏球"].tap()
+        app.buttons["open-substitutions"].tap()
+        XCTAssertTrue(app.buttons["edit-home-lineup"].waitForExistence(timeout: 3))
+        app.buttons["edit-away-lineup"].tap()
+        XCTAssertTrue(app.buttons["lineup-down-1"].waitForExistence(timeout: 3))
+        app.buttons["lineup-down-1"].tap()
+        let player = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "lineup-player-", "陈昊")).firstMatch
+        player.tap()
+        app.buttons["更正姓名／号码"].tap()
+        let name = app.textFields["lineup-chinese-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 3))
+        name.tap(); name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (name.value as? String ?? "").count) + "Updated Player")
+        let numbers = app.textFields["lineup-numbers"]
+        numbers.tap(); numbers.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (numbers.value as? String ?? "").count) + "00, 0")
+        app.buttons["lineup-profile-done"].tap()
+        captureV111("V1.1.1-阵容排序与资料更正", app: app)
+        app.buttons["lineup-save"].tap()
+        XCTAssertTrue(app.buttons["pitch-坏球"].waitForExistence(timeout: 5))
+        XCTAssertTrue(batter.label.contains("第 2 棒"), batter.label)
+        XCTAssertTrue(batter.label.contains("Updated Player"), batter.label)
+        app.buttons["undo-last-play"].tap()
+        XCTAssertTrue(batter.label.contains("第 1 棒")); XCTAssertTrue(batter.label.contains("陈昊"))
+        app.buttons["redo-last-play"].tap()
+        XCTAssertTrue(batter.label.contains("Updated Player"))
+        app.buttons["open-substitutions"].tap(); app.buttons["edit-home-lineup"].tap()
+        XCTAssertTrue(app.buttons["lineup-down-1"].waitForExistence(timeout: 3))
+        app.buttons["lineup-down-1"].tap()
+        app.buttons["取消"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["edit-home-lineup"].waitForExistence(timeout: 3))
+        app.buttons["取消"].firstMatch.tap()
+        XCTAssertTrue(batter.label.contains("第 2 棒"))
+    }
+
+    func testV111FoulBuntVisibleWithoutShrinkingCoreControlsAndCanUndo() {
+        for appearance in ["light", "dark"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--v11-bases-preview", "-appAppearance", appearance]
+            app.launch()
+            XCTAssertTrue(app.buttons["pitch-界外"].waitForExistence(timeout: 5))
+            let field = app.descendants(matching: .any)["base-2-occupied"].firstMatch
+            let beforeFrame = field.frame
+            app.buttons["pitch-界外"].tap(); app.buttons["pitch-界外"].tap()
+            let bunt = app.buttons["foul-bunt-strikeout"]
+            XCTAssertTrue(bunt.waitForExistence(timeout: 3)); XCTAssertTrue(bunt.isHittable)
+            for id in ["pitch-坏球", "pitch-界外", "ball-in-play", "open-substitutions", "open-runner-events", "open-special-events"] {
+                XCTAssertTrue(app.buttons[id].isHittable)
+                XCTAssertGreaterThanOrEqual(app.buttons[id].frame.height, 40)
+            }
+            XCTAssertEqual(field.frame.height, beforeFrame.height, accuracy: 1)
+            XCTAssertTrue(app.buttons["结束半局"].isHittable); XCTAssertTrue(app.buttons["结束比赛"].isHittable)
+            captureV111("V1.1.1-两好球触击入口-" + appearance, app: app)
+            let before = app.descendants(matching: .any)["current-batter"].firstMatch.label
+            app.buttons["pitch-界外"].tap()
+            XCTAssertEqual(app.descendants(matching: .any)["current-batter"].firstMatch.label, before)
+            bunt.tap()
+            XCTAssertFalse(bunt.exists)
+            XCTAssertNotEqual(app.descendants(matching: .any)["current-batter"].firstMatch.label, before)
+            app.buttons["undo-last-play"].tap()
+            XCTAssertTrue(bunt.waitForExistence(timeout: 3))
+        }
+    }
+
+    func testV111ThirdOutAndTriplePlaySkipRemainingRunnerDestinations() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v111-bases-preview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        // Two strikeouts keep existing runners on base.
+        for _ in 0..<6 { app.buttons["pitch-看振"].tap() }
+        app.buttons["ball-in-play"].tap(); app.buttons["arrival-打者出局"].tap()
+        app.buttons["cause-打者未到一垒前出局"].tap()
+        let route = app.buttons["defense-6-3"]
+        XCTAssertTrue(route.waitForExistence(timeout: 3)); route.tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["ball-in-play"].isHittable)
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        XCTAssertFalse(app.buttons["confirm-runners"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["base-1-empty"].firstMatch.waitForExistence(timeout: 3))
+        captureV111("V1.1.1-第三出局直接换边", app: app)
+
+        app.terminate(); app.launch()
+        app.buttons["ball-in-play"].tap(); app.buttons["arrival-打者出局"].tap()
+        let triple = app.buttons["cause-一次出了三人"]
+        revealStatisticsControl(triple, in: app); triple.tap()
+        let tripleRoute = app.buttons["defense-5-4-3-TP"]
+        XCTAssertTrue(tripleRoute.waitForExistence(timeout: 3)); tripleRoute.tap()
+        XCTAssertTrue(app.buttons["confirm-terminal-outs"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["confirm-terminal-outs"].isEnabled)
+        let runners = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "terminal-out-"))
+        runners.element(boundBy: 0).tap(); runners.element(boundBy: 2).tap()
+        captureV111("V1.1.1-三杀只确认实际出局者", app: app)
+        app.buttons["confirm-terminal-outs"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["confirm-runners"].exists)
+    }
+
+    func testV111PitcherCanReturnThroughExistingQuickSubstitution() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let game = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(game.waitForExistence(timeout: 5)); game.tap()
+        app.buttons["pitch-坏球"].tap()
+        app.buttons["open-substitutions"].tap(); app.buttons["substitution-pitcher"].tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "高博文")).firstMatch.tap()
+        app.buttons["pitch-看振"].tap()
+        app.buttons["open-substitutions"].tap(); app.buttons["substitution-pitcher"].tap()
+        let original = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "赵一鸣")).firstMatch
+        revealStatisticsControl(original, in: app); original.tap()
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        XCTAssertTrue(pitcher.label.contains("赵一鸣")); XCTAssertTrue(pitcher.label.contains("本场已投 1 球"))
+        app.buttons["pitch-坏球"].tap()
+        XCTAssertTrue(pitcher.label.contains("本场已投 2 球"))
+    }
+}
+
+extension BaseballMasterUITests {
+    func testV111ForceThirdOutOnlyAsksWhichRunnerAndKeepsScoringReachable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v111-bases-preview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["pitch-看振"].waitForExistence(timeout: 5))
+        for _ in 0..<6 { app.buttons["pitch-看振"].tap() }
+        app.buttons["open-runner-events"].tap()
+        let force = app.buttons["runner-event-封杀"]
+        revealStatisticsControl(force, in: app); force.tap()
+        XCTAssertTrue(app.buttons["confirm-third-out-runner"].waitForExistence(timeout: 3))
+        let runner = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "third-out-runner-")).firstMatch
+        runner.tap()
+        captureV111("V1.1.1-封杀第三出局", app: app)
+        app.buttons["confirm-third-out-runner"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["confirm-runners"].exists)
+    }
+}
+
+extension BaseballMasterUITests {
+    func testV111OpponentPitcherWarningRemainsAfterThirdOutAndOpensAllDetails() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v111-limits-preview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["pitch-看振"].waitForExistence(timeout: 5))
+        let initialWarning = app.buttons["game-rule-warning"]
+        XCTAssertTrue(initialWarning.waitForExistence(timeout: 3))
+        XCTAssertEqual(initialWarning.value as? String, "还有 3 球")
+        assertV111WarningBesidePitcher(app)
+        captureV111("V1.1.1-投手旁还有3球", app: app)
+        for _ in 0..<3 { app.buttons["pitch-看振"].tap() }
+        let warning = app.descendants(matching: .any)["game-rule-warning"].firstMatch
+        XCTAssertTrue(warning.waitForExistence(timeout: 3))
+        XCTAssertTrue(warning.label.contains("飞鹰")); XCTAssertTrue(warning.label.contains("赵一鸣"))
+        XCTAssertEqual(warning.value as? String, "其他达限")
+        assertV111WarningBesidePitcher(app)
+        captureV111("V1.1.1-换边保留对手达限提醒", app: app)
+        warning.tap()
+        XCTAssertTrue(app.navigationBars["比赛规则提醒"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "达到 2 局投球限制")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "达到 6 球限制")).firstMatch.exists)
+        captureV111("V1.1.1-投手限制详情", app: app)
+        app.buttons["完成"].tap()
+        app.buttons["undo-last-play"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["current-pitcher"].firstMatch.label.contains("赵一鸣"))
+    }
+}
+
+extension BaseballMasterUITests {
+    private func assertV111WarningBesidePitcher(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        let warning = app.buttons["game-rule-warning"]
+        XCTAssertLessThan(abs(pitcher.frame.midY - warning.frame.midY), 3, file: file, line: line)
+        // Accessibility reports the touch target, expanded 10 pt beyond the visible badge.
+        XCTAssertGreaterThanOrEqual(warning.frame.minX + 10, pitcher.frame.maxX, file: file, line: line)
+        XCTAssertTrue(app.buttons["ball-in-play"].isHittable, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(app.buttons["ball-in-play"].frame.height, 44, file: file, line: line)
+    }
+
+    func testV111FinalInningBadgeAndLongPitcherNameKeepScoringUsable() {
+        let app = XCUIApplication()
+        for argument in ["--v111-final-inning-preview", "--v111-long-pitcher-preview"] {
+            app.launchArguments = [argument, "-appAppearance", "dark"]
+            app.launch()
+            let warning = app.buttons["game-rule-warning"]
+            XCTAssertTrue(warning.waitForExistence(timeout: 5))
+            let longName = argument.contains("long-pitcher")
+            XCTAssertEqual(warning.value as? String, longName ? "还有 3 球" : "最后一局")
+            assertV111WarningBesidePitcher(app)
+            captureV111(longName ? "V1.1.1-长投手姓名提醒-dark" : "V1.1.1-投手旁最后一局-dark", app: app)
+            warning.tap()
+            XCTAssertTrue(app.navigationBars["比赛规则提醒"].waitForExistence(timeout: 3))
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "允许的最后一局")).firstMatch.exists)
+            app.buttons["完成"].tap()
+            app.buttons["pitch-坏球"].tap()
+            XCTAssertTrue(app.descendants(matching: .any)["current-pitcher"].firstMatch.label.contains(longName ? "本场已投 4 球" : "本场已投 1 球"))
+            app.terminate()
+        }
+    }
+}

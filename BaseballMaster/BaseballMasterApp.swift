@@ -1,20 +1,37 @@
 import SwiftUI
 
+/// Fixture launch arguments are only honored by development builds.
+private enum AppLaunchArguments {
+    static var values: [String] {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments
+        #else
+        []
+        #endif
+    }
+}
+
 @main
 struct BaseballMasterApp: App {
     @StateObject private var store: GameStore
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        let isPreviewRun = ProcessInfo.processInfo.arguments.contains { $0.hasSuffix("-preview") }
-        _store = StateObject(wrappedValue: isPreviewRun ? GameStore(persistenceURL: nil) : GameStore())
+        let isPreviewRun = AppLaunchArguments.values.contains { $0.hasSuffix("-preview") }
+        let initialStore = isPreviewRun ? GameStore(persistenceURL: nil) : GameStore()
+        #if DEBUG
+        initialStore.runUpgradeReleaseAuditIfRequested()
+        #endif
+        _store = StateObject(wrappedValue: initialStore)
     }
 
     var body: some Scene {
         WindowGroup {
             LaunchRouterView()
                 .environmentObject(store)
+                .task { store.liveBroadcasts.setForeground(true) }
                 .onChange(of: scenePhase) { phase in
+                    store.liveBroadcasts.setForeground(phase == .active)
                     if phase == .background { store.createAutomaticBackup() }
                 }
         }
@@ -26,11 +43,40 @@ struct LaunchRouterView: View {
     @AppStorage("appAppearance") private var appAppearance = AppAppearance.system.rawValue
 
     var body: some View {
-        let arguments = ProcessInfo.processInfo.arguments
+        #if DEBUG
+        previewBody
+        #else
+        Group {
+            if store.requiresDataRecovery { NavigationStack { BackupManagementView() } }
+            else { RootTabView() }
+        }
+        .preferredColorScheme(AppAppearance(rawValue: appAppearance)?.colorScheme)
+        #endif
+    }
+
+    #if DEBUG
+    @ViewBuilder private var previewBody: some View {
+        let arguments = AppLaunchArguments.values
 
         Group {
             if store.requiresDataRecovery {
                 NavigationStack { BackupManagementView() }
+            } else if arguments.contains("--v11-coach-preview") {
+                V11ScorekeepingFixture(mode: .coachPitch)
+            } else if arguments.contains("--v11-cap-preview") {
+                V11ScorekeepingFixture(mode: .standard)
+            } else if arguments.contains("--v111-bases-preview") {
+                V11ScorekeepingFixture(mode: .standard, fullBases: true, startsAfterRunners: true)
+            } else if arguments.contains("--v111-limits-preview") {
+                V11ScorekeepingFixture(mode: .standard, limitPreview: true)
+            } else if arguments.contains("--v111-final-inning-preview") {
+                V11ScorekeepingFixture(mode: .standard, limitPreview: true, finalInningPreview: true)
+            } else if arguments.contains("--v111-long-pitcher-preview") {
+                V11ScorekeepingFixture(mode: .standard, limitPreview: true, longPitcherName: true)
+            } else if arguments.contains("--v11-bases-preview") {
+                V11ScorekeepingFixture(mode: .standard, fullBases: true)
+            } else if arguments.contains("--v11-navigation-preview") {
+                V11ScorekeepingFixture(mode: .standard, fullBases: true, showsHome: true)
             } else if arguments.contains("--backup-preview") {
                 NavigationStack { BackupManagementView() }
             } else if arguments.contains("--poster-preview") {
@@ -53,11 +99,11 @@ struct LaunchRouterView: View {
                 }
             } else if arguments.contains("--team-detail-preview") {
                 NavigationStack {
-                    TeamDetailView(teamID: store.currentTeam.id)
+                    TeamDetailView(teamID: store.currentTeam!.id)
                 }
             } else if arguments.contains("--player-detail-preview") {
                 NavigationStack {
-                    PlayerDetailView(player: store.currentTeam.players[0])
+                    PlayerDetailView(player: store.currentTeam!.players[0])
                 }
             } else if arguments.contains("--profile-preview") {
                 NavigationStack {
@@ -147,8 +193,10 @@ struct LaunchRouterView: View {
         }
         .preferredColorScheme(AppAppearance(rawValue: appAppearance)?.colorScheme)
     }
+    #endif
 }
 
+#if DEBUG
 private struct GamePosterFixtureView: View {
     @EnvironmentObject private var store: GameStore
     @State private var gameID: UUID?
@@ -159,7 +207,7 @@ private struct GamePosterFixtureView: View {
             } else { ProgressView() }
         }.onAppear {
             guard gameID == nil else { return }
-            gameID = store.scheduleGame(ourTeam: store.currentTeam, opponent: store.opponentTeams[0], isHome: false,
+            gameID = store.scheduleGame(ourTeam: store.currentTeam!, opponent: store.opponentTeams[0], isHome: false,
                                         scheduledAt: Date().addingTimeInterval(86400))
         }
     }
@@ -174,7 +222,7 @@ private struct StatisticsPreviewFixtureView: View {
             .onAppear {
                 guard !configured, let opponent = store.opponentTeams.first else { return }
                 configured = true
-                let lineup = Array(store.currentTeam.players.prefix(9))
+                let lineup = Array(store.currentTeam!.players.prefix(9))
                 store.startNewGame(opponent: opponent, isHome: false, innings: 6, lineup: lineup)
                 _ = store.applyPlay(.single)
                 _ = store.applyPlay(.homeRun)
@@ -218,7 +266,7 @@ private struct TimedScorekeepingFixtureView: View {
             .onAppear {
                 guard !configured, let opponent = store.opponentTeams.first else { return }
                 configured = true
-                let lineup = Array(store.currentTeam.players.prefix(9)).enumerated().map { index, player in
+                let lineup = Array(store.currentTeam!.players.prefix(9)).enumerated().map { index, player in
                     LineupAssignment(playerID: player.id, battingOrder: index + 1, position: FieldPosition.allCases[index])
                 }
                 _ = store.startNewGame(
@@ -240,7 +288,7 @@ private struct PendingReviewFixtureView: View {
             .onAppear {
                 guard !configured, let opponent = store.opponentTeams.first else { return }
                 configured = true
-                let lineup = Array(store.currentTeam.players.prefix(9)).enumerated().map { index, player in
+                let lineup = Array(store.currentTeam!.players.prefix(9)).enumerated().map { index, player in
                     LineupAssignment(playerID: player.id, battingOrder: index + 1, position: FieldPosition.allCases[index])
                 }
                 _ = store.startNewGame(
@@ -263,7 +311,7 @@ private struct BoxScorePreviewFixtureView: View {
             .onAppear {
                 guard !configured, let opponent = store.opponentTeams.first else { return }
                 configured = true
-                let lineup = Array(store.currentTeam.players.prefix(9)).enumerated().map { index, player in
+                let lineup = Array(store.currentTeam!.players.prefix(9)).enumerated().map { index, player in
                     LineupAssignment(playerID: player.id, battingOrder: index + 1, position: FieldPosition.allCases[index])
                 }
                 _ = store.startNewGame(
@@ -293,7 +341,7 @@ private struct TiebreakPreviewFixtureView: View {
             .onAppear {
                 guard !configured, let opponent = store.opponentTeams.first else { return }
                 configured = true
-                let lineup = Array(store.currentTeam.players.prefix(9)).enumerated().map { index, player in
+                let lineup = Array(store.currentTeam!.players.prefix(9)).enumerated().map { index, player in
                     LineupAssignment(playerID: player.id, battingOrder: index + 1, position: FieldPosition.allCases[index])
                 }
                 _ = store.startNewGame(
@@ -327,7 +375,7 @@ private struct ScheduledPreparationFixtureView: View {
         .onAppear {
             guard gameID == nil, let opponent = store.opponentTeams.first else { return }
             gameID = store.scheduleGame(
-                ourTeam: store.currentTeam,
+                ourTeam: store.currentTeam!,
                 opponent: opponent,
                 isHome: false,
                 scheduledAt: Date().addingTimeInterval(86_400)
@@ -345,7 +393,7 @@ private struct GameHomeFixtureView: View {
             .onAppear {
                 guard !isConfigured, let opponent = store.opponentTeams.first else { return }
                 isConfigured = true
-                let lineup = Array(store.currentTeam.players.prefix(9))
+                let lineup = Array(store.currentTeam!.players.prefix(9))
                 let assignments = lineup.enumerated().map { index, player in
                     LineupAssignment(playerID: player.id, battingOrder: index + 1, position: FieldPosition.allCases[index])
                 }
@@ -373,3 +421,50 @@ private struct GameHomeFixtureView: View {
             }
     }
 }
+
+private struct V11ScorekeepingFixture: View {
+    @EnvironmentObject private var store: GameStore
+    @State private var prepared = false
+    let mode: GameMode
+    var fullBases = false
+    var showsHome = false
+    var limitPreview = false
+    var finalInningPreview = false
+    var longPitcherName = false
+    var startsAfterRunners = false
+    var body: some View {
+        Group {
+            if showsHome { RootTabView() }
+            else { NavigationStack { ScorekeepingView() } }
+        }
+            .onAppear {
+                guard !prepared, let team = store.currentTeam else { return }
+                prepared = true
+                var rules = GameRules()
+                rules.mode = mode; rules.coachPitchLimit = 6
+                rules.halfInningRunLimit = mode == .standard ? 1 : nil
+                if limitPreview { rules.pitchLimit = 6; rules.pitchWarningRemaining = 3; rules.pitcherInningsLimit = 2 }
+                let lineup = team.players.prefix(9).enumerated().map {
+                    LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: $0.element.primaryPosition)
+                }
+                store.startNewGame(opponent: store.opponentTeams[0], isHome: false, rules: rules, lineup: lineup)
+                store.game.baseRunners[.second] = team.players[1]
+                if startsAfterRunners { store.game.awayBatterIndex = 4 }
+                if limitPreview {
+                    store.game.outs = 2
+                    store.game.pitching[store.currentPitcher.id] = PitchingLine(outsRecorded: 5, pitches: finalInningPreview ? 0 : 3)
+                }
+                if longPitcherName {
+                    var draft = store.lineupDraft(forHomeTeam: store.game.isTop)
+                    draft.updateProfile(playerID: store.currentPitcher.id, chineseName: "赵一鸣很长的投手姓名", englishName: "", numberTexts: ["77", "88"])
+                    store.saveLineup(draft)
+                }
+                if fullBases {
+                    store.game.baseRunners[.first] = team.players[2]
+                    store.game.baseRunners[.third] = team.players[3]
+                }
+            }
+    }
+}
+
+#endif

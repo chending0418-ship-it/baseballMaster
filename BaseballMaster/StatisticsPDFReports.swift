@@ -74,10 +74,10 @@ struct TeamSeasonPDFReport {
     let seasonName: String
     let summary: TeamSeasonStatistics
 
-    init(store: GameStore, team: Team, seasonID: String) {
+    init(store: GameStore, team: Team, seasonID: String, mode: GameMode? = nil) {
         self.team = team
         seasonName = store.statisticsSeasons.first { $0.id == seasonID }?.name ?? seasonID
-        summary = store.seasonStatistics(for: team, seasonID: seasonID)
+        summary = store.seasonStatistics(for: team, seasonID: seasonID, mode: mode)
     }
 
     func pdfData(generatedAt: Date = Date()) -> Data {
@@ -103,7 +103,8 @@ struct TeamSeasonPDFReport {
             let players = summary.filteredPlayers(category: .batting, metric: .plateAppearances, ascending: false, recordsOnly: false)
             ReportStatisticsTables.batting(canvas, title: "赛季打击", players: players, totalGames: summary.games.count)
             canvas.newPage()
-            ReportStatisticsTables.pitching(canvas, title: "赛季投手", players: players)
+            if !summary.games.isEmpty && summary.games.allSatisfy({ $0.rules.gameMode == .coachPitch }) { canvas.paragraph("教练投手模式：投手数据不适用") }
+            else { ReportStatisticsTables.pitching(canvas, title: "赛季投手", players: players) }
             ReportStatisticsTables.fielding(canvas, title: "赛季守备", players: players)
             ReportStatisticsTables.legend(canvas)
         }
@@ -148,7 +149,8 @@ struct PlayerStatisticsPDFReport {
             if pending > 0 { canvas.paragraph("所选比赛有 \(pending) 条待确认记录，统计可能在复核后变化。", size: 10, bold: true) }
             let rows = records.isEmpty ? [] : [summary]
             ReportStatisticsTables.batting(canvas, title: "所选范围打击", players: rows, totalGames: records.count, includeTotal: false)
-            ReportStatisticsTables.pitching(canvas, title: "所选范围投手", players: rows, includeTotal: false)
+            if !games.isEmpty && games.allSatisfy({ $0.rules.gameMode == .coachPitch }) { canvas.paragraph("教练投手模式：投手数据不适用") }
+            else { ReportStatisticsTables.pitching(canvas, title: "所选范围投手", players: rows, includeTotal: false) }
             ReportStatisticsTables.fielding(canvas, title: "所选范围守备", players: rows, includeTotal: false)
             canvas.newPage()
             canvas.table(title: "逐场打击 · BATTING GAME LOG", headers: ["日期 / 对手 / 结果", "PA", "AB", "R", "H", "HR", "RBI", "BB", "SO", "AVG"],
@@ -159,6 +161,7 @@ struct PlayerStatisticsPDFReport {
             }, weights: [5] + Array(repeating: 1, count: 9))
             canvas.table(title: "逐场投手 · PITCHING GAME LOG", headers: ["日期 / 对手 / 结果", "IP", "H", "R", "ER", "BB", "SO", "P", "ERA"],
                          rows: records.map { record in
+                if games.first(where: { $0.id == record.id })?.rules.gameMode == .coachPitch { return [recordLabel(record)] + Array(repeating: "不适用", count: 8) }
                 guard let p = games.first(where: { $0.id == record.id })?.state.pitching[player.id] else {
                     return [recordLabel(record)] + Array(repeating: "-", count: 8)
                 }
@@ -234,7 +237,8 @@ struct GameBoxScorePDFReport {
                 let title = team.name + (team.id == game.awayTeam.id ? " · 客队" : " · 主队")
                 let players = participants(for: team)
                 ReportStatisticsTables.batting(canvas, title: title, players: players, totalGames: 1, compact: true)
-                ReportStatisticsTables.pitching(canvas, title: title, players: players, compact: true)
+                if rules?.gameMode == .coachPitch { canvas.paragraph("教练投手模式：投手数据不适用") }
+                else { ReportStatisticsTables.pitching(canvas, title: title, players: players, compact: true) }
                 ReportStatisticsTables.fielding(canvas, title: title, players: players, compact: true)
             }
         }

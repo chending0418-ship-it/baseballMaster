@@ -283,6 +283,15 @@ struct RunnerEventFlowSheet: View {
                         dismiss()
                     }
                 }
+            } else if let selectedKind, selectedKind.group == .out, store.game.outs == 2 {
+                HalfEndingRunnerSheet(runners: store.suggestedRunnerEventDecisions(for: selectedKind), allowsScoring: selectedKind != .forceOut) { outID, scorers in
+                    guard let decisions = store.halfEndingRunnerDecisions(for: selectedKind, outID: outID, scorerIDs: scorers) else { return }
+                    if store.runnerEventNeedsTimingDecision(selectedKind, decisions: decisions) {
+                        pendingTimingDecisions = decisions
+                    } else if store.recordRunnerEvent(selectedKind, decisions: decisions) {
+                        dismiss()
+                    }
+                }
             } else if let selectedKind {
                 RunnerResolutionSheet(
                     decisions: store.suggestedRunnerEventDecisions(for: selectedKind),
@@ -330,7 +339,7 @@ struct RunnerEventFlowSheet: View {
                                 Text(group.rawValue)
                                     .font(.system(size: 13, weight: .black))
                                     .foregroundStyle(BMTheme.secondaryText)
-                                ForEach(RunnerEventKind.allCases.filter { $0.group == group }) { kind in
+                                ForEach(store.allowedRunnerEvents.filter { $0.group == group }) { kind in
                             Button {
                                 selectedKind = kind
                             } label: {
@@ -473,14 +482,14 @@ struct SpecialEventSheet: View {
                         .font(.system(size: 13))
                         .foregroundStyle(BMTheme.secondaryText)
 
-                    specialButton("打者被球击中", detail: "自动上一垒并推进被迫跑者", icon: "cross.case.fill", id: "special-hbp") {
+                    specialButton("打者被球击中", detail: store.isCoachPitch ? "继续打击，计入本打席球数" : "自动上一垒并推进被迫跑者", icon: "cross.case.fill", id: "special-hbp") {
                         store.recordHitByPitch()
                         dismiss()
                     }
-                    specialButton("裁判示意故意保送", detail: "无需补点四个坏球", icon: "hand.raised.fill", id: "special-ibb") {
+                    if !store.isCoachPitch { specialButton("裁判示意故意保送", detail: "无需补点四个坏球", icon: "hand.raised.fill", id: "special-ibb") {
                         store.recordIntentionalWalk()
                         dismiss()
-                    }
+                    } }
                     specialButton(
                         "三振，但捕手没接住",
                         detail: store.canReachOnDroppedThirdStrike ? "打者仍可能跑上一垒" : "当前一垒有人且不足两出局，打者应直接出局",
@@ -572,7 +581,7 @@ struct SpecialEventSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(ViolationKind.allCases.filter { $0.category == category }) { violation in
+                    ForEach(ViolationKind.allCases.filter { $0.category == category && (!store.isCoachPitch || $0.category != .pitcher) }) { violation in
                         HStack(spacing: 8) {
                             specialButton(
                                 violation.rawValue,
@@ -784,7 +793,7 @@ struct ViolationAdjudicationSheet: View {
                             Picker("失误责任人", selection: $fieldingErrorPlayerID) {
                                 Text("请选择").tag(UUID?.none)
                                 ForEach(store.activeFielders) { fielder in
-                                    Text("#\(fielder.number) \(fielder.name)").tag(Optional(fielder.id))
+                                    Text("#\(fielder.numberText) \(fielder.name)").tag(Optional(fielder.id))
                                 }
                             }
                         }
@@ -869,7 +878,7 @@ struct ViolationAdjudicationSheet: View {
     }
 
     private func decisionLabel(_ decision: RunnerDecision) -> String {
-        "#\(decision.player.number) \(decision.player.name) · \(decision.origin.title)"
+        "#\(decision.player.numberText) \(decision.player.name) · \(decision.origin.title)"
     }
 
     private var hasBaseConflict: Bool {
@@ -971,12 +980,12 @@ struct GameStateCorrectionSheet: View {
                 Section("当前球员") {
                     Picker("当前打者", selection: $batterIndex) {
                         ForEach(Array(battingPlayers.enumerated()), id: \.element.id) { index, player in
-                            Text("#\(player.number) \(player.name)").tag(index)
+                            Text("#\(player.numberText) \(player.name)").tag(index)
                         }
                     }
                     Picker("当前投手", selection: $pitcherID) {
                         ForEach(fieldingPlayers) { player in
-                            Text("#\(player.number) \(player.name)").tag(Optional(player.id))
+                            Text("#\(player.numberText) \(player.name)").tag(Optional(player.id))
                         }
                     }
                 }
@@ -1031,7 +1040,7 @@ struct GameStateCorrectionSheet: View {
         Picker(title, selection: selection) {
             Text("无人").tag(UUID?.none)
             ForEach(battingPlayers) { player in
-                Text("#\(player.number) \(player.name)").tag(Optional(player.id))
+                Text("#\(player.numberText) \(player.name)").tag(Optional(player.id))
             }
         }
     }
@@ -1194,7 +1203,7 @@ struct PendingEventReviewView: View {
         Picker(label, selection: selection) {
             Text("未指定").tag(UUID?.none)
             ForEach(store.eventReviewPlayers) { player in
-                Text("#\(player.number) \(player.name)").tag(Optional(player.id))
+                Text("#\(player.numberText) \(player.name)").tag(Optional(player.id))
             }
         }
     }

@@ -4,3 +4,7 @@ DerivedData/
 xcuserdata/
 tmp/
 output/build/
+
+live/data/
+live/node_modules/
+live/.env

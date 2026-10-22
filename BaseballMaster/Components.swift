@@ -130,7 +130,7 @@ struct BaseballDiamondView: View {
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            let activeIDs = Set(game.isTop ? game.homeBattingOrderIDs : game.awayBattingOrderIDs)
+            let activeIDs = Set(game.fieldingPlayerIDs)
             ZStack {
                 BMTheme.dirt.opacity(0.28)
 
@@ -283,14 +283,15 @@ struct BaseballDiamondView: View {
         let runner = game.baseRunners[base]
         return ZStack {
             RoundedRectangle(cornerRadius: 3)
-                .fill(runner == nil ? .white : BMTheme.green)
+                .fill(runner == nil ? .white : Color(red: 0.98, green: 0.74, blue: 0.16))
+                .overlay { RoundedRectangle(cornerRadius: 3).stroke(runner == nil ? Color.clear : Color.white, lineWidth: 2) }
                 .frame(width: runner == nil ? 16 : 31, height: runner == nil ? 16 : 31)
                 .rotationEffect(.degrees(45))
                 .shadow(color: .black.opacity(0.14), radius: 2, y: 1)
             if let runner {
-                Text("#\(runner.number)")
+                Text("#\(runner.numberText)")
                     .font(.system(size: 10, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.black)
             }
         }
         .accessibilityIdentifier("base-\(base.rawValue)-\(runner == nil ? "empty" : "occupied")")
@@ -302,7 +303,7 @@ struct BaseballDiamondView: View {
         return VStack(spacing: 1) {
             Text(position.shortName)
                 .font(.system(size: position.shortName.count > 1 ? 9 : 11, weight: .black))
-            Text("#\(player.number)")
+            Text("#\(player.numberText)")
                 .font(.system(size: 8, weight: .bold, design: .rounded))
         }
         .foregroundStyle(isPitcher ? .white : BMTheme.brandNavy)
@@ -424,7 +425,7 @@ struct PlayerRow: View {
                     .background(BMTheme.green)
                     .clipShape(Circle())
             } else {
-                Text(player.numbers.first.map(String.init) ?? "—")
+                Text(player.numberText)
                     .font(.system(size: 16, weight: .black, design: .rounded))
                     .foregroundStyle(BMTheme.navy)
                     .frame(width: 38, height: 38)

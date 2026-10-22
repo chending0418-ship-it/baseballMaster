@@ -1,0 +1,23 @@
+App: 棒球比赛记录大师 (BaseballMaster)
+Version: 1.1.1
+Bundle ID: com.jasonchen.baseballmaster
+
+This release combines our roster, scoring, coach-pitch, and local-data improvements with fixes from field testing.
+
+No account, login credentials, activation, subscription, in-app purchase, or backend service is required. Core scoring, team management, statistics, reports, and backups work offline. Editable sample teams are provided on a fresh installation.
+
+Review workflow:
+1. In 比赛 (Games), create a new 本队比赛 (Team Game) or 观赛记录 (Spectator Record), select the teams and rules, confirm both lineups, and start the game.
+2. Tap Play Ball and record pitches or a batted-ball result. The scoring screen shows the batter's lineup slot and the current pitcher's accumulated pitch count. Use undo and redo to reverse and restore an action.
+3. Open 阵容 (Lineup) during the game to adjust either team's batting order, defensive positions, or players. Previously substituted players may return. Editing a name or jersey number updates the corresponding team roster and the current game while preserving the player's identity and statistics.
+4. With two strikes, 触击界外出局 records a foul-bunt strikeout. When a play clearly produces the third out, the app changes sides without asking for irrelevant runner destinations. Double and triple plays still identify the actual runners retired; timing decisions are retained when needed.
+5. Pitch-count and innings-limit reminders appear beside the pitcher and open a detail list. Reached limits remain available after changing sides. Reminders do not force a pitching change.
+6. Coach-pitch mode and a half-inning run limit can be configured when creating a game. End a separate test game to inspect its results and PDF/text reports. A finished game can be reopened to continue scoring.
+7. Under 我的 (Profile), review 关于 (About) and 本地数据 / 备份与恢复 (Local Data / Backup and Restore). Backup restoration replaces current local records after confirmation; use separate test data for this operation.
+
+Completed Team Games contribute to team-season statistics. Spectator records, practice sessions, and ongoing games do not contribute to completed team-season totals.
+
+Text live broadcasting and cloud synchronization are not available in this release. The app does not automatically upload roster, player, game, or backup data. Report and backup sharing is initiated by the user using the system share interface. There are no ads, tracking, or third-party analytics SDKs.
+
+The app includes a local copy of the Chinese Baseball Association's 2022 rulebook for offline reference, with source attribution. It does not provide a separate download, export, or sharing action for that rulebook. User-generated game-report exports are a separate feature. Public source:
+http://baseball.sport.org.cn/jsgz/guize/2023/0404/565442.html

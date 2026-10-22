@@ -29,11 +29,24 @@ struct RootTabView: View {
 struct GameHomeView: View {
     @EnvironmentObject private var store: GameStore
     @State private var gamePendingDeletion: StoredGame?
+    @AppStorage("demoIntroductionSeen") private var demoIntroductionSeen = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 teamHeader
+                if store.currentTeam == nil {
+                    Button("创建球队") { store.selectedTab = 1 }
+                        .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("empty-create-team")
+                }
+                if !demoIntroductionSeen && store.teams.contains(where: { $0.isDemo == true }) {
+                    BMCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("当前球队及对手为 Demo 示例，可编辑或删除。")
+                            Button("知道了") { demoIntroductionSeen = true }
+                        }
+                    }.accessibilityIdentifier("demo-introduction")
+                }
 
                 NavigationLink(destination: NewGameSetupView()) {
                     Label(store.ongoingGames.isEmpty ? "开始新比赛" : "再开始一场比赛", systemImage: "plus.circle.fill")
@@ -189,12 +202,12 @@ struct GameHomeView: View {
 
     private var teamHeader: some View {
         HStack(spacing: 13) {
-            TeamMark(team: store.currentTeam, size: 56)
+            if let team = store.currentTeam { TeamMark(team: team, size: 56) }
             VStack(alignment: .leading, spacing: 4) {
-                Text(store.currentTeam.name)
+                Text((store.currentTeam?.name ?? "尚未创建球队"))
                     .font(.system(size: 24, weight: .black))
                     .foregroundStyle(BMTheme.navy)
-                Text("\(store.seasons.first?.name ?? "暂无赛季") · \(store.currentTeam.players.count) 名球员")
+                Text("\(store.seasons.first?.name ?? "暂无赛季") · \((store.currentTeam?.players.count ?? 0)) 名球员")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(BMTheme.secondaryText)
             }
@@ -211,7 +224,7 @@ struct GameHomeView: View {
 
     private var recordText: String {
         let completed = store.recentGames.filter {
-            $0.ourTeamID == store.currentTeam.id && $0.seasonID == store.seasons.first?.id
+            $0.ourTeamID == store.currentTeam?.id && $0.seasonID == store.seasons.first?.id
         }
         guard !completed.isEmpty else { return "暂无战绩" }
         let wins = completed.filter { $0.ourScore > $0.opponentScore }.count
@@ -245,6 +258,7 @@ struct GameHomeView: View {
         }
         .padding(.leading, 15)
         .padding(.vertical, 14)
+        .contentShape(Rectangle())
     }
 
     private func recentGameContent(_ stored: StoredGame) -> some View {

@@ -33,6 +33,10 @@
 		A10000000000000000000022 /* PlayByPlayPDFReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000022 /* PlayByPlayPDFReport.swift */; };
 		A10000000000000000000023 /* GamePoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000023 /* GamePoster.swift */; };
 		A10000000000000000000024 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000024 /* PrivacyInfo.xcprivacy */; };
+		A10000000000000000000025 /* UpgradeProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000025 /* UpgradeProtection.swift */; };
+		A10000000000000000000026 /* LiveBroadcast.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000026 /* LiveBroadcast.swift */; };
+		A10000000000000000000027 /* LiveBroadcastViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000027 /* LiveBroadcastViews.swift */; };
+		A10000000000000000000028 /* LiveLineupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000028 /* LiveLineupViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -82,6 +86,10 @@
 		F10000000000000000000022 /* PlayByPlayPDFReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayByPlayPDFReport.swift; sourceTree = "<group>"; };
 		F10000000000000000000023 /* GamePoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamePoster.swift; sourceTree = "<group>"; };
 		F10000000000000000000024 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F10000000000000000000025 /* UpgradeProtection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpgradeProtection.swift; sourceTree = "<group>"; };
+		F10000000000000000000026 /* LiveBroadcast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveBroadcast.swift; sourceTree = "<group>"; };
+		F10000000000000000000027 /* LiveBroadcastViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveBroadcastViews.swift; sourceTree = "<group>"; };
+		F10000000000000000000028 /* LiveLineupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveLineupViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -138,6 +146,10 @@
 				F10000000000000000000015 /* Statistics.swift */,
 				F10000000000000000000004 /* GameStore.swift */,
 				F10000000000000000000012 /* PersistenceController.swift */,
+				F10000000000000000000025 /* UpgradeProtection.swift */,
+				F10000000000000000000027 /* LiveBroadcastViews.swift */,
+				F10000000000000000000028 /* LiveLineupViews.swift */,
+				F10000000000000000000026 /* LiveBroadcast.swift */,
 				F10000000000000000000013 /* ProfileViews.swift */,
 				F10000000000000000000014 /* BaseballRules2022.pdf */,
 				F10000000000000000000005 /* Components.swift */,
@@ -322,6 +334,10 @@
 				A10000000000000000000015 /* Statistics.swift in Sources */,
 				A10000000000000000000004 /* GameStore.swift in Sources */,
 				A10000000000000000000012 /* PersistenceController.swift in Sources */,
+				A10000000000000000000025 /* UpgradeProtection.swift in Sources */,
+				A10000000000000000000027 /* LiveBroadcastViews.swift in Sources */,
+				A10000000000000000000028 /* LiveLineupViews.swift in Sources */,
+				A10000000000000000000026 /* LiveBroadcast.swift in Sources */,
 				A10000000000000000000013 /* ProfileViews.swift in Sources */,
 				A10000000000000000000005 /* Components.swift in Sources */,
 				A10000000000000000000006 /* MainViews.swift in Sources */,
@@ -406,7 +422,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JUTVG7XR9H;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -418,7 +434,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -435,7 +451,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JUTVG7XR9H;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;
@@ -446,7 +462,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

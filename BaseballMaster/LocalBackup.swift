@@ -18,14 +18,14 @@ struct LocalBackup: Codable {
     init(snapshot: RosterSnapshot, date: Date = Date()) throws {
         try Self.validate(snapshot)
         format = "BaseballMaster Backup"
-        version = 1
+        version = 2
         createdAt = date
         payload = try JSONEncoder().encode(snapshot)
         checksum = Self.digest(payload)
     }
 
     func snapshot() throws -> RosterSnapshot {
-        guard format == "BaseballMaster Backup", version == 1 else {
+        guard format == "BaseballMaster Backup", (1...2).contains(version) else {
             throw LocalDataError.invalid("备份格式或版本不受支持，请使用兼容的 App 版本。")
         }
         guard checksum == Self.digest(payload) else {
@@ -60,7 +60,7 @@ struct LocalBackup: Codable {
             if !condition { throw LocalDataError.invalid("本地数据不完整：" + reason) }
         }
         func unique<T: Hashable>(_ values: [T]) -> Bool { Set(values).count == values.count }
-        try require(!snapshot.teams.isEmpty && snapshot.teams.contains { $0.id == snapshot.currentTeamID }, "缺少当前球队")
+        try require(snapshot.teams.isEmpty ? snapshot.currentTeamID == nil : snapshot.teams.contains { $0.id == snapshot.currentTeamID }, "当前球队无效")
         let teams = snapshot.teams + snapshot.opponentTeams
         try require(unique(teams.map(\.id)), "球队编号重复")
         try require(unique(teams.flatMap(\.players).map(\.id)), "球员编号重复")
@@ -72,6 +72,9 @@ struct LocalBackup: Codable {
             try require(!team.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "球队名称为空")
             for player in team.players {
                 try require(player.numbers.allSatisfy { (0...99).contains($0) }, "球员背号无效")
+                if let labels = player.jerseyNumbers {
+                    try require(Player.validNumberTexts(labels) && labels.compactMap(Int.init) == player.numbers, "球员背号原文无效")
+                }
             }
         }
         for record in snapshot.playerGameRecords {
@@ -79,6 +82,15 @@ struct LocalBackup: Codable {
         }
         for stored in snapshot.games {
             let game = stored.state
+            if let cap = stored.rules.halfInningRunLimit { try require((1...99).contains(cap), "半局得分上限无效") }
+            if let limit = stored.rules.coachPitchLimit { try require((1...20).contains(limit), "教练投手球数上限无效") }
+            if let appearances = game.plateAppearances {
+                try require(unique(appearances.map(\.id)), "打席标识重复")
+                let ids = Set(appearances.map(\.id))
+                if let current = game.currentPlateAppearanceID { try require(ids.contains(current), "当前打席标识不存在") }
+                try require((game.scoringEvents ?? []).allSatisfy { $0.plateAppearanceID == nil || ids.contains($0.plateAppearanceID!) }, "事件关联打席不存在")
+            }
+
             try require(game.homeTeam.id != game.awayTeam.id, "比赛双方相同")
             try require((1...10_000).contains(game.inning) && (1...10_000).contains(game.scheduledInnings), "局数无效")
             try require((0...4).contains(game.balls) && (0...3).contains(game.strikes) && (0...3).contains(game.outs), "球数或出局数无效")
