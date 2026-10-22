@@ -1,0 +1,70 @@
+{
+  "status": "User-approved promotional design baseline",
+  "approvedOn": "2026-10-22",
+  "approvalQuote": "很好，这个设计原则风格规范等，请保留。作为品牌设计规范，for 各种宣传图",
+  "scope": [
+    "social media artwork",
+    "feature posters",
+    "release artwork",
+    "App Store artwork",
+    "website promotional artwork",
+    "other brand promotion"
+  ],
+  "guideline": "docs/brand/PROMOTIONAL-DESIGN.md",
+  "reference": "docs/brand/references/promotional-2026-10-22/overview.png",
+  "renderer": "docs/brand/references/promotional-2026-10-22/source/render.cjs",
+  "assets": {
+    "docs/brand/references/promotional-2026-10-22/overview.png": "2f6fb5429d30ee4cc2c1d77945db3d3fcfbfd073414f267cb2fa9385709debec",
+    "docs/brand/references/promotional-2026-10-22/images/01-每一球都有迹可循.png": "31d27ec81de87f2e786e40d993288dbb5c476ed1f6bc5336ea29bc8710233f6e",
+    "docs/brand/references/promotional-2026-10-22/images/02-两种方式一种顺手.png": "8199d07f940adc35c21526d21d86f9fdd7782c1640133cbb0d5c4f33b7b3862a",
+    "docs/brand/references/promotional-2026-10-22/images/03-从落点到传球.png": "6c6bdef017f38ceead76bad7b2f7342f944b69b307cab9980f386882e56b5109",
+    "docs/brand/references/promotional-2026-10-22/images/04-看见本场也看见进步.png": "90ed7236de5f46938bda3d2d2a036ccecdfcac20b1dc0cc8bc4dc98767b30eab",
+    "docs/brand/references/promotional-2026-10-22/source/render.cjs": "dfefd888c9411da3527bd9efc481fa196372dd30038db99e42283be80dedcca6"
+  },
+  "palette": {
+    "brandBackground": "#092a2a",
+    "posterDark": "#082d28",
+    "posterLight": "#f4f5ef",
+    "darkText": "#143b2d",
+    "darkTitleAccent": "#d7edb7",
+    "lightTitleAccent": "#537947",
+    "brandSubtitle": "#c6d5cc"
+  },
+  "referenceCanvas": {
+    "width": 1080,
+    "height": 1440,
+    "ratio": "3:4",
+    "safeMargin": 64
+  },
+  "typography": {
+    "family": "-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif",
+    "headlineSize": 91,
+    "headlineWeight": 600,
+    "headlineLineHeight": 1.18,
+    "headlineLetterSpacing": -3.7,
+    "introSize": 27,
+    "introLineHeight": 1.7,
+    "eyebrowSize": 24,
+    "footerSize": 16
+  },
+  "composition": {
+    "brand": "centered; dark brand plate on light artwork",
+    "headline": "large, centered, normally two lines",
+    "primaryVisual": "one clear feature concept per image",
+    "surface": "subtle gradients, soft shadows, restrained depth",
+    "imagery": "curated screenshots or clearly labeled functional illustrations",
+    "referenceImageCount": 4,
+    "imageCountPolicy": "Choose based on narrative and user request; four is a reference, not a required count."
+  },
+  "publishedChannelDefaults": {
+    "xiaohongshu": {
+      "versionNumber": false,
+      "previewLabel": false,
+      "externalLinks": false,
+      "downloadPrompt": false,
+      "emoji": "none by default"
+    },
+    "otherChannels": "Adapt factual release labels, calls to action and format to the channel and user request."
+  },
+  "existingLogoBaseline": "docs/brand/brand-baseline.json"
+}
