@@ -1,7 +1,8 @@
 // !$*UTF8*$!
 {
 	archiveVersion = 1;
-	classes = {};
+	classes = {
+	};
 	objectVersion = 56;
 	objects = {
 
@@ -9,26 +10,30 @@
 		A10000000000000000000001 /* BaseballMasterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001 /* BaseballMasterApp.swift */; };
 		A10000000000000000000002 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* DesignSystem.swift */; };
 		A10000000000000000000003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003 /* Models.swift */; };
-		A10000000000000000000004 /* MockGameStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000004 /* MockGameStore.swift */; };
+		A10000000000000000000004 /* GameStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000004 /* GameStore.swift */; };
 		A10000000000000000000005 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000005 /* Components.swift */; };
 		A10000000000000000000006 /* MainViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000006 /* MainViews.swift */; };
 		A10000000000000000000007 /* SetupAndRosterViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000007 /* SetupAndRosterViews.swift */; };
 		A10000000000000000000008 /* ScorekeepingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000008 /* ScorekeepingViews.swift */; };
 		A10000000000000000000009 /* ResultsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000009 /* ResultsViews.swift */; };
 		A10000000000000000000010 /* NoviceScoringViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000010 /* NoviceScoringViews.swift */; };
-		A20000000000000000000001 /* MockGameStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* MockGameStoreTests.swift */; };
+		A10000000000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000011 /* Assets.xcassets */; };
+		A10000000000000000000012 /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000012 /* PersistenceController.swift */; };
+		A10000000000000000000013 /* ProfileViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000013 /* ProfileViews.swift */; };
+		A10000000000000000000014 /* BaseballRules2022.pdf in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000014 /* BaseballRules2022.pdf */; };
+		A20000000000000000000001 /* GameStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* GameStoreTests.swift */; };
 		A30000000000000000000001 /* BaseballMasterUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000001 /* BaseballMasterUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		D20000000000000000000001 = {
+		D20000000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = P00000000000000000000001 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = T10000000000000000000001;
 			remoteInfo = BaseballMaster;
 		};
-		D30000000000000000000001 = {
+		D30000000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = P00000000000000000000001 /* Project object */;
 			proxyType = 1;
@@ -41,14 +46,18 @@
 		F10000000000000000000001 /* BaseballMasterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseballMasterApp.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		F10000000000000000000003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		F10000000000000000000004 /* MockGameStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockGameStore.swift; sourceTree = "<group>"; };
+		F10000000000000000000004 /* GameStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameStore.swift; sourceTree = "<group>"; };
 		F10000000000000000000005 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		F10000000000000000000006 /* MainViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViews.swift; sourceTree = "<group>"; };
 		F10000000000000000000007 /* SetupAndRosterViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupAndRosterViews.swift; sourceTree = "<group>"; };
 		F10000000000000000000008 /* ScorekeepingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScorekeepingViews.swift; sourceTree = "<group>"; };
 		F10000000000000000000009 /* ResultsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsViews.swift; sourceTree = "<group>"; };
 		F10000000000000000000010 /* NoviceScoringViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoviceScoringViews.swift; sourceTree = "<group>"; };
-		F20000000000000000000001 /* MockGameStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockGameStoreTests.swift; sourceTree = "<group>"; };
+		F10000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F10000000000000000000012 /* PersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceController.swift; sourceTree = "<group>"; };
+		F10000000000000000000013 /* ProfileViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileViews.swift; sourceTree = "<group>"; };
+		F10000000000000000000014 /* BaseballRules2022.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Resources/BaseballRules2022.pdf; sourceTree = "<group>"; };
+		F20000000000000000000001 /* GameStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameStoreTests.swift; sourceTree = "<group>"; };
 		F30000000000000000000001 /* BaseballMasterUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseballMasterUITests.swift; sourceTree = "<group>"; };
 		F90000000000000000000001 /* BaseballMaster.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaseballMaster.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F90000000000000000000002 /* BaseballMasterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaseballMasterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -56,9 +65,27 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		B10000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		B20000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		B30000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		B10000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B20000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B30000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -75,10 +102,14 @@
 		G10000000000000000000001 /* BaseballMaster */ = {
 			isa = PBXGroup;
 			children = (
+				F10000000000000000000011 /* Assets.xcassets */,
 				F10000000000000000000001 /* BaseballMasterApp.swift */,
 				F10000000000000000000002 /* DesignSystem.swift */,
 				F10000000000000000000003 /* Models.swift */,
-				F10000000000000000000004 /* MockGameStore.swift */,
+				F10000000000000000000004 /* GameStore.swift */,
+				F10000000000000000000012 /* PersistenceController.swift */,
+				F10000000000000000000013 /* ProfileViews.swift */,
+				F10000000000000000000014 /* BaseballRules2022.pdf */,
 				F10000000000000000000005 /* Components.swift */,
 				F10000000000000000000006 /* MainViews.swift */,
 				F10000000000000000000007 /* SetupAndRosterViews.swift */,
@@ -91,13 +122,17 @@
 		};
 		G20000000000000000000001 /* BaseballMasterTests */ = {
 			isa = PBXGroup;
-			children = (F20000000000000000000001 /* MockGameStoreTests.swift */,);
+			children = (
+				F20000000000000000000001 /* GameStoreTests.swift */,
+			);
 			path = BaseballMasterTests;
 			sourceTree = "<group>";
 		};
 		G30000000000000000000001 /* BaseballMasterUITests */ = {
 			isa = PBXGroup;
-			children = (F30000000000000000000001 /* BaseballMasterUITests.swift */,);
+			children = (
+				F30000000000000000000001 /* BaseballMasterUITests.swift */,
+			);
 			path = BaseballMasterUITests;
 			sourceTree = "<group>";
 		};
@@ -116,35 +151,55 @@
 /* Begin PBXNativeTarget section */
 		T10000000000000000000001 /* BaseballMaster */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = C10000000000000000000001;
-			buildPhases = (B10000000000000000000001, B10000000000000000000002, B10000000000000000000003);
-			buildRules = ();
-			dependencies = ();
+			buildConfigurationList = C10000000000000000000001 /* Build configuration list for PBXNativeTarget "BaseballMaster" */;
+			buildPhases = (
+				B10000000000000000000001 /* Sources */,
+				B10000000000000000000002 /* Frameworks */,
+				B10000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
 			name = BaseballMaster;
 			productName = BaseballMaster;
-			productReference = F90000000000000000000001;
+			productReference = F90000000000000000000001 /* BaseballMaster.app */;
 			productType = "com.apple.product-type.application";
 		};
 		T20000000000000000000001 /* BaseballMasterTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = C20000000000000000000001;
-			buildPhases = (B20000000000000000000001, B20000000000000000000002, B20000000000000000000003);
-			buildRules = ();
-			dependencies = (D20000000000000000000002,);
+			buildConfigurationList = C20000000000000000000001 /* Build configuration list for PBXNativeTarget "BaseballMasterTests" */;
+			buildPhases = (
+				B20000000000000000000001 /* Sources */,
+				B20000000000000000000002 /* Frameworks */,
+				B20000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D20000000000000000000002 /* PBXTargetDependency */,
+			);
 			name = BaseballMasterTests;
 			productName = BaseballMasterTests;
-			productReference = F90000000000000000000002;
+			productReference = F90000000000000000000002 /* BaseballMasterTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		T30000000000000000000001 /* BaseballMasterUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = C30000000000000000000001;
-			buildPhases = (B30000000000000000000001, B30000000000000000000002, B30000000000000000000003);
-			buildRules = ();
-			dependencies = (D30000000000000000000002,);
+			buildConfigurationList = C30000000000000000000001 /* Build configuration list for PBXNativeTarget "BaseballMasterUITests" */;
+			buildPhases = (
+				B30000000000000000000001 /* Sources */,
+				B30000000000000000000002 /* Frameworks */,
+				B30000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D30000000000000000000002 /* PBXTargetDependency */,
+			);
 			name = BaseballMasterUITests;
 			productName = BaseballMasterUITests;
-			productReference = F90000000000000000000003;
+			productReference = F90000000000000000000003 /* BaseballMasterUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -157,65 +212,305 @@
 				LastSwiftUpdateCheck = 2610;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
-					T10000000000000000000001 = {CreatedOnToolsVersion = 26.1;};
-					T20000000000000000000001 = {CreatedOnToolsVersion = 26.1; TestTargetID = T10000000000000000000001;};
-					T30000000000000000000001 = {CreatedOnToolsVersion = 26.1; TestTargetID = T10000000000000000000001;};
+					T10000000000000000000001 = {
+						CreatedOnToolsVersion = 26.1;
+					};
+					T20000000000000000000001 = {
+						CreatedOnToolsVersion = 26.1;
+						TestTargetID = T10000000000000000000001;
+					};
+					T30000000000000000000001 = {
+						CreatedOnToolsVersion = 26.1;
+						TestTargetID = T10000000000000000000001;
+					};
 				};
 			};
-			buildConfigurationList = C00000000000000000000001;
+			buildConfigurationList = C00000000000000000000001 /* Build configuration list for PBXProject "BaseballMaster" */;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = zh-Hans;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
-			knownRegions = (en, Base, "zh-Hans");
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
 			mainGroup = G00000000000000000000001;
-			productRefGroup = G90000000000000000000001;
+			productRefGroup = G90000000000000000000001 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-			targets = (T10000000000000000000001, T20000000000000000000001, T30000000000000000000001);
+			targets = (
+				T10000000000000000000001 /* BaseballMaster */,
+				T20000000000000000000001 /* BaseballMasterTests */,
+				T30000000000000000000001 /* BaseballMasterUITests */,
+			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		B10000000000000000000003 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		B20000000000000000000003 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		B30000000000000000000003 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		B10000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000011 /* Assets.xcassets in Resources */,
+				A10000000000000000000014 /* BaseballRules2022.pdf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B20000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B30000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		B10000000000000000000001 = {
+		B10000000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000009, A10000000000000000000010);
+			files = (
+				A10000000000000000000001 /* BaseballMasterApp.swift in Sources */,
+				A10000000000000000000002 /* DesignSystem.swift in Sources */,
+				A10000000000000000000003 /* Models.swift in Sources */,
+				A10000000000000000000004 /* GameStore.swift in Sources */,
+				A10000000000000000000012 /* PersistenceController.swift in Sources */,
+				A10000000000000000000013 /* ProfileViews.swift in Sources */,
+				A10000000000000000000005 /* Components.swift in Sources */,
+				A10000000000000000000006 /* MainViews.swift in Sources */,
+				A10000000000000000000007 /* SetupAndRosterViews.swift in Sources */,
+				A10000000000000000000008 /* ScorekeepingViews.swift in Sources */,
+				A10000000000000000000009 /* ResultsViews.swift in Sources */,
+				A10000000000000000000010 /* NoviceScoringViews.swift in Sources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B20000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A20000000000000000000001,); runOnlyForDeploymentPostprocessing = 0; };
-		B30000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A30000000000000000000001,); runOnlyForDeploymentPostprocessing = 0; };
+		B20000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A20000000000000000000001 /* GameStoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B30000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A30000000000000000000001 /* BaseballMasterUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		D20000000000000000000002 = {isa = PBXTargetDependency; target = T10000000000000000000001; targetProxy = D20000000000000000000001; };
-		D30000000000000000000002 = {isa = PBXTargetDependency; target = T10000000000000000000001; targetProxy = D30000000000000000000001; };
+		D20000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = T10000000000000000000001 /* BaseballMaster */;
+			targetProxy = D20000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		D30000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = T10000000000000000000001 /* BaseballMaster */;
+			targetProxy = D30000000000000000000001 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		C00000000000000000000002 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; GCC_C_LANGUAGE_STANDARD = gnu17; IPHONEOS_DEPLOYMENT_TARGET = 16.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_OPTIMIZATION_LEVEL = "-Onone";}; name = Debug; };
-		C00000000000000000000003 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; ENABLE_NS_ASSERTIONS = NO; GCC_C_LANGUAGE_STANDARD = gnu17; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SDKROOT = iphoneos; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; VALIDATE_PRODUCT = YES;}; name = Release; };
-
-		C10000000000000000000002 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; ENABLE_PREVIEWS = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "棒球大师"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports"; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.baseballmaster.prototype; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1;}; name = Debug; };
-		C10000000000000000000003 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "棒球大师"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports"; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.baseballmaster.prototype; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1;}; name = Release; };
-
-		C20000000000000000000002 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.0; PRODUCT_BUNDLE_IDENTIFIER = com.baseballmaster.prototype.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaseballMaster.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BaseballMaster";}; name = Debug; };
-		C20000000000000000000003 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.0; PRODUCT_BUNDLE_IDENTIFIER = com.baseballmaster.prototype.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaseballMaster.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BaseballMaster";}; name = Release; };
-
-		C30000000000000000000002 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.0; PRODUCT_BUNDLE_IDENTIFIER = com.baseballmaster.prototype.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_TARGET_NAME = BaseballMaster;}; name = Debug; };
-		C30000000000000000000003 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.0; PRODUCT_BUNDLE_IDENTIFIER = com.baseballmaster.prototype.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_TARGET_NAME = BaseballMaster;}; name = Release; };
+		C00000000000000000000002 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		C00000000000000000000003 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C10000000000000000000002 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JUTVG7XR9H;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		C10000000000000000000003 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JUTVG7XR9H;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		C20000000000000000000002 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaseballMaster.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BaseballMaster";
+			};
+			name = Debug;
+		};
+		C20000000000000000000003 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaseballMaster.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BaseballMaster";
+			};
+			name = Release;
+		};
+		C30000000000000000000002 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = BaseballMaster;
+			};
+			name = Debug;
+		};
+		C30000000000000000000003 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = BaseballMaster;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		C00000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (C00000000000000000000002, C00000000000000000000003); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		C10000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (C10000000000000000000002, C10000000000000000000003); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		C20000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (C20000000000000000000002, C20000000000000000000003); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		C30000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (C30000000000000000000002, C30000000000000000000003); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		C00000000000000000000001 /* Build configuration list for PBXProject "BaseballMaster" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00000000000000000000002 /* Debug */,
+				C00000000000000000000003 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C10000000000000000000001 /* Build configuration list for PBXNativeTarget "BaseballMaster" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C10000000000000000000002 /* Debug */,
+				C10000000000000000000003 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C20000000000000000000001 /* Build configuration list for PBXNativeTarget "BaseballMasterTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C20000000000000000000002 /* Debug */,
+				C20000000000000000000003 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C30000000000000000000001 /* Build configuration list for PBXNativeTarget "BaseballMasterUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C30000000000000000000002 /* Debug */,
+				C30000000000000000000003 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 	};
 	rootObject = P00000000000000000000001 /* Project object */;

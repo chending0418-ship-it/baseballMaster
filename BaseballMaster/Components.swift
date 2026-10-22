@@ -18,7 +18,7 @@ struct TeamMark: View {
 }
 
 struct ScoreboardCard: View {
-    let game: DemoGameState
+    let game: GameState
 
     var body: some View {
         BMCard {
@@ -112,11 +112,25 @@ struct CountStrip: View {
 }
 
 struct BaseballDiamondView: View {
-    let game: DemoGameState
+    let game: GameState
+    var fixedHeight: CGFloat? = 260
+
+    private struct FieldGeometry {
+        let home: CGPoint
+        let first: CGPoint
+        let second: CGPoint
+        let third: CGPoint
+        let center: CGPoint
+        let leftFence: CGPoint
+        let rightFence: CGPoint
+        let outfieldRadius: CGFloat
+        let baseHalfDiagonal: CGFloat
+    }
 
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
+            let activeIDs = Set(game.isTop ? game.homeBattingOrderIDs : game.awayBattingOrderIDs)
             ZStack {
                 BMTheme.dirt.opacity(0.28)
 
@@ -143,7 +157,9 @@ struct BaseballDiamondView: View {
                 ForEach(FieldPosition.allCases) { position in
                     if let player = position == .pitcher
                         ? Optional(game.currentPitcher)
-                        : game.fieldingTeam.players.first(where: { $0.primaryPosition == position }) {
+                        : game.fieldingTeam.players.first(where: {
+                            activeIDs.contains($0.id) && $0.primaryPosition == position
+                        }) {
                         fielderMarker(player: player, position: position)
                             .position(fieldPosition(position, in: size))
                     }
@@ -159,7 +175,7 @@ struct BaseballDiamondView: View {
                 HomePlateShape()
                     .fill(.white)
                     .frame(width: 18, height: 18)
-                    .position(point(0.50, 0.88, in: size))
+                    .position(fieldGeometry(in: size).home)
                     .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -184,65 +200,75 @@ struct BaseballDiamondView: View {
                     .padding(10)
             }
         }
-        .frame(height: 260)
+        .frame(height: fixedHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("完整棒球场，\(game.fieldingTeam.shortName)守备，垒上\(game.baseRunners.count)人")
     }
 
     private func outfield(in size: CGSize) -> Path {
-        Path { path in
-            path.move(to: point(0.50, 0.90, in: size))
-            path.addLine(to: point(0.055, 0.25, in: size))
-            path.addQuadCurve(
-                to: point(0.945, 0.25, in: size),
-                control: point(0.50, -0.09, in: size)
+        let field = fieldGeometry(in: size)
+        return Path { path in
+            path.move(to: field.home)
+            path.addLine(to: field.leftFence)
+            path.addArc(
+                center: field.home,
+                radius: field.outfieldRadius,
+                startAngle: .degrees(225),
+                endAngle: .degrees(315),
+                clockwise: false
             )
             path.closeSubpath()
         }
     }
 
     private func foulLines(in size: CGSize) -> Path {
-        Path { path in
-            let home = point(0.50, 0.88, in: size)
-            path.move(to: home)
-            path.addLine(to: point(0.055, 0.25, in: size))
-            path.move(to: home)
-            path.addLine(to: point(0.945, 0.25, in: size))
+        let field = fieldGeometry(in: size)
+        return Path { path in
+            path.move(to: field.home)
+            path.addLine(to: field.leftFence)
+            path.move(to: field.home)
+            path.addLine(to: field.rightFence)
         }
     }
 
     private func infieldDirt(in size: CGSize) -> Path {
-        Path { path in
-            path.move(to: point(0.50, 0.91, in: size))
-            path.addLine(to: point(0.72, 0.68, in: size))
-            path.addQuadCurve(to: point(0.50, 0.43, in: size), control: point(0.69, 0.48, in: size))
-            path.addQuadCurve(to: point(0.28, 0.68, in: size), control: point(0.31, 0.48, in: size))
+        let field = fieldGeometry(in: size)
+        let radius = field.baseHalfDiagonal * 1.25
+        return Path { path in
+            path.move(to: CGPoint(x: field.center.x, y: field.center.y + radius))
+            path.addLine(to: CGPoint(x: field.center.x + radius, y: field.center.y))
+            path.addLine(to: CGPoint(x: field.center.x, y: field.center.y - radius))
+            path.addLine(to: CGPoint(x: field.center.x - radius, y: field.center.y))
             path.closeSubpath()
         }
     }
 
     private func innerGrass(in size: CGSize) -> Path {
-        Path { path in
-            path.move(to: point(0.50, 0.80, in: size))
-            path.addLine(to: point(0.62, 0.68, in: size))
-            path.addLine(to: point(0.50, 0.55, in: size))
-            path.addLine(to: point(0.38, 0.68, in: size))
+        let field = fieldGeometry(in: size)
+        let radius = field.baseHalfDiagonal * 0.58
+        return Path { path in
+            path.move(to: CGPoint(x: field.center.x, y: field.center.y + radius))
+            path.addLine(to: CGPoint(x: field.center.x + radius, y: field.center.y))
+            path.addLine(to: CGPoint(x: field.center.x, y: field.center.y - radius))
+            path.addLine(to: CGPoint(x: field.center.x - radius, y: field.center.y))
             path.closeSubpath()
         }
     }
 
     private func basePath(in size: CGSize) -> Path {
-        Path { path in
-            path.move(to: point(0.50, 0.88, in: size))
-            path.addLine(to: basePosition(.first, in: size))
-            path.addLine(to: basePosition(.second, in: size))
-            path.addLine(to: basePosition(.third, in: size))
+        let field = fieldGeometry(in: size)
+        return Path { path in
+            path.move(to: field.home)
+            path.addLine(to: field.first)
+            path.addLine(to: field.second)
+            path.addLine(to: field.third)
             path.closeSubpath()
         }
     }
 
     private func mound(in size: CGSize) -> some View {
-        ZStack {
+        let field = fieldGeometry(in: size)
+        return ZStack {
             Circle()
                 .fill(BMTheme.dirt)
                 .frame(width: 34, height: 20)
@@ -250,7 +276,7 @@ struct BaseballDiamondView: View {
                 .fill(.white.opacity(0.9))
                 .frame(width: 14, height: 3)
         }
-        .position(point(0.50, 0.69, in: size))
+        .position(field.center)
     }
 
     private func baseMarker(_ base: Base) -> some View {
@@ -291,29 +317,82 @@ struct BaseballDiamondView: View {
     }
 
     private func basePosition(_ base: Base, in size: CGSize) -> CGPoint {
+        let field = fieldGeometry(in: size)
         switch base {
-        case .first: point(0.67, 0.69, in: size)
-        case .second: point(0.50, 0.50, in: size)
-        case .third: point(0.33, 0.69, in: size)
+        case .first: return field.first
+        case .second: return field.second
+        case .third: return field.third
         }
     }
 
     private func fieldPosition(_ position: FieldPosition, in size: CGSize) -> CGPoint {
+        let field = fieldGeometry(in: size)
+        let d = field.baseHalfDiagonal
         switch position {
-        case .pitcher: point(0.50, 0.68, in: size)
-        case .catcher: point(0.50, 0.955, in: size)
-        case .firstBase: point(0.76, 0.64, in: size)
-        case .secondBase: point(0.61, 0.54, in: size)
-        case .thirdBase: point(0.24, 0.64, in: size)
-        case .shortstop: point(0.39, 0.54, in: size)
-        case .leftField: point(0.25, 0.31, in: size)
-        case .centerField: point(0.50, 0.20, in: size)
-        case .rightField: point(0.75, 0.31, in: size)
+        case .pitcher:
+            return field.center
+        case .catcher:
+            return CGPoint(x: field.home.x, y: min(size.height - 20, field.home.y + 43))
+        case .firstBase:
+            return CGPoint(x: field.first.x + d * 0.42, y: field.first.y - d * 0.38)
+        case .secondBase:
+            return CGPoint(x: field.center.x + d * 0.72, y: field.center.y - d * 0.78)
+        case .thirdBase:
+            return CGPoint(x: field.third.x - d * 0.42, y: field.third.y - d * 0.38)
+        case .shortstop:
+            return CGPoint(x: field.center.x - d * 0.72, y: field.center.y - d * 0.78)
+        case .leftField:
+            return polarPoint(angle: 245, radius: field.outfieldRadius * 0.58, center: field.home)
+        case .centerField:
+            return polarPoint(angle: 270, radius: field.outfieldRadius * 0.62, center: field.home)
+        case .rightField:
+            return polarPoint(angle: 295, radius: field.outfieldRadius * 0.58, center: field.home)
         }
     }
 
-    private func point(_ x: CGFloat, _ y: CGFloat, in size: CGSize) -> CGPoint {
-        CGPoint(x: size.width * x, y: size.height * y)
+    private func fieldGeometry(in size: CGSize) -> FieldGeometry {
+        let sideInset = min(24, max(14, size.width * 0.04))
+        let bottomReserve = min(82, max(66, size.height * 0.16))
+        let home = CGPoint(x: size.width / 2, y: size.height - bottomReserve)
+
+        // A baseball field is a 90-degree circular sector: the two foul lines
+        // leave home plate at 45 degrees and the fence is an arc centered on home.
+        let rootTwo = CGFloat(2).squareRoot()
+        // The portrait card is taller than a square field diagram. A small,
+        // symmetric overscan keeps the true quarter-circle large and lets the
+        // card crop only its two far corners instead of leaving a blank header.
+        let outfieldRadius = max(1, (size.width / 2 - sideInset) * rootTwo * 1.30)
+        let fenceOffset = outfieldRadius / rootTwo
+        let leftFence = CGPoint(x: home.x - fenceOffset, y: home.y - fenceOffset)
+        let rightFence = CGPoint(x: home.x + fenceOffset, y: home.y - fenceOffset)
+
+        // Home, first, second and third are the four vertices of one exact square.
+        let availableBaseDepth = max(60, home.y - max(34, size.height * 0.44))
+        let baseHalfDiagonal = min(size.width * 0.18, availableBaseDepth / 2)
+        let first = CGPoint(x: home.x + baseHalfDiagonal, y: home.y - baseHalfDiagonal)
+        let second = CGPoint(x: home.x, y: home.y - baseHalfDiagonal * 2)
+        let third = CGPoint(x: home.x - baseHalfDiagonal, y: home.y - baseHalfDiagonal)
+        let center = CGPoint(x: home.x, y: home.y - baseHalfDiagonal)
+
+        return FieldGeometry(
+            home: home,
+            first: first,
+            second: second,
+            third: third,
+            center: center,
+            leftFence: leftFence,
+            rightFence: rightFence,
+            outfieldRadius: outfieldRadius,
+            baseHalfDiagonal: baseHalfDiagonal
+        )
+    }
+
+    private func polarPoint(angle: CGFloat, radius: CGFloat, center: CGPoint) -> CGPoint {
+        let radians = angle * .pi / 180
+        return CGPoint(
+            x: center.x + cos(radians) * radius,
+            y: center.y + sin(radians) * radius
+        )
     }
 }
 
@@ -345,7 +424,7 @@ struct PlayerRow: View {
                     .background(BMTheme.green)
                     .clipShape(Circle())
             } else {
-                Text("\(player.number)")
+                Text(player.numbers.first.map(String.init) ?? "—")
                     .font(.system(size: 16, weight: .black, design: .rounded))
                     .foregroundStyle(BMTheme.navy)
                     .frame(width: 38, height: 38)
@@ -357,7 +436,7 @@ struct PlayerRow: View {
                 Text(player.name)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(BMTheme.navy)
-                Text("#\(player.number) · \(player.primaryPosition.fullName)")
+                Text(playerSubtitle)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(BMTheme.secondaryText)
             }
@@ -369,6 +448,13 @@ struct PlayerRow: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    private var playerSubtitle: String {
+        if player.englishName.isEmpty || player.chineseName.isEmpty {
+            return player.numbersText
+        }
+        return "\(player.englishName) · \(player.numbersText)"
     }
 }
 
