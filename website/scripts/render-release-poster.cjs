@@ -33,9 +33,20 @@ async function render() {
       const images = [...document.images];
       const featureBottom = document.querySelector('.features').getBoundingClientRect().bottom;
       const footerTop = document.querySelector('.footer').getBoundingClientRect().top;
-      return { imagesLoaded: images.every(image => image.complete && image.naturalWidth > 0), featureBottom, footerTop, overflow: document.documentElement.scrollWidth > innerWidth };
+      const phoneBounds = [...document.querySelectorAll('.phone img')].map(image => {
+        const { x, y, width, height, bottom } = image.getBoundingClientRect();
+        return { x, y, width, height, bottom };
+      });
+      const captionBounds = [...document.querySelectorAll('.phone p')].map(caption => {
+        const { y, bottom } = caption.getBoundingClientRect();
+        return { y, bottom };
+      });
+      const spread = (values, key) => Math.max(...values.map(value => value[key])) - Math.min(...values.map(value => value[key]));
+      const phonesAligned = ['y', 'width', 'height', 'bottom'].every(key => spread(phoneBounds, key) < 1);
+      const captionsAligned = ['y', 'bottom'].every(key => spread(captionBounds, key) < 1);
+      return { imagesLoaded: images.every(image => image.complete && image.naturalWidth > 0), phoneBounds, captionBounds, phonesAligned, captionsAligned, featureBottom, footerTop, overflow: document.documentElement.scrollWidth > innerWidth };
     });
-    if (!layout.imagesLoaded || layout.overflow || layout.featureBottom > layout.footerTop - 20) throw new Error(`Poster layout failed: ${JSON.stringify(layout)}`);
+    if (!layout.imagesLoaded || !layout.phonesAligned || !layout.captionsAligned || layout.overflow || layout.featureBottom > layout.footerTop - 20) throw new Error(`Poster layout failed: ${JSON.stringify(layout)}`);
     const png = await page.screenshot({ type: 'png' });
     const filename = path.join(destination, 'baseballmaster-2.1-update.png');
     await sharp(png).removeAlpha().png().toFile(filename);
