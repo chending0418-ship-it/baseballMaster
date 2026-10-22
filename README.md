@@ -1,7 +1,8 @@
 # BaseballMaster iOS App
 
-**当前分支：2.1 维护版（Build 1）。** 用户于 2026-09-29 决定停止新增功能，继续允许问题修复、回归和发布准备。当前成果提交为 2.1 基线；2.2 在独立工作目录开发。文字直播仍关闭，生产部署与真机验收继续按待办推进。详见 [版本分支与工作目录](docs/BRANCHES.md)。
+**当前分支：2.1 维护版（Build 1）。** 用户于 2026-09-29 明确记分纠错继续放在 2.1，重点是漏记换人、换守位、局面和失误；其他新增功能进入 2.2，继续允许问题修复、回归和发布准备。当前成果提交为 2.1 基线；2.2 在独立工作目录开发。文字直播仍关闭，生产部署与真机验收继续按待办推进。详见 [版本分支与工作目录](docs/BRANCHES.md)。
 
+- [2.1 记分纠错 TODO](<update/BaseballMaster 2.1 记分纠错 TODO.md>)（漏换人／换守位／局面／失误，已实现并完成本地回归）
 - [正式发布流程](docs/releases/2.0/00-正式发布流程.md)
 - [版本更新说明](docs/releases/2.0/01-版本更新说明.txt) · [英文审核备注](docs/releases/2.0/02-审核备注英文.txt)
 - [开发与验证记录](<update/BaseballMaster V1.1.1 开发与验证记录.md>) · [需求与完成清单](<update/BaseballMaster V1.1.1 TODO.md>)
@@ -144,3 +145,7 @@ xcodebuild \
 `website/public/` 是 `baseballmaster.cc` 首页及隐私／支持页的独立公开目录。使用现有 App 图标与示例截图，提供功能介绍、可切换界面展示、常见问题与 App Store 下载；文字直播标注为 2.1 计划。支持桌面与手机，不依赖构建工具或第三方网页脚本。
 
 官网已于 2026-09-28 上线至 [baseballmaster.cc](https://baseballmaster.cc/)，独立目录、SSL 证书和 HTTP → HTTPS 均已验证；证书有效至 2026-12-27，当前未配置自动续期。预览、打包和维护见 [官网说明](website/README.md) 与 [上线记录](website/deploy/2026-09-28-https-deployment.md)。直播服务准备好后再添加相应代理路径；不得将仓库根目录作为公开目录。
+
+2.1 记分纠错已实现：漏记换人、换守位、局面与失误；详见 [功能说明与实际截图](docs/releases/2.1/CORRECTIONS.md)。
+
+[2.1 App Store 七张宣传图说明](docs/releases/2.1/APPSTORE-ARTWORK.md)：包含更新记分页、文字直播、直播分享、四类纠错、影响预览、阵容调整及数据战报；直播素材待生产上线验收后使用。
