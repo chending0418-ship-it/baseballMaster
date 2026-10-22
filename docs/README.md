@@ -26,7 +26,7 @@
 | [后续待办](plans/BACKLOG.md) | Android、小组件与设备适配等暂缓需求；击球记录已转入 3.1 主规划 |
 | [releases/2.0/](releases/2.0/) | 2.0 发布流程与交接记录 |
 | `releases/<旧版本>/` | 其他版本的发布与验收记录，按版本保留 |
-| [brand/](brand/) | 已确认的 Logo 基准、[宣传图设计规范](brand/PROMOTIONAL-DESIGN.md)、参考成图与可复用源稿 |
+| [brand/](brand/) | [完整品牌与产品规范 1.0 / PDF](brand/specifications/1.0/README.md)、[母品牌标识](brand/PARENT-BRAND.md)、[教练口袋产品品牌规范](brand/COACH-POCKET.md)、[宣传图设计规范](brand/PROMOTIONAL-DESIGN.md)及可复用源稿 |
 | [research/](research/) | 独立研究资料 |
 | [archive/plans/](archive/plans/) | 旧需求、草案、确认清单和历史验证记录 |
 | [archive/screenshots/](archive/screenshots/) | 早期界面截图，不作为当前版本截图 |

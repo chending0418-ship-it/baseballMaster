@@ -1,0 +1,14 @@
+Mode: built-in ImageGen.
+Edit target: user-selected BM logo, retained as ../supplied-original.png.
+Result retained as ../transparent-source.png.
+User subsequently requested a deeper navy. Final composed SVG/PNG use exact flat #0B1933 on the alpha silhouette and English, overriding the initial preparation color below.
+Wordmark typography is native SVG, inheriting Arial / 800 / 400 / -0.045em from existing record-keeper brand baseline.
+
+Original preparation prompt:
+Use case: precise-object-edit / logo-brand.
+EDIT TARGET: the user's selected BM baseball brand logo in the attached file. This exact chosen drawing is approved; preserve its silhouette, every letter contour, angle, curve, negative-space baseball shape, and baseball seam/stitch positions precisely. Do not design a new logo and do not reinterpret any part.
+Requested changes ONLY:
+1. Recolor ALL existing dark black BM shapes AND the gray baseball seam/stitches to the SAME single solid NAVY BLUE #173454. The whole mark should be crisp uniform navy, with no black, no neutral gray, no gradients, no lighting or shading.
+2. Remove the white canvas background and make it genuinely TRANSPARENT. The white negative spaces around and within the emblem should be transparent, retaining every clean edge and the exact open silhouette.
+3. Deliver only this exact BM symbol isolated and centered with about 8 percent empty transparent margin on every side; no text, no wordmark, no new objects, no frame, no app-icon tile. Do not change B or M proportions or the seam's shape. No shadow. It is a faithful color conversion and transparent cleanup of the original selected symbol, not a redesign.
+

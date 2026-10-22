@@ -1,0 +1,88 @@
+{
+  "status": "user-approved product lockup",
+  "approvedOn": "2026-10-22",
+  "approvalQuote": "教练口袋的产品 LOGO 不错，作为产品规范做保留 和 棒球比赛记录大师 类似。",
+  "product": {
+    "englishName": "Coach Insights",
+    "chineseName": "教练口袋"
+  },
+  "parentBrand": {
+    "name": "BaseballMaster",
+    "logo": "User-selected BM ligature and baseball seam; see docs/brand/PARENT-BRAND.md",
+    "productColorsAreParentBrandColors": false
+  },
+  "reference": "docs/brand/references/coach-pocket-2026-10-22/approved-lockup.png",
+  "source": "docs/brand/references/coach-pocket-2026-10-22/source/lockup.html",
+  "icon": {
+    "sourceProject": "CoachInsights",
+    "sourceRelativePath": "CoachInsights/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+    "description": "burgundy eye with baseball pupil; existing approved icon",
+    "width": 1024,
+    "height": 1024
+  },
+  "layout": {
+    "direction": "icon left, two-line text right",
+    "alignItems": "center",
+    "gap": 12,
+    "iconSize": 44,
+    "iconBorderRadius": 11
+  },
+  "wordmark": {
+    "text": "BaseballMaster.cc",
+    "fontFamily": "Arial, sans-serif",
+    "fontSize": 19,
+    "lineHeight": 1.1,
+    "letterSpacing": -0.855,
+    "letterSpacingEm": -0.045,
+    "segments": [
+      {
+        "text": "Baseball",
+        "fontWeight": 800
+      },
+      {
+        "text": "Master.cc",
+        "fontWeight": 400
+      }
+    ],
+    "color": "#242426"
+  },
+  "subtitle": {
+    "text": "教练口袋",
+    "fontFamily": "-apple-system, BlinkMacSystemFont, PingFang SC, sans-serif",
+    "fontSize": 11,
+    "fontWeight": 450,
+    "lineHeight": 1.3,
+    "letterSpacing": "0.16em",
+    "marginTop": 7
+  },
+  "webNavyVariant": {
+    "color": "#0B1933",
+    "appliedOn": "2026-10-22",
+    "scope": "current local homepage; icon and layout unchanged; initial approved black-text reference retained"
+  },
+  "colors": {
+    "approvedSurface": "#FFFFFF",
+    "text": "#242426",
+    "productBurgundy": "#722F37",
+    "iconIvory": "#FFF8F0"
+  },
+  "responsivePolicy": "Scale composition proportionally; preserve icon, spelling, weight contrast and Chinese name.",
+  "assets": {
+    "docs/brand/references/coach-pocket-2026-10-22/app-icon.png": "daca678d2771322c7506f12ab3c97cc30673af2cef89c18e580c1e496979729a",
+    "docs/brand/references/coach-pocket-2026-10-22/approved-lockup.png": "6d587cd5bb8d83edee64b374c1abb5f75bc631ba07461b4c2f1dfb5895954025",
+    "docs/brand/references/coach-pocket-2026-10-22/source/lockup.html": "a3e023f539786b4a3dbe9fbcb7b265aca16d53c1c461131bb8a221661cf10502",
+    "docs/brand/references/coach-pocket-2026-10-22/source/render.cjs": "9ac1b9cc6d6ad7b38afc4a0256b2a96fb9c542ecdb2e8f55eb759a05328d71b4"
+  },
+  "verification": {
+    "loaded": true,
+    "word": "BaseballMaster.cc",
+    "subtitle": "教练口袋",
+    "iconWidth": "44px",
+    "wordFontSize": "19px",
+    "firstWeight": "800",
+    "secondWeight": "400",
+    "subtitleWeight": "450",
+    "inside": true
+  },
+  "scope": "Local brand archive only; no production website or app changes, no upload or deployment."
+}
