@@ -46,7 +46,7 @@ struct PlayByPlayPDFReport {
     func pdfData(appearanceID: UUID? = nil, style: PlayByPlayPDFStyle = .detailed, generatedAt: Date = Date()) -> Data {
         if style == .textOnly { return textPDFData(appearanceID: appearanceID, generatedAt: generatedAt) }
         let selected = entries.filter { appearanceID == nil || $0.appearance.id == appearanceID }
-        let title = appearanceID == nil ? "逐打席比赛速报" : "第 \(selected.first?.appearance.sequence ?? 0) 打席速报"
+        let title = appearanceID == nil ? "逐打席比赛速报" : "\(selected.first?.appearance.sequenceLabel ?? "单打席")速报"
         return ReportPDFCanvas.render(kind: "PLAY BY PLAY / 逐打席速报", title: title,
             subtitle: "\(game.awayTeam.name) vs \(game.homeTeam.name) · \(playedAt.map { ReportPDFCanvas.dateText($0, includesTime: true) } ?? "比赛时间未记录") · \(game.isFinal ? "已结束" : "进行中")",
             generatedAt: generatedAt) { canvas in
@@ -63,16 +63,16 @@ struct PlayByPlayPDFReport {
             if appearanceID == nil {
                 canvas.metrics([("打席记录", "\(selected.count)"), ("客队得分", "\(game.awayScore)"), ("主队得分", "\(game.homeScore)"),
                                 ("待确认打席", "\(selected.filter { $0.appearance.needsReview }.count)")])
-                canvas.paragraph("按记录顺序逐打席展示。每个打席包含前后局面、逐球及跑垒记录；换人、计时、TB 和修正保留在发生位置。事件序号不等同于投球数。", muted: true)
+                canvas.paragraph("按比赛时间顺序展示，主客队的打席分别从 1 累计，跨局继续。每个打席包含前后局面、逐球及跑垒记录；换人、计时、TB 和修正保留在发生位置。事件序号不等同于投球数。", muted: true)
                 canvas.table(title: "打席索引", headers: ["打席 / 局次", "打者", "结果", "状态"], rows: selected.map {
-                    ["\($0.appearance.sequence) · \($0.appearance.inningLabel)", $0.appearance.batter.compactName,
+                    ["\($0.appearance.teamLabel) \($0.appearance.sequence) · \($0.appearance.inningLabel)", $0.appearance.batter.compactName,
                      $0.appearance.resultText, $0.status]
                 }, weights: [1.8, 2.3, 6, 1.8])
             }
             for (index, entry) in selected.enumerated() {
                 if appearanceID == nil || index > 0 { canvas.newPage() }
                 let pa = entry.appearance
-                let label = "第 \(pa.sequence) 打席 · \(pa.inningLabel) · \(pa.batter.compactName)"
+                let label = "\(pa.sequenceLabel) · \(pa.inningLabel) · \(pa.batter.compactName)"
                 canvas.paragraph(label, size: 17, bold: true)
                 canvas.paragraph("\(entry.status)  |  结果：\(pa.resultText)", size: 10, bold: true)
                 canvas.situationPair(before: entry.before, after: entry.after, game: game)
@@ -107,7 +107,7 @@ struct PlayByPlayPDFReport {
                     event.title + (event.needsReview ? "（待确认）" : "")
                         + (event.reviewNote.flatMap { $0.isEmpty ? nil : "（复核：\($0)）" } ?? "")
                 }.joined(separator: "；")
-                canvas.textRecord(title: "\(pa.inningLabel) · 第 \(pa.sequence) 打席 · \(pa.batter.compactName)\(status)",
+                canvas.textRecord(title: "\(pa.inningLabel) · \(pa.sequenceLabel) · \(pa.batter.compactName)\(status)",
                                   body: description.isEmpty ? "暂无文字描述。" : description)
             }
         }

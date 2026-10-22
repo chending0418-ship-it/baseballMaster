@@ -1,15 +1,33 @@
-# BaseballMaster 文字直播 · 宝塔部署
+# BaseballMaster 2.1 文字直播 · 腾讯云域名与宝塔部署
 
-**2026-09-27 版本定位：本服务属于 V1.2.1 文字直播。** 先完成 V1.1 收尾和 V1.1.1 现场修复，再接续 App／网页／服务端联调、生产部署及真机验收；详见[版本推进规划](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1至V1.2.1 版本推进规划.md>)。本轮只规划，不执行部署。
+**2026-09-28 版本定位：当前版本为 2.0，文字直播计划随 2.1 上线。** 用户已在腾讯云购买 `baseballmaster.cc`，继续使用现有服务器。旧 V1.2.1 文档编号仅作为历史需求标识。
 
-**状态：直播延期至 V1.2.1 正式迭代，本次 TestFlight 1.6（1）不部署、不启用。以下为保留的后续部署方案，启用前需重新核对政策、版本和打包内容。**
+**状态：2026-09-28 根域名解析、官网独立站点及 HTTPS 已部署并通过公网验证；文字直播服务尚未部署。** 当前 App 的直播开关仍关闭，2.1 启用前需更新隐私资料、申报、版本和打包内容。证书有效至 2026-12-27，暂为手动换证，详见 [官网上线记录](../website/deploy/2026-09-28-https-deployment.md)。
 
-部署目标：`https://jingsen.cc/baseballmaster/live/<24位串码>`。这是后续启用直播版本的配套服务，包含网页和 API；**当前只在本地验证，没有连接或修改你的生产服务器**。
+部署目标：`https://baseballmaster.cc/livestreaming/novideo/<24位串码>`。用户于 2026-09-28 确认文字直播统一使用 `/livestreaming/novideo/`，替代旧 `/baseballmaster/live/` 路径。这是 2.1 的配套服务，包含网页和 API；**直播当前只在本地准备，生产服务器仅部署了官网与证书**。域名首页提供独立的 [App 官网](../website/README.md)。
+
+## 0. 腾讯云解析与站点隔离
+
+当前根域名 A 记录已指向 `124.156.173.204` 并验证生效，独立官网和 HTTPS 已上线。以下保留从零配置参考，不要重复创建现有站点。
+
+1. 登录腾讯云的 DNSPod／云解析 DNS 控制台，进入 `baseballmaster.cc` 的记录管理页面，添加下列记录：
+
+   | 主机记录 | 类型 | 线路 | 记录值 | TTL |
+   | --- | --- | --- | --- | --- |
+   | `@` | `A` | 默认 | 现有服务器的公网 IPv4，以服务器控制台为准 | 600 秒 |
+
+   记录值只填 IP，不填网址或端口。不要使用指向旧域名的 CNAME 或 URL 转发；无需添加 `www` 即可使用当前方案。若 DNS 尚未委派给 DNSPod，先按控制台提示设置域名 DNS 服务器。新注册和解析变更需等待公共 DNS 生效。
+2. 在宝塔新建静态站点，绑定 `baseballmaster.cc`，使用独立目录（例如 `/www/wwwroot/baseballmaster.cc`）。按 [官网部署说明](../website/README.md) 只上传 `website/public/` 的内容。不要把新域名直接添加为旧站点的别名，不要把整个仓库、TODO、备份或内部网页上传到该目录。
+3. 为 `baseballmaster.cc` 配置独立 HTTPS 证书和自动续期，确认服务器 80／443 端口可访问。启用 HTTP → HTTPS 跳转。不要使用同时包含旧域名的证书。
+4. 旧站点的 TODO 等内部资料需登录验证或其他访问控制，不能依赖隐藏域名。检查默认站点和直接 IP 访问不会返回内部资料，也不能通过服务的其他公网端口绕过验证。共用服务器不能保证两个域名无法被关联。
+
+域名与站点准备完成后，再执行以下直播部署步骤。腾讯云操作依据：[A 记录](https://intl.cloud.tencent.com/zh/document/product/1295/76974?lang=zh)。
 
 ## 1. 运行方式与保留规则
 
-- Node.js **24.x，至少 24.12**，内置 HTTP + SQLite，无 npm 第三方运行依赖；单进程即可。无需 MySQL、Redis、对象存储、视频产品或另购域名。
+- Node.js **24.x，至少 24.12**，内置 HTTP + SQLite，无 npm 第三方运行依赖；单进程即可。无需 MySQL、Redis、对象存储或视频产品，使用已购买的独立域名。
 - App 主动开播后上传该场只读投影，网页前台每 **10 秒**轮询。无新版本只返回同步时间等少量资料；后台暂停，返回后补拉。
+- 当前投打区显示“第 X 棒 · 打者”；棒次与 App 共用计算，阵容调整、换人、换边和撤销重做随快照同步。终场不显示当前棒次；旧开发快照缺少字段时仍可观看，兼容约定见 [协议](PROTOCOL.md)。
 - 观看串码与写入密钥分开。任何持链接者可看；只有原发布设备可写。写入密钥位于设备 Keychain，不放进链接、二维码、本地比赛导出或网页。
 - 服务端只保留**当前版本**，不建立版本历史。结束时间 + 1 小时自动删除，重复终场、心跳和赛后修正不延长期限。在期限内“恢复继续”可沿用原链接；过期后旧链接不能复活。
 - 设备断网或被系统挂起时，服务器无法获知新记录。为避免遗留，**连续一小时未同步也删除**。断网期间可继续本地记分，联网补传；旧链接过期后需要重新开播、重新分享。
@@ -69,35 +87,36 @@ pm2 save
 检查本机服务：
 
 ```sh
-curl --fail http://127.0.0.1:8088/baseballmaster/live/health
+curl --fail http://127.0.0.1:8088/livestreaming/novideo/health
 ```
 
 应返回 `{"ok":true}`。8088 不需要对公网开放，云安全组和系统防火墙保持关闭该端口。
 
-## 4. 将现有域名的指定路径代理到服务
+## 4. 将新域名的直播路径代理到服务
 
-在宝塔“网站 → jingsen.cc → 设置 → 配置文件”中，先备份现有 Nginx 配置，再将 [nginx-location.conf](deploy/nginx-location.conf) 的两个 `location` 块加入 **现有 HTTPS `server { ... }` 内部**。
+先备份当前 `/www/server/panel/vhost/nginx/baseballmaster.cc.conf`，再将 [nginx-location.conf](deploy/nginx-location.conf) 的两个直播 `location` 块合并到 **同一新站点的 HTTPS `server { ... }` 内部**，保留已上线的 [官网静态配置](../website/deploy/nginx-homepage.conf)。此次站点通过 SSH 配置，尚未导入宝塔网站列表；若后续在宝塔维护，先按 [上线记录](../website/deploy/2026-09-28-https-deployment.md) 导入现有站点，避免覆盖当前配置。
 
-- 保留已有站点根目录、PHP／静态规则、证书和其他路径。
+- 使用新站点的独立根目录，保留证书及证书验证配置；不继承旧站点的 PHP、静态文件或路径代理规则。
 - 如果已经存在相同路径的 `location`，修改那一个，避免重复。
+- `/` 提供 App 官网，公开静态文件仅限官网配置列出的页面和资源；`/livestreaming/novideo/` 代理直播服务，其他路径默认返回 404。证书续期所需的 `/.well-known/` 验证规则需单独保留并核验。旧的首页跳转规则应替换为官网规则。
 - `proxy_pass http://127.0.0.1:8088;` **末尾不加 `/`**，否则转发路径可能被截断。
-- 不要通过面板再生成覆盖整个域名的 `/` 代理规则；我们只使用 `/baseballmaster/live/`。
+- 不要通过面板再生成覆盖整个域名的 `/` 代理规则；我们只使用 `/livestreaming/novideo/`。
 - 保留／启用此站点 HTTPS 证书和 HTTP → HTTPS 跳转；App 生产环境只连接 HTTPS，不接受自签证书。
-- 若使用 CDN，给 `/baseballmaster/live/*` 配置绕过缓存，API 同时不得缓存。不要为该路径注入分析或广告脚本。
+- 若使用 CDN，给 `/livestreaming/novideo/*` 配置绕过缓存，API 同时不得缓存。不要为该路径注入分析或广告脚本。
 
 在宝塔检查 Nginx 配置语法后重载 Nginx。通过浏览器访问：
 
-- [观赛入口](https://jingsen.cc/baseballmaster/live/)
-- [健康检查](https://jingsen.cc/baseballmaster/live/health)
+- [观赛入口](https://baseballmaster.cc/livestreaming/novideo/)
+- [健康检查](https://baseballmaster.cc/livestreaming/novideo/health)
 
-入口应显示串码输入框，健康检查返回 `ok`。其他已有网页应仍正常。
+直播入口应显示串码输入框，健康检查返回 `ok`，域名首页显示 App 介绍。新域名的 `/TODO.md`、`/.git/config` 等未开放路径应返回 404 或 403，不能返回任何内部资料；旧站点的内部内容应要求验证。检查页面、接口、跳转、二维码及证书均不引用旧域名。
 
 ## 5. 上线前验收
 
 先使用合成数据检查 API 全链路（仅创建临时示例，测试结束自动删除）：
 
 ```sh
-LIVE_BASE=https://jingsen.cc/baseballmaster/live node demo.mjs --smoke
+LIVE_BASE=https://baseballmaster.cc/livestreaming/novideo node demo.mjs --smoke
 ```
 
 应显示 `PASS: create → read → update → undo → finish → delete`。
@@ -105,12 +124,12 @@ LIVE_BASE=https://jingsen.cc/baseballmaster/live node demo.mjs --smoke
 要在手机 Safari／微信内看一场示例：
 
 ```sh
-LIVE_BASE=https://jingsen.cc/baseballmaster/live node demo.mjs
+LIVE_BASE=https://baseballmaster.cc/livestreaming/novideo node demo.mjs
 ```
 
 终端会给出示例链接。保持进程运行，输入 `ball`、`undo` 可查看十秒轮询效果，`finish` 显示终场，`reopen` 恢复，`expire` 将该合成比赛设为已终场 59 分 45 秒（约 15 秒后删除），`quit` 关闭并删除。命令不显示或写盘保存发布密钥。示例不是常驻审核回放，链接不能永久使用。
 
-最后安装本分支 App，在**测试比赛**中完成：
+完成 [2.1 隐私资料](PRIVACY-RELEASE.md) 更新并启用直播后，构建安装 2.1 测试 App，在**测试比赛**中完成（当前 2.0 直播开关仍关闭）：
 
 1. 现场记分右上角天线按钮 → 开启文字直播 → 分享链接，在另一部手机打开。
 2. 记录投球、安打、换人、得分；网页约 10 秒后看到同一局面和对应打席；普通投手显示本场球数，教练模式显示本打席球数。
@@ -120,7 +139,7 @@ LIVE_BASE=https://jingsen.cc/baseballmaster/live node demo.mjs
 6. 手动关闭直播，确认旧链接失效、手机比赛仍在。
 7. 在 Safari 和微信内置浏览器检查小屏、展开逐球记录、历史半局跳转以及“有新记录”提示。
 
-前台网络上传已实现；iOS 不保证后台或锁屏后的持续执行，因此实际记分应保持 App 前台。部署、证书、域名 CDN 与真机微信仍需在你的服务器上线后完成，不能用本地模拟器测试代替。
+前台网络上传已实现；iOS 不保证后台或锁屏后的持续执行，因此实际记分应保持 App 前台。官网和证书已经上线，直播服务部署、直播接口公网验收、域名 CDN 核查与真机微信验证仍未完成，不能用本地模拟器测试代替。
 
 ## 6. 更新、回滚与维护
 

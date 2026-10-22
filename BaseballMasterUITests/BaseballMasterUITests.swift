@@ -10,7 +10,7 @@ final class BaseballMasterUITests: XCTestCase {
         app.launchArguments = ["--boxscore-preview"]
         app.launch()
         app.buttons["记录"].tap()
-        let single = app.buttons["export-appearance-3"]
+        let single = app.buttons["export-appearance-away-3"]
         revealStatisticsControl(single, in: app)
         single.tap()
         XCTAssertTrue(app.navigationBars["打席速报"].waitForExistence(timeout: 5))
@@ -29,7 +29,7 @@ final class BaseballMasterUITests: XCTestCase {
         app.launchArguments = ["--boxscore-preview"]
         app.launch()
         app.buttons["记录"].tap()
-        let single = app.buttons["export-appearance-text-3"]
+        let single = app.buttons["export-appearance-text-away-3"]
         revealStatisticsControl(single, in: app)
         single.tap()
         XCTAssertTrue(app.navigationBars["单打席文字简版"].waitForExistence(timeout: 5))
@@ -368,9 +368,9 @@ final class BaseballMasterUITests: XCTestCase {
         let records = app.buttons["记录"]
         XCTAssertTrue(records.waitForExistence(timeout: 2))
         records.tap()
-        let firstAppearance = app.descendants(matching: .any).matching(identifier: "plate-appearance-1").firstMatch
-        let secondAppearance = app.descendants(matching: .any).matching(identifier: "plate-appearance-2").firstMatch
-        let thirdAppearance = app.descendants(matching: .any).matching(identifier: "plate-appearance-3").firstMatch
+        let firstAppearance = app.descendants(matching: .any).matching(identifier: "plate-appearance-away-1").firstMatch
+        let secondAppearance = app.descendants(matching: .any).matching(identifier: "plate-appearance-away-2").firstMatch
+        let thirdAppearance = app.descendants(matching: .any).matching(identifier: "plate-appearance-away-3").firstMatch
         XCTAssertTrue(firstAppearance.waitForExistence(timeout: 2))
         XCTAssertTrue(secondAppearance.exists)
         XCTAssertTrue(thirdAppearance.exists)
@@ -939,16 +939,17 @@ extension BaseballMasterUITests {
         XCTAssertTrue(game.waitForExistence(timeout: 5)); game.tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["open-live-broadcast"].exists)
-        let scoring = XCTAttachment(screenshot: app.screenshot()); scoring.name = "1.6-离线记分"; scoring.lifetime = .keepAlways; add(scoring)
+        let scoring = XCTAttachment(screenshot: app.screenshot()); scoring.name = "离线记分"; scoring.lifetime = .keepAlways; add(scoring)
         app.buttons["open-box-score"].tap()
         XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["open-live-broadcast"].exists)
         app.terminate(); app.launchArguments = ["--profile-preview"]; app.launch()
         let about = app.buttons["open-app-about"]
         revealStatisticsControl(about, in: app); about.tap()
-        XCTAssertTrue(app.staticTexts["版本 1.6（1）"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["about-privacy-description"].label.contains("当前版本暂不提供文字直播"))
-        let privacy = XCTAttachment(screenshot: app.screenshot()); privacy.name = "1.6-离线隐私说明"; privacy.lifetime = .keepAlways; add(privacy)
+        let description = app.staticTexts["about-privacy-description"]
+        XCTAssertTrue(description.waitForExistence(timeout: 5))
+        XCTAssertTrue(description.label.contains("当前版本暂不提供文字直播"))
+        let privacy = XCTAttachment(screenshot: app.screenshot()); privacy.name = "离线隐私说明"; privacy.lifetime = .keepAlways; add(privacy)
     }
 }
 

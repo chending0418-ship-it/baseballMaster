@@ -1,0 +1,49 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "7A06FC2B-4469-4BDA-981B-EF103169BAEB",
+        "deviceName" : "BaseballMaster 1.1.1 QA Large",
+        "modelName" : "iPhone 17 Pro",
+        "osBuildNumber" : "23B86",
+        "osVersion" : "26.1",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 0,
+      "passedTests" : 148,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "BaseballMaster · Built with macOS 26.5.2",
+  "expectedFailures" : 0,
+  "failedTests" : 0,
+  "finishTime" : 1790580123.048,
+  "passedTests" : 148,
+  "result" : "Passed",
+  "skippedTests" : 0,
+  "startTime" : 1790580031.609,
+  "statistics" : [
+    {
+      "subtitle" : "1 test run",
+      "title" : "1 test collected performance metrics"
+    }
+  ],
+  "testFailures" : [
+
+  ],
+  "title" : "Test - BaseballMaster",
+  "topInsights" : [
+    {
+      "category" : "Longest Test Runs",
+      "impact" : "27% of duration",
+      "text" : "1 longest test run with outlier durations exceeding 0.61s (three standard deviations)"
+    }
+  ],
+  "totalTestCount" : 148
+}

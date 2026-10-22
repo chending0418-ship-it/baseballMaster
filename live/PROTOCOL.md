@@ -1,6 +1,6 @@
 # Live protocol v1
 
-Base: `/baseballmaster/live`。仅同源网页，不开放 CORS。所有响应 `Cache-Control: no-store`。JSON 正文最大 2 MiB。`LiveSnapshot`（Swift）与 `validateSnapshot`（Node）共同定义字段白名单，`schema=1`；可空字段显式为 `null`。时间统一为 Unix 毫秒。
+Base: `/livestreaming/novideo`。仅同源网页，不开放 CORS。所有响应 `Cache-Control: no-store`。JSON 正文最大 2 MiB。`LiveSnapshot`（Swift）与 `validateSnapshot`（Node）共同定义字段白名单，`schema=1`；可空字段显式为 `null`。时间统一为 Unix 毫秒。
 
 | 方法／路径 | 权限 | 行为 |
 | --- | --- | --- |
@@ -18,8 +18,12 @@ Base: `/baseballmaster/live`。仅同源网页，不开放 CORS。所有响应 `
 
 - `gameID/revision/mode/isFinal/endedAt`。
 - `inning/isTop/balls/strikes/outs`，`home/away` 的队名、逐局分数和 R/H/E。
-- 当前 `batter/pitcher`（ID、显示名、背号）、`pitchCount`，教练模式的 `appearancePitchCount/pitchLimit`；`bases`、`currentAppearanceID`、待决提示 `notice`。
+- 当前 `batter/pitcher`（ID、显示名、背号）、`batterOrder`（当前打者第几棒）、`pitchCount`，教练模式的 `appearancePitchCount/pitchLimit`；`bases`、`currentAppearanceID`、待决提示 `notice`。
 - `entries`：稳定 ID、所属打席 ID、半局、类型、标签、摘要、球员、状态和逐球 `details`。新快照移除的 ID 在网页中也消失；不是往旧列表追加一份新的全场记录。
+
+`batterOrder` 是 2.1 增加的 v1 可选字段：当前有打者时为从 1 开始的整数（协议上限 999），与 App 记分页共用计算逻辑，独立于球衣号码；终场或没有打者时新 App 发送 `null`。服务端兼容旧开发快照缺省或显式 `null`，网页仅显示“打者”，不会从号码推测棒次。有效整数只允许出现在进行中且有打者的快照，非法值拒绝写入并保留已发布版本。旧服务的字段白名单不接受新增字段，因此后续部署应先更新服务端和网页，再启用新版 App；协议编号仍为 `schema=1`。
+
+阵容和资料更正沿用保存后的球员 ID。当前投打、垒上跑者和打席球员资料随更正更新，既有逐球原文保留原记录；新增阵容／更正事件说明变化。撤销与重做发布递增修订的完整快照，不重复追加记录。
 
 App 先完成 Core Data 保存，才触发发布。Keychain 保存开播身份、密钥、串码、上次确认修订及内容摘要；比赛本身保存最新快照的来源。失败时保留这个状态，重启后重新生成并补传最新版本。无需为每一个逐球操作复制完整网络请求。撤销也增加修订号。
 

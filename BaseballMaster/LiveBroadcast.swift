@@ -4,7 +4,7 @@ import Foundation
 import Security
 
 enum AppFeatureAvailability {
-    // Text live is deferred to the V1.2 production iteration. Not a remote setting.
+    // Text live is planned for 2.1 after deployment and release validation. Not a remote setting.
     static let liveBroadcast = false
 }
 
@@ -25,6 +25,7 @@ struct LiveSnapshot: Codable, Equatable {
     var gameID: String; var revision: Int; var mode: String; var isFinal: Bool; var endedAt: Double?
     var inning: Int; var isTop: Bool; var balls: Int; var strikes: Int; var outs: Int
     var home: Side; var away: Side; var batter: Person?; var pitcher: Person?; var pitchCount: Int?
+    var batterOrder: Int?
     var appearancePitchCount: Int; var pitchLimit: Int?; var bases: [Runner]; var currentAppearanceID: String?
     var notice: String; var entries: [Entry]
 
@@ -38,6 +39,7 @@ struct LiveSnapshot: Codable, Equatable {
         home = Side(name: String(g.homeTeam.name.prefix(200)), runs: g.homeScore, hits: g.homeHits, errors: g.homeErrors, innings: g.homeRunsByInning)
         away = Side(name: String(g.awayTeam.name.prefix(200)), runs: g.awayScore, hits: g.awayHits, errors: g.awayErrors, innings: g.awayRunsByInning)
         batter = g.battingOrderPlayers.isEmpty ? nil : Person(g.currentBatter)
+        batterOrder = g.isFinal || batter == nil ? nil : g.currentBattingOrder
         pitcher = g.fieldingTeam.players.isEmpty ? nil : Person(g.currentPitcher)
         pitchCount = coach || g.fieldingTeam.players.isEmpty ? nil : (g.pitching[g.currentPitcher.id]?.pitches ?? 0)
         appearancePitchCount = g.plateAppearancePitchCount ?? 0
@@ -90,7 +92,7 @@ struct LiveSnapshot: Codable, Equatable {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let raw = try encoder.encode(self)
         var object = try JSONSerialization.jsonObject(with: raw) as! [String: Any]
-        for key in ["endedAt", "batter", "pitcher", "pitchCount", "pitchLimit", "currentAppearanceID"] where object[key] == nil { object[key] = NSNull() }
+        for key in ["endedAt", "batter", "batterOrder", "pitcher", "pitchCount", "pitchLimit", "currentAppearanceID"] where object[key] == nil { object[key] = NSNull() }
         if var rows = object["entries"] as? [[String: Any]] {
             for i in rows.indices { for key in ["appearanceID", "player"] where rows[i][key] == nil { rows[i][key] = NSNull() } }
             object["entries"] = rows
@@ -139,7 +141,7 @@ protocol LiveTransport {
     func send(method: String, code: String?, token: String, body: Data?) async throws -> LiveResponse?
 }
 struct LiveHTTPClient: LiveTransport {
-    static let baseURL = URL(string: "https://jingsen.cc/baseballmaster/live")!
+    static let baseURL = URL(string: "https://baseballmaster.cc/livestreaming/novideo")!
     var baseURL = Self.baseURL
     var session = URLSession.shared
     func send(method: String, code: String?, token: String, body: Data?) async throws -> LiveResponse? {

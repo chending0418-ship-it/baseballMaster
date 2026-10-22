@@ -216,7 +216,7 @@ struct BoxScoreView: View {
                             .background(appearance.needsReview ? BMTheme.orangeSoft : BMTheme.greenSoft)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("第 \(appearance.sequence) 打席 · #\(appearance.batter.numberText) \(appearance.batter.name)")
+                            Text("\(appearance.sequenceLabel) · #\(appearance.batter.numberText) \(appearance.batter.name)")
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(BMTheme.navy)
                             Text(appearance.events.map(\.title).joined(separator: "；"))
@@ -232,12 +232,12 @@ struct BoxScoreView: View {
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(BMTheme.secondaryText)
                             }
-                            ReportExportButton(title: "导出本打席 · 详细版", identifier: "export-appearance-\(appearance.sequence)", previewTitle: "打席速报") {
+                            ReportExportButton(title: "导出本打席 · 详细版", identifier: "export-appearance-\(appearance.accessibilityKey)", previewTitle: "打席速报") {
                                 try playByPlayReport.write(appearanceID: appearance.id)
                             }
                             .font(.subheadline)
                             .padding(.vertical, 6)
-                            ReportExportButton(title: "导出本打席 · 文字简版", identifier: "export-appearance-text-\(appearance.sequence)", previewTitle: "单打席文字简版") {
+                            ReportExportButton(title: "导出本打席 · 文字简版", identifier: "export-appearance-text-\(appearance.accessibilityKey)", previewTitle: "单打席文字简版") {
                                 try playByPlayReport.write(appearanceID: appearance.id, style: .textOnly)
                             }
                             .font(.subheadline)
@@ -249,7 +249,7 @@ struct BoxScoreView: View {
                     .background(BMTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 13))
                     .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("plate-appearance-\(appearance.sequence)")
+                    .accessibilityIdentifier("plate-appearance-\(appearance.accessibilityKey)")
                 }
             }
 
