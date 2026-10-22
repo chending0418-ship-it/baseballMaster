@@ -1,10 +1,225 @@
 import XCTest
 import CoreData
 import PDFKit
+import SQLite3
 @testable import BaseballMaster
 
 @MainActor
 final class GameStoreTests: XCTestCase {
+    func testLocalBackupRoundTripPreservesGamesEventsAndRestoresOnRestart() throws {
+        let source = freshStore()
+        source.recordPitch(.ball)
+        source.applyPlay(.single)
+        source.recordPitch(.calledStrike)
+        let backup = try LocalBackup.read(source.exportBackup())
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("BackupRoundTrip-\(UUID())")
+        let url = directory.appendingPathComponent("BaseballMaster.sqlite")
+        let destination = GameStore(persistenceURL: url)
+        try destination.restoreBackup(backup)
+        XCTAssertEqual(destination.games, source.games)
+        XCTAssertEqual(destination.teams, source.teams)
+        XCTAssertEqual(destination.game.scoringEvents, source.game.scoringEvents)
+        let reopened = GameStore(persistenceURL: url)
+        XCTAssertFalse(reopened.requiresDataRecovery)
+        XCTAssertEqual(reopened.games, source.games)
+        XCTAssertEqual(reopened.game.currentBatter.id, source.game.currentBatter.id)
+        XCTAssertFalse(destination.automaticBackupURLs.isEmpty)
+    }
+
+    func testCorruptDatabaseIsPreservedAndCanRecoverFromBackup() throws {
+        let source = freshStore()
+        source.recordPitch(.foul)
+        let backup = try LocalBackup.read(source.exportBackup())
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("CorruptRecovery-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("BaseballMaster.sqlite")
+        let broken = Data("This is not a SQLite database".utf8)
+        try broken.write(to: url)
+        let store = GameStore(persistenceURL: url)
+        XCTAssertTrue(store.requiresDataRecovery)
+        XCTAssertEqual(try Data(contentsOf: url), broken)
+        XCTAssertThrowsError(try store.exportBackup())
+        try store.restoreBackup(backup)
+        XCTAssertFalse(store.requiresDataRecovery)
+        XCTAssertEqual(GameStore(persistenceURL: url).games, source.games)
+        let archive = try XCTUnwrap(try FileManager.default.contentsOfDirectory(at: directory.appendingPathComponent("Recovery"), includingPropertiesForKeys: nil).first)
+        XCTAssertEqual(try Data(contentsOf: archive.appendingPathComponent(url.lastPathComponent)), broken)
+    }
+
+    func testInvalidAndFutureBackupsCannotReplaceExistingData() throws {
+        let source = freshStore()
+        let backup = try LocalBackup.read(source.exportBackup())
+        let destination = freshStore()
+        let original = destination.teams
+        for key in ["version", "checksum"] {
+            var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(backup)) as? [String: Any])
+            json[key] = key == "version" ? 99 : "broken"
+            let altered = try JSONDecoder().decode(LocalBackup.self, from: JSONSerialization.data(withJSONObject: json))
+            XCTAssertThrowsError(try destination.restoreBackup(altered))
+            XCTAssertEqual(destination.teams, original)
+        }
+        var game = source.games[0]
+        game.state.awayBatterIndex = -1
+        let snapshot = RosterSnapshot(teams: source.teams, currentTeamID: source.currentTeam.id, seasons: source.seasons,
+                                      playerGameRecords: [], games: [game])
+        XCTAssertThrowsError(try LocalBackup(snapshot: snapshot))
+    }
+
+    func testAutomaticBackupsRotateAndEmptyOpponentRosterStaysEmpty() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("BackupRotation-\(UUID())")
+        let url = directory.appendingPathComponent("BaseballMaster.sqlite")
+        let store = GameStore(persistenceURL: url)
+        for team in store.opponentTeams { _ = store.deleteOpponentTeam(id: team.id) }
+        for _ in 0..<5 { store.createAutomaticBackup() }
+        XCTAssertLessThanOrEqual(store.automaticBackupURLs.count, 3)
+        XCTAssertTrue(GameStore(persistenceURL: url).opponentTeams.isEmpty)
+        let backup = try LocalBackup.read(store.exportBackup())
+        XCTAssertTrue(try backup.snapshot().opponentTeams.isEmpty)
+    }
+
+    func testFutureDatabaseVersionAndMalformedPayloadRequireRecovery() throws {
+        for sql in ["UPDATE ZROSTERMETADATA SET ZSCHEMAVERSION=99", "UPDATE ZSTOREDGAME SET ZPAYLOADDATA=x'7b7d'", "UPDATE ZROSTERSEASON SET ZNAME=NULL"] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SchemaProtection-\(UUID())")
+            let url = directory.appendingPathComponent("BaseballMaster.sqlite")
+            let seed = freshStore()
+            do {
+                let db = try CoreDataRosterStore(storeURL: url)
+                try db.replaceAll(with: LocalBackup.read(seed.exportBackup()).snapshot())
+                try db.close()
+            }
+            var handle: OpaquePointer?
+            XCTAssertEqual(sqlite3_open(url.path, &handle), SQLITE_OK)
+            XCTAssertEqual(sqlite3_exec(handle, sql, nil, nil, nil), SQLITE_OK)
+            sqlite3_close(handle)
+            let original = try Data(contentsOf: url)
+            let store = GameStore(persistenceURL: url)
+            XCTAssertTrue(store.requiresDataRecovery)
+            XCTAssertEqual(try Data(contentsOf: url), original)
+        }
+    }
+
+    func testPlayByPlayPDFKeepsBallsRunnersTransitionsAndSingleAppearanceScope() throws {
+        let store = freshStore()
+        for _ in 0..<4 { store.recordPitch(.ball) }
+        store.recordPitch(.calledStrike)
+        store.recordRunnerEvent(.stolenBase, decisions: store.suggestedRunnerEventDecisions(for: .stolenBase))
+        store.applyPlay(.double)
+        for _ in 0..<3 { store.applyPlay(.groundOut) }
+        store.recordPitch(.foul)
+        let report = PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: store.activeGameRecordedAt)
+        XCTAssertEqual(report.entries.flatMap(\.events).map(\.id), store.game.scoringEvents?.map(\.id))
+        XCTAssertEqual(report.entries.last?.after?.isTop, false)
+        let text = try reportText(report.pdfData())
+        for expected in ["PLAY BY PLAY", "逐打席", "坏球", "偷垒", "二垒安打", "攻守交换", "打席未完成"] {
+            XCTAssertTrue(text.contains(expected), expected)
+        }
+        let single = try reportText(report.pdfData(appearanceID: report.entries[0].appearance.id))
+        XCTAssertTrue(single.contains("保送"))
+        XCTAssertFalse(single.contains("二垒安打"))
+    }
+
+    func testPlayByPlayMissingSnapshotsAndLongAppearancePaginateHonestly() throws {
+        let store = freshStore()
+        for _ in 0..<35 { store.recordPitch(.foul) }
+        store.game.scoringEvents = store.game.scoringEvents?.map { event in
+            var value = event; value.beforeSituation = nil; value.afterSituation = nil; return value
+        }
+        let report = PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: nil)
+        let data = report.pdfData(appearanceID: report.entries.first?.appearance.id)
+        let text = try reportText(data)
+        XCTAssertTrue(text.contains("此局面未记录"))
+        XCTAssertTrue(text.contains("(续)"))
+        XCTAssertTrue(text.contains("35 · 投球"))
+        let empty = PlayByPlayPDFReport(game: GameStore(persistenceURL: nil).game, appearances: [], playedAt: nil)
+        XCTAssertTrue(try reportText(empty.pdfData()).contains("暂无可导出"))
+    }
+
+    func testTextOnlyPlayByPlayPreservesDescriptionsAndSingleAppearanceScope() throws {
+        let store = freshStore()
+        for _ in 0..<4 { store.recordPitch(.ball) }
+        store.recordPitch(.calledStrike)
+        store.recordRunnerEvent(.stolenBase, decisions: store.suggestedRunnerEventDecisions(for: .stolenBase))
+        store.applyPlay(.double)
+        for _ in 0..<3 { store.applyPlay(.groundOut) }
+        store.recordPitch(.foul)
+        let report = PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: store.activeGameRecordedAt)
+        let data = report.pdfData(style: .textOnly)
+        let document = try XCTUnwrap(PDFDocument(data: data))
+        let text = try reportText(data, portrait: true)
+        XCTAssertEqual(document.pageCount, 1, "Six short appearances should share one page")
+        let bounds = try XCTUnwrap(document.page(at: 0)).bounds(for: .mediaBox)
+        XCTAssertLessThan(bounds.width, bounds.height)
+        for expected in ["第1局上", "第1局下", "保送", "偷垒", "二垒安打", "界外", "打席未完成"] {
+            XCTAssertTrue(text.contains(expected), expected)
+        }
+        let first = try XCTUnwrap(text.range(of: "第 1 打席"))
+        let last = try XCTUnwrap(text.range(of: "第 6 打席"))
+        XCTAssertLessThan(first.lowerBound, last.lowerBound)
+        for excluded in ["打席索引", "打席前", "B/S/O", "事件后垒况", "事件过程"] {
+            XCTAssertFalse(text.contains(excluded), excluded)
+        }
+        let single = try reportText(report.pdfData(appearanceID: report.entries[0].appearance.id, style: .textOnly), portrait: true)
+        XCTAssertTrue(single.contains("保送"))
+        XCTAssertFalse(single.contains("二垒安打"))
+        let file = try report.write(style: .textOnly)
+        XCTAssertTrue(file.lastPathComponent.contains("文字简版"))
+        XCTAssertNotNil(PDFDocument(url: file))
+        try data.write(to: reportSampleDirectory().appendingPathComponent("play-by-play-text-report.pdf"))
+    }
+
+    func testTextOnlyPlayByPlayHandlesLongDescriptionsReviewsAndEmptyRecords() throws {
+        let store = freshStore()
+        for _ in 0..<150 { store.recordPitch(.foul) }
+        store.applyPlay(.pending)
+        let report = PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: nil)
+        let data = report.pdfData(style: .textOnly)
+        let document = try XCTUnwrap(PDFDocument(data: data))
+        XCTAssertGreaterThan(document.pageCount, 1)
+        let text = try reportText(data, portrait: true)
+        XCTAssertTrue(text.contains("(续)"))
+        XCTAssertTrue(text.contains("待确认"))
+        XCTAssertTrue(try XCTUnwrap(document.page(at: document.pageCount - 1)?.string).contains("待确认"))
+        try data.write(to: reportSampleDirectory().appendingPathComponent("play-by-play-text-stress.pdf"))
+        let empty = PlayByPlayPDFReport(game: store.game, appearances: [], playedAt: nil)
+        XCTAssertTrue(try reportText(empty.pdfData(style: .textOnly), portrait: true).contains("暂无可导出的打席文字记录"))
+    }
+
+    func testGeneratePlayByPlayAndPosterPresentationSamples() throws {
+        let store = freshStore()
+        store.recordPitch(.ball); store.recordPitch(.foul); store.applyPlay(.single)
+        store.recordPitch(.calledStrike)
+        store.recordRunnerEvent(.stolenBase, decisions: store.suggestedRunnerEventDecisions(for: .stolenBase))
+        store.applyPlay(.double)
+        store.applyPlay(.pending)
+        let report = PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: store.activeGameRecordedAt)
+        let directory = try reportSampleDirectory()
+        try report.pdfData().write(to: directory.appendingPathComponent("play-by-play-report.pdf"))
+        let game = try XCTUnwrap(store.activeStoredGame)
+        let poster = GamePoster(game: game, venue: "青岛市体育中心 · 棒球场", note: "请队员提前 30 分钟到场热身\n欢迎家长和朋友到场观赛")
+        let image = poster.image()
+        XCTAssertEqual(image.size.width, 1080)
+        XCTAssertEqual(image.size.height, 1440)
+        try XCTUnwrap(image.pngData()).write(to: directory.appendingPathComponent("match-notice-poster.png"))
+        XCTAssertEqual(try poster.write().pathExtension, "png")
+    }
+
+    func testLargeSeasonAggregationAndBackupPerformance() throws {
+        let store = freshStore()
+        for _ in 0..<50 { store.recordPitch(.foul) }
+        store.finishGame()
+        let state = store.game
+        store.games = (0..<150).map { _ in
+            StoredGame(seasonID: store.seasons[0].id, ourTeamID: store.currentTeam.id, opponentTeamID: store.opponentTeams[0].id,
+                       isHome: false, rules: GameRules(), lineup: [], status: .completed, state: state)
+        }
+        let options = XCTMeasureOptions(); options.iterationCount = 3
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
+            XCTAssertEqual(store.seasonStatistics(for: store.currentTeam, seasonID: store.seasons[0].id).games.count, 150)
+            do { _ = try LocalBackup.read(store.exportBackup()) }
+            catch { XCTFail(error.localizedDescription) }
+        }
+    }
+
     private func freshStore() -> GameStore {
         let store = GameStore(persistenceURL: nil)
         store.startNewGame(
@@ -1115,6 +1330,10 @@ final class GameStoreTests: XCTestCase {
         XCTAssertEqual(migrated.team(withID: teamID)?.name, "旧版球队")
         XCTAssertFalse(migrated.opponentTeams.isEmpty)
         XCTAssertTrue(migrated.games.isEmpty)
+        for opponent in migrated.opponentTeams { XCTAssertTrue(migrated.deleteOpponentTeam(id: opponent.id)) }
+        let reloaded = GameStore(persistenceURL: databaseURL)
+        XCTAssertFalse(reloaded.requiresDataRecovery)
+        XCTAssertTrue(reloaded.opponentTeams.isEmpty, "Migration defaults must only be seeded once")
     }
 
     func testArbitraryFielderReplacementUpdatesDefenseBattingSlotAndExitState() throws {
@@ -1423,7 +1642,7 @@ final class GameStoreTests: XCTestCase {
         let document = try XCTUnwrap(PDFDocument(data: pdf))
         XCTAssertGreaterThanOrEqual(document.pageCount, 1)
         for pageIndex in 0..<document.pageCount {
-            XCTAssertTrue(document.page(at: pageIndex)?.string?.contains("OFFICIAL BOX SCORE") == true)
+            XCTAssertTrue(document.page(at: pageIndex)?.string?.contains("BOX SCORE") == true)
         }
         let extractedPDFText = (0..<document.pageCount)
             .compactMap { document.page(at: $0)?.string }
@@ -1439,6 +1658,361 @@ final class GameStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: pdfURL.path))
         XCTAssertEqual(textURL.pathExtension, "txt")
         XCTAssertEqual(pdfURL.pathExtension, "pdf")
+    }
+
+    private func reportText(_ data: Data, portrait: Bool = false) throws -> String {
+        let document = try XCTUnwrap(PDFDocument(data: data))
+        XCTAssertGreaterThan(document.pageCount, 0)
+        for index in 0..<document.pageCount {
+            let page = try XCTUnwrap(document.page(at: index))
+            XCTAssertEqual(page.bounds(for: .mediaBox).width, portrait ? 595 : 842, accuracy: 0.1)
+            XCTAssertEqual(page.bounds(for: .mediaBox).height, portrait ? 842 : 595, accuracy: 0.1)
+            XCTAssertTrue(page.string?.contains("第 \(index + 1) 页") == true)
+        }
+        return (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.joined(separator: "\n")
+    }
+
+    func testTeamSeasonPDFContainsOnlySelectedTeamSeasonAndAllCategories() throws {
+        let store = GameStore(persistenceURL: nil)
+        let player = store.currentTeam.players[0]
+        var included = statisticsGame(store: store)
+        included.state.batting[player.id] = BattingLine(plateAppearances: 4, atBats: 3, hits: 2, doubles: 1, walks: 1)
+        included.state.pitching[player.id] = PitchingLine(outsRecorded: 4, strikeouts: 3)
+        included.state.fielding[player.id] = FieldingLine(putouts: 1, assists: 2)
+        var excluded = statisticsGame(store: store, seasonID: "excluded-season")
+        excluded.state.awayTeam.name = "不应导出的其他赛季对手"
+        store.games = [included, excluded]
+        let report = TeamSeasonPDFReport(store: store, team: store.currentTeam, seasonID: store.seasons[0].id)
+        let text = try reportText(report.pdfData())
+        XCTAssertTrue(text.contains("SEASON REPORT"))
+        XCTAssertTrue(text.contains("BATTING"))
+        XCTAssertTrue(text.contains("PITCHING"))
+        XCTAssertTrue(text.contains("FIELDING"))
+        XCTAssertTrue(text.contains("GAME LOG"))
+        XCTAssertTrue(text.contains(player.name))
+        XCTAssertTrue(text.contains(".667"))
+        XCTAssertFalse(text.contains("不应导出"))
+        XCTAssertTrue(text.contains("ERA 按 7 局"))
+        XCTAssertEqual(report.summary.games.count, 1)
+    }
+
+    func testPlayerPDFHonorsSelectedGamesAndPreservesUnknownLegacyStatistics() throws {
+        let store = GameStore(persistenceURL: nil)
+        let player = store.currentTeam.players[0]
+        let seasonID = store.seasons[0].id
+        var included = statisticsGame(store: store)
+        included.state.batting[player.id] = BattingLine(plateAppearances: 4, atBats: 4, hits: 3)
+        included.state.pitching[player.id] = PitchingLine(outsRecorded: 5, strikeouts: 3)
+        var excluded = statisticsGame(store: store)
+        excluded.state.awayTeam.name = "未选中的对手不应导出"
+        store.games = [included, excluded]
+        let legacy = PlayerGameRecord(playerID: player.id, seasonID: seasonID, date: Date(), opponent: "旧版对手", result: "胜", batting: BattingLine(atBats: 2, hits: 1))
+        store.playerGameRecords = [legacy]
+        let report = PlayerStatisticsPDFReport(store: store, player: player, seasonID: seasonID,
+                                               teamID: store.currentTeam.id, gameIDs: [included.id, legacy.id])
+        let text = try reportText(report.pdfData())
+        XCTAssertTrue(text.contains("已选 2 / 3"))
+        XCTAssertTrue(text.contains("旧版个人打击记录"))
+        XCTAssertTrue(text.contains("旧版对手"))
+        XCTAssertFalse(text.contains("未选中的对手"))
+        XCTAssertEqual(report.summary.batting.hits, 4)
+        XCTAssertEqual(report.summary.pitching.outsRecorded, 5)
+        let empty = PlayerStatisticsPDFReport(store: store, player: player, seasonID: seasonID, teamID: nil, gameIDs: [])
+        let emptyText = try reportText(empty.pdfData())
+        XCTAssertTrue(emptyText.contains("已选 0 / 3"))
+        XCTAssertTrue(emptyText.contains("暂无符合当前范围的记录"))
+        XCTAssertFalse(emptyText.localizedCaseInsensitiveContains("nan"))
+    }
+
+    func testReportPaginationRepeatsHeadersAndPreservesLongChineseNames() throws {
+        let store = GameStore(persistenceURL: nil)
+        for index in 0..<65 {
+            _ = store.addPlayer(to: store.currentTeam.id, chineseName: "长名单球员第\(index)位测试姓名末尾", englishName: "Long Name \(index)", numbers: [index + 100])
+        }
+        var game = statisticsGame(store: store)
+        for player in store.currentTeam.players {
+            game.state.batting[player.id] = BattingLine(plateAppearances: 2, atBats: 2, hits: 1)
+        }
+        store.games = [game]
+        let data = TeamSeasonPDFReport(store: store, team: store.currentTeam, seasonID: store.seasons[0].id).pdfData()
+        let document = try XCTUnwrap(PDFDocument(data: data))
+        let text = try reportText(data)
+        let compact = text.filter { !$0.isWhitespace }
+        XCTAssertGreaterThan(document.pageCount, 4)
+        XCTAssertTrue(compact.contains("长名单球员第64位测试姓名末尾"))
+        XCTAssertTrue(text.contains("(续)"))
+        XCTAssertGreaterThan(text.components(separatedBy: "OPS").count, 3)
+        let totalPage = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.first { $0.contains("合计") }
+        XCTAssertTrue(totalPage?.contains("宋知远") == true, "合计行应与最后一名球员保持在同一页")
+        let directory = try reportSampleDirectory()
+        try data.write(to: directory.appendingPathComponent("pagination-stress.pdf"))
+    }
+
+    func testBoxScorePDFSplitsLongExtraInningsWithoutShrinkingColumns() throws {
+        let store = freshStore()
+        store.game.inning = 30
+        store.game.isTop = false
+        store.game.awayRunsByInning = Array(repeating: 0, count: 30)
+        store.game.homeRunsByInning = Array(repeating: 0, count: 30)
+        store.game.awayRunsByInning[29] = 2
+        store.finishGame()
+        let data = GameBoxScorePDFReport(game: store.game, rules: store.activeRules, playedAt: store.activeGameRecordedAt).pdfData()
+        let text = try reportText(data)
+        XCTAssertTrue(text.contains("1-12"))
+        XCTAssertTrue(text.contains("13-24"))
+        XCTAssertTrue(text.contains("25-30"))
+        XCTAssertTrue(text.contains("BOX SCORE"))
+        try data.write(to: reportSampleDirectory().appendingPathComponent("extra-innings-stress.pdf"))
+    }
+
+    func testReportFilesSanitizeNamesAndNeverOverwritePreviousExports() throws {
+        let first = try ReportExportFile.write(Data("first".utf8), name: "球队/测试:球员\n报告")
+        let second = try ReportExportFile.write(Data("second".utf8), name: "球队/测试:球员\n报告")
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(first.lastPathComponent, second.lastPathComponent)
+        XCTAssertFalse(first.lastPathComponent.contains(":"))
+        XCTAssertFalse(first.lastPathComponent.contains("\n"))
+        XCTAssertEqual(try Data(contentsOf: first), Data("first".utf8))
+        XCTAssertEqual(try Data(contentsOf: second), Data("second".utf8))
+        let long = try ReportExportFile.write(Data("long".utf8), name: String(repeating: "中文球队⚾️", count: 50))
+        XCTAssertLessThanOrEqual(long.lastPathComponent.utf8.count, 184)
+        XCTAssertEqual(try Data(contentsOf: long), Data("long".utf8))
+    }
+
+    private func reportSampleDirectory() throws -> URL {
+        let documents = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
+        let directory = documents.appendingPathComponent("PDFValidation", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    func testGeneratePresentationPDFSamplesFromRecordedGames() throws {
+        let store = GameStore(persistenceURL: nil)
+        store.updateTeam(id: store.currentTeam.id, name: "青岛海浪（示例数据）", shortName: "海浪", city: "青岛")
+        let lineup = Array(store.currentTeam.players.prefix(9))
+        store.startNewGame(opponent: store.opponentTeams[0], isHome: false, innings: 6, lineup: lineup)
+        store.recordPitch(.ball)
+        store.applyPlay(.single)
+        store.applyPlay(.homeRun)
+        for _ in 0..<3 { store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays[0]) }
+        store.applyPlay(.single)
+        for _ in 0..<3 { store.recordPitch(.swingingStrike) }
+        for _ in 0..<2 { store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays[0]) }
+        store.finishGame()
+        let directory = try reportSampleDirectory()
+        let teamData = TeamSeasonPDFReport(store: store, team: store.currentTeam, seasonID: store.seasons[0].id).pdfData()
+        let personalData = PlayerStatisticsPDFReport(store: store, player: lineup[0], seasonID: store.seasons[0].id,
+                                                     teamID: store.currentTeam.id, gameIDs: Set(store.games.map(\.id))).pdfData()
+        let boxData = GameExportService(game: store.game, rules: store.activeRules, plateAppearances: store.plateAppearanceRecords(),
+                                        gameEvents: store.nonPlateAppearanceGameEvents(), playedAt: store.activeGameRecordedAt).boxScorePDFData()
+        for (name, data) in [("team-season-report.pdf", teamData), ("player-report.pdf", personalData), ("game-box-score.pdf", boxData)] {
+            XCTAssertTrue(try reportText(data).contains("青岛海浪"))
+            try data.write(to: directory.appendingPathComponent(name))
+        }
+    }
+
+    private func statisticsGame(
+        store: GameStore, team: Team? = nil, seasonID: String? = nil,
+        isHome: Bool = true, status: StoredGameStatus = .completed,
+        observation: Bool = false, runs: Int = 3, allowed: Int = 1
+    ) -> StoredGame {
+        let ours = team ?? store.currentTeam
+        let opponent = store.opponentTeams[0]
+        var state = GameState(homeTeam: isHome ? ours : opponent, awayTeam: isHome ? opponent : ours)
+        state.isFinal = status == .completed
+        state.homeRunsByInning[0] = isHome ? runs : allowed
+        state.awayRunsByInning[0] = isHome ? allowed : runs
+        return StoredGame(
+            seasonID: seasonID ?? store.seasons[0].id, ourTeamID: ours.id,
+            opponentTeamID: opponent.id, isHome: isHome, isSpectator: observation,
+            rules: GameRules(), lineup: [], status: status, state: state
+        )
+    }
+
+    func testStatisticsExcludeOtherTeamsSeasonsObservationAndUnfinishedGames() {
+        let store = GameStore(persistenceURL: nil)
+        let other = Team(name: "其他球队", shortName: "其他", city: "", players: [])
+        store.games = [
+            statisticsGame(store: store, runs: 4, allowed: 1),
+            statisticsGame(store: store, isHome: false, runs: 2, allowed: 3),
+            statisticsGame(store: store, runs: 1, allowed: 1),
+            statisticsGame(store: store, team: other),
+            statisticsGame(store: store, seasonID: store.seasons[1].id),
+            statisticsGame(store: store, status: .ongoing),
+            statisticsGame(store: store, status: .scheduled),
+            statisticsGame(store: store, observation: true)
+        ]
+        let summary = store.seasonStatistics(for: store.currentTeam, seasonID: store.seasons[0].id)
+        XCTAssertEqual(summary.games.count, 3)
+        XCTAssertEqual(summary.wins, 1)
+        XCTAssertEqual(summary.losses, 1)
+        XCTAssertEqual(summary.ties, 1)
+        XCTAssertEqual(summary.runs, 7)
+        XCTAssertEqual(summary.runsAllowed, 5)
+    }
+
+    func testStatisticsAggregateRawTotalsBeforeCalculatingRatesAndInnings() throws {
+        let store = GameStore(persistenceURL: nil)
+        let player = store.currentTeam.players[0]
+        var first = statisticsGame(store: store)
+        var second = statisticsGame(store: store, isHome: false)
+        first.state.batting[player.id] = BattingLine(plateAppearances: 2, atBats: 1, hits: 1, walks: 1)
+        second.state.batting[player.id] = BattingLine(plateAppearances: 3, atBats: 3, hits: 1, doubles: 1)
+        first.state.pitching[player.id] = PitchingLine(outsRecorded: 2, hits: 1, earnedRuns: 1, walks: 1, pitches: 20)
+        second.state.pitching[player.id] = PitchingLine(outsRecorded: 2, hits: 1, earnedRuns: 1, pitches: 12)
+        first.state.fielding[player.id] = FieldingLine(putouts: 1, assists: 1, errors: 1)
+        second.state.fielding[player.id] = FieldingLine(putouts: 3, assists: 3)
+        // Opponent contributions must never leak into team totals.
+        first.state.batting[store.opponentTeams[0].players[0].id] = BattingLine(atBats: 20, hits: 20)
+        store.games = [first, second]
+        let summary = store.seasonStatistics(for: store.currentTeam, seasonID: store.seasons[0].id)
+        XCTAssertEqual(summary.batting.average, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(summary.batting.onBasePercentage, 0.6, accuracy: 0.0001)
+        XCTAssertEqual(summary.batting.slugging, 0.75, accuracy: 0.0001)
+        XCTAssertEqual(summary.batting.ops, 1.35, accuracy: 0.0001)
+        XCTAssertEqual(summary.pitching.inningsText, "1.1")
+        XCTAssertEqual(summary.pitching.era, 10.5, accuracy: 0.0001)
+        XCTAssertEqual(summary.pitching.whip, 2.25, accuracy: 0.0001)
+        XCTAssertEqual(summary.pitching.pitches, 32)
+        XCTAssertEqual(try XCTUnwrap(summary.fielding.percentage), 8.0 / 9.0, accuracy: 0.0001)
+    }
+
+    func testStatisticsKeepDeletedAndSubstitutedPlayersWithoutCountingUnusedBench() throws {
+        let store = GameStore(persistenceURL: nil)
+        let removed = store.currentTeam.players[0]
+        let benchID = try XCTUnwrap(store.addPlayer(to: store.currentTeam.id, chineseName: "未上场替补", englishName: "", numbers: [99]))
+        var stored = statisticsGame(store: store)
+        stored.state.homeBattingOrderIDs.removeAll { $0 == benchID || $0 == removed.id }
+        stored.state.homeExitedPlayerIDs = [removed.id]
+        stored.state.batting[removed.id] = BattingLine(plateAppearances: 1, atBats: 1, hits: 1)
+        store.games = [stored]
+        store.deletePlayer(from: store.currentTeam.id, playerID: removed.id)
+        let summary = store.seasonStatistics(for: store.currentTeam, seasonID: store.seasons[0].id)
+        let historical = try XCTUnwrap(summary.players.first { $0.id == removed.id })
+        XCTAssertFalse(historical.isCurrentRoster)
+        XCTAssertEqual(historical.gamesPlayed, 1)
+        XCTAssertEqual(historical.batting.hits, 1)
+        XCTAssertEqual(summary.players.first { $0.id == benchID }?.gamesPlayed, 0)
+        XCTAssertEqual(summary.batting.hits, 1)
+    }
+
+    func testStatisticsFiltersAndSortsUndefinedRatesLastInEitherDirection() {
+        let ace = Player(chineseName: "投手甲", englishName: "Ace", numbers: [7, 17])
+        let rookie = Player(chineseName: "投手乙", englishName: "Rookie", numbers: [8])
+        let idle = Player(chineseName: "替补", englishName: "Bench", numbers: [9])
+        let rows = [
+            PlayerSeasonStatistics(player: rookie, pitching: PitchingLine(earnedRuns: 2, pitches: 10)),
+            PlayerSeasonStatistics(player: ace, pitching: PitchingLine(outsRecorded: 3, strikeouts: 2, pitches: 12)),
+            PlayerSeasonStatistics(player: idle)
+        ]
+        let summary = TeamSeasonStatistics(games: [], players: rows)
+        for ascending in [true, false] {
+            let ordered = summary.filteredPlayers(category: .pitching, metric: .era, ascending: ascending)
+            XCTAssertEqual(ordered.map(\.id), [ace.id, rookie.id])
+        }
+        XCTAssertEqual(summary.filteredPlayers(category: .pitching, metric: .pitches, ascending: false).map(\.id), [ace.id, rookie.id])
+        XCTAssertEqual(summary.filteredPlayers(category: .pitching, metric: .pitches, ascending: true).map(\.id), [rookie.id, ace.id])
+        XCTAssertEqual(summary.filteredPlayers(category: .pitching, metric: .era, ascending: true, query: "ace").map(\.id), [ace.id])
+        XCTAssertEqual(summary.filteredPlayers(category: .pitching, metric: .era, ascending: true, query: "17").map(\.id), [ace.id])
+        XCTAssertEqual(summary.filteredPlayers(category: .batting, metric: .hits, ascending: false).count, 0)
+        XCTAssertEqual(summary.filteredPlayers(category: .batting, metric: .hits, ascending: false, recordsOnly: false).count, 3)
+        XCTAssertEqual(StatisticsMetric.era.formattedValue(for: rows[0]), "—")
+        XCTAssertNil(rows[2].fielding.percentage)
+    }
+
+    func testStatisticsPlayerDetailsPreserveSelectedGamesAndLegacyBatting() {
+        let store = GameStore(persistenceURL: nil)
+        let player = store.currentTeam.players[0]
+        let seasonID = store.seasons[0].id
+        var first = statisticsGame(store: store)
+        var second = statisticsGame(store: store)
+        first.state.batting[player.id] = BattingLine(atBats: 2, hits: 1)
+        first.state.pitching[player.id] = PitchingLine(outsRecorded: 3, strikeouts: 2)
+        first.state.fielding[player.id] = FieldingLine(putouts: 1)
+        second.state.batting[player.id] = BattingLine(atBats: 3, hits: 2)
+        second.state.pitching[player.id] = PitchingLine(outsRecorded: 6, strikeouts: 3)
+        store.games = [first, second]
+        let legacy = PlayerGameRecord(playerID: player.id, seasonID: seasonID, date: Date(), opponent: "旧对手", result: "胜", batting: BattingLine(atBats: 4, hits: 1))
+        store.playerGameRecords = [legacy]
+        let records = store.gameRecords(for: player, seasonID: seasonID)
+        XCTAssertEqual(records.count, 3)
+        let selected = store.playerStatistics(for: player, seasonID: seasonID, gameIDs: [first.id])
+        XCTAssertEqual(selected.batting.hits, 1)
+        XCTAssertEqual(selected.pitching.strikeouts, 2)
+        XCTAssertEqual(selected.fielding.putouts, 1)
+        XCTAssertEqual(store.playerStatistics(for: player, seasonID: seasonID, gameIDs: []).batting.hits, 0)
+        XCTAssertEqual(store.seasonStatistics(for: store.currentTeam, seasonID: seasonID).batting.hits, 3)
+        // Opening an already-counted completed game must not add it again.
+        store.openGame(id: first.id)
+        XCTAssertEqual(store.seasonBattingLine(for: player).hits, 4)
+    }
+
+    func testStatisticsFinishingAndReloadingGameUpdatesOverviewAndPlayerDetails() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("statistics.sqlite")
+        let store = GameStore(persistenceURL: url)
+        let player = store.currentTeam.players[0]
+        let seasonID = store.seasons[0].id
+        store.startNewGame(opponent: store.opponentTeams[0], isHome: false, innings: 6, lineup: Array(store.currentTeam.players.prefix(9)))
+        store.applyPlay(.homeRun)
+        XCTAssertTrue(store.gameRecords(for: player, seasonID: seasonID).isEmpty)
+        store.finishGame()
+        let reloaded = GameStore(persistenceURL: url)
+        let summary = reloaded.seasonStatistics(for: reloaded.currentTeam, seasonID: seasonID)
+        XCTAssertEqual(summary.games.count, 1)
+        XCTAssertEqual(summary.wins, 1)
+        XCTAssertEqual(summary.runs, 1)
+        XCTAssertEqual(summary.batting.homeRuns, 1)
+        XCTAssertEqual(reloaded.gameRecords(for: player, seasonID: seasonID).first?.batting.homeRuns, 1)
+        XCTAssertEqual(reloaded.seasonBattingLine(for: player).homeRuns, 1)
+        XCTAssertEqual(reloaded.recordedPlayerGameCount, 9)
+        XCTAssertTrue(reloaded.deleteGame(id: summary.games[0].id))
+        let afterDeletion = GameStore(persistenceURL: url)
+        XCTAssertTrue(afterDeletion.gameRecords(for: player, seasonID: seasonID).isEmpty)
+        XCTAssertEqual(afterDeletion.recordedPlayerGameCount, 0)
+        XCTAssertEqual(afterDeletion.seasonStatistics(for: afterDeletion.currentTeam, seasonID: seasonID).batting.homeRuns, 0)
+    }
+
+    func testStatisticsPostGameReviewPersistsAndRefreshesTotals() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("review.sqlite")
+        let store = GameStore(persistenceURL: url)
+        let player = store.currentTeam.players[0]
+        let seasonID = store.seasons[0].id
+        store.startNewGame(opponent: store.opponentTeams[0], isHome: false, innings: 6, lineup: Array(store.currentTeam.players.prefix(9)))
+        store.applyPlay(.pending)
+        store.finishGame()
+        let gameID = try XCTUnwrap(store.games.first?.id)
+        let reloaded = GameStore(persistenceURL: url)
+        reloaded.openGame(id: gameID)
+        let event = try XCTUnwrap(reloaded.game.scoringEvents?.first(where: \.needsReview))
+        XCTAssertEqual(reloaded.seasonStatistics(for: reloaded.currentTeam, seasonID: seasonID).pendingCount, 1)
+        XCTAssertTrue(reloaded.reviewPendingEvent(
+            id: event.id, title: "复核为一垒安打", category: event.category,
+            notation: "1B", primaryPlayerID: event.primaryPlayerID, secondaryPlayerID: nil,
+            ballStatus: event.ballStatus, resolvedOutcome: .single, note: "录像确认"
+        ))
+        let finalStore = GameStore(persistenceURL: url)
+        let summary = finalStore.seasonStatistics(for: finalStore.currentTeam, seasonID: seasonID)
+        XCTAssertEqual(summary.pendingCount, 0)
+        XCTAssertEqual(summary.batting.hits, 1)
+        XCTAssertEqual(finalStore.gameRecords(for: player, seasonID: seasonID).first?.batting.hits, 1)
+    }
+
+    func testStatisticsExposeUnknownHistoricalSeasonsAndEmptyStates() {
+        let store = GameStore(persistenceURL: nil)
+        store.games = [statisticsGame(store: store, seasonID: "2024-local")]
+        XCTAssertEqual(store.statisticsSeasons.last?.id, "2024-local")
+        let summary = store.seasonStatistics(for: store.currentTeam, seasonID: store.seasons[0].id)
+        XCTAssertEqual(summary.games.count, 0)
+        XCTAssertEqual(summary.wins, 0)
+        XCTAssertEqual(summary.batting, BattingLine())
+        XCTAssertEqual(summary.pitching, PitchingLine())
+        XCTAssertEqual(summary.fielding, FieldingLine())
+        let emptyTeam = Team(name: "空队", shortName: "空队", city: "", players: [])
+        XCTAssertTrue(store.seasonStatistics(for: emptyTeam, seasonID: store.seasons[0].id).players.isEmpty)
     }
 
     private func makeV1TestModel() -> NSManagedObjectModel {

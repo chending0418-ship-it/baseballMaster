@@ -111,6 +111,15 @@ struct ScorekeepingView: View {
                 .accessibilityLabel("棒球规则")
             }
             ToolbarItem(placement: .topBarTrailing) {
+                if let stored = store.activeStoredGame {
+                    NavigationLink(destination: GamePosterView(game: stored)) {
+                        Image(systemName: "photo.badge.plus")
+                    }
+                    .accessibilityLabel("比赛宣传海报")
+                    .accessibilityIdentifier("open-game-poster")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(destination: BoxScoreView()) {
                     Text("比赛结果")
                         .font(.system(size: 14, weight: .bold))
@@ -330,6 +339,8 @@ struct ScorekeepingView: View {
                     .frame(width: 8, height: 8)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(value)\(label == "B" ? "坏球" : label == "S" ? "好球" : "出局")")
     }
 
     private var matchupBar: some View {
@@ -357,14 +368,16 @@ struct ScorekeepingView: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label)，\(player.number)号，\(player.name)")
     }
 
     private var pitchControls: some View {
         VStack(spacing: 7) {
             HStack(spacing: 7) {
-                pitchButton(.ball, color: BMTheme.green)
-                pitchButton(.calledStrike, color: BMTheme.orange)
-                pitchButton(.swingingStrike, color: BMTheme.orange)
+                pitchButton(.ball, color: BMTheme.brandGreen)
+                pitchButton(.calledStrike, color: BMTheme.brandOrange)
+                pitchButton(.swingingStrike, color: BMTheme.brandOrange)
                 pitchButton(.foul, color: BMTheme.brandNavy)
             }
             Button {
@@ -377,7 +390,7 @@ struct ScorekeepingView: View {
                         .font(.system(size: 12, weight: .semibold))
                 }
             }
-            .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green, filled: true))
+            .buttonStyle(ScoreActionButtonStyle(color: BMTheme.brandGreen, filled: true))
             .accessibilityIdentifier("ball-in-play")
         }
     }
@@ -420,7 +433,7 @@ struct ScorekeepingView: View {
                     NavigationLink(destination: BoxScoreView()) {
                         Label("查看结果", systemImage: "tablecells")
                     }
-                    .buttonStyle(PrimaryButtonStyle(color: BMTheme.green))
+                    .buttonStyle(PrimaryButtonStyle(color: BMTheme.brandGreen))
                 }
             }
         }
@@ -1313,7 +1326,7 @@ private struct ScoreActionButtonStyle: ButtonStyle {
             .foregroundStyle(filled ? Color.white : color)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
-            .frame(maxWidth: .infinity, minHeight: compact ? 36 : 42)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background(
                 filled
                     ? color.opacity(configuration.isPressed ? 0.78 : 1)

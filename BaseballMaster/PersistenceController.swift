@@ -43,6 +43,8 @@ struct RosterSnapshot: Codable {
 @MainActor
 final class CoreDataRosterStore {
     static let schemaVersion = 2
+    private(set) var loadedSchemaVersion: Int?
+    private(set) var migratedLegacySchema = false
 
     private enum Entity {
         static let metadata = "RosterMetadata"
@@ -63,7 +65,7 @@ final class CoreDataRosterStore {
                 at: storeURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            try Self.migrateV1StoreIfNeeded(at: storeURL, destinationModel: managedObjectModel)
+            migratedLegacySchema = try Self.migrateV1StoreIfNeeded(at: storeURL, destinationModel: managedObjectModel)
         }
 
         container = NSPersistentContainer(
@@ -97,7 +99,12 @@ final class CoreDataRosterStore {
 
     func loadSnapshot() throws -> RosterSnapshot? {
         let teamObjects = try fetch(Entity.team, sortedBy: "sortOrder")
-        guard !teamObjects.isEmpty else { return nil }
+        if teamObjects.isEmpty {
+            for entity in [Entity.player, Entity.game, Entity.gameRecord, Entity.season, Entity.metadata] {
+                if try !fetch(entity).isEmpty { throw LocalDataError.invalid("数据库缺少球队但仍有历史数据，原文件已保留。") }
+            }
+            return nil
+        }
 
         let playerObjects = try fetch(Entity.player, sortedBy: "sortOrder")
         let playersByTeam = Dictionary(grouping: playerObjects) { object in
@@ -117,29 +124,44 @@ final class CoreDataRosterStore {
         }
         let teams = decodedTeams.filter { !$0.isOpponent }.map(\.team)
         let opponentTeams = decodedTeams.filter { $0.isOpponent }.map(\.team)
-        guard !teams.isEmpty else { return nil }
+        guard !teams.isEmpty else { throw LocalDataError.invalid("数据库缺少本队，原文件已保留。") }
 
-        let seasons = try fetch(Entity.season, sortedBy: "sortOrder").compactMap { object -> Season? in
+        let seasonObjects = try fetch(Entity.season, sortedBy: "sortOrder")
+        let seasons = seasonObjects.compactMap { object -> Season? in
             guard let id = object.value(forKey: "id") as? String,
                   let name = object.value(forKey: "name") as? String else { return nil }
             return Season(id: id, name: name)
         }
 
-        let records = try fetch(
+        let recordObjects = try fetch(
             Entity.gameRecord,
             sortDescriptors: [NSSortDescriptor(key: "date", ascending: false)]
-        ).compactMap(Self.gameRecord(from:))
+        )
+        let records = recordObjects.compactMap(Self.gameRecord(from:))
+        guard seasons.count == seasonObjects.count, records.count == recordObjects.count else {
+            throw LocalDataError.invalid("赛季或个人统计记录不完整，原数据库已保留。")
+        }
 
         let metadata = try fetch(Entity.metadata).first
         let currentTeamID = metadata?.value(forKey: "currentTeamID") as? UUID ?? teams[0].id
+        loadedSchemaVersion = metadata?.value(forKey: "schemaVersion") as? Int
+        if let version = metadata?.value(forKey: "schemaVersion") as? Int, version > Self.schemaVersion {
+            throw LocalDataError.invalid("此数据库由较新版本创建，请更新 App。")
+        }
         let games = try fetch(
             Entity.game,
             sortDescriptors: [NSSortDescriptor(key: "updatedAt", ascending: false)]
-        ).compactMap { object -> StoredGame? in
-            guard let payload = object.value(forKey: "payloadData") as? Data else { return nil }
-            return try? JSONDecoder().decode(StoredGame.self, from: payload)
+        ).map { object -> StoredGame in
+            guard let payload = object.value(forKey: "payloadData") as? Data else {
+                throw LocalDataError.invalid("比赛记录缺少内容，原数据库已保留。")
+            }
+            return try JSONDecoder().decode(StoredGame.self, from: payload)
         }
-        return RosterSnapshot(
+        guard decodedTeams.count == teamObjects.count,
+              decodedTeams.flatMap({ $0.team.players }).count == playerObjects.count else {
+            throw LocalDataError.invalid("名单记录不完整，原数据库已保留。")
+        }
+        let snapshot = RosterSnapshot(
             teams: teams,
             opponentTeams: opponentTeams,
             currentTeamID: currentTeamID,
@@ -147,6 +169,20 @@ final class CoreDataRosterStore {
             playerGameRecords: records,
             games: games
         )
+        try LocalBackup.validate(snapshot)
+        return snapshot
+    }
+
+    func close() throws {
+        for store in container.persistentStoreCoordinator.persistentStores {
+            try container.persistentStoreCoordinator.remove(store)
+        }
+    }
+
+    static func replaceDatabase(at destination: URL, from source: URL) throws {
+        let coordinator = NSPersistentStoreCoordinator(managedObjectModel: makeManagedObjectModel())
+        try coordinator.replacePersistentStore(at: destination, destinationOptions: nil,
+            withPersistentStoreFrom: source, sourceOptions: nil, ofType: NSSQLiteStoreType)
     }
 
     func replaceAll(with snapshot: RosterSnapshot) throws {
@@ -406,7 +442,14 @@ final class CoreDataRosterStore {
     ) throws -> [NSManagedObject] {
         let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
         request.sortDescriptors = sortDescriptors
-        return try context.fetch(request)
+        // Core Data may log and omit a damaged SQLite row instead of throwing.
+        // Compare with the store's count before treating a partial read as valid.
+        let expected = try context.count(for: request)
+        let objects = try context.fetch(request)
+        guard objects.count == expected else {
+            throw LocalDataError.invalid("数据库存在无法读取的记录，原文件已保留。")
+        }
+        return objects
     }
 
     private static func makeManagedObjectModel() -> NSManagedObjectModel {
@@ -486,15 +529,15 @@ final class CoreDataRosterStore {
     private static func migrateV1StoreIfNeeded(
         at storeURL: URL,
         destinationModel: NSManagedObjectModel
-    ) throws {
-        guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
+    ) throws -> Bool {
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return false }
         let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
             ofType: NSSQLiteStoreType,
             at: storeURL,
             options: nil
         )
         if destinationModel.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata) {
-            return
+            return false
         }
 
         let sourceModel = makeV1ManagedObjectModel()
@@ -536,6 +579,7 @@ final class CoreDataRosterStore {
             throw error
         }
         try? FileManager.default.removeItem(at: temporaryURL)
+        return true
     }
 
     private static func makeV1ManagedObjectModel() -> NSManagedObjectModel {

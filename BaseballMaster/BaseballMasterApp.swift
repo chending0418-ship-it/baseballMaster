@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct BaseballMasterApp: App {
     @StateObject private var store: GameStore
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let isPreviewRun = ProcessInfo.processInfo.arguments.contains { $0.hasSuffix("-preview") }
@@ -13,6 +14,9 @@ struct BaseballMasterApp: App {
         WindowGroup {
             LaunchRouterView()
                 .environmentObject(store)
+                .onChange(of: scenePhase) { phase in
+                    if phase == .background { store.createAutomaticBackup() }
+                }
         }
     }
 }
@@ -25,7 +29,13 @@ struct LaunchRouterView: View {
         let arguments = ProcessInfo.processInfo.arguments
 
         Group {
-            if arguments.contains("--scorekeeping-preview") {
+            if store.requiresDataRecovery {
+                NavigationStack { BackupManagementView() }
+            } else if arguments.contains("--backup-preview") {
+                NavigationStack { BackupManagementView() }
+            } else if arguments.contains("--poster-preview") {
+                GamePosterFixtureView()
+            } else if arguments.contains("--scorekeeping-preview") {
                 ScorekeepingPreviewFixtureView()
             } else if arguments.contains("--scorekeeping-timed-preview") {
                 TimedScorekeepingFixtureView()
@@ -33,6 +43,10 @@ struct LaunchRouterView: View {
                 PendingReviewFixtureView()
             } else if arguments.contains("--tiebreak-preview") {
                 TiebreakPreviewFixtureView()
+            } else if arguments.contains("--statistics-preview") {
+                StatisticsPreviewFixtureView()
+            } else if arguments.contains("--statistics-empty-preview") {
+                NavigationStack { StatsOverviewView() }
             } else if arguments.contains("--team-preview") {
                 NavigationStack {
                     TeamRosterView()
@@ -132,6 +146,52 @@ struct LaunchRouterView: View {
             }
         }
         .preferredColorScheme(AppAppearance(rawValue: appAppearance)?.colorScheme)
+    }
+}
+
+private struct GamePosterFixtureView: View {
+    @EnvironmentObject private var store: GameStore
+    @State private var gameID: UUID?
+    var body: some View {
+        NavigationStack {
+            if let stored = store.games.first(where: { $0.id == gameID }) {
+                GamePosterView(game: stored)
+            } else { ProgressView() }
+        }.onAppear {
+            guard gameID == nil else { return }
+            gameID = store.scheduleGame(ourTeam: store.currentTeam, opponent: store.opponentTeams[0], isHome: false,
+                                        scheduledAt: Date().addingTimeInterval(86400))
+        }
+    }
+}
+
+private struct StatisticsPreviewFixtureView: View {
+    @EnvironmentObject private var store: GameStore
+    @State private var configured = false
+
+    var body: some View {
+        NavigationStack { StatsOverviewView() }
+            .onAppear {
+                guard !configured, let opponent = store.opponentTeams.first else { return }
+                configured = true
+                let lineup = Array(store.currentTeam.players.prefix(9))
+                store.startNewGame(opponent: opponent, isHome: false, innings: 6, lineup: lineup)
+                _ = store.applyPlay(.single)
+                _ = store.applyPlay(.homeRun)
+                for _ in 0..<3 { _ = store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays[0]) }
+                for _ in 0..<3 { store.recordPitch(.swingingStrike) }
+                for _ in 0..<2 { _ = store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays[0]) }
+                store.finishGame()
+
+                store.seasons.swapAt(0, 1)
+                store.startNewGame(opponent: opponent, isHome: true, innings: 6, lineup: lineup)
+                _ = store.applyPlay(.homeRun)
+                for _ in 0..<3 { _ = store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays[0]) }
+                _ = store.applyPlay(.double)
+                store.finishGame()
+                store.seasons.swapAt(0, 1)
+                store.addTeam(name: "新建球队", shortName: "新队", city: "")
+            }
     }
 }
 

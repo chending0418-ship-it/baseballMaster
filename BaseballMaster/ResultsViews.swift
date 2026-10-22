@@ -204,13 +204,23 @@ struct BoxScoreView: View {
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(BMTheme.secondaryText)
                             }
+                            ReportExportButton(title: "导出本打席 · 详细版", identifier: "export-appearance-\(appearance.sequence)", previewTitle: "打席速报") {
+                                try playByPlayReport.write(appearanceID: appearance.id)
+                            }
+                            .font(.subheadline)
+                            .padding(.vertical, 6)
+                            ReportExportButton(title: "导出本打席 · 文字简版", identifier: "export-appearance-text-\(appearance.sequence)", previewTitle: "单打席文字简版") {
+                                try playByPlayReport.write(appearanceID: appearance.id, style: .textOnly)
+                            }
+                            .font(.subheadline)
+                            .padding(.vertical, 6)
                         }
                         Spacer()
                     }
                     .padding(13)
                     .background(BMTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 13))
-                    .accessibilityElement(children: .combine)
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("plate-appearance-\(appearance.sequence)")
                 }
             }
@@ -276,13 +286,20 @@ struct BoxScoreView: View {
                     .buttonStyle(SecondaryButtonStyle(color: BMTheme.green))
                     .accessibilityIdentifier("share-complete-game-record")
 
-                    Button {
-                        prepareShare(.boxScore)
-                    } label: {
-                        Label("分享专业 Box Score", systemImage: "tablecells.fill")
+                    ReportExportButton(title: "预览与分享 Box Score", identifier: "share-box-score", previewTitle: "比赛战报") {
+                        try gameExporter.writeBoxScorePDF()
                     }
-                    .buttonStyle(SecondaryButtonStyle(color: BMTheme.brandNavy))
-                    .accessibilityIdentifier("share-box-score")
+                    .buttonStyle(SecondaryButtonStyle(color: BMTheme.navy))
+
+                    ReportExportButton(title: "逐打席速报 · 详细版", identifier: "share-play-by-play", previewTitle: "逐打席速报") {
+                        try playByPlayReport.write()
+                    }
+                    .buttonStyle(SecondaryButtonStyle(color: BMTheme.green))
+
+                    ReportExportButton(title: "逐打席速报 · 文字简版", identifier: "share-play-by-play-text", previewTitle: "逐打席文字简版") {
+                        try playByPlayReport.write(style: .textOnly)
+                    }
+                    .buttonStyle(SecondaryButtonStyle(color: BMTheme.green))
 
                     Button {
                         prepareShare(.all)
@@ -296,21 +313,27 @@ struct BoxScoreView: View {
         }
     }
 
+    private var gameExporter: GameExportService {
+        GameExportService(game: store.game, rules: store.activeRules,
+                          plateAppearances: store.plateAppearanceRecords(),
+                          gameEvents: store.nonPlateAppearanceGameEvents(), playedAt: store.activeGameRecordedAt)
+    }
+
+    private var playByPlayReport: PlayByPlayPDFReport {
+        PlayByPlayPDFReport(game: store.game, appearances: store.plateAppearanceRecords(), playedAt: store.activeGameRecordedAt)
+    }
+
     private func prepareShare(_ selection: GameExportSelection) {
         do {
-            let exporter = GameExportService(
-                game: store.game,
-                rules: store.activeRules,
-                plateAppearances: store.plateAppearanceRecords(),
-                gameEvents: store.nonPlateAppearanceGameEvents()
-            )
+            let exporter = gameExporter
             switch selection {
             case .completeRecord:
                 shareURLs = [try exporter.writeCompleteRecord()]
             case .boxScore:
                 shareURLs = [try exporter.writeBoxScorePDF()]
             case .all:
-                shareURLs = [try exporter.writeCompleteRecord(), try exporter.writeBoxScorePDF()]
+                shareURLs = [try exporter.writeCompleteRecord(), try exporter.writeBoxScorePDF(), try playByPlayReport.write(),
+                             try playByPlayReport.write(style: .textOnly)]
             }
             showShareSheet = true
         } catch {
@@ -475,11 +498,13 @@ struct ActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
+@MainActor
 struct GameExportService {
     let game: GameState
     let rules: GameRules?
     let plateAppearances: [PlateAppearanceRecord]
     let gameEvents: [ScoringEventRecord]
+    var playedAt: Date? = nil
 
     func completeRecordText() -> String {
         var lines: [String] = []
@@ -569,134 +594,7 @@ struct GameExportService {
     }
 
     func boxScorePDFData() -> Data {
-        let page = CGRect(x: 0, y: 0, width: 595, height: 842)
-        let renderer = UIGraphicsPDFRenderer(bounds: page)
-        return renderer.pdfData { context in
-            var y: CGFloat = 0
-
-            func beginPage() {
-                context.beginPage()
-                y = 34
-                drawText("BaseballMaster · OFFICIAL BOX SCORE", x: 36, y: y, width: 523, font: .boldSystemFont(ofSize: 15), color: .black)
-                y += 26
-            }
-            func ensure(_ height: CGFloat) {
-                if y + height > page.height - 34 { beginPage() }
-            }
-            func heading(_ text: String) {
-                ensure(30)
-                y += 8
-                drawText(text, x: 36, y: y, width: 523, font: .boldSystemFont(ofSize: 12), color: UIColor(red: 0.04, green: 0.16, blue: 0.25, alpha: 1))
-                y += 20
-            }
-            func row(_ values: [String], widths: [CGFloat], header: Bool = false) {
-                ensure(20)
-                var x: CGFloat = 36
-                let background = header ? UIColor(white: 0.91, alpha: 1) : UIColor.white
-                background.setFill()
-                UIBezierPath(rect: CGRect(x: 36, y: y, width: widths.reduce(0, +), height: 20)).fill()
-                for index in values.indices {
-                    drawText(
-                        values[index],
-                        x: x + 3,
-                        y: y + 4,
-                        width: widths[index] - 6,
-                        font: header ? .boldSystemFont(ofSize: 7.5) : .systemFont(ofSize: 7.5),
-                        color: .black,
-                        alignment: index == 0 ? .left : .center
-                    )
-                    x += widths[index]
-                }
-                UIColor(white: 0.82, alpha: 1).setStroke()
-                let line = UIBezierPath()
-                line.move(to: CGPoint(x: 36, y: y + 20))
-                line.addLine(to: CGPoint(x: 36 + widths.reduce(0, +), y: y + 20))
-                line.stroke()
-                y += 20
-            }
-            func table(
-                title: String,
-                headers: [String],
-                widths: [CGFloat],
-                rows: [[String]]
-            ) {
-                // Keep the title, column header and first data row together.
-                // When a long roster crosses a page, repeat that context so
-                // the exported sheet remains readable on its own.
-                ensure(rows.isEmpty ? 48 : 68)
-                heading(title)
-                row(headers, widths: widths, header: true)
-                for values in rows {
-                    if y + 20 > page.height - 34 {
-                        beginPage()
-                        heading("\(title) · CONTINUED")
-                        row(headers, widths: widths, header: true)
-                    }
-                    row(values, widths: widths)
-                }
-            }
-
-            beginPage()
-            drawText("\(game.awayTeam.name)  \(game.awayScore)  —  \(game.homeScore)  \(game.homeTeam.name)", x: 36, y: y, width: 523, font: .boldSystemFont(ofSize: 21), color: .black)
-            y += 30
-            drawText(game.isFinal ? (game.endReason?.rawValue ?? "比赛结束") : "比赛记录中", x: 36, y: y, width: 523, font: .systemFont(ofSize: 10), color: .darkGray)
-            y += 22
-
-            let inningCount = max(game.homeRunsByInning.count, game.awayRunsByInning.count, 1)
-            let availableInningWidth = CGFloat(523 - 90 - 90)
-            let inningWidth = min(CGFloat(25), availableInningWidth / CGFloat(inningCount))
-            let inningWidths = Array(repeating: inningWidth, count: inningCount)
-            let scoreWidths = [CGFloat(90)] + inningWidths + [30, 30, 30]
-            let awayInnings = game.awayRunsByInning + Array(repeating: 0, count: inningCount - game.awayRunsByInning.count)
-            let homeInnings = game.homeRunsByInning + Array(repeating: 0, count: inningCount - game.homeRunsByInning.count)
-            table(
-                title: "LINE SCORE",
-                headers: ["TEAM"] + Array(1...inningCount).map(String.init) + ["R", "H", "E"],
-                widths: scoreWidths,
-                rows: [
-                    [game.awayTeam.shortName] + awayInnings.map(String.init) + ["\(game.awayScore)", "\(game.awayHits)", "\(game.awayErrors)"],
-                    [game.homeTeam.shortName] + homeInnings.map(String.init) + ["\(game.homeScore)", "\(game.homeHits)", "\(game.homeErrors)"]
-                ]
-            )
-
-            for team in [game.awayTeam, game.homeTeam] {
-                let battingWidths: [CGFloat] = [118, 33, 33, 33, 33, 33, 33, 33, 40, 33, 33, 45]
-                let battingRows = battingPlayers(for: team).map { player in
-                    let value = game.batting[player.id, default: BattingLine()]
-                    return ["#\(player.number) \(player.name)", "\(value.plateAppearances)", "\(value.atBats)", "\(value.runs)", "\(value.hits)", "\(value.doubles)", "\(value.triples)", "\(value.homeRuns)", "\(value.runsBattedIn)", "\(value.walks)", "\(value.strikeouts)", statText(value.average)]
-                }
-                table(
-                    title: "\(team.shortName) · BATTING",
-                    headers: ["PLAYER", "PA", "AB", "R", "H", "2B", "3B", "HR", "RBI", "BB", "SO", "AVG"],
-                    widths: battingWidths,
-                    rows: battingRows
-                )
-
-                let pitchingWidths: [CGFloat] = [120, 40, 40, 35, 35, 35, 35, 35, 55, 55]
-                let pitchingRows = pitchingPlayers(for: team).map { player in
-                    let value = game.pitching[player.id, default: PitchingLine()]
-                    return ["#\(player.number) \(player.name)", value.inningsText, "\(value.battersFaced)", "\(value.hits)", "\(value.runs)", "\(value.earnedRuns)", "\(value.walks)", "\(value.strikeouts)", "\(value.pitches)-\(value.strikes)", String(format: "%.2f", value.era)]
-                }
-                table(
-                    title: "\(team.shortName) · PITCHING",
-                    headers: ["PITCHER", "IP", "BF", "H", "R", "ER", "BB", "SO", "P-S", "ERA"],
-                    widths: pitchingWidths,
-                    rows: pitchingRows
-                )
-
-                let fieldingWidths: [CGFloat] = [160, 70, 60, 60, 60, 60]
-                let fieldingRows = fieldingPlayers(for: team).map { player in
-                    let value = game.fielding[player.id, default: FieldingLine()]
-                    return ["#\(player.number) \(player.name)", player.primaryPosition.shortName, "\(value.putouts)", "\(value.assists)", "\(value.errors)", "\(value.doublePlays)"]
-                }
-                table(
-                    title: "\(team.shortName) · FIELDING",
-                    headers: ["PLAYER", "POS", "PO", "A", "E", "DP"],
-                    widths: fieldingWidths,
-                    rows: fieldingRows
-                )
-            }
-        }
+        GameBoxScorePDFReport(game: game, rules: rules, playedAt: playedAt).pdfData()
     }
 
     func writeBoxScorePDF() throws -> URL {
@@ -747,122 +645,38 @@ struct GameExportService {
     }
 
     private func exportURL(suffix: String, extension fileExtension: String) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("BaseballMasterExports", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let rawName = "\(game.awayTeam.shortName)-vs-\(game.homeTeam.shortName)-\(suffix)"
-        let safeName = rawName.replacingOccurrences(of: "/", with: "-")
-        let url = directory.appendingPathComponent(safeName).appendingPathExtension(fileExtension)
-        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
-        return url
-    }
-
-    private func drawText(
-        _ text: String,
-        x: CGFloat,
-        y: CGFloat,
-        width: CGFloat,
-        font: UIFont,
-        color: UIColor,
-        alignment: NSTextAlignment = .left
-    ) {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = alignment
-        (text as NSString).draw(
-            in: CGRect(x: x, y: y, width: width, height: 40),
-            withAttributes: [
-                .font: font,
-                .foregroundColor: color,
-                .paragraphStyle: paragraph
-            ]
-        )
-    }
-}
-
-struct StatsOverviewView: View {
-    @EnvironmentObject private var store: GameStore
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                BMCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("2026 夏季")
-                                    .font(.system(size: 22, weight: .black))
-                                    .foregroundStyle(BMTheme.navy)
-                                Text("4 场比赛 · 3胜1负")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(BMTheme.secondaryText)
-                            }
-                            Spacer()
-                            Image(systemName: "chart.line.uptrend.xyaxis")
-                                .font(.system(size: 28, weight: .bold))
-                                .foregroundStyle(BMTheme.green)
-                        }
-                        HStack(spacing: 8) {
-                            StatPill(label: "球队打率", value: ".286", color: BMTheme.green)
-                            StatPill(label: "累计得分", value: "24")
-                            StatPill(label: "团队防率", value: "3.12")
-                        }
-                    }
-                }
-
-                SectionHeader(title: "球员表现", subtitle: "点击查看累计数据")
-                LazyVStack(spacing: 10) {
-                    ForEach(store.currentTeam.players) { player in
-                        let line = store.seasonBattingLine(for: player)
-                        NavigationLink(destination: PlayerDetailView(player: player)) {
-                            HStack(spacing: 12) {
-                                Text("\(player.number)")
-                                    .font(.system(size: 16, weight: .black, design: .rounded))
-                                    .foregroundStyle(BMTheme.navy)
-                                    .frame(width: 40, height: 40)
-                                    .background(BMTheme.greenSoft)
-                                    .clipShape(Circle())
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(player.name)
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundStyle(BMTheme.navy)
-                                    Text("\(line.hits)安打 · \(line.runsBattedIn)打点 · \(line.runs)得分")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(BMTheme.secondaryText)
-                                }
-                                Spacer()
-                                Text(statText(line.average))
-                                    .font(.system(size: 18, weight: .black, design: .rounded))
-                                    .foregroundStyle(BMTheme.green)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(BMTheme.secondaryText)
-                            }
-                            .padding(14)
-                            .background(BMTheme.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: 15))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(BMTheme.horizontalPadding)
-        }
-        .bmScreenBackground()
-        .navigationTitle("统计")
-        .navigationBarTitleDisplayMode(.inline)
+        try ReportExportFile.url(name: "\(game.awayTeam.shortName)-vs-\(game.homeTeam.shortName)-\(suffix)", extension: fileExtension)
     }
 }
 
 struct PlayerDetailView: View {
     @EnvironmentObject private var store: GameStore
     let player: Player
+    let statisticsTeamID: UUID?
 
-    @State private var selectedSeasonID = ""
+    @State private var category: StatisticsCategory
+    @State private var preparedSelection = false
+    @State private var selectedSeasonID: String
     @State private var selectedGameIDs = Set<UUID>()
     @State private var showGameFilter = false
 
+    init(
+        player: Player, initialSeasonID: String = "", statisticsTeamID: UUID? = nil,
+        initialCategory: StatisticsCategory = .batting
+    ) {
+        self.player = player
+        self.statisticsTeamID = statisticsTeamID
+        _selectedSeasonID = State(initialValue: initialSeasonID)
+        _category = State(initialValue: initialCategory)
+    }
+
     private var seasonGames: [PlayerGameRecord] {
-        store.gameRecords(for: player, seasonID: selectedSeasonID)
+        store.gameRecords(for: player, seasonID: selectedSeasonID, teamID: statisticsTeamID)
+    }
+
+    private var selectedStatistics: PlayerSeasonStatistics {
+        store.playerStatistics(for: player, seasonID: selectedSeasonID,
+                               teamID: statisticsTeamID, gameIDs: selectedGameIDs)
     }
 
     private var selectedGames: [PlayerGameRecord] {
@@ -905,12 +719,13 @@ struct PlayerDetailView: View {
                                     .font(.system(size: 12, weight: .bold))
                                     .foregroundStyle(BMTheme.secondaryText)
                                 Picker("统计赛季", selection: $selectedSeasonID) {
-                                    ForEach(store.seasons) { season in
+                                    ForEach(store.statisticsSeasons) { season in
                                         Text(season.name).tag(season.id)
                                     }
                                 }
                                 .pickerStyle(.menu)
                                 .tint(BMTheme.navy)
+                                .accessibilityIdentifier("player-season-picker")
                             }
                             Spacer()
                             Button {
@@ -941,38 +756,52 @@ struct PlayerDetailView: View {
                     }
                 }
 
-                HStack(spacing: 8) {
-                    StatPill(label: "AVG", value: statText(selectedLine.average), color: BMTheme.green)
-                    StatPill(label: "OBP", value: statText(selectedLine.onBasePercentage))
-                    StatPill(label: "SLG", value: statText(selectedLine.slugging))
-                    StatPill(label: "OPS", value: statText(selectedLine.ops), color: BMTheme.orange)
+                Picker("球员统计分类", selection: $category) {
+                    ForEach(StatisticsCategory.allCases) { Text($0.rawValue).tag($0) }
                 }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("player-statistics-category")
 
-                BMCard {
-                    VStack(alignment: .leading, spacing: 15) {
-                        SectionHeader(title: "筛选范围统计", subtitle: "\(selectedGames.count) 场")
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 16) {
-                            detailStat("PA", selectedLine.plateAppearances)
-                            detailStat("AB", selectedLine.atBats)
-                            detailStat("H", selectedLine.hits)
-                            detailStat("R", selectedLine.runs)
-                            detailStat("2B", selectedLine.doubles)
-                            detailStat("3B", selectedLine.triples)
-                            detailStat("HR", selectedLine.homeRuns)
-                            detailStat("RBI", selectedLine.runsBattedIn)
-                            detailStat("BB", selectedLine.walks)
-                            detailStat("SO", selectedLine.strikeouts)
-                            detailStat("SB", selectedLine.stolenBases)
-                            detailStat("TB", selectedLine.totalBases)
+                if category == .batting {
+                    HStack(spacing: 8) {
+                        StatPill(label: "AVG", value: selectedLine.atBats > 0 ? statText(selectedLine.average) : "—", color: BMTheme.green)
+                        StatPill(label: "OBP", value: selectedLine.atBats + selectedLine.walks + selectedLine.hitByPitch + selectedLine.sacrifices > 0 ? statText(selectedLine.onBasePercentage) : "—")
+                        StatPill(label: "SLG", value: selectedLine.atBats > 0 ? statText(selectedLine.slugging) : "—")
+                        StatPill(label: "OPS", value: StatisticsMetric.ops.formattedValue(for: selectedStatistics), color: BMTheme.orange)
+                    }
+
+                    BMCard {
+                        VStack(alignment: .leading, spacing: 15) {
+                            SectionHeader(title: "筛选范围统计", subtitle: "\(selectedGames.count) 场")
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 16) {
+                                detailStat("PA", selectedLine.plateAppearances)
+                                detailStat("AB", selectedLine.atBats)
+                                detailStat("H", selectedLine.hits)
+                                detailStat("R", selectedLine.runs)
+                                detailStat("2B", selectedLine.doubles)
+                                detailStat("3B", selectedLine.triples)
+                                detailStat("HR", selectedLine.homeRuns)
+                                detailStat("RBI", selectedLine.runsBattedIn)
+                                detailStat("BB", selectedLine.walks)
+                                detailStat("SO", selectedLine.strikeouts)
+                                detailStat("SB", selectedLine.stolenBases)
+                                detailStat("TB", selectedLine.totalBases)
+                            }
                         }
                     }
-                }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    SectionHeader(title: "表现总结", subtitle: selectedSeasonName)
-                    performanceSummary(title: "近 3 场", records: Array(seasonGames.prefix(3)))
-                    performanceSummary(title: "近 10 场", records: Array(seasonGames.prefix(10)))
-                    performanceSummary(title: "本赛季", records: seasonGames)
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionHeader(title: "表现总结", subtitle: selectedSeasonName)
+                        performanceSummary(title: "近 3 场", records: Array(seasonGames.prefix(3)))
+                        performanceSummary(title: "近 10 场", records: Array(seasonGames.prefix(10)))
+                        performanceSummary(title: "本赛季", records: seasonGames)
+                    }
+
+                } else {
+                    StatisticsMetricsGrid(category: category, row: selectedStatistics)
+                    Text("投手与守备数据来自所选已结束比赛；旧版个人记录仅含打击数据。")
+                        .font(.footnote)
+                        .foregroundStyle(BMTheme.secondaryText)
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -996,6 +825,14 @@ struct PlayerDetailView: View {
         .bmScreenBackground()
         .navigationTitle("球员数据")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                ReportExportButton(title: "导出 PDF", identifier: "export-player-pdf", previewTitle: "球员个人报告") {
+                    try PlayerStatisticsPDFReport(store: store, player: player, seasonID: selectedSeasonID,
+                                                  teamID: statisticsTeamID, gameIDs: selectedGameIDs).write()
+                }
+            }
+        }
         .onAppear(perform: prepareInitialSelection)
         .onChange(of: selectedSeasonID) { _ in
             selectedGameIDs = Set(seasonGames.map(\.id))
@@ -1019,12 +856,14 @@ struct PlayerDetailView: View {
     }
 
     private var selectedSeasonName: String {
-        store.seasons.first(where: { $0.id == selectedSeasonID })?.name ?? ""
+        store.statisticsSeasons.first(where: { $0.id == selectedSeasonID })?.name ?? ""
     }
 
     private func prepareInitialSelection() {
-        if selectedSeasonID.isEmpty {
-            selectedSeasonID = store.seasons.first?.id ?? ""
+        guard !preparedSelection else { return }
+        preparedSelection = true
+        if !store.statisticsSeasons.contains(where: { $0.id == selectedSeasonID }) {
+            selectedSeasonID = store.statisticsSeasons.first?.id ?? ""
         }
         selectedGameIDs = Set(seasonGames.map(\.id))
     }
@@ -1041,8 +880,8 @@ struct PlayerDetailView: View {
                     .foregroundStyle(BMTheme.secondaryText)
             }
             Spacer()
-            summaryMetric("AVG", statText(line.average), color: BMTheme.green)
-            summaryMetric("OPS", statText(line.ops), color: BMTheme.orange)
+            summaryMetric("AVG", line.atBats > 0 ? statText(line.average) : "—", color: BMTheme.green)
+            summaryMetric("OPS", line.atBats > 0 ? statText(line.ops) : "—", color: BMTheme.orange)
         }
         .padding(14)
         .background(BMTheme.surface)
@@ -1061,6 +900,19 @@ struct PlayerDetailView: View {
         .frame(width: 47)
     }
 
+    private func gameRecordSummary(_ record: PlayerGameRecord) -> String {
+        let stored = store.games.first { $0.id == record.id }
+        switch category {
+        case .batting: return "\(record.batting.hits)-\(record.batting.atBats)"
+        case .pitching:
+            guard let line = stored?.state.pitching[player.id] else { return "无投手记录" }
+            return "\(line.inningsText) 局 · \(line.strikeouts) 三振"
+        case .fielding:
+            guard let line = stored?.state.fielding[player.id] else { return "无守备记录" }
+            return "\(line.putouts) 刺杀 · \(line.assists) 助杀 · \(line.errors) 失误"
+        }
+    }
+
     private func gameRecordRow(_ record: PlayerGameRecord) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
@@ -1073,10 +925,10 @@ struct PlayerDetailView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
-                Text("\(record.batting.hits)-\(record.batting.atBats)")
-                    .font(.system(size: 17, weight: .black, design: .rounded))
+                Text(gameRecordSummary(record))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(BMTheme.navy)
-                Text("AVG \(statText(record.batting.average))")
+                Text(category == .batting ? "AVG \(record.batting.atBats > 0 ? statText(record.batting.average) : "—")" : category.rawValue)
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(BMTheme.green)
             }

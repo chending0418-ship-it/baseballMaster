@@ -411,6 +411,11 @@ private struct ScheduledGameDetailView: View {
                         }
                         .buttonStyle(PrimaryButtonStyle())
                         .accessibilityIdentifier("prepare-scheduled-game")
+                        NavigationLink(destination: GamePosterView(game: stored)) {
+                            Label("制作比赛宣传海报", systemImage: "photo.badge.plus")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .accessibilityIdentifier("open-scheduled-poster")
                     }
                     .padding(BMTheme.horizontalPadding)
                 }

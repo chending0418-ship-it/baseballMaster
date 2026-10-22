@@ -6,10 +6,13 @@ enum BMTheme {
     static let surface = dynamicColor(light: 0xFFFEFA, dark: 0x1B2632)
     static let navy = dynamicColor(light: 0x102A43, dark: 0xE8F1F7)
     static let brandNavy = Color(uiColor: UIColor(hex: 0x102A43))
+    static let brandGreen = Color(uiColor: UIColor(hex: 0x217A57))
+    static let brandRed = Color(uiColor: UIColor(hex: 0xA8312B))
+    static let brandOrange = Color(uiColor: UIColor(hex: 0x9F4C0D))
     static let secondaryText = dynamicColor(light: 0x607284, dark: 0xAAB8C5)
     static let green = dynamicColor(light: 0x217A57, dark: 0x48B889)
     static let greenSoft = dynamicColor(light: 0xE4F2EA, dark: 0x173D30)
-    static let orange = dynamicColor(light: 0xD88028, dark: 0xF2A65A)
+    static let orange = dynamicColor(light: 0xA35513, dark: 0xF2A65A)
     static let orangeSoft = dynamicColor(light: 0xFFF0DE, dark: 0x49321C)
     static let red = dynamicColor(light: 0xC7463D, dark: 0xF17870)
     static let redSoft = dynamicColor(light: 0xFBE7E4, dark: 0x482422)
@@ -57,12 +60,15 @@ struct BMCard<Content: View>: View {
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
-    var color: Color = BMTheme.green
+    var color: Color = BMTheme.brandGreen
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 17, weight: .bold))
+            .font(.headline)
             .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, minHeight: 56)
             .background(color.opacity(configuration.isPressed ? 0.78 : 1))
             .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
@@ -76,8 +82,11 @@ struct SecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 16, weight: .semibold))
+            .font(.headline)
             .foregroundStyle(color)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(BMTheme.surface.opacity(configuration.isPressed ? 0.6 : 1))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

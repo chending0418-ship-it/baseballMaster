@@ -5,6 +5,244 @@ final class BaseballMasterUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    func testWholeGameAndSingleAppearancePDFCanBePreviewed() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--boxscore-preview"]
+        app.launch()
+        app.buttons["记录"].tap()
+        let single = app.buttons["export-appearance-3"]
+        revealStatisticsControl(single, in: app)
+        single.tap()
+        XCTAssertTrue(app.navigationBars["打席速报"].waitForExistence(timeout: 5))
+        app.buttons["close-report-pdf"].tap()
+        let full = app.buttons["share-play-by-play"]
+        revealStatisticsControl(full, in: app)
+        full.tap()
+        XCTAssertTrue(app.navigationBars["逐打席速报"].waitForExistence(timeout: 5))
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "逐打席速报预览"; capture.lifetime = .keepAlways; add(capture)
+        app.buttons["share-report-pdf"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    func testTextOnlyWholeGameAndSingleAppearancePDFCanBePreviewedAndShared() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--boxscore-preview"]
+        app.launch()
+        app.buttons["记录"].tap()
+        let single = app.buttons["export-appearance-text-3"]
+        revealStatisticsControl(single, in: app)
+        single.tap()
+        XCTAssertTrue(app.navigationBars["单打席文字简版"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["report-pdf-page-count"].label.contains("A4 竖版"))
+        app.buttons["close-report-pdf"].tap()
+        let full = app.buttons["share-play-by-play-text"]
+        revealStatisticsControl(full, in: app)
+        full.tap()
+        XCTAssertTrue(app.navigationBars["逐打席文字简版"].waitForExistence(timeout: 5))
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "逐打席文字简版预览"; capture.lifetime = .keepAlways; add(capture)
+        app.buttons["share-report-pdf"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
+    }
+
+    func testBackupExportAndImportPickerAreAvailable() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--backup-preview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["export-local-backup"].waitForExistence(timeout: 5))
+        app.buttons["export-local-backup"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5), app.debugDescription)
+        app.terminate(); app.launch()
+        app.buttons["import-local-backup"].tap()
+        XCTAssertTrue(app.navigationBars["Browse"].waitForExistence(timeout: 3) || app.buttons["Browse"].exists || app.buttons["浏览"].exists || app.buttons["Cancel"].exists || app.buttons["取消"].exists)
+    }
+
+    func testGamePosterCanEditVenueAndShareImage() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--poster-preview"]
+        app.launch()
+        XCTAssertTrue(app.images["game-poster-preview"].waitForExistence(timeout: 5))
+        let venue = app.textFields["poster-venue"]
+        revealStatisticsControl(venue, in: app)
+        venue.tap(); venue.typeText("Baseball Park\n")
+        let share = app.buttons["share-game-poster"]
+        revealStatisticsControl(share, in: app)
+        share.tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    func testTeamSeasonPDFCanBePreviewedAndShared() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--statistics-preview"]
+        app.launch()
+        let export = app.buttons["export-team-season-pdf"]
+        XCTAssertTrue(export.waitForExistence(timeout: 5))
+        export.tap()
+        XCTAssertTrue(app.navigationBars["球队赛季报告"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["report-pdf-page-count"].label.contains("A4 横版"))
+        app.buttons["share-report-pdf"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    func testPlayerSelectedGamePDFCanBePreviewedAndShared() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--statistics-preview"]
+        app.launch()
+        let player = app.buttons["stats-player-陈昊"]
+        revealStatisticsControl(player, in: app)
+        player.tap()
+        XCTAssertTrue(app.buttons["export-player-pdf"].waitForExistence(timeout: 3))
+        app.buttons["open-game-filter"].tap()
+        app.buttons["清空"].tap()
+        app.buttons["应用"].tap()
+        app.buttons["export-player-pdf"].tap()
+        XCTAssertTrue(app.navigationBars["球员个人报告"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["report-pdf-page-count"].exists)
+        app.buttons["share-report-pdf"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    func testProfessionalBoxScorePDFPreviewAndShare() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--boxscore-preview"]
+        app.launch()
+        let export = app.buttons["share-box-score"]
+        revealStatisticsControl(export, in: app)
+        XCTAssertTrue(export.isHittable)
+        export.tap()
+        XCTAssertTrue(app.navigationBars["比赛战报"].waitForExistence(timeout: 5))
+        app.buttons["share-report-pdf"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    func testStatisticsLargeTextAndDarkModeKeepFiltersReachable() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--statistics-preview", "-appAppearance", "dark",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        XCTAssertTrue(app.buttons["stats-season-picker"].waitForExistence(timeout: 5))
+        let pitching = app.buttons["投手"]
+        for _ in 0..<12 where !pitching.isHittable { app.swipeUp() }
+        XCTAssertTrue(pitching.isHittable)
+        pitching.tap()
+        let sort = app.buttons["stats-sort-picker"]
+        for _ in 0..<20 where !sort.isHittable { app.swipeUp() }
+        XCTAssertTrue(sort.isHittable)
+        XCTAssertLessThanOrEqual(sort.frame.maxX, app.frame.maxX)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "统计页-深色-最大字体"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        sort.tap()
+        XCTAssertTrue(app.buttons["三振 SO"].waitForExistence(timeout: 3))
+        app.buttons["三振 SO"].tap()
+        XCTAssertTrue(app.buttons["stats-sort-direction"].isHittable)
+    }
+
+    func testStatisticsSwitchesSeasonAndTeamUsingRealCompletedGames() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--statistics-preview"]
+        app.launch()
+        let record = app.staticTexts["stats-team-record"]
+        XCTAssertTrue(record.waitForExistence(timeout: 5))
+        XCTAssertEqual(record.label, "1 场比赛 · 1胜0负0平")
+        app.buttons["stats-season-picker"].tap()
+        app.buttons["2025 秋季"].tap()
+        XCTAssertEqual(record.label, "1 场比赛 · 0胜1负0平")
+        app.buttons["stats-team-picker"].tap()
+        app.buttons["新建球队"].tap()
+        XCTAssertEqual(record.label, "0 场比赛 · 0胜0负0平")
+        let empty = app.staticTexts["这个赛季还没有已结束的比赛"]
+        for _ in 0..<5 where !empty.isHittable { app.swipeUp() }
+        XCTAssertTrue(empty.exists)
+    }
+
+    func testStatisticsCategoriesOpenPlayerWithSeasonAndGameFilter() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--statistics-preview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["stats-season-picker"].waitForExistence(timeout: 5))
+        app.buttons["stats-season-picker"].tap()
+        app.buttons["2025 秋季"].tap()
+        app.buttons["投手"].tap()
+        let player = app.buttons["stats-player-陈昊"]
+        for _ in 0..<6 where !player.isHittable { app.swipeUp() }
+        XCTAssertTrue(player.isHittable)
+        player.tap()
+        XCTAssertTrue(app.navigationBars["球员数据"].waitForExistence(timeout: 3))
+        let season = app.buttons["player-season-picker"]
+        XCTAssertTrue((season.label + (season.value as? String ?? "")).contains("2025 秋季"))
+        XCTAssertTrue(app.buttons["投手"].isSelected)
+        XCTAssertTrue(app.staticTexts["已选 1 / 1 场比赛"].exists)
+        app.buttons["open-game-filter"].tap()
+        app.buttons["清空"].tap()
+        app.buttons["应用"].tap()
+        XCTAssertTrue(app.staticTexts["已选 0 / 1 场比赛"].waitForExistence(timeout: 3))
+        app.buttons["守备"].tap()
+        XCTAssertTrue(app.otherElements["stats-metrics-守备"].exists)
+    }
+
+    func testStatisticsSearchRecordFilterAndSortControls() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--statistics-preview"]
+        app.launch()
+        let search = app.textFields["stats-search"]
+        revealStatisticsControl(search, in: app)
+        XCTAssertTrue(search.isHittable)
+        search.tap()
+        search.typeText("NoSuchPlayer\n")
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["没有符合条件的球员"].exists)
+        app.buttons["清空搜索"].tap()
+        search.tap()
+        search.typeText("Chen Hao\n")
+        app.swipeUp()
+        XCTAssertTrue(app.buttons["stats-player-陈昊"].waitForExistence(timeout: 3))
+        app.buttons["清空搜索"].tap()
+        let sort = app.buttons["stats-sort-picker"]
+        revealStatisticsControl(sort, in: app)
+        if !sort.isHittable {
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.name = "统计页-搜索后排序定位"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        XCTAssertTrue(sort.isHittable)
+        sort.tap()
+        app.buttons["本垒打 HR"].tap()
+        XCTAssertTrue(app.buttons["stats-sort-direction"].label.contains("降序"))
+        app.buttons["stats-sort-direction"].tap()
+        XCTAssertTrue(app.buttons["stats-sort-direction"].label.contains("升序"))
+        let recordsOnly = app.switches["stats-records-only"]
+        revealStatisticsControl(recordsOnly, in: app)
+        recordsOnly.tap()
+        XCTAssertTrue(app.staticTexts["12 名球员 · 点击查看逐场数据"].exists)
+    }
+
+    func testStatisticsEmptySeasonHasNoFabricatedTotals() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--statistics-empty-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["stats-team-record"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["stats-team-record"].label, "0 场比赛 · 0胜0负0平")
+        XCTAssertFalse(app.staticTexts["4 场比赛 · 3胜1负"].exists)
+        let empty = app.staticTexts["这个赛季还没有已结束的比赛"]
+        for _ in 0..<5 where !empty.isHittable { app.swipeUp() }
+        XCTAssertTrue(empty.exists)
+        XCTAssertTrue(app.staticTexts["没有符合条件的球员"].exists)
+    }
+
+    private func revealStatisticsControl(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<15 {
+            if element.exists && element.isHittable && element.frame.minY > 100
+                && element.frame.maxY < app.frame.maxY - 70 { return }
+            let above = element.exists && element.frame.midY < app.frame.midY
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: above ? 0.35 : 0.7))
+            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: above ? 0.65 : 0.4))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
+    }
+
     func testScorekeepingCoreControlsAndOutcomeSheet() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--scorekeeping-preview"]
@@ -141,7 +379,7 @@ final class BaseballMasterUITests: XCTestCase {
         for _ in 0..<8 where !share.isHittable { app.swipeUp() }
         XCTAssertTrue(share.isHittable)
         share.tap()
-        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
     func testPendingRecordCanBeReviewedDirectlyFromGameResult() throws {
@@ -443,7 +681,9 @@ final class BaseballMasterUITests: XCTestCase {
 
         let createdAlert = app.alerts["比赛安排已保存"]
         XCTAssertTrue(createdAlert.waitForExistence(timeout: 2))
-        createdAlert.buttons["返回比赛首页"].tap()
+        createdAlert.buttons["制作宣传海报"].tap()
+        XCTAssertTrue(app.images["game-poster-preview"].waitForExistence(timeout: 3))
+        app.buttons["close-created-game-poster"].tap()
         XCTAssertTrue(app.navigationBars["比赛"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["即将进行"].exists)
 

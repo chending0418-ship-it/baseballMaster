@@ -144,11 +144,13 @@ private struct ProfileMenuRow: View {
                     .font(.system(size: 12))
                     .foregroundStyle(BMTheme.secondaryText)
             }
-            Spacer()
+            Spacer(minLength: 0)
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(BMTheme.secondaryText)
         }
+        .multilineTextAlignment(.leading)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(15)
         .background(BMTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 15))
@@ -193,7 +195,7 @@ struct LocalDataManagementView: View {
                     DataMetricCard(title: "对手球员", value: opponentPlayerCount, icon: "person.2.fill")
                     DataMetricCard(title: "赛季", value: store.seasons.count, icon: "calendar")
                     DataMetricCard(title: "比赛记录", value: store.games.count, icon: "baseball.diamond.bases")
-                    DataMetricCard(title: "球员统计", value: store.playerGameRecords.count, icon: "chart.bar.doc.horizontal")
+                    DataMetricCard(title: "球员统计", value: store.recordedPlayerGameCount, icon: "chart.bar.doc.horizontal")
                     DataMetricCard(title: "进行中", value: store.ongoingGames.count, icon: "play.circle.fill")
                 }
 
@@ -208,17 +210,11 @@ struct LocalDataManagementView: View {
                 }
                 .buttonStyle(SecondaryButtonStyle(color: BMTheme.green))
 
-                BMCard {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("关于备份")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(BMTheme.navy)
-                        Text("卸载 App 会同时删除沙盒内的数据。正式的数据导入、导出和备份方案仍需单独确认。")
-                            .font(.system(size: 13))
-                            .foregroundStyle(BMTheme.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                NavigationLink(destination: BackupManagementView()) {
+                    Label("备份与恢复", systemImage: "externaldrive.badge.timemachine")
                 }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityIdentifier("open-backup-management")
             }
             .padding(BMTheme.horizontalPadding)
         }
@@ -246,6 +242,8 @@ private struct DataMetricCard: View {
                 .foregroundStyle(BMTheme.secondaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .multilineTextAlignment(.leading)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(15)
         .background(BMTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 15))
