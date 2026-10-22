@@ -147,7 +147,7 @@ struct LiveSnapshot: Codable, Equatable {
         var sequence: [(position: Double, entry: Entry)] = []
         func person(_ id: UUID?) -> Person? { id.flatMap { id in players.first { $0.id == id }.map(Person.init) } }
         func detail(_ e: ScoringEventRecord) -> Detail {
-            Detail(id: e.id.uuidString, text: String((e.title + (e.reviewedAt != nil ? "（已复核修订）" : "")).prefix(1000)),
+            Detail(id: e.id.uuidString, text: String((g.liveText(for: e) + (e.reviewedAt != nil ? "（已复核修订）" : "")).prefix(1000)),
                    situation: eventSituation(e))
         }
         for (offset, appearance) in appearances.enumerated() {
@@ -158,7 +158,7 @@ struct LiveSnapshot: Codable, Equatable {
             let state = owned.contains(where: \.needsReview) ? "review" : appearance.interrupted ? "interrupted" : appearance.completed ? "completed" : "current"
             let summary: String
             if appearance.interrupted { summary = "\(p?.name ?? "打者")：打席未完成，因换边或终场中断" }
-            else { summary = last?.title ?? "\(p?.name ?? "打者")准备打击" }
+            else { summary = last.map { g.liveText(for: $0) } ?? "\(p?.name ?? "打者")准备打击" }
             let historicalOrder = last?.beforeSituation.flatMap { situation -> Int? in
                 let ids = appearance.isTop ? situation.awayBattingOrderIDs : situation.homeBattingOrderIDs
                 return appearance.batterIDs.last.flatMap { ids?.firstIndex(of: $0).map { $0 + 1 } }
@@ -182,7 +182,7 @@ struct LiveSnapshot: Codable, Equatable {
         for (index, event) in events.enumerated() where event.plateAppearanceID.map({ !known.contains($0) }) ?? true {
             sequence.append((Double(index), Entry(id: event.id.uuidString, appearanceID: event.plateAppearanceID?.uuidString,
                 inning: event.inning, isTop: event.isTop, kind: "event", label: event.category.title,
-                summary: String(event.title.prefix(1000)), player: person(event.primaryPlayerID),
+                summary: String(g.liveText(for: event).prefix(1000)), player: person(event.primaryPlayerID),
                 status: event.needsReview ? "review" : "completed", details: [detail(event)], order: nil,
                 situation: eventSituation(event))))
         }

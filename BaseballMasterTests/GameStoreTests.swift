@@ -4582,7 +4582,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.game.scoringEvents?.filter { $0.illegalPitch != nil }.count, 4)
         let restored = GameStore(persistenceURL: nil)
         let backup = try LocalBackup.read(store.exportBackup())
-        XCTAssertEqual(backup.version, 6)
+        XCTAssertEqual(backup.version, 7)
         try restored.restoreBackup(backup)
         XCTAssertEqual(restored.game, store.game)
     }
@@ -5424,7 +5424,7 @@ extension GameStoreTests {
         XCTAssertEqual(restored.recentGames, store.recentGames)
         let db = try CoreDataRosterStore(storeURL: url)
         _ = try db.loadSnapshot()
-        XCTAssertEqual(db.loadedSchemaVersion, 7)
+        XCTAssertEqual(db.loadedSchemaVersion, 8)
         try db.close()
     }
 }
@@ -6548,7 +6548,7 @@ extension GameStoreTests {
             var game = game; game.id = match.wireLocalID ?? game.id
             _ = try await client.matchCommand(path: TeamServiceClient.matchPath(team.teamID, match.id), method: "PUT", body: .object([
                 "operationID": .uuid(UUID()), "baseRevision": .number(Double(match.serverRevision)), "writerEpoch": .number(Double(match.writerEpoch)),
-                "formatVersion": .number(1), "payload": try .encode(game), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(game).data())
+                "formatVersion": .number(2), "payload": try .encode(game), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(game).data())
             ]))
         }
         try await upload(remote, updated); await sync.refresh(remote)
@@ -7037,5 +7037,369 @@ extension GameStoreTests {
         let remote = try await client.match(teamID: team.teamID, gameID: shared.id)
         XCTAssertEqual(remote.serverRevision, shared.serverRevision); XCTAssertEqual(remote.payload?.state.balls, 0)
         XCTAssertEqual(sync.state.conflicts.first?.game.state.balls, 2)
+    }
+}
+
+// 3.1.0: observations are part of the same committed play, never independent scores.
+extension GameStoreTests {
+    func testV310ObservationCombinationsRoundTripWithoutGuessingOrChangingScores() throws {
+        for type in BattedBallType.allCases {
+            for precision in [BattedBallObservation.Precision.unknown, .region, .point] {
+                var observation = BattedBallObservation(type: type)
+                if precision == .region { observation.selectRegion(.foulLeft) }
+                if precision == .point { observation.selectPoint(CGPoint(x: 0.23, y: 0.17)) }
+                let store = freshStore(), control = freshStore()
+                XCTAssertTrue(store.applyPlay(.single, observation: observation))
+                XCTAssertTrue(control.applyPlay(.single))
+                XCTAssertEqual(store.game.awayScore, control.game.awayScore)
+                XCTAssertEqual(store.game.outs, control.game.outs)
+                XCTAssertEqual(store.game.awayHits, 1)
+                XCTAssertEqual(store.game.scoringEvents?.last?.battedBall, observation)
+                XCTAssertEqual(store.game.historyJournal?.operations.last?.battedBall, observation)
+                let decoded = try JSONDecoder().decode(GameState.self, from: JSONEncoder().encode(store.game))
+                XCTAssertEqual(decoded, store.game)
+            }
+        }
+        var region = BattedBallObservation(type: .line)
+        region.selectPoint(CGPoint(x: 0.2, y: 0.3)); region.selectRegion(.center)
+        XCTAssertNil(region.x); XCTAssertNil(region.y); XCTAssertEqual(region.precision, .region)
+        region.selectRegion(nil); XCTAssertFalse(region.hasLocation)
+    }
+
+    func testV310InvalidObservationAndSlowPitchBuntAreAtomicAndLeaveNoUndo() throws {
+        let store = freshStore(), before = store.game
+        let invalid = BattedBallObservation(type: .ground, precision: .point, x: .nan, y: 0.4)
+        XCTAssertFalse(store.applyPlay(.single, observation: invalid)); XCTAssertEqual(store.game, before)
+        let slow = try slowStore(), slowBefore = slow.game
+        XCTAssertFalse(slow.applyPlay(.single, observation: BattedBallObservation(type: .bunt)))
+        XCTAssertEqual(slow.game, slowBefore)
+    }
+
+    func testV310ObservationSurvivesUndoRedoDiskRestartBackupAndHistoryCorrection() throws {
+        let store = freshStore()
+        var observation = BattedBallObservation(type: .hardGround); observation.selectRegion(.left)
+        XCTAssertTrue(store.applyPlay(.single, observation: observation))
+        let after = store.game
+        store.undo(); XCTAssertTrue(store.game.scoringEvents?.allSatisfy { $0.battedBall == nil } ?? true)
+        store.redo(); XCTAssertEqual(store.game, after)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("BM310-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("game.sqlite")
+        let restored = GameStore(persistenceURL: path)
+        try restored.restoreBackup(LocalBackup.read(store.exportBackup()))
+        let reopened = GameStore(persistenceURL: path)
+        XCTAssertFalse(reopened.requiresDataRecovery); XCTAssertEqual(reopened.game, after)
+        var draft = try reopened.makeCorrectionDraft()
+        let index = try XCTUnwrap(draft.journal.operations.firstIndex { $0.battedBall != nil })
+        observation.type = .line; observation.selectRegion(.center)
+        draft.journal.operations[index].battedBall = observation; draft.journal.operations[index].edited = true
+        let preview = reopened.previewCorrection(draft)
+        XCTAssertTrue(preview.canSave, preview.conflict ?? "")
+        XCTAssertEqual(preview.game.scoringEvents?.first(where: { $0.category == .battedBall })?.battedBall, observation)
+        XCTAssertTrue(reopened.saveCorrection(draft), reopened.actionErrorMessage ?? "")
+        XCTAssertEqual(reopened.game.awayHits, 1)
+        XCTAssertEqual(reopened.game.batting, after.batting)
+        XCTAssertTrue(reopened.game.playLog.contains { $0.text.contains("平飞") })
+    }
+
+    func testV310OldPayloadKeepsTraditionalMethodAndUnknownContact() throws {
+        let store = freshStore(); XCTAssertTrue(store.applyPlay(.single))
+        let decoded = try JSONDecoder().decode(GameState.self, from: JSONEncoder().encode(store.game))
+        XCTAssertEqual(decoded.rulesSnapshot?.effectiveRecordingMethod ?? .traditional, .traditional)
+        XCTAssertNil(decoded.scoringEvents?.last?.battedBall)
+        let player = store.game.awayTeam.players.first!
+        let data = store.batterPerformance(playerID: player.id, annual: false)
+        XCTAssertEqual(data.line.hits, 1); XCTAssertEqual(data.missingLocations, 1); XCTAssertTrue(data.contacts.isEmpty)
+    }
+
+    func testV310CurrentAndAnnualPerformanceExcludeIncompleteAndKeepStableIdentity() {
+        let store = freshStore(), player = store.currentBatter
+        store.recordPitch(.ball)
+        XCTAssertEqual(store.batterPerformance(playerID: player.id, annual: false).line.plateAppearances, 0)
+        var observation = BattedBallObservation(type: .fly); observation.selectRegion(.right)
+        XCTAssertTrue(store.applyPlay(.homeRun, observation: observation))
+        let gameData = store.batterPerformance(playerID: player.id, annual: false)
+        let annual = store.batterPerformance(playerID: player.id, annual: true)
+        XCTAssertEqual(gameData.line.hits, 1); XCTAssertEqual(gameData.contacts.count, 1)
+        XCTAssertEqual(annual.line.hits, 1); XCTAssertEqual(annual.contacts.count, 1)
+        let unknown = Player(name: player.name, number: player.number, primaryPosition: .leftField)
+        XCTAssertEqual(store.batterPerformance(playerID: unknown.id, annual: true).line.plateAppearances, 0)
+        store.undo()
+        XCTAssertEqual(store.batterPerformance(playerID: player.id, annual: true).contacts.count, 0)
+        store.redo()
+        XCTAssertEqual(store.batterPerformance(playerID: player.id, annual: true).contacts.count, 1)
+    }
+
+    func testV310DefensiveRouteSnapshotsNamesAndRemainsHistoricalAfterSubstitution() throws {
+        let store = freshStore()
+        let fielders = store.activeFielders
+        let route = DefensivePlay.quickPlays[6]
+        let expected = "防守路线 6-4-3，" + [FieldPosition.shortstop, .secondBase, .firstBase].map { position in
+            position.fullName + fielders.first { $0.primaryPosition == position }!.name
+        }.joined(separator: "-")
+        XCTAssertTrue(store.applyPlay(.single))
+        XCTAssertTrue(store.applyPlay(.doublePlay, defensivePlay: route))
+        let event = try XCTUnwrap(store.game.scoringEvents?.first { $0.resolvedOutcome == .doublePlay })
+        XCTAssertEqual(event.defensiveRoute, expected); XCTAssertTrue(event.title.contains(expected))
+        let stored = try XCTUnwrap(store.activeStoredGame)
+        let projection = LiveSnapshot(stored)
+        XCTAssertTrue(projection.entries.flatMap(\.details).contains { $0.text.contains(expected) })
+        let oldName = store.game.homeTeam.players.first { $0.primaryPosition == .shortstop }!.name
+        let index = store.game.homeTeam.players.firstIndex { $0.primaryPosition == .shortstop }!
+        store.game.homeTeam.players[index].chineseName = "后来的新游击手"
+        let changedProjection = LiveSnapshot({ var value = stored; value.state = store.game; return value }())
+        XCTAssertTrue(changedProjection.entries.flatMap(\.details).contains { $0.text.contains("游击手" + oldName) })
+    }
+
+    func testV310PracticeMethodsResetAndDoNotCreateFormalGames() {
+        let store = GameStore(persistenceURL: nil), original = store.games
+        for method in RecordingMethod.allCases {
+            store.resetPracticeInning(method: method)
+            XCTAssertEqual(store.game.rulesSnapshot?.effectiveRecordingMethod, method)
+            XCTAssertTrue(store.applyPlay(.single, observation: method == .situation ? BattedBallObservation(type: .line) : nil))
+            XCTAssertEqual(store.games, original); XCTAssertNil(store.activeGameID)
+        }
+    }
+
+    func testV310IllegalPitchKeepsObservationInTheSameReplayOperation() throws {
+        let store = try slowStore()
+        var observation = BattedBallObservation(type: .ground); observation.selectRegion(.infieldLeft)
+        XCTAssertTrue(store.recordIllegalPitch(nil, wasThrown: true, outcome: .single, observation: observation))
+        let event = try XCTUnwrap(store.game.scoringEvents?.first { $0.battedBall != nil })
+        XCTAssertNotNil(event.illegalPitch)
+        let preview = store.previewCorrection(try store.makeCorrectionDraft())
+        XCTAssertTrue(preview.canSave, preview.conflict ?? "")
+        XCTAssertEqual(preview.game.scoringEvents?.first { $0.battedBall != nil }?.battedBall, observation)
+        XCTAssertTrue(preview.game.historyScoreEquivalent(to: store.game))
+    }
+}
+
+extension GameStoreTests {
+    func testV310AnnualSharedCopiesDeduplicateAndRevokedTeamsDisappear() async throws {
+        let a = freshStore(), player = a.currentBatter
+        var observation = BattedBallObservation(type: .line); observation.selectRegion(.center)
+        XCTAssertTrue(a.applyPlay(.homeRun, observation: observation)); a.finishGame()
+        let local = try XCTUnwrap(a.activeStoredGame), admin = try matchClient()
+        _ = try await admin.enroll(deviceName: "击球记录员")
+        let team = try await admin.createTeam(name: "击球图权限队", nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: a.currentTeam!))
+        let reader = try await matchPartner(admin, team: team.teamID, role: .member)
+        let da = TeamSharingStore(service: admin, storage: V30DirectoryMemoryStorage()); a.teamSharing = da; await da.connect()
+        let ca = SharedMatchCoordinator(store: a, service: admin, storage: V30MatchMemoryStorage()); a.sharedMatches = ca
+        await ca.publish(local, teamID: team.teamID); XCTAssertNil(ca.message)
+        let copyID = try XCTUnwrap(ca.state.matches.first?.payload?.id)
+        XCTAssertEqual(a.batterPerformance(playerID: player.id, annual: true).contacts.count, 1)
+        XCTAssertEqual(a.batterPerformance(playerID: player.id, annual: true).line.plateAppearances, 1)
+        let b = GameStore(persistenceURL: nil)
+        let db = TeamSharingStore(service: reader, storage: V30DirectoryMemoryStorage()); b.teamSharing = db; await db.connect()
+        let cb = SharedMatchCoordinator(store: b, service: reader, storage: V30MatchMemoryStorage()); b.sharedMatches = cb
+        await cb.synchronize(teamID: team.teamID); b.openGame(id: copyID)
+        XCTAssertFalse(b.canEditCurrentMatch)
+        let data = b.batterPerformance(playerID: player.id, annual: true)
+        XCTAssertEqual(data.contacts.count, 1); XCTAssertEqual(data.line.hits, 1)
+        let before = b.game; XCTAssertFalse(b.applyPlay(.single, observation: observation)); XCTAssertEqual(b.game, before)
+        let left = await db.submit(.leave(teamID: team.teamID)); XCTAssertTrue(left)
+        XCTAssertEqual(b.batterPerformance(playerID: player.id, annual: true).contacts.count, 0)
+    }
+
+    func testV310ModeYearAndOpponentIdentityScopeAndObservationOnlyCorrectionStayConsistent() throws {
+        let store = freshStore(), player = store.currentBatter
+        var observation = BattedBallObservation(type: .ground); observation.selectPoint(CGPoint(x: 0.4, y: 0.5))
+        XCTAssertTrue(store.applyPlay(.single, observation: observation)); store.finishGame()
+        let stored = try XCTUnwrap(store.activeStoredGame)
+        var otherMode = stored; otherMode.id = UUID(); otherMode.rules.mode = .coachPitch
+        var otherYear = stored; otherYear.id = UUID(); otherYear.playedAt = Date(timeIntervalSince1970: 1600000000)
+        store.games += [otherMode, otherYear]
+        XCTAssertEqual(store.batterPerformance(playerID: player.id, annual: true).contacts.count, 1)
+        var draft = try store.makeCorrectionDraft()
+        let index = try XCTUnwrap(draft.journal.operations.firstIndex { $0.battedBall != nil })
+        draft.journal.operations[index].battedBall?.selectRegion(nil)
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+        let corrected = store.batterPerformance(playerID: player.id, annual: false)
+        XCTAssertEqual(corrected.line.hits, 1); XCTAssertEqual(corrected.contacts.count, 0); XCTAssertEqual(corrected.missingLocations, 1)
+        let originalOpponent = store.game.homeTeam.players[0]
+        let stranger = Player(name: player.name, number: player.number, primaryPosition: .pitcher)
+        store.game.homeTeam.players[0] = stranger
+        XCTAssertEqual(store.batterPerformance(playerID: originalOpponent.id, annual: false).line.hits, 0)
+        XCTAssertEqual(store.batterPerformance(playerID: stranger.id, annual: false).line.hits, 0)
+    }
+
+    func testV310LegacyLiveRoutesUseHistoricalParticipantsNotCurrentAssignments() throws {
+        let store = freshStore(), original = store.game.homeTeam.players.first { $0.primaryPosition == .shortstop }!
+        XCTAssertTrue(store.applyPlay(.groundOut, defensivePlay: DefensivePlay.quickPlays[0]))
+        let index = try XCTUnwrap(store.game.scoringEvents?.firstIndex { $0.category == .battedBall })
+        store.game.scoringEvents?[index].defensiveRoute = nil
+        store.game.scoringEvents?[index].title = "旧记录：滚地出局，游击传一垒（6-3）"
+        // A later assignment change must not select the new shortstop for an older event.
+        let oldIndex = store.game.homeTeam.players.firstIndex { $0.id == original.id }!
+        store.game.homeTeam.players[oldIndex].primaryPosition = .leftField
+        let newIndex = store.game.homeTeam.players.firstIndex { $0.primaryPosition == .secondBase }!
+        store.game.homeTeam.players[newIndex].primaryPosition = .shortstop
+        let event = store.game.scoringEvents![index]
+        let text = store.game.liveText(for: event)
+        XCTAssertTrue(text.contains("游击手" + original.name))
+        XCTAssertFalse(text.contains("游击手" + store.game.homeTeam.players[newIndex].name))
+    }
+}
+
+extension GameStoreTests {
+    private func v4Observation(_ type: BattedBallType = .line, _ route: [FieldPosition] = [.centerField, .secondBase], status: BattedBallFielding.Status = .recorded, error: FieldPosition? = nil) -> BattedBallObservation {
+        var value = BattedBallObservation(type: type)
+        value.selectPoint(CGPoint(x: 0.3, y: 0.25))
+        value.fielding = BattedBallFielding(status: status, route: route, errorPosition: error)
+        return value
+    }
+
+    func testV310V4HitsRequireExplicitFieldingAndNeverInferItFromLocation() throws {
+        let store = freshStore(), before = store.game
+        var observation = v4Observation()
+        observation.fielding?.status = nil; observation.fielding?.route = []
+        XCTAssertFalse(store.applyPlay(.single, observation: observation)); XCTAssertEqual(store.game, before)
+        observation.fielding?.status = .recorded
+        XCTAssertFalse(store.applyPlay(.single, observation: observation)); XCTAssertEqual(store.game, before)
+        observation = v4Observation(.line, [.centerField, .secondBase, .centerField])
+        var fielding = observation.fielding!; fielding.touch(.centerField)
+        XCTAssertEqual(fielding.route, [.centerField, .secondBase, .centerField], "Repeated same-player taps do not add throws")
+        fielding.touch(.catcher); XCTAssertEqual(fielding.route.count, 4)
+        observation.fielding = fielding
+        let moves = store.suggestedRunnerDecisions(for: .single)
+        let defense = situationDefensivePlay(outcome: .single, observation: observation, decisions: moves)
+        XCTAssertEqual(defense?.putoutPositions, []); XCTAssertEqual(defense?.assistPositions, [])
+        XCTAssertTrue(store.applyPlay(.single, defensivePlay: defense, decisions: moves, observation: observation))
+        XCTAssertEqual(store.game.scoringEvents?.last?.battedBall?.fielding?.route, fielding.route)
+        XCTAssertTrue(store.game.scoringEvents!.last!.title.contains("防守路线 8-4-8-2"))
+        XCTAssertEqual(store.game.pitching.values.reduce(0) { $0 + $1.pitches }, 1)
+    }
+
+    func testV310V4CompoundHitAndTagOutPreservesHitRunOnePitchAndSeparateRoute() throws {
+        let store = freshStore(); XCTAssertTrue(store.applyPlay(.double))
+        let runner = try XCTUnwrap(store.game.baseRunners[.second]), batter = store.currentBatter, pitcher = store.currentPitcher
+        var observation = v4Observation()
+        let moves = [RunnerDecision(player: batter, origin: .batter, destination: .out), RunnerDecision(player: runner, origin: .base(.second), destination: .score)]
+        observation.runnerDetails = [BattedBallRunnerDetail(playerID: batter.id, cause: .tag, fielding: BattedBallFielding(status: .recorded, route: [.centerField, .secondBase])), BattedBallRunnerDetail(playerID: runner.id)]
+        let defense = situationDefensivePlay(outcome: .single, observation: observation, decisions: moves)
+        XCTAssertTrue(store.applyPlay(.single, defensivePlay: defense, decisions: moves, observation: observation))
+        XCTAssertEqual(store.game.batting[batter.id]?.hits, 1); XCTAssertEqual(store.game.batting[batter.id]?.runsBattedIn, 1)
+        XCTAssertEqual(store.game.awayScore, 1); XCTAssertEqual(store.game.outs, 1); XCTAssertEqual(store.game.pitching[pitcher.id]?.pitches, 2)
+        let second = store.game.homeTeam.players.first { $0.primaryPosition == .secondBase }!
+        XCTAssertEqual(store.game.fielding[second.id]?.putouts, 1)
+        let after = store.game; store.undo(); XCTAssertEqual(store.game.outs, 0); store.redo(); XCTAssertEqual(store.game, after)
+        XCTAssertTrue(store.previewCorrection(try store.makeCorrectionDraft()).game.historyScoreEquivalent(to: after))
+    }
+
+    func testV310V4ThirdOutTimingForCatchAndAdditionalRunnerOutCanCountOrCancelRun() throws {
+        for runCounts in [false, true] {
+            let store = freshStore()
+            XCTAssertTrue(store.applyPlay(.single)); XCTAssertTrue(store.applyPlay(.single))
+            store.game.baseRunners[.third] = store.game.baseRunners.removeValue(forKey: .second)
+            XCTAssertTrue(store.applyPlay(.groundOut))
+            let first = try XCTUnwrap(store.game.baseRunners[.first]), third = try XCTUnwrap(store.game.baseRunners[.third]), batter = store.currentBatter
+            var observation = v4Observation(.fly, [.centerField, .firstBase])
+            let moves = [RunnerDecision(player: batter, origin: .batter, destination: .out), RunnerDecision(player: first, origin: .base(.first), destination: .out), RunnerDecision(player: third, origin: .base(.third), destination: .score)]
+            observation.runnerDetails = [BattedBallRunnerDetail(playerID: batter.id), BattedBallRunnerDetail(playerID: first.id, cause: .tag, fielding: BattedBallFielding(status: .recorded, route: [.centerField, .firstBase])), BattedBallRunnerDetail(playerID: third.id)]
+            XCTAssertTrue(store.situationNeedsTimingDecision(.flyOut, decisions: moves))
+            let before = store.game
+            XCTAssertFalse(store.applyPlay(.flyOut, decisions: moves, observation: observation)); XCTAssertEqual(store.game, before)
+            let defense = situationDefensivePlay(outcome: .flyOut, observation: observation, decisions: moves)
+            XCTAssertTrue(store.applyPlay(.flyOut, defensivePlay: defense, decisions: moves, timingRunCounts: runCounts, observation: observation))
+            XCTAssertEqual(store.game.awayScore, runCounts ? 1 : 0)
+            XCTAssertEqual(store.game.pitching[before.currentPitcher.id]?.outsRecorded, 3)
+        }
+    }
+
+    func testV310V4IndependentErrorHomeRunNoFieldingPendingAndAmendmentAreExplicit() throws {
+        let store = freshStore(), batter = store.currentBatter
+        var error = v4Observation(.ground, [.shortstop, .firstBase])
+        XCTAssertFalse(store.applyPlay(.error, observation: error))
+        error.fielding?.errorPosition = .firstBase
+        let moves = store.suggestedRunnerDecisions(for: .error)
+        XCTAssertTrue(store.applyPlay(.error, defensivePlay: situationDefensivePlay(outcome: .error, observation: error, decisions: moves), decisions: moves, observation: error))
+        let first = store.game.homeTeam.players.first { $0.primaryPosition == .firstBase }!, short = store.game.homeTeam.players.first { $0.primaryPosition == .shortstop }!
+        XCTAssertEqual(store.game.fielding[first.id]?.errors, 1); XCTAssertNil(store.game.fielding[short.id]?.errors)
+        var draft = try store.makeCorrectionDraft()
+        let index = try XCTUnwrap(draft.journal.operations.firstIndex { $0.battedBall != nil })
+        draft.journal.operations[index].battedBall?.fielding?.route = [.thirdBase, .firstBase]
+        draft.journal.operations[index].edited = true
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+        XCTAssertEqual(store.game.batting[batter.id]?.plateAppearances, 1)
+        XCTAssertEqual(store.game.pitching.values.reduce(0) { $0 + $1.pitches }, 1)
+        let hrStore = freshStore(), hr = v4Observation(.fly, [], status: .noFielding)
+        XCTAssertFalse(hrStore.applyPlay(.single, observation: hr))
+        XCTAssertTrue(hrStore.applyPlay(.homeRun, observation: hr)); XCTAssertEqual(hrStore.game.awayScore, 1)
+        let pendingStore = freshStore(), pending = v4Observation(.line, [.leftField], status: .pending)
+        XCTAssertTrue(pendingStore.applyPlay(.single, observation: pending))
+        XCTAssertTrue(pendingStore.game.scoringEvents!.last!.needsReview)
+        XCTAssertTrue(pendingStore.game.scoringEvents!.last!.title.contains("后续待补"))
+    }
+}
+
+extension GameStoreTests {
+    func testV310V4PracticeWholePlayAmendmentIsMemoryOnlyAndRejectsStaleDraft() throws {
+        let store = GameStore(persistenceURL: nil); store.resetPracticeInning(method: .situation)
+        let batter = store.currentBatter, observation = v4Observation(), moves = store.suggestedRunnerDecisions(for: .single)
+        XCTAssertTrue(store.applyPlay(.single, defensivePlay: situationDefensivePlay(outcome: .single, observation: observation, decisions: moves), decisions: moves, observation: observation))
+        var draft = try store.makeCorrectionDraft()
+        let index = try XCTUnwrap(draft.journal.operations.firstIndex { $0.battedBall != nil })
+        draft.journal.operations[index].battedBall?.fielding?.touch(.catcher)
+        draft.journal.operations[index].edited = true; draft.reason = "练习补充这球"
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+        XCTAssertEqual(store.game.batting[batter.id]?.plateAppearances, 1)
+        XCTAssertEqual(store.game.pitching.values.reduce(0) { $0 + $1.pitches }, 1)
+        XCTAssertEqual(store.game.scoringEvents?.first { $0.category == .battedBall }?.battedBall?.fielding?.route, [.centerField, .secondBase, .catcher])
+        XCTAssertTrue(store.games.isEmpty); XCTAssertNil(store.activeGameID)
+        let stale = try store.makeCorrectionDraft(); store.recordPitch(.ball)
+        XCTAssertFalse(store.saveCorrection(stale)); XCTAssertEqual(store.game.balls, 1)
+    }
+}
+
+extension GameStoreTests {
+    func testV310V4RawFieldingAndRunnerCausesSurviveSharingHandoffAndPortableArchive() async throws {
+        let a = freshStore(); XCTAssertTrue(a.applyPlay(.double))
+        let batter = a.currentBatter, runner = try XCTUnwrap(a.game.baseRunners[.second])
+        var observation = v4Observation()
+        let moves = [RunnerDecision(player: batter, origin: .batter, destination: .out), RunnerDecision(player: runner, origin: .base(.second), destination: .score)]
+        observation.runnerDetails = [BattedBallRunnerDetail(playerID: batter.id, cause: .tag, fielding: BattedBallFielding(status: .recorded, route: [.centerField, .secondBase])), BattedBallRunnerDetail(playerID: runner.id)]
+        XCTAssertTrue(a.applyPlay(.single, decisions: moves, observation: observation))
+        let original = try XCTUnwrap(a.activeStoredGame), expected = try XCTUnwrap(a.game.scoringEvents?.last?.battedBall)
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "V4 记录设备")
+        let team = try await client.createTeam(name: "V4 全球档案测试", nickname: "教练", operationID: UUID())
+        let partner = try await matchPartner(client, team: team.teamID), b = GameStore(persistenceURL: nil)
+        let ca = SharedMatchCoordinator(store: a, service: client, storage: V30MatchMemoryStorage()), cb = SharedMatchCoordinator(store: b, service: partner, storage: V30MatchMemoryStorage())
+        a.sharedMatches = ca; b.sharedMatches = cb
+        await ca.publish(original, teamID: team.teamID); XCTAssertNil(ca.message)
+        let match = try XCTUnwrap(ca.state.matches.first), copyID = try XCTUnwrap(match.payload?.id)
+        a.openGame(id: copyID)
+        await cb.synchronize(teamID: team.teamID); b.openGame(id: copyID)
+        XCTAssertEqual(b.game.scoringEvents?.last?.battedBall, expected)
+        let device = try await partner.enroll(deviceName: "V4 接手设备")
+        await ca.command(match, resource: "handoff/propose", fields: ["targetDeviceID": .uuid(device)])
+        await cb.synchronize(teamID: team.teamID)
+        await cb.command(try XCTUnwrap(cb.match(id: match.id)), resource: "handoff/accept")
+        XCTAssertNil(cb.message); XCTAssertTrue(cb.canEdit(copyID))
+        b.recordPitch(.ball); await cb.waitForSync(); await ca.synchronize(teamID: team.teamID)
+        XCTAssertEqual(a.games.first { $0.id == copyID }?.state.scoringEvents?.first { $0.resolvedOutcome == .single }?.battedBall, expected)
+        let archive = try await client.exportTeamArchive(teamID: team.teamID)
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let verified = try PortableTeamArchive.validate(archive)
+        XCTAssertEqual(verified.manifest.version, 2)
+        XCTAssertEqual(verified.records.first?.payload?.state.scoringEvents?.first { $0.resolvedOutcome == .single }?.battedBall, expected)
+    }
+}
+
+extension GameStoreTests {
+    func testV310V4BallTypeNeverChangesOfficialStatisticsAndPendingErrorCountsTeamError() throws {
+        var reference: GameState?
+        for type in BattedBallType.allCases {
+            let store = freshStore(); XCTAssertTrue(store.applyPlay(.single))
+            let observation = v4Observation(type, [.shortstop, .secondBase, .firstBase])
+            XCTAssertTrue(store.applyPlay(.doublePlay, observation: observation))
+            if let reference {
+                XCTAssertEqual(store.game.awayHits, reference.awayHits); XCTAssertEqual(store.game.outs, reference.outs)
+                XCTAssertEqual(store.game.fielding.values.reduce(0) { $0 + $1.putouts }, reference.fielding.values.reduce(0) { $0 + $1.putouts })
+                XCTAssertEqual(store.game.fielding.values.reduce(0) { $0 + $1.assists }, reference.fielding.values.reduce(0) { $0 + $1.assists })
+            } else { reference = store.game }
+        }
+        let store = freshStore(), observation = v4Observation(.ground, [], status: .pending)
+        XCTAssertTrue(store.applyPlay(.error, observation: observation)); XCTAssertEqual(store.game.homeErrors, 1)
+        XCTAssertTrue(store.game.scoringEvents!.last!.needsReview)
     }
 }

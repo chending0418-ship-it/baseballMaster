@@ -20,6 +20,8 @@ struct ScorekeepingView: View {
     @State private var showLiveBroadcast = false
     @State private var showRuleNotices = false
     @State private var showHistoryCorrection = false
+    @State private var showBatterPerformance = false
+    @State private var situationAmendment: BattedBallEventSelection?
 
     var body: some View {
         GeometryReader { proxy in
@@ -132,6 +134,16 @@ struct ScorekeepingView: View {
                         .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green, compact: true))
                         .accessibilityIdentifier("open-substitutions")
                     }
+                    if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation,
+                       let latest = store.game.scoringEvents?.last(where: { $0.category == .battedBall }) {
+                        HStack(spacing: 8) {
+                            Text(latest.title).font(.system(size: 10)).lineLimit(2).foregroundStyle(BMTheme.secondaryText)
+                            Spacer(minLength: 0)
+                            Button("补充这球") { situationAmendment = BattedBallEventSelection(id: latest.id) }
+                                .font(.caption.bold()).fixedSize().disabled(!store.canEditCurrentMatch)
+                                .accessibilityIdentifier("amend-situation-play")
+                        }.padding(.horizontal, 8)
+                    }
                     HStack(spacing: 10) {
                         Button("结束半局") { confirmEndHalf = true }
                             .disabled(!store.canRecordAction)
@@ -184,6 +196,8 @@ struct ScorekeepingView: View {
             }
         }
         .sheet(isPresented: $showHistoryCorrection) { HistoryCorrectionView().environmentObject(store) }
+        .sheet(isPresented: $showBatterPerformance) { BatterPerformanceSheet(player: store.currentBatter).environmentObject(store) }
+        .sheet(item: $situationAmendment) { selected in SituationAmendmentSheet(store: store, eventID: selected.id) }
         .toolbar {
             if showsGameHomeButton {
                 ToolbarItem(placement: .topBarLeading) {
@@ -243,9 +257,15 @@ struct ScorekeepingView: View {
             }
         }
         .sheet(isPresented: $showPlayFlowSheet) {
-            ScorePlayFlowSheet(illegalPitch: illegalPlay) {
-                showPlayFlowSheet = false
-                presentCorrectionAfterDismissal()
+            Group {
+                if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation {
+                    SituationPlayFlowSheet(illegalPitch: illegalPlay)
+                } else {
+                    ScorePlayFlowSheet(illegalPitch: illegalPlay) {
+                        showPlayFlowSheet = false
+                        presentCorrectionAfterDismissal()
+                    }
+                }
             }
                 .environmentObject(store)
                 .presentationDetents([.large])
@@ -503,7 +523,7 @@ struct ScorekeepingView: View {
                 .fill(BMTheme.line)
                 .frame(width: 1, height: 35)
                 .padding(.horizontal, 12)
-            matchupPlayer(label: "第 \(store.currentBattingOrder) 棒 · 打者", player: store.currentBatter, alignment: .trailing)
+            matchupPlayer(label: "第 \(store.currentBattingOrder) 棒", player: store.currentBatter, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -545,7 +565,9 @@ struct ScorekeepingView: View {
                     }
                 }
             } else {
-                matchupName(label: label, player: player, alignment: alignment, pitchCount: pitchCount)
+                Button { showBatterPerformance = true } label: {
+                    matchupName(label: label, player: player, alignment: alignment, pitchCount: pitchCount)
+                }.buttonStyle(.plain)
             }
         }
         .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
@@ -896,6 +918,7 @@ struct DefensivePlaySheet: View {
     @EnvironmentObject private var store: GameStore
     @Environment(\.dismiss) private var dismiss
     let outcome: PlayOutcome
+    var onBack: (() -> Void)? = nil
     let onSelect: (DefensivePlay) -> Void
     @State private var showCustomRoute = false
 
@@ -989,7 +1012,7 @@ struct DefensivePlaySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("返回") { dismiss() }
+                    Button("返回") { if let onBack { onBack() } else { dismiss() } }
                 }
             }
         }

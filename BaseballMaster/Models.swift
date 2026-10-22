@@ -316,6 +316,8 @@ struct GameRules: Equatable, Codable {
     var competitionFormat: CompetitionFormat? = nil
     var inningsLimit: Int? = nil
     var rulesVersion: Int? = nil
+    var recordingMethod: RecordingMethod? = nil
+    var effectiveRecordingMethod: RecordingMethod { recordingMethod ?? .traditional }
 
     var isSlowPitch: Bool { gameMode == .slowPitch }
     var startingBalls: Int { initialBalls ?? (isSlowPitch ? 1 : 0) }
@@ -427,6 +429,7 @@ struct StoredGame: Identifiable, Equatable, Codable {
     /// Explicit historical identity links; the match snapshot and event references stay intact.
     var sharedPlayerLinks: [MatchPlayerLink]? = nil
     var historySourceID: UUID? = nil
+    var minimumWriterFormat: Int? = nil
 
     init(
         id: UUID = UUID(),
@@ -1197,6 +1200,8 @@ struct ScoringEventRecord: Identifiable, Equatable, Codable {
     var beforeSituation: GameSituationSnapshot?
     var afterSituation: GameSituationSnapshot?
     var illegalPitch: IllegalPitchRecord? = nil
+    var battedBall: BattedBallObservation? = nil
+    var defensiveRoute: String? = nil
 
     /// Pregame setup belongs to the initial lineup, not the recorded game action.
     var isPregameLineupAdjustment: Bool { notation == "PREGAME-LINEUP" }

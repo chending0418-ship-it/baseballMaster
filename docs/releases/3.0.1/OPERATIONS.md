@@ -1,5 +1,7 @@
 # 3.0.1 服务部署与兼容交接
 
+2026-10-20 后续：共享服务已更新为 3.1.0 格式兼容程序，现用版本与回退边界见 [最新部署记录](../../../collaboration/deploy/2026-10-20-live-compatibility-3.1.0.md)。本文保留 10 月 19 日部署时的历史记录。
+
 2026-10-19，已部署至现有服务器。
 
 - 当前程序：`/www/server/baseballmaster-collaboration/releases/3.0.1-20261019`，`current` 已切换。

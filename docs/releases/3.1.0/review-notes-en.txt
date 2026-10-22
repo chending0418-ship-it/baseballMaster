@@ -1,0 +1,28 @@
+App: 棒球比赛记录大师 (BaseballMaster)
+Version: 3.1.0 (Build 1)
+Bundle ID: com.jasonchen.baseballmaster
+
+No login or review account is required. No subscriptions, in-app purchases, ads or third-party analytics. “基础版” (Basic) and “Pro 版” (Pro) are names of two scoring workflows available in the app; Pro is not a purchase or subscription. The UI is Simplified Chinese.
+
+Core scoring, practice, sample teams, corrections, statistics, PDF/TXT reports and local backups work offline. Optional team sharing and web viewing use our existing service and device authorization, not iCloud. Existing local records are not automatically uploaded.
+
+What is new:
+1. Choose 基础版 / Pro 版 at game setup or in 我的 (Profile) > 练习一局 (Practice one inning). Basic preserves the original scoring input flow. Both modes share the updated player-name/jersey field display and batter performance view.
+2. In Pro, tap 击球进入场内 (Ball in play), then select a common outcome such as 一垒安打 (Single). Select a ball type and tap its approximate location on the field. The same field switches to 守备 / 传球 (Fielding/throws); tap the first actual handler, then each receiver. Routes may include return throws. If the play was not seen, explicitly mark it pending using 区域选择 / 其他处理. Recording a location does not automatically infer a fielder.
+3. If runners are on base, review each runner's destination and cause together. Additional runner handling can reuse the main throw route. Error responsibility is selected independently. The app asks about timing when a third out and a run require a ruling. Record the actual game ruling; this is not an automated officiating system.
+4. After recording a Pro play, 补充这球 (Amend this play) updates the original operation. Saving does not add another pitch or plate appearance. Canceling does not change the saved game. Practice uses temporary data and does not enter official statistics.
+5. Tap the current batter to see 本场 / 年度 (Current game / Year) performance and a batted-ball chart. Missing locations remain unknown; yearly coverage is limited to recorded games and team records the user is permitted to access.
+6. Defensive routes in text live viewing include position numbers, positions and the players' names at the time. Name generation is performed by this app version. The compatible server is already deployed.
+
+Sharing can be tested without fixed review credentials: 球队 (Teams) > 球队共享 (Team sharing) > 新建共享球队 (Create shared team). Create a fictional team and nickname, then invite another installation. Administrators manage membership (maximum three administrators); administrators and scorers can maintain player names and jersey numbers. Only one device scores a shared match at a time, and handoff requires confirmation. Local and shared matches remain separately editable. New match data uses format 2; older clients cannot overwrite upgraded matches and remove the new fields. They can still work on matches that remain in the older format.
+
+Services: https://baseballmaster.cc/api/v3 (protocol 1, compatible with existing App 3.0 clients) and https://baseballmaster.cc/join/. Existing single-use and fixed invitations coexist. No automatic retirement of existing invitations.
+
+Anyone with a valid live link can view; live links expire one hour after completion or one hour without sync/heartbeat. Historical web viewing is separately controlled (public, specified people or closed). Closing web access retains the match and authorized in-app access. No audio/video streaming or automatic full-device cloud backup.
+
+Batted-ball coordinates are points on a field illustration chosen by the scorer, not device GPS locations. No new permission prompt or tracking is introduced.
+
+Privacy: https://baseballmaster.cc/privacy.html
+Support: https://baseballmaster.cc/support.html
+Marketing: https://baseballmaster.cc/
+Contact: chending0418@gmail.com

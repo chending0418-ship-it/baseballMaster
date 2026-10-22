@@ -129,7 +129,7 @@ export class GameService {
   }
   validate(body) {
     const p = body.payload, s = p?.state, projection = body.projection;
-    this.check(body.formatVersion === 1, 426, 'upgrade_required', '比赛格式不兼容，请更新 App。');
+    this.check([1,2].includes(body.formatVersion), 426, 'upgrade_required', '比赛格式不兼容，请更新 App。');
     this.check(p && uuid(p.id) && [0,1,2].includes(p.status) && text(p.seasonID, 100)
       && Number.isFinite(p.createdAt) && Number.isFinite(p.updatedAt) && p.rules && s && typeof s.isFinal === 'boolean');
     this.check((p.status === 1) === s.isFinal && int(s.inning, 1, 999) && int(s.outs, 0, 3)
@@ -172,6 +172,40 @@ export class GameService {
           values: Object.fromEntries(keys.filter(k => k in line).map(k => [k,line[k]])) });
       }
     }
+    this.check(p.minimumWriterFormat == null || p.minimumWriterFormat === 2);
+    if (body.formatVersion === 2) p.minimumWriterFormat = 2;
+    this.check(p.minimumWriterFormat !== 2 || body.formatVersion === 2,426,'upgrade_required','请更新至 3.1.0 或更新版本后继续记分，避免丢失击球资料。');
+    this.check(s.scoringEvents == null || Array.isArray(s.scoringEvents));
+    this.check(body.formatVersion === 2 || (!p.rules.recordingMethod && !(s.scoringEvents ?? []).some(e => e.battedBall != null)),426,'upgrade_required','击球资料需要新版比赛格式。');
+    if (body.formatVersion === 2) {
+      this.check(p.rules.recordingMethod == null || ['traditional','situation'].includes(p.rules.recordingMethod));
+      for (const event of s.scoringEvents ?? []) {
+        const o = event.battedBall;
+        if (o == null) continue;
+        this.check(event.category === 'battedBall' && ['ground','hardGround','line','fly','popup','bunt','unknown'].includes(o.type));
+        this.check(p.rules.mode !== 'slowPitch' || o.type !== 'bunt');
+        const validFielding = f => {
+          const position = n => int(n,1,p.rules.mode === 'slowPitch' ? 10 : 9);
+          return f && ['recorded','pending','noFielding'].includes(f.status) && Array.isArray(f.route) && f.route.length <= 50
+            && f.route.every(position) && (f.status !== 'recorded' || f.route.length > 0)
+            && (f.status !== 'noFielding' || (f.route.length === 0 && f.errorPosition == null)) && (f.errorPosition == null || position(f.errorPosition))
+            && (f.participants == null || (Array.isArray(f.participants) && f.participants.length <= 200
+              && f.participants.every(p => position(p.position) && uuid(p.playerID) && text(p.name) && text(p.number,20))));
+        };
+        if(o.fielding != null) {
+          this.check(validFielding(o.fielding) && o.precision !== 'unknown');
+          this.check(o.fielding.status !== 'noFielding' || event.resolvedOutcome === '本垒打');
+          this.check(event.resolvedOutcome !== '对方失误' || o.fielding.status === 'pending' || o.fielding.errorPosition != null);
+        }
+        if(o.runnerDetails != null) {
+          this.check(Array.isArray(o.runnerDetails) && o.runnerDetails.length <= 4
+            && new Set(o.runnerDetails.map(r => r.playerID)).size === o.runnerDetails.length
+            && o.runnerDetails.every(r => uuid(r.playerID) && ['hit','relay','error','award','tag','appeal','pending'].includes(r.cause)
+              && (r.fielding == null || (validFielding(r.fielding) && r.fielding.status !== 'noFielding'))));
+        }
+        this.check(o.precision === 'unknown' ? o.region == null && o.x == null && o.y == null : o.precision === 'region' ? ['infieldLeft','infieldMiddle','infieldRight','left','center','right','foulLeft','foulRight'].includes(o.region) && o.x == null && o.y == null : o.precision === 'point' && o.region == null && Number.isFinite(o.x) && o.x >= 0 && o.x <= 1 && Number.isFinite(o.y) && o.y >= 0 && o.y <= 1);
+      }
+    }
     const serialized = JSON.stringify(p);
     this.check(Buffer.byteLength(serialized) <= 16 * 1024 * 1024, 413, 'too_large', '单场比赛资料超过限制，请保留本机记录并联系支持。');
     return { payload: serialized, projection: JSON.stringify({ snapshot: clean, box, playedAt: (p.playedAt ?? p.startedAt ?? p.scheduledAt ?? p.createdAt) * 1000 + 978307200000,
@@ -193,6 +227,7 @@ export class GameService {
     const valid = this.validate(body);
     return this.store.operation(device,body,`updateGame:${team}:${game}`, () => this.store.membership(team,device), () => {
       const row = this.row(team,game,device); this.writer(row,device);
+      this.check(JSON.parse(row.payload).minimumWriterFormat !== 2 || body.formatVersion === 2,426,'upgrade_required','请更新至 3.1.0 或更新版本后继续记分，避免丢失击球资料。');
       this.check(!this.db.prepare('SELECT id FROM handoffs WHERE game_id=?').get(game),409,'handoff_pending','正在交接，请暂停记分。');
       this.check(body.writerEpoch === row.epoch && body.baseRevision === row.revision,409,'revision_conflict','比赛已有新版本，本机修改已保留，请核对。');
       this.check(id(body.payload.id) === id(JSON.parse(row.payload).id));

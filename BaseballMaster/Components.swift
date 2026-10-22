@@ -132,7 +132,7 @@ struct BaseballDiamondView: View {
             let size = proxy.size
             let activeIDs = Set(game.fieldingPlayerIDs)
             ZStack {
-                BMTheme.dirt.opacity(0.28)
+                BMTheme.field.opacity(0.86)
 
                 outfield(in: size)
                     .fill(BMTheme.field)
@@ -302,21 +302,22 @@ struct BaseballDiamondView: View {
     private func fielderMarker(player: Player, position: FieldPosition) -> some View {
         let isPitcher = position == .pitcher
         return VStack(spacing: 1) {
-            Text(position.shortName)
-                .font(.system(size: position.shortName.count > 1 ? 9 : 11, weight: .black))
+            Text(player.name)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1).minimumScaleFactor(0.75)
             Text("#\(player.numberText)")
-                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .opacity(0.75)
         }
         .foregroundStyle(isPitcher ? .white : BMTheme.brandNavy)
-        .frame(width: 34, height: 34)
-        .background(isPitcher ? BMTheme.brandNavy : .white.opacity(0.92))
-        .clipShape(Circle())
+        .frame(width: 64, height: 32)
+        .background(isPitcher ? BMTheme.brandNavy : Color.white.opacity(0.96), in: RoundedRectangle(cornerRadius: 9))
         .overlay {
-            Circle().stroke(isPitcher ? .white.opacity(0.7) : BMTheme.brandNavy.opacity(0.2), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 9).stroke(.white.opacity(isPitcher ? 0.6 : 0.3), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.16), radius: 2, y: 1)
+        .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(position.fullName)，\(player.name)")
+        .accessibilityLabel("\(player.name)，\(player.numberText)号")
         .accessibilityIdentifier("fielder-\(position.rawValue)")
     }
 
@@ -336,29 +337,30 @@ struct BaseballDiamondView: View {
         case .pitcher:
             return field.center
         case .catcher:
-            return CGPoint(x: field.home.x, y: min(size.height - 20, field.home.y + 43))
+            return CGPoint(x: field.home.x, y: min(size.height - 18, field.home.y + 30))
         case .firstBase:
-            return CGPoint(x: field.first.x + d * 0.42, y: field.first.y - d * 0.38)
+            return CGPoint(x: min(size.width - 38, field.first.x + 66), y: field.first.y + 35)
         case .secondBase:
-            return CGPoint(x: field.center.x + d * 0.72, y: field.center.y - d * 0.78)
+            return CGPoint(x: field.center.x + max(66, d * 1.1), y: field.center.y - d * 0.72)
         case .thirdBase:
-            return CGPoint(x: field.third.x - d * 0.42, y: field.third.y - d * 0.38)
+            return CGPoint(x: max(38, field.third.x - 66), y: field.third.y + 35)
         case .shortstop:
-            return CGPoint(x: field.center.x - d * 0.72, y: field.center.y - d * 0.78)
+            return CGPoint(x: field.center.x - max(66, d * 1.1), y: field.center.y - d * 0.72)
         case .leftField:
-            return polarPoint(angle: 245, radius: field.outfieldRadius * 0.58, center: field.home)
+            return CGPoint(x: size.width * 0.19, y: max(51, field.home.y - field.outfieldRadius * 0.58))
         case .centerField:
-            return polarPoint(angle: 270, radius: field.outfieldRadius * 0.62, center: field.home)
+            return CGPoint(x: size.width * 0.5, y: max(29, field.home.y - field.outfieldRadius * 0.65))
         case .rightField:
-            return polarPoint(angle: 295, radius: field.outfieldRadius * 0.58, center: field.home)
+            return CGPoint(x: size.width * 0.81, y: max(51, field.home.y - field.outfieldRadius * 0.58))
         case .free:
-            return polarPoint(angle: 270, radius: field.outfieldRadius * 0.42, center: field.home)
+            let centerFieldY = max(29, field.home.y - field.outfieldRadius * 0.65)
+            return CGPoint(x: size.width * 0.5, y: (centerFieldY + field.second.y) / 2)
         }
     }
 
     private func fieldGeometry(in size: CGSize) -> FieldGeometry {
         let sideInset = min(24, max(14, size.width * 0.04))
-        let bottomReserve = min(82, max(66, size.height * 0.16))
+        let bottomReserve = CGFloat(48)
         let home = CGPoint(x: size.width / 2, y: size.height - bottomReserve)
 
         // A baseball field is a 90-degree circular sector: the two foul lines
@@ -377,8 +379,9 @@ struct BaseballDiamondView: View {
         let rightFence = CGPoint(x: home.x + fenceOffset, y: home.y - fenceOffset)
 
         // Home, first, second and third are the four vertices of one exact square.
-        let availableBaseDepth = max(60, home.y - max(34, size.height * 0.44))
-        let baseHalfDiagonal = min(size.width * 0.18, availableBaseDepth / 2)
+        // Leave room between occupied bases and the pitcher’s name/number label.
+        let availableBaseDepth = max(132, home.y - max(34, size.height * 0.40))
+        let baseHalfDiagonal = min(size.width * 0.18, availableBaseDepth / 2, max(1, (home.y - 74) / 2))
         let first = CGPoint(x: home.x + baseHalfDiagonal, y: home.y - baseHalfDiagonal)
         let second = CGPoint(x: home.x, y: home.y - baseHalfDiagonal * 2)
         let third = CGPoint(x: home.x - baseHalfDiagonal, y: home.y - baseHalfDiagonal)

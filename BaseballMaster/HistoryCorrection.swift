@@ -173,6 +173,7 @@ struct HistoryOperation: Equatable, Codable, Identifiable {
     var errors: [HistoryErrorCredit] = []
     var statisticsRuling: HistoryStatisticsRuling?
     var correctedAt: Date?
+    var battedBall: BattedBallObservation? = nil
 
     init(command: HistoryCommand, before: GameState, timestamp: Date = Date(), inserted: Bool = false) {
         self.command = command; context = HistoryContext(before); self.timestamp = timestamp
@@ -263,6 +264,7 @@ extension GameStore {
             var journal = try original.historyJournal ?? HistoryJournal(checkpoint: original.historyData(), operations: [], legacyPrefix: !(original.scoringEvents ?? []).isEmpty || !original.batting.isEmpty)
             let command = try historyPendingCommand ?? .unavailable(events.last?.title ?? "历史操作", original.historyData(), game.historyData())
             var operation = HistoryOperation(command: command, before: original, timestamp: events.first?.timestamp ?? Date())
+            operation.battedBall = events.first(where: { $0.category == .battedBall })?.battedBall
             operation.title = events.last?.title ?? command.title
             operation.eventIDs = events.map(\.id); operation.logIDs = events.compactMap(\.logEntryID)
             operation.nextAppearanceID = game.currentPlateAppearanceID
@@ -276,7 +278,7 @@ extension GameStore {
     }
 
     func makeCorrectionDraft() throws -> HistoryCorrectionDraft {
-        guard let stored = activeStoredGame else { throw HistoryCorrectionError.invalid("请先打开一场已保存比赛。") }
+        guard let stored = correctionStoredGame else { throw HistoryCorrectionError.invalid("请先打开一场已保存比赛。") }
         if let journal = game.historyJournal {
             return HistoryCorrectionDraft(gameID: stored.id, baseRevision: stored.revision ?? 0, journal: journal)
         }
@@ -302,7 +304,7 @@ extension GameStore {
 
     func previewCorrection(_ draft: HistoryCorrectionDraft) -> HistoryCorrectionPreview {
         var output = HistoryCorrectionPreview(game: game, journal: draft.journal, statesBefore: [:], changes: [])
-        guard let stored = activeStoredGame, stored.id == draft.gameID, (stored.revision ?? 0) == draft.baseRevision else {
+        guard let stored = correctionStoredGame, stored.id == draft.gameID, (stored.revision ?? 0) == draft.baseRevision else {
             output.conflict = "比赛已变化，请重新打开纠错，避免覆盖新的记分。"; return output
         }
         do {
@@ -337,7 +339,7 @@ extension GameStore {
                     let originalEvents = before.scoringEvents ?? []
                     worker.historyReplayDate = op.timestamp
                     worker.actionErrorMessage = nil
-                    try worker.executeHistoryCommand(op.command, context: op.context, aliases: &aliases)
+                    try worker.executeHistoryCommand(op.command, context: op.context, aliases: &aliases, observation: op.battedBall)
                     if let error = worker.actionErrorMessage { throw HistoryCorrectionError.invalid(error) }
                     let eventOffset = zip(originalEvents, worker.game.scoringEvents ?? []).prefix { $0.id == $1.id }.count
                     let logOffset = zip(before.playLog, worker.game.playLog).prefix { $0.id == $1.id }.count
@@ -347,12 +349,15 @@ extension GameStore {
                     if eventOffset < (worker.game.scoringEvents?.count ?? 0), let title = worker.game.scoringEvents?.last?.title { output.journal.operations[index].title = title }
                     output.journal.operations[index].correctedAt = op.correctedAt
                     output.journal.operations[index].context = HistoryContext(before)
+                    if op.battedBall != nil {
+                        output.journal.operations[index].battedBall = worker.game.scoringEvents?.dropFirst(eventOffset).first(where: { $0.category == .battedBall })?.battedBall
+                    }
                     output.journal.operations[index].eventIDs = Array((worker.game.scoringEvents ?? []).dropFirst(eventOffset)).map(\.id)
                     output.journal.operations[index].logIDs = Array(worker.game.playLog.dropFirst(logOffset)).map(\.id)
                     output.journal.operations[index].nextAppearanceID = worker.game.currentPlateAppearanceID
                     output.journal.operations[index].acceptsNewContext = false
                     let originalOperation = game.historyJournal?.operations.first { $0.id == op.id }
-                    let directlyChanged = originalOperation.map { $0.command != op.command || $0.errors != op.errors || $0.statisticsRuling != op.statisticsRuling || op.acceptsNewContext } ?? (op.edited || op.inserted)
+                    let directlyChanged = originalOperation.map { $0.command != op.command || $0.errors != op.errors || $0.statisticsRuling != op.statisticsRuling || $0.battedBall != op.battedBall || op.acceptsNewContext } ?? (op.edited || op.inserted)
                     if directlyChanged { output.changes.append("\(op.location) · \(op.command.title)\(op.inserted ? "（补录）" : "（更正）")") }
                 } catch {
                     output.game = worker.game
@@ -484,7 +489,7 @@ extension GameStore {
 
 @MainActor
 extension GameStore {
-    func executeHistoryCommand(_ command: HistoryCommand, context: HistoryContext, aliases: inout [UUID: UUID]) throws {
+    func executeHistoryCommand(_ command: HistoryCommand, context: HistoryContext, aliases: inout [UUID: UUID], observation: BattedBallObservation? = nil) throws {
         func resolve(_ id: UUID) -> UUID { aliases[id] ?? id }
         func player(_ id: UUID) throws -> Player {
             guard let value = (game.homeTeam.players + game.awayTeam.players).first(where: { $0.id == id }) else {
@@ -520,6 +525,10 @@ extension GameStore {
             // Explicitly returning a player to the field must not create an A/B cycle.
             aliases[incoming] = incoming
         }
+        var mappedObservation = observation
+        if let details = observation?.runnerDetails {
+            mappedObservation?.runnerDetails = details.map { detail in var copy = detail; copy.playerID = originalParticipant(detail.playerID); return copy }
+        }
         let before = game
         var result = true
         switch command {
@@ -529,9 +538,9 @@ extension GameStore {
             recordPitch(action)
         case .illegalPitch(let action, let thrown, let outcome, let defense, let moves, let timing, let penalty):
             result = recordIllegalPitch(action, wasThrown: thrown, outcome: outcome, defensivePlay: defense,
-                                       decisions: try moves.map { try decisions($0) }, timingRunCounts: timing, penaltyApplied: penalty)
+                                       decisions: try moves.map { try decisions($0) }, timingRunCounts: timing, penaltyApplied: penalty, observation: mappedObservation)
         case .play(let outcome, let defense, let moves, let timing):
-            result = applyPlay(outcome, defensivePlay: defense, decisions: try decisions(moves), timingRunCounts: timing)
+            result = applyPlay(outcome, defensivePlay: defense, decisions: try decisions(moves), timingRunCounts: timing, observation: mappedObservation)
         case .runner(let kind, let moves, let timing):
             result = recordRunnerEvent(kind, decisions: try decisions(moves), timingRunCounts: timing)
         case .hitByPitch: recordHitByPitch()

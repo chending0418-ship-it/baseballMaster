@@ -777,6 +777,7 @@ private struct RulePDFKitView: UIViewRepresentable {
 }
 
 struct PracticeInningView: View {
+    @State private var recordingMethod = RecordingMethod.traditional
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -792,15 +793,16 @@ struct PracticeInningView: View {
                     }
                 }
 
+                RecordingMethodPicker(method: $recordingMethod)
                 SectionHeader(title: "建议练习顺序")
                 VStack(spacing: 10) {
                     practiceStep(number: 1, title: "记录投球", detail: "尝试坏球、好球 - 看、好球 - 挥空和界外。")
-                    practiceStep(number: 2, title: "记录击球", detail: "先选择打者最终位置，再确认发生原因。")
+                    practiceStep(number: 2, title: "记录击球", detail: recordingMethod == .traditional ? "先选择打者最终位置，再确认发生原因。" : "选择常用结果、球型和去向，再核对守备与跑者。")
                     practiceStep(number: 3, title: "处理跑者", detail: "确认跑者进垒、得分或出局。")
                     practiceStep(number: 4, title: "修正与撤销", detail: "模拟看错现场后进行修正。")
                 }
 
-                NavigationLink(destination: PracticeScorekeepingView()) {
+                NavigationLink(destination: PracticeScorekeepingView(method: recordingMethod)) {
                     Label("开始练习一局", systemImage: "play.fill")
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -846,9 +848,9 @@ struct PracticeScorekeepingView: View {
     @AppStorage("showPracticeGuidance") private var showPracticeGuidance = true
     @State private var showResetConfirmation = false
 
-    init() {
+    init(method: RecordingMethod = .traditional) {
         let store = GameStore(persistenceURL: nil)
-        store.resetPracticeInning()
+        store.resetPracticeInning(method: method)
         _practiceStore = StateObject(wrappedValue: store)
     }
 
@@ -872,7 +874,7 @@ struct PracticeScorekeepingView: View {
             }
             .confirmationDialog("重新开始这一局练习？", isPresented: $showResetConfirmation) {
                 Button("重新开始", role: .destructive) {
-                    practiceStore.resetPracticeInning()
+                    practiceStore.resetPracticeInning(method: practiceStore.game.rulesSnapshot?.effectiveRecordingMethod ?? .traditional)
                 }
                 Button("取消", role: .cancel) {}
             } message: {

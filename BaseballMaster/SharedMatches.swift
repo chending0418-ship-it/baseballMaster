@@ -246,7 +246,8 @@ struct SharedMatchFile: SharedMatchStorage {
         clean.sharedTeamID = nil; clean.sharedGameID = nil
         clean.sharedPlayerLinks = nil; clean.historySourceID = nil
         clean.publicationState = nil; clean.pendingPublicationRevisions = nil
-        return ["formatVersion": .number(1), "payload": try .encode(clean), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(clean).data())]
+        clean.minimumWriterFormat = 2
+        return ["formatVersion": .number(2), "payload": try .encode(clean), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(clean).data())]
     }
     private func operation(localID: UUID, teamID: UUID, gameID: UUID?, path: String, method: String, kind: String,
                            fields: [String: MatchJSON], revision: Int? = nil, token: String? = nil) -> PendingMatchOperation {

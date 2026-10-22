@@ -128,6 +128,10 @@ struct LaunchRouterView: View {
                 NavigationStack { BackupManagementView() }
             } else if arguments.contains("--poster-preview") {
                 GamePosterFixtureView()
+            } else if arguments.contains("--situation-compound-preview") {
+                SituationCompoundFixture()
+            } else if arguments.contains("--batted-ball-preview") {
+                BattedBallPreviewFixture()
             } else if arguments.contains("--scorekeeping-preview") {
                 ScorekeepingPreviewFixtureView()
             } else if arguments.contains("--scorekeeping-timed-preview") {

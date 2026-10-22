@@ -18,14 +18,14 @@ struct LocalBackup: Codable {
     init(snapshot: RosterSnapshot, date: Date = Date()) throws {
         try Self.validate(snapshot)
         format = "BaseballMaster Backup"
-        version = 6
+        version = 7
         createdAt = date
         payload = try JSONEncoder().encode(snapshot)
         checksum = Self.digest(payload)
     }
 
     func snapshot() throws -> RosterSnapshot {
-        guard format == "BaseballMaster Backup", (1...6).contains(version) else {
+        guard format == "BaseballMaster Backup", (1...7).contains(version) else {
             throw LocalDataError.invalid("备份格式或版本不受支持，请使用兼容的 App 版本。")
         }
         guard checksum == Self.digest(payload) else {
@@ -88,6 +88,15 @@ struct LocalBackup: Codable {
                     && revision.playedAt.timeIntervalSince1970.isFinite && TimeZone(identifier: revision.timeZoneID) != nil, "比赛时间更正记录无效")
             }
             let game = stored.state
+            for event in game.scoringEvents ?? [] {
+                if let observation = event.battedBall {
+                    try require(event.category == .battedBall && observation.isValid && !(stored.rules.isSlowPitch && observation.type == .bunt), "击球观察无效")
+                    if let fielding = observation.fielding {
+                        try require(observation.hasLocation && fielding.status != nil && (fielding.status != .noFielding || event.resolvedOutcome == .homeRun), "击球守备观察无效")
+                        try require(event.resolvedOutcome != .error || fielding.status == .pending || fielding.errorPosition != nil, "失误责任缺失")
+                    }
+                }
+            }
             try require((0...3).contains(stored.rules.startingBalls) && (0...2).contains(stored.rules.startingStrikes), "初始球数无效")
             if stored.rules.isSlowPitch {
                 try require(stored.rules.fieldersCount == 10, "慢垒守备人数无效")
@@ -98,6 +107,9 @@ struct LocalBackup: Codable {
             for journal in ([game.historyJournal].compactMap { $0 } + (game.correctionRevisions ?? []).map(\.previousJournal)) {
                 try require(journal.version == 1, "纠错记录版本不受支持")
                 try require(unique(journal.operations.map(\.id)), "纠错操作编号重复")
+                for operation in journal.operations {
+                    if let observation = operation.battedBall { try require(observation.isValid && !(stored.rules.isSlowPitch && observation.type == .bunt), "历史击球观察无效") }
+                }
                 let checkpoint = try JSONDecoder().decode(GameState.self, from: journal.checkpoint)
                 try require(checkpoint.historyJournal == nil && checkpoint.correctionRevisions == nil, "检查点包含递归历史")
                 let sameRoles = checkpoint.homeTeam.id == game.homeTeam.id && checkpoint.awayTeam.id == game.awayTeam.id
@@ -196,7 +208,7 @@ enum PortableTeamArchive {
                 if row.kind == "manifest" {
                     guard manifest == nil, records.isEmpty else { throw invalid() }
                     let value = try JSONDecoder().decode(TeamArchiveManifest.self, from: row.payload)
-                    guard value.format == "BaseballMaster Team Archive", value.version == 1,
+                    guard value.format == "BaseballMaster Team Archive", (1...2).contains(value.version),
                           value.games.count <= 5000, Set(value.games.map(\.id)).count == value.games.count,
                           Set(value.profile.players.map(\.id)).count == value.profile.players.count,
                           Set(value.profile.players.map(\.sourceID)).count == value.profile.players.count else { throw invalid() }

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000041 /* SituationRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000041 /* SituationRecording.swift */; };
+		A10000000000000000000040 /* BattedBall.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000040 /* BattedBall.swift */; };
 		A10000000000000000000001 /* BaseballMasterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001 /* BaseballMasterApp.swift */; };
 		A10000000000000000000002 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* DesignSystem.swift */; };
 		A10000000000000000000003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003 /* Models.swift */; };
@@ -66,6 +68,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		F10000000000000000000041 /* SituationRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SituationRecording.swift; sourceTree = "<group>"; };
+		F10000000000000000000040 /* BattedBall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattedBall.swift; sourceTree = "<group>"; };
 		F10000000000000000000001 /* BaseballMasterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseballMasterApp.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		F10000000000000000000003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -185,6 +189,8 @@
 				F10000000000000000000008 /* ScorekeepingViews.swift */,
 				F10000000000000000000009 /* ResultsViews.swift */,
 				F10000000000000000000010 /* NoviceScoringViews.swift */,
+				F10000000000000000000040 /* BattedBall.swift */,
+				F10000000000000000000041 /* SituationRecording.swift */,
 			);
 			path = BaseballMaster;
 			sourceTree = "<group>";
@@ -381,6 +387,8 @@
 				A10000000000000000000008 /* ScorekeepingViews.swift in Sources */,
 				A10000000000000000000009 /* ResultsViews.swift in Sources */,
 				A10000000000000000000010 /* NoviceScoringViews.swift in Sources */,
+				A10000000000000000000040 /* BattedBall.swift in Sources */,
+				A10000000000000000000041 /* SituationRecording.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -470,7 +478,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 3.0.1;
+				MARKETING_VERSION = 3.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -498,7 +506,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 3.0.1;
+				MARKETING_VERSION = 3.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
