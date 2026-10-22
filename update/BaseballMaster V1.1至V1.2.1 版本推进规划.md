@@ -1,6 +1,6 @@
 # BaseballMaster V1.1 → V1.1.1 → V1.2.1 版本推进规划
 
-**最新决定（2026-09-27）：V1.1 与 V1.1.1 已完成本地开发验收，合并以正式版本 1.1.1 发布，由用户本人操作 App Store。此前 TestFlight 1.6 目标已替代；后续文字直播仍保持延期。见[正式发布流程](../docs/releases/1.1.1/00-正式发布流程.md)。**
+**最新决定（2026-09-27）：V1.1 与 V1.1.1 已完成本地开发验收，合并以正式版本 2.0（Build 1）发布，由用户本人操作 App Store。此前 TestFlight 1.6 目标已替代；后续文字直播仍保持延期。见[正式发布流程](../docs/releases/2.0/00-正式发布流程.md)。**
 
 **最新执行要求：**用户指定 V1.1.1 先提交 TODO review，再按需要实施，目标为今天完成后发布 TestFlight。具体清单及需要定稿的行为见[V1.1.1 TODO（待 Review）](</Users/JasonChan/Documents/BaseballMaster/update/BaseballMaster V1.1.1 TODO.md>)；发现与旧设计或效果冲突必须先暂停确认。当前未开始功能修改。
 
