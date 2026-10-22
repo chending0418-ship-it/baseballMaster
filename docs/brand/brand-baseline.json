@@ -33,5 +33,12 @@
     "iconBorderRadius": "10px",
     "background": "#092a2a"
   },
-  "responsivePolicy": "Reuse existing responsive and footer sizes while preserving the composition, wordmark weight contrast, subtitle and colors."
+  "responsivePolicy": "Reuse existing responsive and footer sizes while preserving the composition, wordmark weight contrast, subtitle and colors.",
+  "promotionalDesign": {
+    "approvedOn": "2026-10-22",
+    "guideline": "docs/brand/PROMOTIONAL-DESIGN.md",
+    "baseline": "docs/brand/promotional-design-baseline.json",
+    "reference": "docs/brand/references/promotional-2026-10-22/overview.png",
+    "preserveExistingLogo": true
+  }
 }
