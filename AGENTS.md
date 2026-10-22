@@ -1,3 +1,7 @@
+# 统一工作区（2026-10-22）
+
+本项目已迁入 BaseballMaster.CC。当前状态以 [docs/CURRENT.md](docs/CURRENT.md) 为入口。公共品牌规范由 [总品牌目录](../../brand/README.md) 管理；开始品牌及宣传工作时显式读取该目录规范。总项目规则见 [工作区约定](../../AGENTS.md)。现有工程名、Bundle ID 和版本号保持稳定。历史证据中的旧目录按工作区 management/MIGRATION.md 映射追溯。
+
 # 当前 Git 协作约定
 
 2026-10-22 用户明确要求：以后合并 main 都走 PR，不再直接推送 main。

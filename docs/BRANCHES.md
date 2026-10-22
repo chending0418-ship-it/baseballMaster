@@ -1,6 +1,10 @@
+# 本次迁移分支（2026-10-22）
+
+目录整理在 codex/workspace-migration-20261022 进行，所有原分支和 main 提交保留。最新品牌规范已先保存为提交 6b0fc97。当前资料与工作区路径见 [CURRENT.md](CURRENT.md) 及 [迁移记录](../../../management/MIGRATION.md)。本次未直接修改 main。
+
 # 版本分支与工作目录
 
-更新日期：2026-10-22。按用户要求顺序开发，唯一项目目录已去掉版本号，现为 `/Users/JasonChan/Documents/BaseballMaster`。
+更新日期：2026-10-22。按用户要求顺序开发，唯一项目目录已去掉版本号，现为 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper`。
 
 ## main 合入流程
 
@@ -16,7 +20,7 @@
 
 | 内容 | 分支／目录 | 状态 |
 | --- | --- | --- |
-| 2.2 发布基线 | `d3d4928`（main 历史），`/Users/JasonChan/Documents/BaseballMaster` | 2.2（Build 1），功能与回归、Web 部署、归档及商店材料完成；App 上传和提交按既有交接记录 |
+| 2.2 发布基线 | `d3d4928`（main 历史），`/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper` | 2.2（Build 1），功能与回归、Web 部署、归档及商店材料完成；App 上传和提交按既有交接记录 |
 | 2.2 开发记录 | `codex/dev-2.2` | 已推送并快进合入 main，保留历史分支 |
 | 2.1 历史维护 | `codex/release-2.1` | 完整本地／远端分支保留，不反向混入 2.2 功能 |
 | 2.3 交付基线 | `8e54f23`（main 历史），根目录 [单份计划](<../2.3 发布功能计划.md>) | 工程 2.3（Build 1），209 项单元／集成与 72 项唯一界面验收完成，官网／兼容直播已上线，资料与归档齐备；`8e54f23` 已推送，Apple 发布由用户执行，小组件已延期 |
@@ -34,7 +38,7 @@
 
 以下为规划阶段历史，当前状态以上文 2026-10-11 开发记录为准。
 
-此前规划编写时使用 `codex/dev-2.3`；2.3 已合入后，当时目录 `/Users/JasonChan/Documents/BaseballMaster` 位于 `main`。2026-10-09 用户要求开始 3.0，先交付页面截图和使用流程 PDF，大致确认后实际开发。[页面与流程提案 v2](design/3.0/README.md) 已按反馈修订，主要流程已确认，D01 继续细化。本阶段不创建或切换分支、不创建工作区或版本专属项目目录，不修改工程 2.3（Build 1）；业务开发阶段再安排分支和版本。3.0 队伍权限及平台无关协议仍需定稿；2.3 的实际发布状态见其交接。小组件不因 3.0 规划自动纳入交付。
+此前规划编写时使用 `codex/dev-2.3`；2.3 已合入后，当时目录 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper` 位于 `main`。2026-10-09 用户要求开始 3.0，先交付页面截图和使用流程 PDF，大致确认后实际开发。[页面与流程提案 v2](design/3.0/README.md) 已按反馈修订，主要流程已确认，D01 继续细化。本阶段不创建或切换分支、不创建工作区或版本专属项目目录，不修改工程 2.3（Build 1）；业务开发阶段再安排分支和版本。3.0 队伍权限及平台无关协议仍需定稿；2.3 的实际发布状态见其交接。小组件不因 3.0 规划自动纳入交付。
 
 2026-10-10 最新要求：比赛时间补填与赛后更正只做评估并放入 TODO；用户明确 3.0 尚未开始开发，实际开发等待另行指示。此次仅更新规划及文档入口，仍在当前 `main`，不修改业务代码、工程版本或部署。
 

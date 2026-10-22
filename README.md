@@ -1,5 +1,7 @@
 # BaseballMaster iOS App
 
+**统一入口：** [当前状态](docs/CURRENT.md) · [BaseballMaster 工作区](../../README.md) · [公共品牌规范](../../brand/README.md)。旧版本的日期记录继续保留。
+
 [文档索引](docs/README.md) · [项目目录说明](docs/PROJECT-STRUCTURE.md) · [输出文件入口](output/README.md)
 
 **Git 协作约定（2026-10-22）：所有改动通过 PR 合入 main，不再直接推送 main，包括文档和发布材料。** 见 [流程](docs/BRANCHES.md#main-合入流程) 与 [完整历史 PR 索引](docs/maintenance/2026-10-22-pr-history.md)。

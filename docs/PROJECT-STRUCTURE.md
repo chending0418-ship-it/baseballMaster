@@ -1,6 +1,10 @@
+# 当前目录入口（2026-10-22）
+
+本工程已迁入 BaseballMaster.CC/apps/baseball-scorekeeper/。完整目录与验收见 [迁移记录](../../../management/MIGRATION.md)，当前状态见 [CURRENT.md](CURRENT.md)。website 和 docs/brand 为公共目录的相对兼容链接；App 发布脚本位于 scripts/release/，模板位于 scripts/templates/。既有 output/ 分类和历史证据完整保留。下方保留原目录约定的日期记录，当前归属以本节及工作区 management/projects.json 为准。
+
 # 目录与命名约定
 
-2026-09-29 整理。现适用于 `/Users/JasonChan/Documents/BaseballMaster/`；2026-10-03 已完成单目录收拢，并按用户要求去掉项目文件夹版本号。
+2026-09-29 整理。现适用于 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper/`；2026-10-03 已完成单目录收拢，并按用户要求去掉项目文件夹版本号。
 
 ## 根目录保留什么
 
