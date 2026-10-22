@@ -5,7 +5,8 @@
 ## 实现
 
 - 使用比赛记录大师深绿 **#092A2A**、原始 BM 图形的反白版、Arial BASEBALL 800／MASTER 400 与 −0.045em 字距；保留产品中文名称、低对比缝线与球场纹理，以及底部“每一球 都有迹可循”。
-- `BaseballMaster/LaunchScreen.storyboard` 由系统显示，使用独立的全屏背景、等比例图文和底部短句三个 PNG 图层与 Auto Layout。图文不会被背景的等比例铺满裁切；底部按安全区留白。
+- `BaseballMaster/LaunchScreen.storyboard` 由系统显示，使用独立的全屏背景、等比例图文和底部 App 图标／短句三个 PNG 图层与 Auto Layout。图文不会被背景的等比例铺满裁切；底部按安全区留白。
+- 用户后续要求在底部补充 App Logo。当前底部为原有球场／棒球 App 图标（44 × 44 pt、圆角 10 pt），图标下方 14 pt 放短句，整体 180 × 74 pt；原小本垒装饰由产品图标替换，版本保持 3.1.1（Build 1）。
 - App 自有资源位于 `BaseballMaster/Assets.xcassets/Launch*`，包含 1x／2x／3x 分辨率和固定深绿色；构建不依赖公共品牌目录或本地 output。
 - Debug／Release 均设置 `UILaunchStoryboardName = LaunchScreen`，撤除原空白自动启动页配置。
 - 启动阶段状态栏使用浅色以适应深绿背景；进入 App 后继续由现有页面控制状态栏外观。
@@ -15,7 +16,7 @@
 
 ## 验证
 
-本轮验证证据统一保存至 `output/validation/3.1.1/launch-screen/`，Xcode 26.1.1／iOS 26.1 模拟器。
+验证证据统一保存至 `output/validation/3.1.1/launch-screen/`，Xcode 26.1.1／iOS 26.1 模拟器。下表为初次深绿启动页接入记录；底部 App 图标补充的增量验证另见后文。
 
 | 检查 | 结果与证据 |
 | --- | --- |
@@ -29,6 +30,16 @@
 | 工程与源稿 | plist／工程格式检查、两份 Node 源稿语法检查、Git diff 空白检查通过 |
 
 系统启动页截图使用模拟器的 `--wait-for-debugger` 暂停取证，正常启动视频不使用此参数。此暂停仅为验证手段，App 未加入等待代码。初次未签名模拟器构建被 SplashBoard 资源校验拒绝（-67056），其黑屏和视频证据按 unsigned 命名保留；对模拟器产物做本地 ad hoc 签名并重新安装后，原生启动截图及正常冷启动均通过。正式工程的自动签名配置未改动，此签名不属于发布归档。
+
+### 底部 App 图标补充
+
+按用户后续要求加入原有 App 图标，源稿输出为 v3，增量证据归入 `output/validation/3.1.1/launch-screen/app-icon-footer/`。图标直接使用原 AppIcon-1024.png，未改变其原图形、配色或 App 图标设置。
+
+- Debug 与 Release 重新构建通过；底部图层 1x／2x／3x 均为 180 × 74 pt 对应像素尺寸。
+- 分层合成相对 v3 设计最大通道差 1／255，App 图标来源 SHA-256 与当前工程原图一致；`asset-verification.json`。
+- iPhone 17 Pro 浅色与 iPhone SE（第三代）深色的系统原生截图均确认底部 App 图标完整显示、留白正常，正常启动均进入首页；`iphone17pro-light-launch.png`、`iphonese-dark-launch.png`、`*-home.png` 与 `validation-manifest.json`。
+- 原生截图及正常启动取证使用同一版本的本地签名模拟器构建；同版本开发中的旧启动页缓存通过重启专用测试模拟器刷新，不增加业务代码或强制清理用户资料的逻辑。
+- 本次只更新图片、静态约束与源稿，未修改业务 Swift 代码；既有两项界面回归不重复运行。
 
 ## Git 与发布边界
 

@@ -5,7 +5,7 @@
 | 项目 | 当前依据 |
 | --- | --- |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.1（Build 1） |
-| 当前开发 | `codex/dev-3.1.1`；已确认的产品深绿 BM 开机图接入，见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md) |
+| 当前开发 | `codex/dev-3.1.1`；产品深绿 BM 开机图接入，底部补充现有 App 图标，见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md) |
 | 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
 | 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
 | 发布材料 | [3.1.0 发布交接](releases/3.1.0/REVIEW-HANDOFF.md)、`output/releases/3.1.0/` |

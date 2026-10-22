@@ -1,5 +1,5 @@
-// Export the approved v2 composition into independent native launch layers.
-// This does not change the approved layout or redraw the BM mark.
+// Export the deep green composition, with its existing App icon at the bottom,
+// into native launch layers. Both brand marks come from the original assets.
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -9,7 +9,7 @@ const { chromium } = require(path.join(modules, 'playwright'));
 const sharp = require(path.join(modules, 'sharp'));
 const root = path.resolve(__dirname, '../../../../..');
 const assets = path.join(root, 'BaseballMaster/Assets.xcassets');
-const input = path.join(root, 'output/samples/3.1.1/launch-screen/2026-10-22/v2/01-产品深绿.html');
+const input = path.join(root, 'output/samples/3.1.1/launch-screen/2026-10-22/v3/01-产品深绿.html');
 
 (async () => {
     const browser = await chromium.launch({ headless: true });
@@ -21,6 +21,7 @@ const input = path.join(root, 'output/samples/3.1.1/launch-screen/2026-10-22/v2/
             const image = new Image();
             image.src = getComputedStyle(document.querySelector('.mark')).maskImage.slice(5, -2);
             await image.decode();
+            await Promise.all([...document.images].map(image => image.decode()));
         });
         const exportLayer = async (name, clip, css) => {
             const style = await page.addStyleTag({ content: css });
@@ -38,7 +39,7 @@ const input = path.join(root, 'output/samples/3.1.1/launch-screen/2026-10-22/v2/
         };
         await exportLayer('LaunchArtwork', { x: 0, y: 0, width: 402, height: 874 }, '.identity,.signoff{visibility:hidden}');
         await exportLayer('LaunchIdentity', { x: 71, y: 299, width: 260, height: 223 }, '.screen{background:transparent}.art,.signoff{visibility:hidden}');
-        await exportLayer('LaunchSignoff', { x: 111, y: 736, width: 180, height: 53 }, '.screen{background:transparent}.art,.identity{visibility:hidden}');
+        await exportLayer('LaunchSignoff', { x: 111, y: 715, width: 180, height: 74 }, '.screen{background:transparent}.art,.identity{visibility:hidden}');
         const colorDirectory = path.join(assets, 'LaunchBackground.colorset');
         fs.mkdirSync(colorDirectory, { recursive: true });
         fs.writeFileSync(path.join(colorDirectory, 'Contents.json'), JSON.stringify({ colors: [{ idiom: 'universal', color: { 'color-space': 'srgb', components: { red: '0x09', green: '0x2A', blue: '0x2A', alpha: '1.000' } } }], info: { author: 'xcode', version: 1 } }, null, 2) + '\n');
