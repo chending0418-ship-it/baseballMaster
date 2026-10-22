@@ -53,7 +53,7 @@ async function main() {
         if (urlPath === '/') {
           const text = await page.locator('body').innerText();
           assert.ok(text.includes('2.3 App 已完成开发与模拟器验收'));
-          assert.equal(await page.locator('#main-nav a[href="#next"]').textContent(), '后续计划');
+          assert.equal(await page.locator('#main-nav a[href="#next"]').textContent(), '3.0 预告');
           assert.ok(!text.includes('2.1 即将上线'));
           assert.equal(await page.locator('.release-card').count(), 4);
           assert.equal(await page.locator('.release-details article').count(), 3);
