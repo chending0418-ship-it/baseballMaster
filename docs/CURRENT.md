@@ -5,6 +5,7 @@
 | 项目 | 当前依据 |
 | --- | --- |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.0（Build 1） |
+| 本版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，汇总最终范围、完成事项与待发布步骤 |
 | 最近完成开发 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
 | 发布材料 | [3.1.0 发布交接](releases/3.1.0/REVIEW-HANDOFF.md)、`output/releases/3.1.0/` |
 | 已确认上架 | 既有 README 记录用户确认 3.0 已上架；本轮没有连接 App Store Connect 核验新状态 |
@@ -13,7 +14,7 @@
 | 公共品牌与官网 | [品牌](../../../brand/README.md)、[官网](../../../website/README.md) |
 | 目录整理 | [迁移记录](../../../management/MIGRATION.md)，本次不修改业务代码、版本号或部署 |
 
-需求与后续设计入口：[3.1 规划](plans/3.1-BATTED-BALL.md)、[后续计划](plans/BACKLOG.md)、[产品设计](design/)。
+需求与后续设计入口：[3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)、[3.1 原始详细规划](plans/3.1-BATTED-BALL.md)、[后续计划](plans/BACKLOG.md)、[产品设计](design/)。
 
 App Store 与版本宣传脚本现位于 `scripts/release/`，海报模板位于 `scripts/templates/`。例如在本项目目录运行 `python3 scripts/release/package-release-3.1.0.py`，输出继续使用本项目原有 `output/` 分类。分享卡片部署脚本位于 `scripts/website/`，执行部署需要用户另行授权。
 
