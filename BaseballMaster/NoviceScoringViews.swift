@@ -187,6 +187,7 @@ struct BattedBallObservationSheet: View {
 
 struct BattedBallCauseSheet: View {
     let arrival: BatterArrival
+    var allowsBunting = true
     let hasRunners: Bool
     let hasRunnerOnThird: Bool
     let hasRunnersOnFirstAndSecond: Bool
@@ -222,7 +223,7 @@ struct BattedBallCauseSheet: View {
                         hasRunnerOnThird: hasRunnerOnThird,
                         hasRunnersOnFirstAndSecond: hasRunnersOnFirstAndSecond,
                         outs: outs
-                    )) { cause in
+                    ).filter { allowsBunting || $0.outcome != .sacrificeBunt }) { cause in
                         Button {
                             onSelect(cause)
                         } label: {

@@ -40,7 +40,7 @@
 
 ## 2.2 发布交付
 
-当前唯一项目目录为 `/Users/JasonChan/Documents/BaseballMaster-2.2`。
+当前唯一项目目录为 `/Users/JasonChan/Documents/BaseballMaster`。
 
 - `releases/2.2/`：两套截图、预览、商店文案、签名归档及素材 ZIP。
 - `validation/2.2/release-preparation/`：发布阶段模拟器、公网、官网和迁移后构建证据。

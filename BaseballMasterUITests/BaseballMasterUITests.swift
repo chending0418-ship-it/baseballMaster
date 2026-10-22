@@ -260,6 +260,8 @@ final class BaseballMasterUITests: XCTestCase {
         let startClock = app.buttons["start-game-clock"]
         XCTAssertTrue(startClock.exists)
         startClock.tap()
+        XCTAssertTrue(app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 3))
+        app.alerts.buttons["确认开赛"].tap()
         XCTAssertTrue(app.buttons["game-clock-display"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.buttons["redo-last-play"].exists)
 
@@ -279,6 +281,8 @@ final class BaseballMasterUITests: XCTestCase {
         let start = app.buttons["start-game-clock"]
         XCTAssertTrue(start.waitForExistence(timeout: 3))
         start.tap()
+        XCTAssertTrue(app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 3))
+        app.alerts.buttons["确认开赛"].tap()
 
         let display = app.buttons["game-clock-display"]
         XCTAssertTrue(display.waitForExistence(timeout: 2))
@@ -737,7 +741,7 @@ final class BaseballMasterUITests: XCTestCase {
         for _ in 0..<5 where !next.isHittable { app.swipeUp() }
         XCTAssertTrue(next.isHittable)
         next.tap()
-        XCTAssertTrue(app.navigationBars["选择先发"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["双方阵容"].waitForExistence(timeout: 3))
         let confirm = app.buttons["confirm-lineup"]
         XCTAssertTrue(confirm.exists)
         XCTAssertTrue(confirm.isEnabled)
@@ -766,14 +770,15 @@ final class BaseballMasterUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["观赛阵容"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["客队 · 先攻"].exists)
         XCTAssertTrue(app.staticTexts["主队 · 后攻"].exists)
-        let rows = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "observed-lineup-order-"))
+        let rows = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label MATCHES %@", "observed-lineup-row-", "^[0-9]+$"))
         for start in [0, 9] {
             let id = rows.element(boundBy: start).identifier
             let target = rows.element(boundBy: start + 2)
             revealStatisticsControl(target, in: app)
-            let dragged = app.staticTexts[id]
+            let dragged = rows.matching(identifier: id).firstMatch
+            let originalLabel = dragged.label
             dragged.press(forDuration: 1, thenDragTo: target)
-            XCTAssertNotEqual(dragged.label, "1")
+            XCTAssertNotEqual(dragged.label, originalLabel, "Dragging each team's first player must change its recorded batting-order label")
         }
         captureV111("2.2-观赛双方赛前拖动阵容", app: app)
         XCTAssertTrue(app.buttons["confirm-observed-lineup"].isEnabled)
@@ -976,10 +981,18 @@ extension BaseballMasterUITests {
         let lineup = app.buttons[observed ? "confirm-observed-lineup" : "confirm-lineup"]
         revealStatisticsControl(lineup, in: app)
         lineup.tap()
-        let confirmation = app.alerts[observed ? "开始观赛记录？" : "确认开始比赛？"]
+        let confirmation = app.alerts[observed ? "开始观赛记录？" : "建立比赛并开始记录？"]
         XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
-        confirmation.buttons[observed ? "开始记录" : "开始比赛"].tap()
+        confirmation.buttons["开始记录"].tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        let playBall = app.buttons["start-game-clock"]
+        if playBall.exists {
+            revealStatisticsControl(playBall, in: app)
+            XCTAssertTrue(playBall.isHittable)
+            playBall.tap()
+            XCTAssertTrue(app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 5))
+            app.alerts.buttons["确认开赛"].tap()
+        }
     }
 
     func testV11FullBasesContrast() {
@@ -1106,6 +1119,11 @@ extension BaseballMasterUITests {
         let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.otherElements["ActivityListView"])
         XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
         app.buttons["完成"].tap()
+        if app.buttons["start-game-clock"].exists {
+            app.buttons["start-game-clock"].tap()
+            XCTAssertTrue(app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 5))
+            app.alerts.buttons["确认开赛"].tap()
+        }
         app.buttons["pitch-坏球"].tap()
         _ = try waitForPublicLive(code) { ($0["revision"] as? Int ?? 0) > initialRevision && $0["balls"] as? Int == initialBalls + 1 }
         app.buttons["undo-last-play"].tap()
@@ -1577,6 +1595,7 @@ extension BaseballMasterUITests {
             swap.tap(); XCTAssertEqual(batter.label, initial)
             swap.tap(); XCTAssertNotEqual(batter.label, initial)
             app.buttons["pitch-坏球"].tap()
+            if app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 2) { app.alerts.buttons["确认开赛"].tap() }
             XCTAssertFalse(swap.exists)
             app.buttons["undo-last-play"].tap(); XCTAssertFalse(swap.exists)
             XCTAssertTrue(app.buttons["pitch-界外"].isHittable)
@@ -1695,5 +1714,198 @@ extension BaseballMasterUITests {
         XCTAssertTrue(safari.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "直播已关闭")).firstMatch.waitForExistence(timeout: 15))
         XCTAssertFalse(lineups.exists)
         captureHistory(safari, name: "2.2直播-Safari关闭链接")
+    }
+}
+
+extension BaseballMasterUITests {
+    private func v23Capture(_ app: XCUIApplication, _ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    @objc func testV23PregameBothLineupsAndConfirmedPlayBallRetainLiveEditing() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--v23-slow-preview"]; app.launch()
+        XCTAssertTrue(app.buttons["start-game-clock"].waitForExistence(timeout: 10))
+        v23Capture(app, "2.3 慢垒开赛前")
+        revealStatisticsControl(app.buttons["open-substitutions"], in: app); app.buttons["open-substitutions"].tap()
+        XCTAssertTrue(app.buttons["edit-away-lineup"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["edit-home-lineup"].exists)
+        XCTAssertFalse(app.buttons["substitution-pitcher"].exists)
+        app.buttons["edit-away-lineup"].tap()
+        XCTAssertTrue(app.buttons["lineup-finish"].waitForExistence(timeout: 5))
+        v23Capture(app, "2.3 开赛前完整打序")
+        app.buttons["lineup-finish"].tap()
+        app.buttons["返回比赛"].tap()
+        app.buttons["start-game-clock"].tap()
+        XCTAssertTrue(app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 5))
+        app.alerts.buttons["确认开赛"].tap()
+        XCTAssertTrue(app.buttons["toggle-game-clock-running"].waitForExistence(timeout: 5))
+        revealStatisticsControl(app.buttons["open-substitutions"], in: app); app.buttons["open-substitutions"].tap()
+        XCTAssertTrue(app.buttons["substitution-pitcher"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["edit-away-lineup"].exists); XCTAssertTrue(app.buttons["edit-home-lineup"].exists)
+        v23Capture(app, "2.3 开赛后沿用阵容调整")
+    }
+
+    @objc func testV23SlowFoulGraceIllegalAndFreeAreVisibleAndRecordable() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--v23-slow-preview"]; app.launch()
+        XCTAssertTrue(app.buttons["start-game-clock"].waitForExistence(timeout: 10))
+        app.buttons["start-game-clock"].tap(); app.alerts.buttons["确认开赛"].tap()
+        revealStatisticsControl(app.buttons["pitch-界外"], in: app); app.buttons["pitch-界外"].tap(); app.buttons["pitch-界外"].tap()
+        XCTAssertTrue(app.staticTexts["额外界外机会已用，下次界外出局"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["foul-bunt-strikeout"].exists)
+        revealStatisticsControl(app.buttons["record-illegal-pitch"], in: app); app.buttons["record-illegal-pitch"].tap()
+        app.buttons["界外，按本场界外规则处理"].tap()
+        XCTAssertTrue(app.staticTexts["两好后仍允许一次界外"].exists == false)
+        XCTAssertTrue(app.buttons["pitch-坏球"].exists)
+        v23Capture(app, "2.3 Illegal 界外终结打席")
+        app.buttons["open-box-score"].tap()
+        XCTAssertTrue(app.buttons["share-play-by-play"].waitForExistence(timeout: 10))
+        v23Capture(app, "2.3 慢垒结果与完整阵容")
+    }
+
+    @objc func testV23NewOwnSlowGameConfiguresBothSidesAndExtraHitters() throws {
+        let app = XCUIApplication(); app.launchArguments = ["--v23-new-game-preview"]; app.launch()
+        let mode = app.buttons["game-mode"]
+        revealStatisticsControl(mode, in: app); mode.tap()
+        app.buttons["成人慢垒"].tap()
+        let duration = app.textFields["slow-pitch-time-limit"]
+        revealStatisticsControl(duration, in: app); duration.tap(); duration.typeText("90")
+        app.buttons["dismiss-rule-keyboard"].tap()
+        let foul = app.buttons["slow-pitch-foul-policy"]
+        revealStatisticsControl(foul, in: app); foul.tap()
+        app.buttons["再允许一次界外，第二次出局"].tap()
+        v23Capture(app, "AppStore23-03-慢垒规则设置")
+        for title in ["单投手球数限制", "单投手局数限制"] {
+            let reminder = app.switches[title]
+            revealStatisticsControl(reminder, in: app)
+            XCTAssertTrue(reminder.isEnabled)
+            XCTAssertEqual(reminder.value as? String, "0", "Slow-pitch pitcher reminders default to off")
+            reminder.tap()
+            XCTAssertEqual(reminder.value as? String, "1")
+        }
+        v23Capture(app, "2.3 慢垒赛前可选投手提醒")
+        let next = app.buttons["continue-to-lineup"]
+        revealStatisticsControl(next, in: app); next.tap()
+        XCTAssertTrue(app.buttons["confirm-lineup"].waitForExistence(timeout: 10))
+        let addHitters = app.buttons["增加打者／全员加入"].firstMatch
+        revealStatisticsControl(addHitters, in: app); addHitters.tap(); app.buttons["全员加入打序"].tap()
+        v23Capture(app, "2.3 创建比赛时设置双方阵容")
+        app.buttons["confirm-lineup"].tap(); app.alerts.buttons["开始记录"].tap()
+        XCTAssertTrue(app.buttons["start-game-clock"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["open-substitutions"].exists)
+        v23Capture(app, "2.3 创建后等待确认开赛")
+    }
+}
+
+extension BaseballMasterUITests {
+    @objc func testV23SlowProductionHTTPSAndSafariViewer() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v23-live-production-preview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["start-game-clock"].waitForExistence(timeout: 10))
+        app.buttons["start-game-clock"].tap(); app.alerts.buttons["确认开赛"].tap()
+        let open = app.buttons["open-live-broadcast"]
+        open.tap(); app.buttons["start-live-broadcast"].tap()
+        XCTAssertTrue(app.buttons["share-live-link"].waitForExistence(timeout: 20))
+        let code = app.staticTexts["live-view-code"].label
+        let initial = try publicLiveSnapshot(code)
+        XCTAssertEqual(initial["mode"] as? String, "slowPitch")
+        XCTAssertEqual(initial["pitchCount"] as? Int, 0)
+        XCTAssertEqual(((initial["away"] as? [String: Any])?["lineup"] as? [[String: Any]])?.count, 12)
+        XCTAssertEqual(((initial["home"] as? [String: Any])?["lineup"] as? [[String: Any]])?.count, 11)
+        app.buttons["完成"].tap(); app.buttons["pitch-界外"].tap(); app.buttons["pitch-界外"].tap()
+        let state = try waitForPublicLive(code) {
+            $0["pitchCount"] as? Int == 2 && ($0["rules"] as? [String: Any])?["extraFoulUsed"] as? Bool == true
+        }
+        let source = XCTAttachment(data: try JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys]), uniformTypeIdentifier: "public.json")
+        source.name = "AppStore23-slow-live-source.json"; source.lifetime = .keepAlways; add(source)
+        XCUIDevice.shared.system.open(URL(string: "https://baseballmaster.cc/livestreaming/novideo/\(code)")!)
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari"); safari.activate()
+        for title in ["Continue", "继续", "Not Now", "暂不"] {
+            if safari.buttons[title].waitForExistence(timeout: 1) { safari.buttons[title].tap() }
+        }
+        if safari.otherElements["TipView"].exists { safari.buttons["xmark.circle.fill"].tap() }
+        XCTAssertTrue(safari.staticTexts["成人慢垒"].waitForExistence(timeout: 15))
+        v23Capture(safari, "AppStore23-05-慢垒公网观赛")
+        safari.buttons["查看双方阵容"].tap()
+        XCTAssertTrue(safari.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "自由人")).firstMatch.waitForExistence(timeout: 5))
+        v23Capture(safari, "2.3 公网完整阵容与Free")
+        app.activate(); open.tap()
+        let close = app.buttons["close-live-broadcast"]
+        revealStatisticsControl(close, in: app); close.tap(); app.buttons["关闭直播"].tap()
+        XCTAssertTrue(app.buttons["start-live-broadcast"].waitForExistence(timeout: 10))
+        let gone = expectation(description: "Slow-pitch test broadcast deleted")
+        URLSession.shared.dataTask(with: URL(string: "https://baseballmaster.cc/livestreaming/novideo/api/sessions/\(code)")!) { _, response, _ in
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 404); gone.fulfill()
+        }.resume()
+        wait(for: [gone], timeout: 15)
+    }
+
+    @objc func testAppStore23SlowFullInningLineupIllegalAndReportScreenshots() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v23-slow-preview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["start-game-clock"].waitForExistence(timeout: 10))
+        app.buttons["open-substitutions"].tap()
+        app.buttons["edit-away-lineup"].tap()
+        XCTAssertTrue(app.buttons["lineup-finish"].waitForExistence(timeout: 5))
+        revealStatisticsControl(app.buttons["lineup-up-12"], in: app)
+        v23Capture(app, "AppStore23-02-双方阵容与扩展打序")
+        app.buttons["lineup-finish"].tap()
+        app.buttons["返回比赛"].tap()
+        app.buttons["start-game-clock"].tap()
+        app.alerts.buttons["确认开赛"].tap()
+        app.buttons["pitch-界外"].tap()
+        app.buttons["pitch-界外"].tap()
+        XCTAssertTrue(app.buttons["game-clock-display"].label.hasPrefix("剩余"))
+        XCTAssertTrue(app.staticTexts["额外界外机会已用，下次界外出局"].waitForExistence(timeout: 5))
+        v23Capture(app, "AppStore23-01-成人慢垒记分")
+        app.buttons["record-illegal-pitch"].tap()
+        v23Capture(app, "AppStore23-04-非法投球按裁判结果")
+        app.buttons["界外，按本场界外规则处理"].tap()
+        // Finish both halves through actual recorded outs, using the per-PA
+        // initial strike count rather than fabricated score/statistic fields.
+        for _ in 0..<5 {
+            app.buttons["pitch-看振"].tap()
+            app.buttons["pitch-看振"].tap()
+        }
+        XCTAssertTrue(app.buttons["pitch-坏球"].exists)
+        app.buttons["结束比赛"].tap()
+        app.buttons["finish-reason-记录员结束记录"].tap()
+        app.buttons["确认保存"].tap()
+        let result = app.buttons["open-box-score"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        let pitcherStats = app.buttons["投手"]
+        revealStatisticsControl(pitcherStats, in: app)
+        XCTAssertTrue(pitcherStats.waitForExistence(timeout: 5))
+        pitcherStats.tap()
+        v23Capture(app, "AppStore23-07-完整比赛与战报")
+        let report = app.buttons["share-box-score"]
+        revealStatisticsControl(report, in: app)
+        XCTAssertTrue(report.waitForExistence(timeout: 5))
+        report.tap()
+        XCTAssertTrue(app.navigationBars["比赛战报"].waitForExistence(timeout: 5))
+        v23Capture(app, "AppStore23-07b-BoxScore战报预览")
+    }
+
+    @objc func testV23SmallDarkSlowScoringAndRosterKeepActionsReachable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v23-slow-preview", "-appAppearance", "dark", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryXXXL"]
+        app.launch()
+        XCTAssertTrue(app.buttons["start-game-clock"].waitForExistence(timeout: 10))
+        v23Capture(app, "2.3 小屏深色十人场图")
+        app.buttons["start-game-clock"].tap(); app.alerts.buttons["确认开赛"].tap()
+        revealStatisticsControl(app.buttons["open-substitutions"], in: app)
+        app.buttons["open-substitutions"].tap(); app.buttons["edit-away-lineup"].tap()
+        XCTAssertTrue(app.buttons["lineup-finish"].waitForExistence(timeout: 5))
+        for _ in 0..<3 { app.swipeUp() }
+        v23Capture(app, "2.3 小屏深色长打序")
+        app.buttons["lineup-finish"].tap(); app.buttons["返回比赛"].tap()
+        revealStatisticsControl(app.buttons["record-illegal-pitch"], in: app)
+        XCTAssertTrue(app.buttons["record-illegal-pitch"].isHittable)
+        app.buttons["record-illegal-pitch"].tap(); app.buttons["未实际投出的罚球，记一坏"].tap()
+        v23Capture(app, "2.3 小屏深色非法投球")
     }
 }

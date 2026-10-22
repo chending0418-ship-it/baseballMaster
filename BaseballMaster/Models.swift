@@ -10,6 +10,7 @@ enum FieldPosition: Int, CaseIterable, Identifiable, Codable, Hashable {
     case leftField
     case centerField
     case rightField
+    case free = 10
 
     var id: Int { rawValue }
 
@@ -24,6 +25,7 @@ enum FieldPosition: Int, CaseIterable, Identifiable, Codable, Hashable {
         case .leftField: "左外"
         case .centerField: "中外"
         case .rightField: "右外"
+        case .free: "Free"
         }
     }
 
@@ -38,6 +40,7 @@ enum FieldPosition: Int, CaseIterable, Identifiable, Codable, Hashable {
         case .leftField: "左外野手"
         case .centerField: "中外野手"
         case .rightField: "右外野手"
+        case .free: "自由人"
         }
     }
 }
@@ -247,9 +250,15 @@ enum GameEndReason: String, CaseIterable, Identifiable, Codable {
 }
 
 enum GameMode: String, CaseIterable, Identifiable, Codable {
-    case standard, coachPitch
+    case standard, coachPitch, slowPitch
     var id: String { rawValue }
-    var title: String { self == .standard ? "普通比赛" : "教练投手" }
+    var title: String {
+        switch self {
+        case .standard: "普通比赛"
+        case .coachPitch: "教练投手"
+        case .slowPitch: "成人慢垒"
+        }
+    }
 }
 
 enum GameDecision: String, Codable {
@@ -261,6 +270,24 @@ enum GameDecision: String, Codable {
         case .walkOff: "主队取得领先，是否结束比赛？"
         }
     }
+}
+
+enum TwoStrikeFoulPolicy: String, CaseIterable, Identifiable, Codable {
+    case outImmediately, oneExtraFoul
+    var id: String { rawValue }
+    var title: String { self == .outImmediately ? "两好后界外直接出局" : "再允许一次界外，第二次出局" }
+}
+
+enum CompetitionFormat: String, CaseIterable, Identifiable, Codable {
+    case innings, timed
+    var id: String { rawValue }
+    var title: String { self == .timed ? "按时间比赛" : "按局数比赛" }
+}
+
+struct IllegalPitchRecord: Equatable, Codable {
+    var wasThrown: Bool
+    var penaltyApplied: Bool
+    var finalResult: String
 }
 
 struct GameRules: Equatable, Codable {
@@ -278,6 +305,47 @@ struct GameRules: Equatable, Codable {
     var mode: GameMode? = nil
     var halfInningRunLimit: Int? = nil
     var coachPitchLimit: Int? = nil
+    var initialBalls: Int? = nil
+    var initialStrikes: Int? = nil
+    var twoStrikeFoulPolicy: TwoStrikeFoulPolicy? = nil
+    var competitionFormat: CompetitionFormat? = nil
+    var inningsLimit: Int? = nil
+    var rulesVersion: Int? = nil
+
+    var isSlowPitch: Bool { gameMode == .slowPitch }
+    var startingBalls: Int { initialBalls ?? (isSlowPitch ? 1 : 0) }
+    var startingStrikes: Int { initialStrikes ?? (isSlowPitch ? 1 : 0) }
+    var isTimeGame: Bool { (competitionFormat ?? (isSlowPitch ? .timed : .innings)) == .timed }
+    var regulationInnings: Int? { isTimeGame ? inningsLimit : scheduledInnings }
+    var positions: [FieldPosition] { isSlowPitch ? FieldPosition.allCases : FieldPosition.allCases.filter { $0 != .free } }
+    var supportsBunting: Bool { !isSlowPitch }
+    var supportsStealing: Bool { gameMode == .standard }
+    var supportsDroppedThirdStrike: Bool { gameMode == .standard }
+    var startingValidationMessage: String? {
+        guard (0...3).contains(startingBalls), (0...2).contains(startingStrikes) else { return "初始球数须为 0–3 坏球、0–2 好球。" }
+        if isSlowPitch {
+            guard fieldersCount == 10 else { return "成人慢垒须安排 10 人守备。" }
+            guard twoStrikeFoulPolicy != nil else { return "开赛前请选择两好后的界外规则。" }
+        }
+        if isTimeGame, (timeLimitMinutes ?? 0) <= 0 { return "时间赛开赛前须填写有效比赛时长。" }
+        if let inningsLimit, inningsLimit < 1 { return "局数上限须至少为 1 局。" }
+        return nil
+    }
+    var lockedForGame: GameRules {
+        var copy = self
+        if isSlowPitch {
+            copy.initialBalls = startingBalls; copy.initialStrikes = startingStrikes
+            copy.competitionFormat = isTimeGame ? .timed : .innings
+            copy.rulesVersion = rulesVersion ?? 2
+        }
+        return copy
+    }
+    var summary: String {
+        let format = isTimeGame ? "时间赛 \(timeLimitMinutes.map { "\($0) 分钟" } ?? "时长待设置")" : "\(scheduledInnings) 局"
+        let cap = isTimeGame ? inningsLimit.map { " · 局数上限 \($0)" } ?? "" : ""
+        let initial = isSlowPitch ? " · 初始 \(startingStrikes) 好 \(startingBalls) 坏 · \(twoStrikeFoulPolicy?.title ?? "界外规则待选择")" : ""
+        return "\(gameMode.title) · \(format)\(cap) · \(fieldersCount) 人守备\(initial)"
+    }
 
     var gameMode: GameMode { mode ?? .standard }
 
@@ -310,7 +378,7 @@ struct GameRules: Equatable, Codable {
 struct LineupAssignment: Identifiable, Equatable, Codable {
     var playerID: UUID
     var battingOrder: Int
-    var position: FieldPosition
+    var position: FieldPosition?
 
     var id: UUID { playerID }
 }
@@ -988,6 +1056,7 @@ struct GameSituationSnapshot: Equatable, Codable {
     var awayBattingOrderIDs: [UUID]? = nil
     var runnerPitcherIDs: [UUID: UUID]? = nil
     var unearnedRunnerIDs: [UUID]? = nil
+    var extraFoulUsed: Bool? = nil
 }
 
 /// Machine-readable companion to the Chinese play log. This is stored inside
@@ -1021,6 +1090,10 @@ struct ScoringEventRecord: Identifiable, Equatable, Codable {
     var reviewedAt: Date?
     var beforeSituation: GameSituationSnapshot?
     var afterSituation: GameSituationSnapshot?
+    var illegalPitch: IllegalPitchRecord? = nil
+
+    /// Pregame setup belongs to the initial lineup, not the recorded game action.
+    var isPregameLineupAdjustment: Bool { notation == "PREGAME-LINEUP" }
 
     init(
         id: UUID = UUID(),
@@ -1077,6 +1150,18 @@ struct PlateAppearanceRecord: Identifiable, Equatable {
     let events: [ScoringEventRecord]
     let isComplete: Bool
 
+    init(id: UUID, sequence: Int, inning: Int, isTop: Bool, batter: Player,
+         events: [ScoringEventRecord], isComplete: Bool) {
+        self.id = id
+        self.sequence = sequence
+        self.inning = inning
+        self.isTop = isTop
+        self.batter = batter
+        // Also handles saved setup events that were assigned a PA by older code.
+        self.events = events.filter { !$0.isPregameLineupAdjustment }
+        self.isComplete = isComplete
+    }
+
     var needsReview: Bool { events.contains(where: \.needsReview) }
     var teamLabel: String { isTop ? "客队" : "主队" }
     var sequenceLabel: String { "\(teamLabel)第 \(sequence) 打席" }
@@ -1103,6 +1188,11 @@ struct GameState: Equatable, Codable {
     var homeTeam: Team
     var awayTeam: Team
     var scheduledInnings: Int
+    var rulesSnapshot: GameRules? = nil
+    var extraFoulUsed: Bool? = nil
+    var pitchingOutsAccountingVersion: Int? = nil
+    var pitchingOutsReviewRequired: Bool? = nil
+    var pitchingOutsBeforeRepair: [UUID: Int]? = nil
     var inning = 1
     var isTop = true
     var balls = 0
@@ -1177,13 +1267,20 @@ struct GameState: Equatable, Codable {
         awayTeam: Team,
         scheduledInnings: Int = 6,
         homeBattingOrderIDs: [UUID]? = nil,
-        awayBattingOrderIDs: [UUID]? = nil
+        awayBattingOrderIDs: [UUID]? = nil,
+        rules: GameRules? = nil
     ) {
         self.homeTeam = homeTeam
         self.awayTeam = awayTeam
         self.scheduledInnings = scheduledInnings
-        self.homeRunsByInning = Array(repeating: 0, count: scheduledInnings)
-        self.awayRunsByInning = Array(repeating: 0, count: scheduledInnings)
+        self.rulesSnapshot = rules
+        self.pitchingOutsAccountingVersion = 2
+        self.balls = rules?.startingBalls ?? 0
+        self.strikes = rules?.startingStrikes ?? 0
+        self.extraFoulUsed = rules?.isSlowPitch == true ? false : nil
+        self.clockDisplayMode = rules?.isTimeGame == true ? .remaining : nil
+        self.homeRunsByInning = Array(repeating: 0, count: rules?.isTimeGame == true ? 1 : scheduledInnings)
+        self.awayRunsByInning = Array(repeating: 0, count: rules?.isTimeGame == true ? 1 : scheduledInnings)
         self.activeHomePitcherID = homeTeam.players.first {
             $0.primaryPosition == .pitcher && (homeBattingOrderIDs?.contains($0.id) ?? true)
         }?.id
@@ -1192,6 +1289,26 @@ struct GameState: Equatable, Codable {
         }?.id
         self.homeBattingOrderIDs = homeBattingOrderIDs ?? homeTeam.players.map(\.id)
         self.awayBattingOrderIDs = awayBattingOrderIDs ?? awayTeam.players.map(\.id)
+    }
+
+    var scoreInningCount: Int {
+        let scored = max((homeRunsByInning.lastIndex(where: { $0 > 0 }) ?? -1) + 1,
+                         (awayRunsByInning.lastIndex(where: { $0 > 0 }) ?? -1) + 1)
+        if rulesSnapshot?.isTimeGame == true { return max(1, inning, scored) }
+        return max(1, inning, homeRunsByInning.count, awayRunsByInning.count)
+    }
+    func startingAssignments(for teamID: UUID, rules: GameRules) -> [LineupAssignment] {
+        let home = teamID == homeTeam.id
+        let team = home ? homeTeam : awayTeam
+        let order = home ? homeBattingOrderIDs : awayBattingOrderIDs
+        let defense = Set((home ? homeFieldingPlayerIDs : awayFieldingPlayerIDs) ?? order)
+        let dh = home ? homeDesignatedHitterID : awayDesignatedHitterID
+        let pitcher = home ? activeHomePitcherID : activeAwayPitcherID
+        return order.enumerated().map { slot, id in
+            let selectedID = rules.designatedHitterEnabled && !rules.twoWayPlayerEnabled && id == dh ? (pitcher ?? id) : id
+            return LineupAssignment(playerID: selectedID, battingOrder: slot + 1,
+                                    position: defense.contains(selectedID) ? team.players.first { $0.id == selectedID }?.primaryPosition : nil)
+        }
     }
 
     var homeScore: Int { homeRunsByInning.reduce(0, +) }
@@ -1224,6 +1341,18 @@ struct GameState: Equatable, Codable {
             ?? fieldingTeam.players.first(where: { fieldingPlayerIDs.contains($0.id) && $0.primaryPosition == .pitcher })
             ?? fieldingTeam.players[0]
     }
+    func lineupSummary(for teamID: UUID) -> String {
+        let home = teamID == homeTeam.id
+        let team = home ? homeTeam : awayTeam
+        let order = home ? homeBattingOrderIDs : awayBattingOrderIDs
+        let defense = Set((home ? homeFieldingPlayerIDs : awayFieldingPlayerIDs) ?? order)
+        return order.enumerated().compactMap { slot, id -> String? in
+            guard let player = team.players.first(where: { $0.id == id }) else { return nil }
+            let role = defense.contains(id) ? player.primaryPosition.shortName : "暂不守备"
+            return "\(slot + 1)棒 \(player.compactName)（\(role)）"
+        }.joined(separator: "；")
+    }
+
     var halfLabel: String { "\(isTop ? "上" : "下")半局" }
     var situationSnapshot: GameSituationSnapshot {
         GameSituationSnapshot(
@@ -1243,7 +1372,8 @@ struct GameState: Equatable, Codable {
             homeBattingOrderIDs: recordsLineupSnapshots == true ? homeBattingOrderIDs : nil,
             awayBattingOrderIDs: recordsLineupSnapshots == true ? awayBattingOrderIDs : nil,
             runnerPitcherIDs: runnerPitcherIDs,
-            unearnedRunnerIDs: unearnedRunnerIDs
+            unearnedRunnerIDs: unearnedRunnerIDs,
+            extraFoulUsed: extraFoulUsed
         )
     }
 }
@@ -1253,6 +1383,7 @@ struct LiveLineupDraft {
     let source: GameState
     let isHomeTeam: Bool
     let allowsTwoWayPlayer: Bool
+    let allowsPregameOrderChanges: Bool
     var players: [Player]
     var battingOrderIDs: [UUID]
     var fieldingIDs: [UUID]
@@ -1263,10 +1394,11 @@ struct LiveLineupDraft {
     var automaticRunnerIDs: [UUID]?
     var changes: [String] = []
 
-    init(game: GameState, isHomeTeam: Bool, allowsTwoWayPlayer: Bool) {
+    init(game: GameState, isHomeTeam: Bool, allowsTwoWayPlayer: Bool, isPregame: Bool = false) {
         source = game
         self.isHomeTeam = isHomeTeam
         self.allowsTwoWayPlayer = allowsTwoWayPlayer
+        self.allowsPregameOrderChanges = isPregame && game.rulesSnapshot?.isSlowPitch == true
         players = (isHomeTeam ? game.homeTeam : game.awayTeam).players
         battingOrderIDs = isHomeTeam ? game.homeBattingOrderIDs : game.awayBattingOrderIDs
         fieldingIDs = (isHomeTeam ? game.homeFieldingPlayerIDs : game.awayFieldingPlayerIDs) ?? battingOrderIDs
@@ -1296,12 +1428,14 @@ struct LiveLineupDraft {
         let originalOrder = isHomeTeam ? source.homeBattingOrderIDs : source.awayBattingOrderIDs
         let originalDefense = (isHomeTeam ? source.homeFieldingPlayerIDs : source.awayFieldingPlayerIDs) ?? originalOrder
         guard rosterIDs.count == players.count, rosterIDs == Set(team.players.map(\.id)),
-              battingOrderIDs.count == originalOrder.count, !battingOrderIDs.isEmpty,
+              (allowsPregameOrderChanges ? battingOrderIDs.count >= 10 : battingOrderIDs.count == originalOrder.count), !battingOrderIDs.isEmpty,
               Set(battingOrderIDs).count == battingOrderIDs.count,
               Set(battingOrderIDs).isSubset(of: rosterIDs),
               fieldingIDs.count == originalDefense.count, Set(fieldingIDs).count == fieldingIDs.count,
               Set(fieldingIDs).isSubset(of: rosterIDs) else { return "阵容人数或球员身份不一致，请重新选择。" }
         let fielders = fieldingIDs.compactMap(player)
+        let allowedPositions = source.rulesSnapshot?.positions ?? FieldPosition.allCases.filter { $0 != .free }
+        guard Set(fielders.map(\.primaryPosition)).isSubset(of: Set(allowedPositions)) else { return "本场模式不支持所选守位。" }
         guard Set(fielders.map(\.primaryPosition)).count == fielders.count else { return "同一个守位不能同时安排两名球员。" }
         guard let pitcherID, fielders.first(where: { $0.primaryPosition == .pitcher })?.id == pitcherID else {
             return "请在守位菜单中确认本场投手；已记录的投手统计不会自动转移。"
@@ -1319,6 +1453,18 @@ struct LiveLineupDraft {
                   !runners.values.contains(where: { $0.id == batterAnchorID }) else { return "打者与垒上跑者发生重复，请检查换人。" }
         }
         return nil
+    }
+
+    mutating func addExtraHitter(_ id: UUID) {
+        guard allowsPregameOrderChanges, player(id) != nil, !battingOrderIDs.contains(id) else { return }
+        battingOrderIDs.append(id)
+        changes.append("增加打者：\(player(id)?.name ?? "")")
+    }
+    mutating func removeExtraHitter(_ id: UUID) {
+        guard allowsPregameOrderChanges, battingOrderIDs.count > 10, !fieldingIDs.contains(id) else { return }
+        battingOrderIDs.removeAll { $0 == id }
+        if batterAnchorID == id { batterAnchorID = battingOrderIDs.first }
+        changes.append("移出打序：\(player(id)?.name ?? "")")
     }
 
     mutating func moveBatter(from sourceIndex: Int, to targetIndex: Int) {
@@ -1341,8 +1487,20 @@ struct LiveLineupDraft {
         }
     }
 
+    mutating func rotateIntoFielding(playerID: UUID, replacing outgoingID: UUID) {
+        guard source.rulesSnapshot?.isSlowPitch == true,
+              battingOrderIDs.contains(playerID), !fieldingIDs.contains(playerID),
+              let incomingIndex = players.firstIndex(where: { $0.id == playerID }),
+              let outgoing = player(outgoingID), fieldingIDs.contains(outgoingID) else { return }
+        players[incomingIndex].primaryPosition = outgoing.primaryPosition
+        fieldingIDs = fieldingIDs.map { $0 == outgoingID ? playerID : $0 }
+        if pitcherID == outgoingID { pitcherID = playerID }
+        changes.append("\(players[incomingIndex].name)进入守备，\(outgoing.name)暂不守备；棒次保持")
+    }
+
     mutating func changePosition(playerID: UUID, to position: FieldPosition) {
-        guard fieldingIDs.contains(playerID), let index = players.firstIndex(where: { $0.id == playerID }) else { return }
+        let allowed = source.rulesSnapshot?.positions ?? FieldPosition.allCases.filter { $0 != .free }
+        guard allowed.contains(position), fieldingIDs.contains(playerID), let index = players.firstIndex(where: { $0.id == playerID }) else { return }
         let previous = players[index].primaryPosition
         if let other = players.firstIndex(where: { fieldingIDs.contains($0.id) && $0.id != playerID && $0.primaryPosition == position }) {
             players[other].primaryPosition = previous

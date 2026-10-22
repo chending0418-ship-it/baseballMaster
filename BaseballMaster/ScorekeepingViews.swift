@@ -10,6 +10,11 @@ struct ScorekeepingView: View {
     @State private var showSpecialEventSheet = false
     @State private var showCorrectionSheet = false
     @State private var showSubstitutionSheet = false
+    @State private var confirmOpeningLineups = false
+    @State private var illegalPlay = false
+    @State private var confirmTimeEnd = false
+    @State private var pendingOpeningPitch: PitchAction?
+    @State private var pendingOpeningPlay = false
     @State private var showEndReasonSheet = false
     @State private var confirmEndHalf = false
     @State private var showLiveBroadcast = false
@@ -82,6 +87,31 @@ struct ScorekeepingView: View {
                         .accessibilityIdentifier("open-special-events")
                     }
 
+                    if store.isSlowPitch {
+                        Menu {
+                            Button("未挥棒，裁判判一坏球") { store.recordIllegalPitch(.ball, wasThrown: true) }
+                            Button("裁判取消 Illegal，按普通坏球记录") { store.recordIllegalPitch(.ball, wasThrown: true, penaltyApplied: false) }
+                            Button("挥空，按好球处理") { store.recordIllegalPitch(.swingingStrike, wasThrown: true) }
+                            Button("界外，按本场界外规则处理") { store.recordIllegalPitch(.foul, wasThrown: true) }
+                            Button("击球，按最终结果录入") { illegalPlay = true; showPlayFlowSheet = true }
+                            Button("未实际投出的罚球，记一坏") { store.recordIllegalPitch(.ball, wasThrown: false) }
+                            Button("已投出，裁判判 No Pitch") { store.recordIllegalPitch(nil, wasThrown: true) }
+                            Button("未投出，裁判判 No Pitch") { store.recordIllegalPitch(nil, wasThrown: false) }
+                        } label: { Label("Illegal／非法投球", systemImage: "exclamationmark.circle") }
+                        .buttonStyle(ScoreActionButtonStyle(color: BMTheme.orange))
+                        .accessibilityIdentifier("record-illegal-pitch")
+                        .disabled(store.isPregame)
+                        if store.game.strikes >= 2 && store.activeRules?.twoStrikeFoulPolicy == .oneExtraFoul {
+                            Text(store.game.extraFoulUsed == true ? "额外界外机会已用，下次界外出局" : "两好后仍允许一次界外")
+                                .font(.caption).foregroundStyle(BMTheme.secondaryText)
+                        }
+                        TimelineView(.periodic(from: Date(), by: 1)) { context in
+                            if store.hasStartedGameClock && store.activeRules?.isTimeGame == true && (store.remainingGameTime(at: context.date) ?? 1) <= 0 {
+                                Button("时间已到 · 按裁判决定结束比赛") { confirmTimeEnd = true }
+                                    .buttonStyle(PrimaryButtonStyle())
+                            }
+                        }
+                    }
                     HStack(spacing: 7) {
                         undoButton
                         redoButton
@@ -106,7 +136,7 @@ struct ScorekeepingView: View {
                         Button("结束半局") { confirmEndHalf = true }
                             .disabled(!store.canRecordAction)
                         Spacer(minLength: 0)
-                        if store.game.strikes == 2 {
+                        if store.game.strikes == 2 && store.activeRules?.supportsBunting != false {
                             Button("触击界外出局") { store.recordFoulBuntStrikeout() }
                                 .foregroundStyle(BMTheme.orange)
                                 .frame(minHeight: 40)
@@ -194,7 +224,7 @@ struct ScorekeepingView: View {
             }
         }
         .sheet(isPresented: $showPlayFlowSheet) {
-            ScorePlayFlowSheet {
+            ScorePlayFlowSheet(illegalPitch: illegalPlay) {
                 showPlayFlowSheet = false
                 presentCorrectionAfterDismissal()
             }
@@ -240,6 +270,22 @@ struct ScorekeepingView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.hidden)
                 .interactiveDismissDisabled()
+        }
+        .alert("确认时间赛结束？", isPresented: $confirmTimeEnd) {
+            Button("继续记录", role: .cancel) {}
+            Button("确认结束") { store.finishGame(reason: .timeLimit) }
+        } message: { Text("仅按裁判最终决定结束比赛，保留当前比分与实际记录。") }
+        .alert("确认双方阵容并开赛？", isPresented: $confirmOpeningLineups) {
+            Button("继续设置阵容") { pendingOpeningPitch = nil; pendingOpeningPlay = false; showSubstitutionSheet = true }
+            Button("确认开赛") {
+                store.startGameClock()
+                if let pitch = pendingOpeningPitch { store.recordPitch(pitch) }
+                if pendingOpeningPlay { showPlayFlowSheet = true }
+                pendingOpeningPitch = nil; pendingOpeningPlay = false
+            }
+            Button("取消", role: .cancel) { pendingOpeningPitch = nil; pendingOpeningPlay = false }
+        } message: {
+            Text("\(store.game.awayTeam.shortName) 与 \(store.game.homeTeam.shortName)的先发阵容确认后开始计时。开赛后仍可按现有方式调整阵容。")
         }
         .gameActionErrorAlert(store)
     }
@@ -290,7 +336,7 @@ struct ScorekeepingView: View {
     private var gameClockControl: some View {
         if !store.hasStartedGameClock {
             Button {
-                store.startGameClock()
+                confirmOpeningLineups = true
                 haptic(.medium)
             } label: {
                 Label("Play Ball", systemImage: "play.fill")
@@ -506,7 +552,9 @@ struct ScorekeepingView: View {
             }
             Button {
                 haptic(.medium)
-                showPlayFlowSheet = true
+                illegalPlay = false
+                if store.isPregame { pendingOpeningPlay = true; confirmOpeningLineups = true }
+                else { showPlayFlowSheet = true }
             } label: {
                 HStack {
                     Image(systemName: "baseball.fill")
@@ -587,7 +635,8 @@ struct ScorekeepingView: View {
 
     private func pitchButton(_ action: PitchAction, color: Color) -> some View {
         Button {
-            store.recordPitch(action)
+            if store.isPregame { pendingOpeningPitch = action; confirmOpeningLineups = true }
+            else { store.recordPitch(action) }
             haptic(.light)
         } label: {
             Text(action.rawValue)
@@ -619,10 +668,12 @@ private enum PlayFlowStage {
 struct ScorePlayFlowSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore
+    let illegalPitch: Bool
     let onNeedsCorrection: () -> Void
     @State private var stage: PlayFlowStage = .arrival
 
-    init(onNeedsCorrection: @escaping () -> Void = {}) {
+    init(illegalPitch: Bool = false, onNeedsCorrection: @escaping () -> Void = {}) {
+        self.illegalPitch = illegalPitch
         self.onNeedsCorrection = onNeedsCorrection
     }
 
@@ -640,6 +691,7 @@ struct ScorePlayFlowSheet: View {
             case .cause(let arrival):
                 BattedBallCauseSheet(
                     arrival: arrival,
+                    allowsBunting: store.activeRules?.supportsBunting != false,
                     hasRunners: store.hasRunners,
                     hasRunnerOnThird: store.game.baseRunners[.third] != nil,
                     hasRunnersOnFirstAndSecond: store.game.baseRunners[.first] != nil
@@ -670,7 +722,7 @@ struct ScorePlayFlowSheet: View {
                     if store.playNeedsTimingDecision(cause.outcome, decisions: decisions) {
                         stage = .timing(cause, arrival, defensivePlay, decisions)
                     } else {
-                        if store.applyPlay(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) {
+                        if recordOutcome(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) {
                             dismiss()
                         }
                     }
@@ -679,14 +731,14 @@ struct ScorePlayFlowSheet: View {
             case .terminalOuts(let cause, _, let defensivePlay, let count):
                 HalfEndingOutsSheet(runners: store.suggestedRunnerEventDecisions(for: .forceOut), requiredOuts: count) { ids in
                     if let decisions = store.halfEndingDecisions(for: cause.outcome, runnerOutIDs: ids),
-                       store.applyPlay(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) {
+                       recordOutcome(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) {
                         dismiss()
                     }
                 }
 
             case .timing(let cause, _, let defensivePlay, let decisions):
                 ThirdOutTimingSheet(title: cause.outcome.rawValue) { runCounts in
-                    if store.applyPlay(
+                    if recordOutcome(
                         cause.outcome,
                         defensivePlay: defensivePlay,
                         decisions: decisions,
@@ -707,7 +759,7 @@ struct ScorePlayFlowSheet: View {
     ) {
         if arrival == .out, let count = store.halfEndingRunnerOutCount(for: cause.outcome) {
             if count == 0, let decisions = store.halfEndingDecisions(for: cause.outcome) {
-                if store.applyPlay(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) { dismiss() }
+                if recordOutcome(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) { dismiss() }
             } else {
                 stage = .terminalOuts(cause, arrival, defensivePlay, count)
             }
@@ -722,11 +774,20 @@ struct ScorePlayFlowSheet: View {
                 for: cause.outcome,
                 batterDestination: arrival.destination
             )
-            if store.applyPlay(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) {
+            if recordOutcome(cause.outcome, defensivePlay: defensivePlay, decisions: decisions) {
                 dismiss()
             }
         }
     }
+    private func recordOutcome(_ outcome: PlayOutcome, defensivePlay: DefensivePlay? = nil,
+                               decisions: [RunnerDecision]? = nil, timingRunCounts: Bool? = nil) -> Bool {
+        if illegalPitch {
+            return store.recordIllegalPitch(nil, wasThrown: true, outcome: outcome, defensivePlay: defensivePlay,
+                                            decisions: decisions, timingRunCounts: timingRunCounts)
+        }
+        return store.applyPlay(outcome, defensivePlay: defensivePlay, decisions: decisions, timingRunCounts: timingRunCounts)
+    }
+
 }
 
 struct PlayOutcomeSheet: View {
@@ -813,6 +874,7 @@ struct PlayOutcomeSheet: View {
 }
 
 struct DefensivePlaySheet: View {
+    @EnvironmentObject private var store: GameStore
     @Environment(\.dismiss) private var dismiss
     let outcome: PlayOutcome
     let onSelect: (DefensivePlay) -> Void
@@ -825,7 +887,7 @@ struct DefensivePlaySheet: View {
         case .flyOut:
             return Array(DefensivePlay.quickPlays[3...5]) + [DefensivePlay.quickPlays.last!]
         case .lineOut, .foulFlyOut:
-            return FieldPosition.allCases.map(DefensivePlay.caught(by:)) + [DefensivePlay.quickPlays.last!]
+            return store.availableFieldPositions.map(DefensivePlay.caught(by:)) + [DefensivePlay.quickPlays.last!]
         case .infieldFly:
             return Array(FieldPosition.allCases.prefix(6)).map(DefensivePlay.caught(by:))
                 + [DefensivePlay.quickPlays.last!]
@@ -851,7 +913,7 @@ struct DefensivePlaySheet: View {
 
                     if outcome == .error {
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 10) {
-                            ForEach(FieldPosition.allCases) { position in
+                            ForEach(store.availableFieldPositions) { position in
                                 Button {
                                     onSelect(.error(at: position))
                                 } label: {
@@ -924,6 +986,7 @@ struct DefensivePlaySheet: View {
 }
 
 struct CustomDefensiveRouteSheet: View {
+    @EnvironmentObject private var store: GameStore
     @Environment(\.dismiss) private var dismiss
     let outcome: PlayOutcome
     let onConfirm: (DefensivePlay) -> Void
@@ -961,7 +1024,7 @@ struct CustomDefensiveRouteSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 13))
 
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 10) {
-                        ForEach(FieldPosition.allCases) { position in
+                        ForEach(store.availableFieldPositions) { position in
                             let selectedIndex = route.firstIndex(of: position)
                             Button {
                                 if let selectedIndex {
@@ -1231,12 +1294,17 @@ struct SubstitutionSheet: View {
                 }
                 Text("双方均可调整棒次、守位、姓名和号码")
                     .font(.caption).foregroundStyle(BMTheme.secondaryText)
+                if store.isPregame {
+                    Text("保存双方赛前阵容，返回后点 Play Ball 确认开赛。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                } else {
                 menuButton(store.isCoachPitch ? "替换 P 位守备" : "换投手", detail: store.isCoachPitch ? "选择新的 P 位守备球员" : "选择新的投手", icon: "arrow.triangle.2.circlepath", id: "substitution-pitcher") { stage = .pitcher }
                 menuButton("代打", detail: "替换当前打者", icon: "figure.baseball", id: "substitution-pinch-hitter") { stage = .pinchHitter }
                 menuButton("代跑", detail: "选择垒位和替换球员", icon: "figure.run", id: "substitution-pinch-runner") { stage = .pinchRunnerBase }
                 menuButton("守备换人", detail: "替换任意一名场上守备员", icon: "person.crop.circle.badge.plus", id: "substitution-fielder") { stage = .fielderReplacementTarget }
                 menuButton("双重换人", detail: "一次确认两组球员、棒次和守位", icon: "arrow.triangle.swap", id: "substitution-double-switch") { stage = .doubleSwitch }
                 menuButton("调整守位", detail: "交换球员的防守位置", icon: "square.grid.3x3.fill", id: "substitution-position") { stage = .fielder }
+                }
             }
 
         case .pitcher:
@@ -1309,7 +1377,7 @@ struct SubstitutionSheet: View {
 
         case .position(let player):
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(FieldPosition.allCases) { position in
+                ForEach(store.availableFieldPositions) { position in
                     Button {
                         store.changeFieldingPosition(for: player, to: position)
                         adjustmentSaved()
@@ -1487,7 +1555,7 @@ private struct DoubleSwitchEditor: View {
                 }
             }
             Picker("新守位", selection: position) {
-                ForEach(FieldPosition.allCases) { fieldPosition in
+                ForEach(store.availableFieldPositions) { fieldPosition in
                     Text(fieldPosition.fullName).tag(fieldPosition)
                 }
             }

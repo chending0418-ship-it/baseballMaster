@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#092a2a">
-  <meta name="description" content="棒球比赛记录大师 BaseballMaster，让每一球都有记录。2.2 优化文字直播、阵容调整、比赛筛选统计与报告导出；2.3 规划慢垒和桌面小组件。核心记分、统计与报表支持离线使用。">
+  <meta name="description" content="棒球比赛记录大师 BaseballMaster，让每一球都有记录。2.3 支持成人慢垒、10 人守备与 Free、扩展打序、赛前双方阵容和投手局数修复。核心记分、统计与报表支持离线使用；App 可下载版本以 App Store 为准。">
   <meta property="og:type" content="website">
   <meta property="og:title" content="BaseballMaster 2.2 · 记分更顺手，观赛更清楚">
   <meta property="og:description" content="2.2：记分更顺手，观赛更清楚。紧凑文字直播、双方阵容、自选比赛统计与报告优化。">
   <meta property="og:url" content="https://baseballmaster.cc/">
-  <meta property="og:image" content="https://baseballmaster.cc/assets/baseballmaster-2.2-update.png">
+  <meta property="og:image" content="https://baseballmaster.cc/assets/baseballmaster-2.3-update.png">
   <meta property="og:image:width" content="1440">
   <meta property="og:image:height" content="1920">
   <meta property="og:image:alt" content="BaseballMaster 2.2 更新介绍：文字直播、阵容调整、比赛筛选与投手信息">
@@ -18,10 +18,10 @@
   <link rel="apple-touch-icon" href="/assets/app-icon.png">
   <link rel="stylesheet" href="/assets/site.css">
   <link rel="stylesheet" href="/assets/features.css">
-  <link rel="stylesheet" href="/assets/release-2.2.css">
+  <link rel="stylesheet" href="/assets/release-2.3.css">
   <script src="/assets/site.js" defer></script>
   <script src="/assets/gallery.js" defer></script>
-  <title>BaseballMaster 棒球比赛记录大师 · 2.2 版本更新</title>
+  <title>BaseballMaster 棒球比赛记录大师 · 2.3 棒球与慢垒</title>
 </head>
 <body>
   <a class="skip-link" href="#main">跳至主要内容</a>
@@ -30,7 +30,7 @@
       <a class="brand" href="/" aria-label="BaseballMaster 首页"><img src="/assets/app-icon.png" width="42" height="42" alt=""><span>BASEBALL<span class="brand-light">MASTER</span><small>棒球比赛记录大师</small></span></a>
       <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="main-nav" aria-label="打开导航"><span></span><span></span></button>
       <nav id="main-nav" aria-label="主导航">
-        <a href="#features">产品功能</a><a class="nav-live" href="#updates" aria-label="查看 2.2 更新">2.2 更新</a><a href="#next">2.3 预告</a>
+        <a href="#features">产品功能</a><a class="nav-live" href="#updates" aria-label="查看 2.3 更新">2.3 更新</a><a href="#next">后续计划</a>
         <a class="nav-download" href="https://apps.apple.com/cn/app/id6802063886" target="_blank" rel="noopener noreferrer">获取 iOS App <span aria-hidden="true">↗</span></a>
       </nav>
     </div>
@@ -40,22 +40,22 @@
       <div class="hero-wordmark" aria-hidden="true">PLAY BALL.</div>
       <div class="container hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="eyebrow-line"></span> 2.2 · 版本更新</p>
-          <h1 id="hero-title">记分更顺手，<br><span>观赛更清楚。</span></h1>
-          <p class="hero-description">投打对决、打席垒况与双方阵容，一页看清。<br>连续调整阵容，自选比赛统计，复盘更方便。</p>
-          <p class="hero-audience">为家长记分员、教练与棒球爱好者打造。</p>
+          <p class="eyebrow"><span class="eyebrow-line"></span> 2.3 · 版本更新</p>
+          <h1 id="hero-title">棒球与慢垒，<br><span>都能认真记。</span></h1>
+          <p class="hero-description">10 人守备与 Free、扩展打序，按本场规则记分。<br>赛前确认双方阵容，赛中记录与战报同步。</p>
+          <p class="hero-audience">为球队记录员、教练、家长与棒球和慢垒爱好者打造。</p>
           <div class="hero-actions">
             <a class="button button-lime" href="https://apps.apple.com/cn/app/id6802063886" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.3 12.7c0-2 1.7-3 1.8-3.1-1-1.5-2.6-1.7-3.1-1.7-1.3-.1-2.5.8-3.2.8-.6 0-1.6-.8-2.7-.7-1.4 0-2.7.8-3.5 2.1-1.5 2.6-.4 6.5 1 8.6.7 1 1.5 2.1 2.6 2 1.1 0 1.5-.7 2.8-.7s1.7.7 2.8.7c1.2 0 1.9-1 2.6-2 .8-1.2 1.1-2.3 1.2-2.3-.1 0-2.3-.9-2.3-3.7ZM15.2 6.5c.6-.8 1.1-1.9 1-3-.9 0-2 .6-2.7 1.4-.6.7-1.2 1.8-1 2.9 1 .1 2-.5 2.7-1.3Z"/></svg><span>在 App Store 查看</span><span class="button-arrow" aria-hidden="true">↗</span></a>
-            <a class="text-link" href="#updates">看看 2.2 更新 <span aria-hidden="true">↓</span></a>
+            <a class="text-link" href="#updates">看看 2.3 更新 <span aria-hidden="true">↓</span></a>
           </div>
-          <div class="hero-notes"><span>离线记分</span><span>主动开播</span><span>历史纠错</span></div><p class="release-status">2.2 App 正在发布中，文字直播网页已更新；可下载版本以 App Store 页面为准。</p>
+          <div class="hero-notes"><span>离线记分</span><span>主动开播</span><span>历史纠错</span></div><p class="release-status">2.3 App 已完成开发与模拟器验收，准备发布；可下载版本以 App Store 页面为准。</p>
         </div>
         <div class="hero-product">
           <div class="product-orbit orbit-one" aria-hidden="true"></div><div class="product-orbit orbit-two" aria-hidden="true"></div>
           <div class="side-note"><span>YOUR GAME.</span><span>YOUR STORY.</span></div>
-          <div class="phone phone-hero"><img src="/assets/scoring-2.2.jpg" width="660" height="1434" alt="App 现场记分界面：比分、守备位置、垒上跑者和逐球记分按钮" fetchpriority="high"></div>
+          <div class="phone phone-hero"><img src="/assets/scoring-2.3.jpg" width="660" height="1434" alt="App 现场记分界面：比分、守备位置、垒上跑者和逐球记分按钮" fetchpriority="high"></div>
           <div class="product-tag"><span class="tag-icon" aria-hidden="true">↳</span><span>看见场上局面<small>把每一个打席记清楚</small></span></div>
-          <span class="product-caption">2.2 实际界面 · 示例比赛数据</span>
+          <span class="product-caption">2.3 实际界面 · 示例比赛数据</span>
         </div>
       </div>
       <div class="container hero-bottom"><span>记录当下，回看成长。</span><span class="mono">SCORE. UNDERSTAND. REMEMBER.</span><a href="#features" aria-label="查看产品功能">向下探索 <span aria-hidden="true">↓</span></a></div>
@@ -63,16 +63,13 @@
 
     <section class="release-section section-pad" id="updates" aria-labelledby="updates-title">
       <span id="live" class="section-anchor" aria-hidden="true"></span><div class="container">
-<div class="section-heading"><div><p class="eyebrow dark-eyebrow">WHAT’S NEW · VERSION 2.2</p><h2 id="updates-title">场边记录更从容，<br>亲友观看更清楚。</h2></div><p>2.2 聚焦现有功能优化。<br>以下为本版实际界面，点击可放大。</p></div>
-<div class="release-grid"><article class="release-card"><div class="release-copy"><span class="release-number">01 · 文字直播</span><h3>比分与投打对决，<br>紧凑呈现。</h3><p>逐局比分、R/H/E、规则、用时和最近同步集中呈现。未开始的半局用“-”区分；打席实况保留当时垒况。网页标题显示双方队名，分享后更容易识别比赛。</p><a class="release-action" href="/livestreaming/novideo/">进入观赛页 <span aria-hidden="true">↗</span></a></div><a class="release-shot" href="/assets/live-viewer-2.2.jpg" data-gallery data-version="2.2" data-caption="文字直播 · 记分牌与实况" aria-label="放大查看文字直播 · 记分牌与实况"><img src="/assets/live-viewer-2.2.jpg" alt="2.2 实际界面：文字直播 · 记分牌与实况" loading="lazy"></a></article><article class="release-card"><div class="release-copy"><span class="release-number">02 · 双方阵容</span><h3>正在场上的队员，<br>随时查看。</h3><p>网页查看双方当前打序、背号与守备位置。当前投手、后两位待打清晰展示，亲友打开链接即可观看。</p></div><a class="release-shot" href="/assets/live-lineups-2.2.jpg" data-gallery data-version="2.2" data-caption="文字直播 · 双方当前阵容" aria-label="放大查看文字直播 · 双方当前阵容"><img src="/assets/live-lineups-2.2.jpg" alt="2.2 实际界面：文字直播 · 双方当前阵容" loading="lazy"></a></article><article class="release-card"><div class="release-copy"><span class="release-number">03 · 阵容调整</span><h3>一次保存之后，<br>继续调整。</h3><p>长按拖动调整棒次，连续修改不用反复进入页面；完成后自行返回比赛。首球记录前还能多次互换先攻后攻。</p></div><a class="release-shot" href="/assets/lineup-2.2.jpg" data-gallery data-version="2.2" data-caption="阵容调整 · 连续修改与保存" aria-label="放大查看阵容调整 · 连续修改与保存"><img src="/assets/lineup-2.2.jpg" alt="2.2 实际界面：阵容调整 · 连续修改与保存" loading="lazy"></a></article><article class="release-card"><div class="release-copy"><span class="release-number">04 · 自选比赛统计</span><h3>想复盘哪几场，<br>就统计哪几场。</h3><p>自选需要汇总的已结束本队比赛，查看对应的球队与球员统计，并导出统计 PDF。文字简版打席报告补充当时投手。</p></div><a class="release-shot" href="/assets/statistics-filter-2.2.jpg" data-gallery data-version="2.2" data-caption="统计 · 指定比赛筛选" aria-label="放大查看统计 · 指定比赛筛选"><img src="/assets/statistics-filter-2.2.jpg" alt="2.2 实际界面：统计 · 指定比赛筛选" loading="lazy"></a></article></div><div class="release-details" aria-label="2.2 更多优化">
-  <article><h3>首球之前，互换先攻后攻</h3><p>开始投球前可多次互换；记录第一球后锁定，跟随正式比赛安排。</p></article>
-  <article><h3>文字简版，补齐当时投手</h3><p>每个打席标明投手，打席内换投也有记录；Box Score 导出入口更清晰。</p></article>
-  <article><h3>终场之后，顺畅返回首页</h3><p>修复手动结束比赛后无法退出的问题。紧凑的返回入口，继续查看结果或其他页面。</p></article>
-</div>
-<div class="release-share">
-  <div><p class="release-number">2.2 · 更新海报</p><h3>一张图，看清本次更新。</h3><p>实际界面与四项重点，方便保存、转发给球队和亲友。</p><a class="release-poster-download" href="/assets/baseballmaster-2.2-update.png" download="BaseballMaster-2.2-update.png">保存更新海报 <span aria-hidden="true">↓</span></a></div>
-  <a class="release-poster-thumb" href="/assets/baseballmaster-2.2-update.png" data-gallery data-version="2.2" data-caption="2.2 版本更新海报" aria-label="放大查看 2.2 更新海报"><img src="/assets/baseballmaster-2.2-update.png" width="1440" height="1920" alt="2.2 更新海报：文字直播焕新、阵容连续调整、自选比赛统计、投手信息补全" loading="lazy"></a>
-</div><p class="release-footnote">2.2 App 正在发布中，可下载版本以 App Store 为准；新版直播网页已上线。以上使用合成比赛数据。开播需联网；终场或连续未同步一小时后，直播内容自动删除。</p>
+<div class="section-heading"><div><p class="eyebrow dark-eyebrow">WHAT’S NEW · VERSION 2.3</p><h2 id="updates-title">从棒球到慢垒，<br>每场都有好记录。</h2></div><p>成人慢垒与已有功能优化。<br>以下为 2.3 实际界面，点击可放大。</p></div>
+<div class="release-grid"><article class="release-card"><div class="release-copy"><span class="release-number">01 · 成人慢垒</span><h3>10 人守备，<br>更多打者参与。</h3><p>投、捕与九个既有守位之外加入自由人（10 / Free）。双方打序独立，可安排 11、12 人及更多棒次；额外打者可以保留棒次轮换进入守备。</p></div><a class="release-shot" href="/assets/slow-lineup-2.3.jpg" data-gallery data-version="2.3" data-caption="成人慢垒 · 完整打序与自由人" aria-label="放大查看成人慢垒 · 完整打序与自由人"><img src="/assets/slow-lineup-2.3.jpg" alt="2.3 实际界面：成人慢垒 · 完整打序与自由人" loading="lazy"></a></article><article class="release-card"><div class="release-copy"><span class="release-number">02 · 本场规则</span><h3>一好一坏，<br>按你的比赛开局。</h3><p>初始球数、两好后界外策略、Illegal 和时间赛均按本场设置处理。预设球数不计实际投球，时间到点由记录员依裁判决定继续或结束。</p></div><a class="release-shot" href="/assets/slow-rules-2.3.jpg" data-gallery data-version="2.3" data-caption="成人慢垒 · 初始球数、界外与时间规则" aria-label="放大查看成人慢垒 · 初始球数、界外与时间规则"><img src="/assets/slow-rules-2.3.jpg" alt="2.3 实际界面：成人慢垒 · 初始球数、界外与时间规则" loading="lazy"></a></article><article class="release-card"><div class="release-copy"><span class="release-number">03 · 双方阵容</span><h3>先确认阵容，<br>再 Play Ball。</h3><p>创建比赛时设置双方先发；进入记分后、Play Ball 前仍可调整，确认后开赛。未来比赛保留双方选择，开赛后继续支持阵容和守位调整。</p></div><a class="release-shot" href="/assets/pregame-lineup-2.3.jpg" data-gallery data-version="2.3" data-caption="双方阵容 · 创建、赛前与赛中" aria-label="放大查看双方阵容 · 创建、赛前与赛中"><img src="/assets/pregame-lineup-2.3.jpg" alt="2.3 实际界面：双方阵容 · 创建、赛前与赛中" loading="lazy"></a></article><article class="release-card"><div class="release-copy"><span class="release-number">04 · 战报与观赛</span><h3>场上实际发生，<br>记录如实保留。</h3><p>修复部分实际出局漏记投手局数的问题：三个实际出局为 1.0。赛前阵容调整不进入导出明细，慢垒完整阵容和规则同步到 PDF、TXT 与文字直播。</p></div><a class="release-shot" href="/assets/slow-live-2.3.jpg" data-gallery data-version="2.3" data-caption="慢垒文字直播 · 本场规则与赛况" aria-label="放大查看慢垒文字直播 · 本场规则与赛况"><img src="/assets/slow-live-2.3.jpg" alt="2.3 实际界面：慢垒文字直播 · 本场规则与赛况" loading="lazy"></a></article></div><div class="release-details" aria-label="2.3 更多优化">
+<article><h3>投手实际出局，完整入账</h3><p>正常出局、跑者出局及第三好球未接住后的实际出局统一计算；两个出局后手动结束仍保留 0.2 局。旧记录资料不足时提示核对。</p></article>
+<article><h3>历史纠错，跟随本场规则</h3><p>换人、守位、局面和失误继续支持影响预览。慢垒球数、界外机会、Free 和 Illegal 贯穿更正、撤销与恢复。</p></article>
+<article><h3>本地备份，保留完整记录</h3><p>新版备份保存慢垒规则、双方阵容和当前状态，继续导入旧版备份。未开播的比赛与完整备份仍在本机处理。</p></article>
+</div><div class="release-share"><div><p class="release-number">2.3 · 更新海报</p><h3>一张图，看清本次更新。</h3><p>真实界面与版本重点，方便保存给球队和亲友。</p><a class="release-poster-download" href="/assets/baseballmaster-2.3-update.png" download="BaseballMaster-2.3-update.png">保存更新海报 <span aria-hidden="true">↓</span></a></div><a class="release-poster-thumb" href="/assets/baseballmaster-2.3-update.png" data-gallery data-version="2.3" data-caption="2.3 版本更新海报" aria-label="放大查看 2.3 更新海报"><img src="/assets/baseballmaster-2.3-update.png" width="1440" height="1920" alt="2.3 更新海报：成人慢垒、双方阵容、实际投手局数与完整战报" loading="lazy"></a></div>
+<p class="release-footnote">2.3 App 准备发布，可下载版本以 App Store 为准。以上使用合成比赛数据。开播需联网；终场或连续未同步一小时后，直播内容自动删除。</p>
       </div>
     </section>
 
@@ -110,7 +107,7 @@
 
     <section class="confidence section-pad" aria-labelledby="confidence-title"><div class="container confidence-grid"><div><p class="eyebrow dark-eyebrow">FOCUS ON THE FIELD</p><h2 id="confidence-title">场上的事，全心投入。<br>记录的事，放心交给它。</h2></div><div class="confidence-list"><article><span class="confidence-mark" aria-hidden="true">↘</span><div><h3>离线，也能完整记分</h3><p>记分、球队管理、统计和报表可离线使用，无需注册账号。</p></div></article><article><span class="confidence-mark" aria-hidden="true">↘</span><div><h3>你的记录，保存在你的设备</h3><p>支持本地备份与恢复，导出 PDF、文字记录和比赛海报，由你选择分享给谁。</p></div></article><article><span class="confidence-mark" aria-hidden="true">↘</span><div><h3>从第一次记分，到熟练记录</h3><p>独立练习模式与内置规则说明，帮助你理解局面，逐步熟悉记分。</p></div></article></div></div></section>
 
-    <section class="next-section section-pad" id="next" aria-labelledby="next-title"><div class="container next-grid"><div><p class="eyebrow dark-eyebrow">LOOKING AHEAD · VERSION 2.3</p><span class="plan-badge">规划中 · 不属于 2.2</span><h2 id="next-title">成人慢垒，<br>下一场的准备。</h2><p>2.3 计划加入成人慢垒与比赛预告桌面小组件，<br>让赛事设置更贴合规程，后续赛程一眼可见。</p><p class="release-small">功能仍在规划开发中，上线时间待定；最终以上线版本为准。</p></div><div class="next-features"><article><span>10 人</span><h3>守备阵容</h3><p>现有九个守位，增加一名自由人。</p></article><article><span>10+</span><h3>可扩展打序</h3><p>10 人防守，棒次可多于十人。</p></article><article><span>自由人</span><h3>第十个守位</h3><p>独立安排守位，参与正常打序。</p></article><article><span>1 好 1 坏</span><h3>自定义初始球数</h3><p>每位打者从赛事指定球数开始。</p></article></div></div></section>
+    <section class="next-section section-pad" id="next" aria-labelledby="next-title"><div class="container next-grid"><div><p class="eyebrow dark-eyebrow">LOOKING AHEAD</p><span class="plan-badge">后续待办 · 版本待定</span><h2 id="next-title">比赛预告，<br>留给下一步。</h2><p>桌面小组件继续保留在后续待办，尚未开放，不包含在 2.3 中。当前先完成比赛记录与版本发布。</p></div><div class="next-features"><article><span>赛程预告</span><h3>桌面小组件</h3><p>未来计划从本机赛程展示后续比赛。具体版本与时间待后续安排。</p></article><article><span>持续改进</span><h3>来自真实记录</h3><p>欢迎通过技术支持反馈实际记分与观赛中的问题，帮助下一版更好用。</p></article></div></div></section>
 
     <section class="faq-section section-pad" aria-labelledby="faq-title"><div class="container faq-grid"><div><p class="eyebrow dark-eyebrow">GOOD TO KNOW</p><h2 id="faq-title">开场之前，<br>你可能想知道。</h2><a class="text-link dark-link" href="/support.html">更多使用帮助 <span aria-hidden="true">↗</span></a></div><div class="faq-list"><details><summary>没有专业记分经验，也能使用吗？<span aria-hidden="true">+</span></summary><p>可以。观察式记分让你先选择“到一垒”“打者出局”等现场结果，再按提示记录原因。也可以先用独立练习模式熟悉操作；练习数据不会写入正式比赛。</p></details><details><summary>需要科学上网吗？支持哪些设备？<span aria-hidden="true">+</span></summary><p>日常记分无需科学上网。App 面向 iPhone，支持 iOS 16 及以上系统；当前记分、球队管理、统计和报告可离线使用。下载更新、访问网页或通过其他服务分享时可能需要联网。</p></details><details><summary>比赛结束后，可以分享哪些内容？<span aria-hidden="true">+</span></summary><p>可以分享比赛 Box Score、球队与球员统计 PDF、逐打席详细版和文字简版报告，以及完整文字记录。赛前也可以生成比赛宣传海报。</p></details><details><summary>换手机时，如何保留比赛数据？<span aria-hidden="true">+</span></summary><p>先在“我的 → 本地数据 → 备份与恢复”中导出备份，并保存到 App 之外。将备份传到新设备后再导入。恢复会替换新设备上的本地业务数据，操作前请保存需要保留的记录。</p></details></div></div></section>
 

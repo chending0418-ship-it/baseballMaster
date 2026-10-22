@@ -14,7 +14,7 @@
 
 | 项目 | 已核对内容 |
 | --- | --- |
-| 唯一活动工程 | `/Users/JasonChan/Documents/BaseballMaster-2.2/BaseballMaster.xcodeproj` |
+| 唯一活动工程 | `/Users/JasonChan/Documents/BaseballMaster/BaseballMaster.xcodeproj` |
 | Scheme | BaseballMaster |
 | Version／Build | 2.2／1 |
 | Bundle ID | com.jasonchen.baseballmaster |
@@ -56,7 +56,7 @@
 
 ## Git 与目录执行记录
 
-2.2 代码提交 `433373b` 已推送 `codex/dev-2.2` 并快进合入／推送 main；远端 SHA 核对一致。单目录迁移与文档收尾另随提交保存。现在只保留 `/Users/JasonChan/Documents/BaseballMaster-2.2`，完整 Git、原签名归档、测试证据、宣传图与源码备份已保留并校验，迁移后 Release 编译通过。详见 [迁移维护记录](../../maintenance/2026-10-03-single-project.md) 与 [版本目录说明](../../BRANCHES.md)。
+2.2 代码提交 `433373b` 已推送 `codex/dev-2.2` 并快进合入／推送 main；远端 SHA 核对一致。单目录迁移与文档收尾另随提交保存。现在只保留 `/Users/JasonChan/Documents/BaseballMaster`，完整 Git、原签名归档、测试证据、宣传图与源码备份已保留并校验，迁移后 Release 编译通过。详见 [迁移维护记录](../../maintenance/2026-10-03-single-project.md) 与 [版本目录说明](../../BRANCHES.md)。
 
 ## 官网与传播素材补充
 

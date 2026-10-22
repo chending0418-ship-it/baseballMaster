@@ -50,7 +50,7 @@
     "version": "2.2 (1)",
     "passed": 161,
     "failures": 0,
-    "evidence": "/Users/JasonChan/Documents/BaseballMaster-2.2/output/validation/2.2/baseline-sync/correction-sync-2.2.xcresult"
+    "evidence": "/Users/JasonChan/Documents/BaseballMaster/output/validation/2.2/baseline-sync/correction-sync-2.2.xcresult"
   },
   "marketing": {
     "screens": 7,

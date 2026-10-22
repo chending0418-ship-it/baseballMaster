@@ -46,6 +46,7 @@ enum ReportStatisticsTables {
     }
 
     static func pitching(_ canvas: ReportPDFCanvas, title: String, players: [PlayerSeasonStatistics], includeTotal: Bool = true, compact: Bool = false) {
+        canvas.paragraph("ERA 使用 7 局口径，按实际投手出局数计算；时间赛不按时长折算。", size: 9, muted: true)
         let pitchers = players.filter { $0.hasRecord(in: .pitching) }
         var rows = pitchers.map { pitchingRow(playerName($0), line: $0.pitching) }
         if includeTotal && !pitchers.isEmpty { rows.append(pitchingRow("合计", line: .aggregate(pitchers.map(\.pitching)))) }
@@ -202,7 +203,8 @@ struct GameBoxScorePDFReport {
 
     func pdfData(generatedAt: Date = Date()) -> Data {
         ReportPDFCanvas.render(kind: "BOX SCORE / 单场比赛战报", title: "\(game.awayTeam.name) vs \(game.homeTeam.name)",
-                               subtitle: "比赛时间：\(playedAt.map { ReportPDFCanvas.dateText($0, includesTime: true) } ?? "未记录") · \(game.isFinal ? "已结束" : "进行中 / 非最终数据") · 规定 \(rules?.scheduledInnings ?? game.scheduledInnings) 局", generatedAt: generatedAt) { canvas in
+                               subtitle: "比赛时间：\(playedAt.map { ReportPDFCanvas.dateText($0, includesTime: true) } ?? "未记录") · \(game.isFinal ? "已结束" : "进行中 / 非最终数据") · " + ((rules ?? game.rulesSnapshot)?.isSlowPitch == true ? ((rules ?? game.rulesSnapshot)?.summary ?? "") : "规定 \(rules?.scheduledInnings ?? game.scheduledInnings) 局"), generatedAt: generatedAt) { canvas in
+            if game.pitchingOutsReviewRequired == true { canvas.paragraph("旧比赛投手局数待核对：可重放历史不完整，保留原始值。", bold: true) }
             if game.statisticsIncomplete == true { canvas.paragraph("过程或责任待确认 · 统计可能不完整", bold: true) }
             canvas.metrics([("客队 · \(String(game.awayTeam.shortName.prefix(14)))", "\(game.awayScore)"),
                             ("主队 · \(String(game.homeTeam.shortName.prefix(14)))", "\(game.homeScore)"),
@@ -211,7 +213,7 @@ struct GameBoxScorePDFReport {
             canvas.paragraph(game.isFinal ? "结束原因：\(game.endReason?.rawValue ?? "比赛结束")" : "比赛尚未结束，本报告为导出时的比赛快照。", size: 10, bold: true)
             let pending = (game.scoringEvents ?? []).filter(\.needsReview).count
             if pending > 0 { canvas.paragraph("数据待复核：\(pending) 条记录尚待确认。", size: 10, bold: true) }
-            let inningCount = max(1, game.inning, game.homeRunsByInning.count, game.awayRunsByInning.count)
+            let inningCount = game.scoreInningCount
             for start in stride(from: 1, through: inningCount, by: 12) {
                 let innings = Array(start...min(start + 11, inningCount))
                 let rows = [false, true].map { home -> [String] in
@@ -243,6 +245,7 @@ struct GameBoxScorePDFReport {
                 canvas.newPage()
                 let title = team.name + (team.id == game.awayTeam.id ? " · 客队" : " · 主队")
                 let players = participants(for: team)
+                if rules?.isSlowPitch == true { canvas.paragraph("完整打序与守备：" + game.lineupSummary(for: team.id), size: 9) }
                 ReportStatisticsTables.batting(canvas, title: title, players: players, totalGames: 1, compact: true)
                 if rules?.gameMode == .coachPitch { canvas.paragraph("教练投手模式：投手数据不适用") }
                 else { ReportStatisticsTables.pitching(canvas, title: title, players: players, compact: true) }

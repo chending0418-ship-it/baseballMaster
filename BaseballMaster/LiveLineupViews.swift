@@ -15,12 +15,19 @@ struct LiveLineupEditor: View {
         NavigationStack {
             List {
                 Section {
-                    Text("姓名与号码更正同时更新球队名单。排序保留当前／下一位打者及球数；换人接替原棒次和守位，退场球员可再次上场。")
+                    Text(store.isPregame ? "开赛前可修改先发、棒次和守位，确认后按新阵容开赛。" : "姓名与号码更正同步球队名单。赛中排序保留当前打者及球数，换人接替原棒次和守位。")
                         .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                 }
                 if saved && !draft.hasChanges {
                     Section { Label("已保存，可继续调整或点完成返回", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(BMTheme.green).accessibilityIdentifier("lineup-saved") }
+                }
+                if draft.allowsPregameOrderChanges && !draft.bench.isEmpty {
+                    Section("开赛前增加打者") {
+                        ForEach(draft.bench) { player in
+                            Button("加入打序 · \(player.compactName)") { draft.addExtraHitter(player.id) }
+                        }
+                    }
                 }
                 Section("打序 · 长按右侧把手拖动") {
                     ForEach(Array(draft.battingOrderIDs.enumerated()), id: \.element) { index, id in
@@ -160,14 +167,27 @@ struct LiveLineupEditor: View {
 
     private func playerMenu(_ player: Player) -> some View {
         Menu {
+            if draft.allowsPregameOrderChanges && !draft.fieldingIDs.contains(player.id) {
+                Button("移出打序", role: .destructive) { draft.removeExtraHitter(player.id) }
+                    .disabled(draft.battingOrderIDs.count <= 10)
+            }
             Button("更正姓名／号码") { editingPlayer = player }
             Button("换人（接替棒次与守位）") { replacement = LineupReplacement(player: player, pitchingOnly: false) }
             if draft.allowsTwoWayPlayer, player.id == draft.pitcherID, player.id == draft.designatedHitterID {
                 Button("只换投手（原投手继续 DH）") { replacement = LineupReplacement(player: player, pitchingOnly: true) }
             }
+            if store.isSlowPitch && !draft.fieldingIDs.contains(player.id) {
+                Menu("进入守备（棒次不变）") {
+                    ForEach(draft.fieldingIDs, id: \.self) { outgoingID in
+                        if let outgoing = draft.player(outgoingID) {
+                            Button("接替 \(outgoing.name) · \(outgoing.primaryPosition.shortName)") { draft.rotateIntoFielding(playerID: player.id, replacing: outgoingID) }
+                        }
+                    }
+                }
+            }
             if draft.fieldingIDs.contains(player.id) {
                 Menu("调整守位") {
-                    ForEach(FieldPosition.allCases) { position in
+                    ForEach(store.availableFieldPositions) { position in
                         Button(position.fullName) { draft.changePosition(playerID: player.id, to: position) }
                     }
                 }

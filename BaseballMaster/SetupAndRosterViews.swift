@@ -620,6 +620,17 @@ struct NewGameSetupView: View {
         value.mode = versionRules.mode
         value.halfInningRunLimit = versionRules.halfInningRunLimit
         value.coachPitchLimit = versionRules.coachPitchLimit
+        if versionRules.isSlowPitch {
+            value.fieldersCount = 10
+            value.scheduledInnings = versionRules.scheduledInnings
+            value.initialBalls = versionRules.startingBalls; value.initialStrikes = versionRules.startingStrikes
+            value.twoStrikeFoulPolicy = versionRules.twoStrikeFoulPolicy
+            value.competitionFormat = versionRules.competitionFormat ?? .timed
+            value.inningsLimit = versionRules.inningsLimit
+            value.timeLimitMinutes = versionRules.timeLimitMinutes
+            value.timeWarningMinutes = versionRules.timeWarningMinutes ?? 5
+            value.rulesVersion = 2
+        }
         return value
     }
 
@@ -629,7 +640,8 @@ struct NewGameSetupView: View {
             guard let away = spectatorAwayTeam, let home = spectatorHomeTeam else {
                 messages.append("请选择观赛的客队和主队")
                 if store.opponentTeams.count < 2 { messages.append("观赛记录至少需要创建 2 支对手球队") }
-                return messages
+                if !scheduleForLater, let issue = rules.startingValidationMessage { messages.append(issue) }
+        return messages
             }
             if away.id == home.id { messages.append("观赛的客队和主队不能相同") }
             if scheduleForLater && !configureScheduleNow { return messages }
@@ -795,18 +807,20 @@ struct NewGameSetupView: View {
                     SectionHeader(title: "比赛规则")
                     BMCard {
                         VStack(spacing: 0) {
+                            if !versionRules.isSlowPitch {
                             settingPickerRow(title: "规定局数", icon: "number.circle.fill") {
                                 Picker("规定局数", selection: $innings) {
                                     ForEach(1...9, id: \.self) { Text("\($0) 局").tag($0) }
                                 }
                                 .pickerStyle(.menu)
                             }
+                            }
 
                             Divider().padding(.leading, 42)
 
                             settingPickerRow(title: "守备人数", icon: "person.3.fill") {
                                 Picker("守备人数", selection: $fieldersCount) {
-                                    ForEach(6...9, id: \.self) { Text("\($0) 人").tag($0) }
+                                    ForEach(versionRules.isSlowPitch ? [10] : Array(6...9), id: \.self) { Text("\($0) 人").tag($0) }
                                 }
                                 .pickerStyle(.menu)
                             }
@@ -814,7 +828,7 @@ struct NewGameSetupView: View {
                             Divider().padding(.leading, 42)
 
                             Toggle("启用指定打击 DH", isOn: $usesDesignatedHitter)
-                                .disabled(versionRules.gameMode == .coachPitch)
+                                .disabled(versionRules.gameMode != .standard)
                                 .font(.system(size: 15, weight: .semibold))
                                 .tint(BMTheme.green)
                                 .frame(minHeight: 54)
@@ -830,14 +844,16 @@ struct NewGameSetupView: View {
 
                     BM11RulesControls(rules: $versionRules)
                         .onChange(of: versionRules.gameMode) { mode in
-                            if mode == .coachPitch {
+                            fieldersCount = mode == .slowPitch ? 10 : 9
+                            if mode != .standard {
                                 usesDesignatedHitter = false; allowsTwoWayPlayer = false
                                 hasPitchLimit = false; hasPitcherInningsLimit = false
                             }
                         }
-                    SectionHeader(title: "时间与投球提醒", subtitle: "只提醒，不自动结束比赛")
+                    SectionHeader(title: versionRules.isSlowPitch ? "投手提醒" : "时间与投球提醒", subtitle: "只提醒，不自动结束比赛")
                     BMCard {
                         VStack(spacing: 0) {
+                            if !versionRules.isSlowPitch {
                             Toggle("比赛时间限制", isOn: $hasTimeLimit)
                                 .font(.system(size: 15, weight: .semibold))
                                 .tint(BMTheme.green)
@@ -860,6 +876,7 @@ struct NewGameSetupView: View {
                             }
 
                             Divider()
+                            }
 
                             Toggle("单投手球数限制", isOn: $hasPitchLimit)
                                 .disabled(versionRules.gameMode == .coachPitch)
@@ -941,6 +958,7 @@ struct NewGameSetupView: View {
         }
         .bmScreenBackground()
         .navigationTitle("新比赛")
+        .scrollDismissesKeyboard(.interactively)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if selectedTeamID == nil || !store.teams.contains(where: { $0.id == selectedTeamID }) {
@@ -965,13 +983,14 @@ struct NewGameSetupView: View {
                     scheduledAt: scheduleForLater ? scheduledAt : Date(),
                     startImmediately: !scheduleForLater
                 )
-            } else if let opponent = selectedOpponent {
-                LineupSelectionView(
-                    opponent: opponent,
-                    isHome: isHome,
+            } else if let opponent = selectedOpponent, let own = selectedTeam {
+                ObservedGameLineupView(
+                    awayTeam: isHome ? opponent : own,
+                    homeTeam: isHome ? own : opponent,
                     rules: rules,
                     scheduledAt: scheduleForLater ? scheduledAt : Date(),
-                    startImmediately: !scheduleForLater
+                    startImmediately: !scheduleForLater,
+                    ourTeamID: own.id
                 )
             }
         }
@@ -1415,14 +1434,15 @@ struct ScheduledGamePreparationView: View {
             } else if let stored,
                       let team = localTeam,
                       let opponent = localOpponent {
-                LineupSelectionView(
-                    opponent: opponent,
-                    isHome: stored.isHome,
+                ObservedGameLineupView(
+                    awayTeam: stored.isHome ? opponent : team,
+                    homeTeam: stored.isHome ? team : opponent,
                     rules: rules,
                     startImmediately: true,
-                    lineupTeamID: team.id,
                     scheduledGameID: gameID,
-                    initialLineup: stored.lineup
+                    ourTeamID: team.id,
+                    initialAwayLineup: stored.isHome ? (stored.secondaryLineup ?? []) : stored.lineup,
+                    initialHomeLineup: stored.isHome ? stored.lineup : (stored.secondaryLineup ?? [])
                 )
             }
         }
@@ -1526,13 +1546,13 @@ private struct GameRulesEditor: View {
                 Divider().padding(.leading, 42)
                 settingPickerRow(title: "守备人数", icon: "person.3.fill") {
                     Picker("守备人数", selection: $rules.fieldersCount) {
-                        ForEach(6...9, id: \.self) { Text("\($0) 人").tag($0) }
+                        ForEach(rules.isSlowPitch ? [10] : Array(6...9), id: \.self) { Text("\($0) 人").tag($0) }
                     }
                     .pickerStyle(.menu)
                 }
                 Divider().padding(.leading, 42)
                 Toggle("启用指定打击 DH", isOn: usesDesignatedHitter)
-                    .disabled(rules.gameMode == .coachPitch)
+                    .disabled(rules.gameMode != .standard)
                     .font(.system(size: 15, weight: .semibold))
                     .tint(BMTheme.green)
                     .frame(minHeight: 54)
@@ -1814,7 +1834,7 @@ struct LineupSelectionView: View {
                                             }
                                         }
                                     } label: {
-                                        Text(assignment.position.shortName)
+                                        Text(assignment.position?.shortName ?? "暂不守备")
                                             .font(.system(size: 13, weight: .black))
                                             .foregroundStyle(BMTheme.green)
                                             .padding(.horizontal, 9)
@@ -2075,6 +2095,8 @@ struct ObservedGameLineupView: View {
     let scheduledAt: Date
     let startImmediately: Bool
     let scheduledGameID: UUID?
+    let ourTeamID: UUID?
+    @State private var savedMessage: String?
 
     @State private var draggingPlayerID: UUID?
     @State private var showConfirmation = false
@@ -2092,6 +2114,7 @@ struct ObservedGameLineupView: View {
         scheduledAt: Date = Date(),
         startImmediately: Bool = true,
         scheduledGameID: UUID? = nil,
+        ourTeamID: UUID? = nil,
         initialAwayLineup: [LineupAssignment] = [],
         initialHomeLineup: [LineupAssignment] = []
     ) {
@@ -2101,17 +2124,18 @@ struct ObservedGameLineupView: View {
         self.scheduledAt = scheduledAt
         self.startImmediately = startImmediately
         self.scheduledGameID = scheduledGameID
+        self.ourTeamID = ourTeamID
         func preparedLineup(_ initial: [LineupAssignment], for team: Team) -> [LineupAssignment] {
             let playerIDs = Set(team.players.map(\.id))
             var seen = Set<UUID>()
             var result = initial.filter { playerIDs.contains($0.playerID) && seen.insert($0.playerID).inserted }
             for player in team.players where result.count < rules.fieldersCount && !seen.contains(player.id) {
-                let usedPositions = Set(result.map(\.position))
-                let position = FieldPosition.allCases.first(where: { !usedPositions.contains($0) }) ?? .rightField
+                let usedPositions = Set(result.compactMap(\.position))
+                let position = rules.positions.first(where: { !usedPositions.contains($0) }) ?? .rightField
                 result.append(LineupAssignment(playerID: player.id, battingOrder: result.count + 1, position: position))
                 seen.insert(player.id)
             }
-            result = Array(result.prefix(rules.fieldersCount))
+            if !rules.isSlowPitch { result = Array(result.prefix(rules.fieldersCount)) }
             for index in result.indices { result[index].battingOrder = index + 1 }
             return result
         }
@@ -2119,9 +2143,13 @@ struct ObservedGameLineupView: View {
         _homeAssignments = State(initialValue: preparedLineup(initialHomeLineup, for: homeTeam))
     }
 
+    private var lineupValidationMessages: [String] {
+        lineupErrors(assignments: awayAssignments, role: "客队") + lineupErrors(assignments: homeAssignments, role: "主队")
+    }
     private var validationMessages: [String] {
-        lineupErrors(assignments: awayAssignments, role: "客队")
-            + lineupErrors(assignments: homeAssignments, role: "主队")
+        var errors = lineupValidationMessages
+        if startImmediately, let issue = rules.startingValidationMessage { errors.append(issue) }
+        return errors
     }
 
     var body: some View {
@@ -2130,10 +2158,10 @@ struct ObservedGameLineupView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     BMCard {
                         VStack(alignment: .leading, spacing: 7) {
-                            Label("观赛记录", systemImage: "eye.fill")
+                            Label(ourTeamID == nil ? "观赛记录" : "双方赛前阵容", systemImage: ourTeamID == nil ? "eye.fill" : "person.3.fill")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundStyle(BMTheme.green)
-                            Text("双方都不会被计为本方球队；可在这里确认双方棒次、守位和先发球员，记录过程中仍可换人和调整守位。")
+                            Text(ourTeamID == nil ? "双方都不会被计为本方球队；确认双方棒次、守位和先发球员，记录过程中仍可调整。" : "分别确认双方棒次、守位和先发投手。本队比赛身份与统计保持，比赛开始后仍可调整双方阵容。")
                                 .font(.system(size: 13))
                                 .foregroundStyle(BMTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -2158,24 +2186,50 @@ struct ObservedGameLineupView: View {
                 .padding(BMTheme.horizontalPadding)
             }
 
+            if let scheduledGameID {
+                if let savedMessage { Text(savedMessage).font(.footnote).foregroundStyle(BMTheme.green) }
+                Button("保存赛前阵容") {
+                    if store.saveScheduledLineups(id: scheduledGameID, rules: rules, awayLineup: awayAssignments, homeLineup: homeAssignments) {
+                        savedMessage = "双方阵容已保存，可继续调整或稍后开赛"
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(!lineupValidationMessages.isEmpty)
+                .accessibilityIdentifier("save-pregame-lineups")
+                .padding(.horizontal, BMTheme.horizontalPadding)
+            }
             Button(startImmediately ? "确认双方阵容并开始记录" : "确认双方阵容并创建比赛") {
                 showConfirmation = true
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(!validationMessages.isEmpty)
             .opacity(validationMessages.isEmpty ? 1 : 0.45)
-            .accessibilityIdentifier("confirm-observed-lineup")
+            .accessibilityIdentifier(ourTeamID == nil ? "confirm-observed-lineup" : "confirm-lineup")
             .padding(.horizontal, BMTheme.horizontalPadding)
             .padding(.vertical, 12)
             .background(BMTheme.background)
         }
         .bmScreenBackground()
-        .navigationTitle("观赛阵容")
+        .navigationTitle(ourTeamID == nil ? "观赛阵容" : "双方阵容")
         .navigationBarTitleDisplayMode(.inline)
-        .alert(startImmediately ? "开始观赛记录？" : "创建未来观赛？", isPresented: $showConfirmation) {
+        .gameActionErrorAlert(store)
+        .alert(ourTeamID == nil ? (startImmediately ? "开始观赛记录？" : "创建未来观赛？") : (startImmediately ? "建立比赛并开始记录？" : "确认创建未来比赛？"), isPresented: $showConfirmation) {
             Button("取消", role: .cancel) {}
             Button(startImmediately ? "开始记录" : "创建比赛") {
-                if let scheduledGameID {
+                if let ourTeamID {
+                    let isHome = homeTeam.id == ourTeamID
+                    let opponent = isHome ? awayTeam : homeTeam
+                    let ownLineup = isHome ? homeAssignments : awayAssignments
+                    let opponentLineup = isHome ? awayAssignments : homeAssignments
+                    if let scheduledGameID {
+                        showGame = store.startScheduledGame(id: scheduledGameID, rules: rules, lineup: ownLineup, opponentLineup: opponentLineup)
+                    } else {
+                        store.setCurrentTeam(id: ourTeamID)
+                        createdGameID = store.startNewGame(opponent: opponent, isHome: isHome, rules: rules, lineup: ownLineup,
+                                                          opponentLineup: opponentLineup, scheduledAt: scheduledAt, startImmediately: startImmediately)
+                        if startImmediately { showGame = createdGameID != nil } else { showScheduledCreated = createdGameID != nil }
+                    }
+                } else if let scheduledGameID {
                     showGame = store.startScheduledObservedGame(
                         id: scheduledGameID,
                         rules: rules,
@@ -2213,7 +2267,7 @@ struct ObservedGameLineupView: View {
             Button("返回比赛首页") { store.returnToGameHome() }
             Button("制作宣传海报") { posterGame = store.games.first { $0.id == createdGameID } }
         } message: {
-            Text("未来观赛已保存，可从比赛首页的“即将进行”中开始。")
+            Text("双方阵容已保存，可从比赛首页的“即将进行”中继续调整并开赛。")
         }
         .navigationDestination(isPresented: $showGame) {
             ScorekeepingView(showsGameHomeButton: true)
@@ -2228,7 +2282,27 @@ struct ObservedGameLineupView: View {
         let selectedIDs = Set(assignments.wrappedValue.map(\.playerID))
         let bench = team.sortedPlayers.filter { !selectedIDs.contains($0.id) }
         return VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: role, subtitle: team.name)
+            SectionHeader(title: role, subtitle: "\(team.name) · \(assignments.wrappedValue.count) 棒 · 守备 \(assignments.wrappedValue.compactMap(\.position).count)/\(rules.fieldersCount)")
+            if let previous = store.previousLineup(for: team.id, excluding: scheduledGameID, mode: rules.gameMode) {
+                Button("沿用上一场阵容") {
+                    let rosterIDs = Set(team.players.map(\.id))
+                    assignments.wrappedValue = previous.filter { rosterIDs.contains($0.playerID) }.enumerated().map {
+                        LineupAssignment(playerID: $0.element.playerID, battingOrder: $0.offset + 1, position: $0.element.position)
+                    }
+                }
+            }
+            if rules.isSlowPitch {
+                Menu("增加打者／全员加入") {
+                    ForEach(bench) { player in
+                        Button(player.compactName) {
+                            assignments.wrappedValue.append(LineupAssignment(playerID: player.id, battingOrder: assignments.wrappedValue.count + 1, position: nil))
+                        }
+                    }
+                    Button("全员加入打序") {
+                        for player in bench { assignments.wrappedValue.append(LineupAssignment(playerID: player.id, battingOrder: assignments.wrappedValue.count + 1, position: nil)) }
+                    }
+                }
+            }
             ForEach(Array(assignments.wrappedValue.enumerated()), id: \.element.playerID) { index, assignment in
                 if let player = team.players.first(where: { $0.id == assignment.playerID }) {
                     HStack(spacing: 8) {
@@ -2248,6 +2322,12 @@ struct ObservedGameLineupView: View {
                                 .foregroundStyle(BMTheme.secondaryText)
                         }
                         Spacer()
+                        if rules.isSlowPitch {
+                            Button(role: .destructive) {
+                                assignments.wrappedValue.remove(at: index)
+                                for slot in assignments.wrappedValue.indices { assignments.wrappedValue[slot].battingOrder = slot + 1 }
+                            } label: { Image(systemName: "minus.circle") }
+                        }
                         if !bench.isEmpty {
                             Menu {
                                 ForEach(bench) { replacement in
@@ -2261,13 +2341,20 @@ struct ObservedGameLineupView: View {
                             }
                         }
                         Menu {
-                            ForEach(FieldPosition.allCases) { position in
+                            if rules.isSlowPitch {
+                                Button("暂不守备 · 额外打者") { assignments.wrappedValue[index].position = nil }
+                            }
+                            ForEach(rules.positions) { position in
                                 Button(position.fullName) {
+                                    let previous = assignments.wrappedValue[index].position
+                                    if let other = assignments.wrappedValue.indices.first(where: { $0 != index && assignments.wrappedValue[$0].position == position }) {
+                                        assignments.wrappedValue[other].position = previous
+                                    }
                                     assignments.wrappedValue[index].position = position
                                 }
                             }
                         } label: {
-                            Text(assignment.position.shortName)
+                            Text(assignment.position?.shortName ?? "暂不守备")
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(BMTheme.green)
                                 .padding(.horizontal, 8)
@@ -2292,6 +2379,7 @@ struct ObservedGameLineupView: View {
                     .padding(12)
                     .background(BMTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 13))
+                    .accessibilityIdentifier("observed-lineup-row-\(team.id)-\(assignment.playerID)")
                     .onDrag {
                         draggingPlayerID = assignment.playerID
                         return NSItemProvider(object: assignment.playerID.uuidString as NSString)
@@ -2320,13 +2408,15 @@ struct ObservedGameLineupView: View {
 
     private func lineupErrors(assignments: [LineupAssignment], role: String) -> [String] {
         var messages: [String] = []
-        if assignments.count != rules.fieldersCount {
-            messages.append("\(role)需要选择 \(rules.fieldersCount) 名先发")
+        if rules.isSlowPitch ? assignments.count < 10 : assignments.count != rules.fieldersCount {
+            messages.append("\(role)需要至少 \(rules.fieldersCount) 个有效棒次")
         }
         if Set(assignments.map(\.playerID)).count != assignments.count {
             messages.append("\(role)先发球员不能重复")
         }
-        if Set(assignments.map(\.position)).count != assignments.count {
+        let defense = assignments.compactMap(\.position)
+        if defense.count != rules.fieldersCount { messages.append("\(role)需要 \(rules.fieldersCount) 人守备，当前 \(defense.count) 人") }
+        if Set(defense).count != defense.count {
             messages.append("\(role)守备位置不能重复")
         }
         if !assignments.contains(where: { $0.position == .pitcher }) {
@@ -2339,7 +2429,7 @@ struct ObservedGameLineupView: View {
     }
 
     private var confirmationSummary: String {
-        var text = "\(awayTeam.shortName)（客队）对 \(homeTeam.shortName)（主队）\n\(rules.scheduledInnings) 局，\(rules.fieldersCount) 人守备"
+        var text = "\(awayTeam.shortName)（客队）对 \(homeTeam.shortName)（主队）\n\(rules.summary)"
         if !startImmediately {
             text += "\n开赛：\(scheduledAt.formatted(date: .abbreviated, time: .shortened))"
         }
@@ -2400,12 +2490,20 @@ private struct LineupDropDelegate: DropDelegate {
 
 struct BM11RulesControls: View {
     @Binding var rules: GameRules
+    @FocusState private var editingDuration: Bool
     var body: some View {
         BMCard {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("比赛模式", selection: Binding(get: { rules.gameMode }, set: { mode in
                     rules.mode = mode
-                    if mode == .coachPitch {
+                    rules.fieldersCount = mode == .slowPitch ? 10 : 9
+                    rules.initialBalls = mode == .slowPitch ? 1 : nil
+                    rules.initialStrikes = mode == .slowPitch ? 1 : nil
+                    rules.competitionFormat = mode == .slowPitch ? .timed : nil
+                    rules.twoStrikeFoulPolicy = nil; rules.inningsLimit = nil
+                    rules.timeLimitMinutes = nil
+                    rules.rulesVersion = mode == .slowPitch ? 2 : nil
+                    if mode != .standard {
                         rules.usesDesignatedHitter = false; rules.allowsTwoWayPlayer = false
                         rules.pitchLimit = nil; rules.pitchWarningRemaining = nil; rules.pitcherInningsLimit = nil
                         rules.coachPitchLimit = rules.coachPitchLimit ?? 6
@@ -2414,6 +2512,32 @@ struct BM11RulesControls: View {
                     ForEach(GameMode.allCases) { Text($0.title).tag($0) }
                 }
                 .accessibilityIdentifier("game-mode")
+                if rules.isSlowPitch {
+                    Picker("赛制", selection: Binding(get: { rules.competitionFormat ?? .timed }, set: { rules.competitionFormat = $0 })) {
+                        ForEach(CompetitionFormat.allCases) { Text($0.title).tag($0) }
+                    }
+                    if rules.isTimeGame {
+                        TextField("比赛时长（分钟，开赛前填写）", text: Binding(get: { rules.timeLimitMinutes.map(String.init) ?? "" }, set: { rules.timeLimitMinutes = Int($0) }))
+                            .keyboardType(.numberPad).accessibilityIdentifier("slow-pitch-time-limit")
+                            .focused($editingDuration)
+                        Toggle("同时设置局数上限", isOn: Binding(get: { rules.inningsLimit != nil }, set: { rules.inningsLimit = $0 ? 7 : nil }))
+                        if rules.inningsLimit != nil {
+                            Stepper("局数上限 \(rules.inningsLimit ?? 7) 局", value: Binding(get: { rules.inningsLimit ?? 7 }, set: { rules.inningsLimit = $0 }), in: 1...99)
+                        }
+                        Text("到时提示，由记录员依裁判决定继续或确认结束，不截断打席。")
+                            .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                    } else {
+                        Stepper("规定局数 \(rules.scheduledInnings) 局", value: $rules.scheduledInnings, in: 1...99)
+                    }
+                    Stepper("初始好球 \(rules.startingStrikes)", value: Binding(get: { rules.startingStrikes }, set: { rules.initialStrikes = $0 }), in: 0...2)
+                    Stepper("初始坏球 \(rules.startingBalls)", value: Binding(get: { rules.startingBalls }, set: { rules.initialBalls = $0 }), in: 0...3)
+                    Picker("两好后界外", selection: $rules.twoStrikeFoulPolicy) {
+                        Text("开赛前请选择").tag(Optional<TwoStrikeFoulPolicy>.none)
+                        ForEach(TwoStrikeFoulPolicy.allCases) { Text($0.title).tag(Optional($0)) }
+                    }.accessibilityIdentifier("slow-pitch-foul-policy")
+                    Text("10 人守备，打序可多于 10 人；预设球数不计实际投球。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                }
                 if rules.gameMode == .coachPitch {
                     Stepper("每打席最多 \(rules.coachPitchLimit ?? 6) 球", value: Binding(get: { rules.coachPitchLimit ?? 6 }, set: { rules.coachPitchLimit = $0 }), in: 1...20)
                     Text("末球界外或球数用尽出局；触身继续并计球，不四坏保送。P 位球员只记录打击与守备。")
@@ -2426,6 +2550,13 @@ struct BM11RulesControls: View {
                     Text("超额分不计；达限后确认换边，适用于最后一局和延长局。")
                         .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                 }
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完成") { editingDuration = false }
+                    .accessibilityIdentifier("dismiss-rule-keyboard")
             }
         }
     }
