@@ -40,6 +40,19 @@ const input = path.join(root, 'output/samples/3.1.1/launch-screen/2026-10-22/v3/
         await exportLayer('LaunchArtwork', { x: 0, y: 0, width: 402, height: 874 }, '.identity,.signoff{visibility:hidden}');
         await exportLayer('LaunchIdentity', { x: 71, y: 299, width: 260, height: 223 }, '.screen{background:transparent}.art,.signoff{visibility:hidden}');
         await exportLayer('LaunchSignoff', { x: 111, y: 715, width: 180, height: 74 }, '.screen{background:transparent}.art,.identity{visibility:hidden}');
+        const appIconDirectory = path.join(assets, 'LaunchAppIcon.imageset');
+        fs.mkdirSync(appIconDirectory, {recursive:true});
+        const appImages=[];
+        for(const scale of [1,2,3]){
+            const filename=`LaunchAppIcon@${scale}x.png`;
+            const edge=44*scale,radius=10*scale;
+            const mask=Buffer.from(`<svg width="${edge}" height="${edge}"><rect width="${edge}" height="${edge}" rx="${radius}" fill="white"/></svg>`);
+            await sharp(path.join(assets,'AppIcon.appiconset/AppIcon-1024.png')).resize(edge,edge).composite([{input:mask,blend:'dest-in'}]).png().toFile(path.join(appIconDirectory,filename));
+            appImages.push({filename,idiom:'universal',scale:`${scale}x`});
+        }
+        fs.writeFileSync(path.join(appIconDirectory,'Contents.json'),JSON.stringify({images:appImages,info:{author:'xcode',version:1}},null,2)+'\n');
+        fs.copyFileSync(path.join(assets,'LaunchIdentity.imageset/LaunchIdentity@2x.png'),path.join(root,'collaboration/admin/public/launch-identity.png'));
+        fs.copyFileSync(path.join(assets,'LaunchArtwork.imageset/LaunchArtwork@2x.png'),path.join(root,'collaboration/admin/public/launch-background.png'));
         const colorDirectory = path.join(assets, 'LaunchBackground.colorset');
         fs.mkdirSync(colorDirectory, { recursive: true });
         fs.writeFileSync(path.join(colorDirectory, 'Contents.json'), JSON.stringify({ colors: [{ idiom: 'universal', color: { 'color-space': 'srgb', components: { red: '0x09', green: '0x2A', blue: '0x2A', alpha: '1.000' } } }], info: { author: 'xcode', version: 1 } }, null, 2) + '\n');

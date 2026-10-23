@@ -17,6 +17,7 @@ import { TeamArchiveService } from './archive.mjs';
 import { inflateSync, gzipSync } from 'node:zlib';
 import { isIP } from 'node:net';
 import { createAdminHandler } from './admin.mjs';
+import { LaunchScreenService, LaunchScreenError } from './launch-screen.mjs';
 
 export const BASE = '/api/v3';
 export const PROTOCOL = 1;
@@ -343,6 +344,8 @@ export class CollaborationStore {
 
 export function createCollaborationServer(options = {}) {
   const store = new CollaborationStore(options);
+  const launchScreen = new LaunchScreenService(store);
+  store.launchScreen = launchScreen;
   const admin = createAdminHandler(store,options.admin);
   const windows = new Map();
   const server = createServer(async (req, res) => {
@@ -381,6 +384,7 @@ export function createCollaborationServer(options = {}) {
       const window = windows.get(key) ?? { count: 0, until: now + 60_000 };
       windows.set(key, window); window.count++;
       requireValue(window.count <= (options.requestsPerMinute ?? 180), 429, 'rate_limited', '请求过于频繁，请稍后重试。');
+      if(launchScreen.public(req,res,path))return;
       requireValue(req.headers['x-bm-protocol'] === String(PROTOCOL), 426, 'upgrade_required', '请更新 App 后重试。');
       const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(req.headers.authorization ?? '')?.[1];
       let body = {};
@@ -525,8 +529,8 @@ export function createCollaborationServer(options = {}) {
       throw new APIError(404, 'not_found', '页面不存在。');
     } catch (e) {
       // No body, bearer token, invitation or database exception is ever logged or returned.
-      reply(e instanceof APIError ? e.status : 503,
-        { error: { code: e instanceof APIError ? e.code : 'service_unavailable', message: e instanceof APIError ? e.message : '服务暂时不可用，请稍后重试。' } });
+      reply(e instanceof APIError || e instanceof LaunchScreenError ? e.status : 503,
+        { error: { code: e instanceof APIError ? e.code : e instanceof LaunchScreenError ? 'launch_screen' : 'service_unavailable', message: e instanceof APIError || e instanceof LaunchScreenError ? e.message : '服务暂时不可用，请稍后重试。' } });
     }
   });
   server.requestTimeout = 15_000; server.headersTimeout = 10_000;

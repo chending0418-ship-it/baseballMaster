@@ -51,6 +51,8 @@ async function render(){
    const stats=n('div',undefined,'stats');for(const [label,value,detail,target]of [['球队',data.teams,'当前有效共享球队','teams'],['云端比赛',data.games,'不含已删除比赛','games'],['正在直播',data.live.ongoing,'两套直播服务合计','live'],['比赛资料',size(data.bytes),'正文与展示数据，不含备份','games']]){const c=link(' ',target,'stat');c.replaceChildren(n('p',label),n('strong',value),n('small',detail));stats.append(c);}root.append(stats);if(data.warning)root.append(n('p',data.warning,'notice'));
    const panel=n('section',undefined,'panel');panel.append(n('h2','按球队查看与下载'),n('p','全部云端或单支球队资料可打包为 ZIP；比赛和直播内容可单独下载为 JSON。临时直播请在有效期内单独下载。','muted'),link('打开球队资料 →','teams'));root.append(panel);
    const dataLive=await read('live?limit=8');root.append(n('h2','正在直播'));root.append(dataLive.items.length?table(['对阵','比分','状态','最近同步','操作'],matchRows(dataLive,true)):n('p','当前没有正在进行的直播','empty'));if(data.live.completed)root.append(link(`${data.live.completed} 场已终场直播仍在有效期内 →`,'live?state=completed'));
+  }else if(route==='launch'){
+   root.append(await window.BMLaunchEditor({read,api,header}));
   }else if(route==='teams'){
    const data=await read('teams?'+query);root.append(header('球队资料','查看共享球队、球员姓名与背号、成员角色及球队比赛。'),filter(route,query,[['active','有效球队'],['dissolved','已解散球队'],['all','全部球队']]));
    root.append(data.items.length?table(['球队','球员','有效成员','比赛','创建时间','操作'],data.items.map(t=>[teamName(t),t.players||0,t.members,t.games,date(t.createdAt),action('查看球队',()=>{location.hash='teams/'+t.id;})])):n('p','没有符合条件的球队','empty'));root.append(pagination(data,route,query));

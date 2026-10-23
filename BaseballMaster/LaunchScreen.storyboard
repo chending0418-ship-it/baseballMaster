@@ -25,11 +25,11 @@
                                     <constraint firstAttribute="height" constant="223" id="identity-height"/>
                                 </constraints>
                             </imageView>
-                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="LaunchSignoff" translatesAutoresizingMaskIntoConstraints="NO" id="launch-signoff">
-                                <rect key="frame" x="111" y="715" width="180" height="74"/>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="LaunchAppIcon" translatesAutoresizingMaskIntoConstraints="NO" id="launch-signoff">
+                                <rect key="frame" x="179" y="715" width="44" height="44"/>
                                 <constraints>
-                                    <constraint firstAttribute="width" constant="180" id="signoff-width"/>
-                                    <constraint firstAttribute="height" constant="74" id="signoff-height"/>
+                                    <constraint firstAttribute="width" constant="44" id="signoff-width"/>
+                                    <constraint firstAttribute="height" constant="44" id="signoff-height"/>
                                 </constraints>
                             </imageView>
                         </subviews>
@@ -43,7 +43,7 @@
                             <constraint firstItem="launch-identity" firstAttribute="centerX" secondItem="launch-view" secondAttribute="centerX" id="identity-center-x"/>
                             <constraint firstItem="launch-identity" firstAttribute="centerY" secondItem="launch-view" secondAttribute="centerY" multiplier="0.93936" id="identity-center-y"/>
                             <constraint firstItem="launch-signoff" firstAttribute="centerX" secondItem="launch-view" secondAttribute="centerX" id="signoff-center-x"/>
-                            <constraint firstItem="launch-safe-area" firstAttribute="bottom" secondItem="launch-signoff" secondAttribute="bottom" constant="51" id="signoff-bottom"/>
+                            <constraint firstItem="launch-safe-area" firstAttribute="bottom" secondItem="launch-signoff" secondAttribute="bottom" constant="81" id="signoff-bottom"/>
                         </constraints>
                     </view>
                     <simulatedStatusBarMetrics key="simulatedStatusBarMetrics" statusBarStyle="lightContent"/>
@@ -56,7 +56,7 @@
     <resources>
         <image name="LaunchArtwork" width="402" height="874"/>
         <image name="LaunchIdentity" width="260" height="223"/>
-        <image name="LaunchSignoff" width="180" height="74"/>
+        <image name="LaunchAppIcon" width="44" height="44"/>
         <namedColor name="LaunchBackground">
             <color red="0.03529411764705882" green="0.16470588235294117" blue="0.16470588235294117" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
         </namedColor>

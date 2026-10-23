@@ -1,4 +1,5 @@
-// Site-owner inspection only; team permissions and business records are never changed here.
+// Business records remain read-only. Site owners can separately edit App launch presentation.
+import {LaunchScreenError,readLaunchUpload} from './launch-screen.mjs';
 import { readFileSync } from 'node:fs';
 import { randomBytes, scrypt, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -83,7 +84,7 @@ export function createAdminHandler(store,options){
   return {items:rows.slice(offset,offset+limit),total:rows.length,offset,limit,counts,warning};
  }
  async function requestBody(req){check((req.headers['content-type']??'').split(';')[0]==='application/json',415);let n=0;const chunks=[];
-  for await(const part of req){n+=part.length;check(n<=2048,413);chunks.push(part);}let body;try{body=JSON.parse(Buffer.concat(chunks).toString());}catch{throw new AdminError(400,'登录资料格式不正确。');}check(body&&typeof body==='object'&&!Array.isArray(body));return body;}
+  for await(const part of req){n+=part.length;check(n<=2048,413);chunks.push(part);}let body;try{body=JSON.parse(Buffer.concat(chunks).toString());}catch{throw new AdminError(400,'请求内容格式不正确。');}check(body&&typeof body==='object'&&!Array.isArray(body));return body;}
  return async function(req,res){
   const url=new URL(req.url,'http://localhost'),path=url.pathname;
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Robots-Tag','noindex, nofollow, noarchive');res.setHeader('X-Frame-Options','DENY');
@@ -95,7 +96,7 @@ export function createAdminHandler(store,options){
    rate('read:'+client(req),300,60000);const origin=allowLocal?'http://'+req.headers.host:'https://baseballmaster.cc';
    check(!req.headers.origin||req.headers.origin===origin,403,'请从管理后台操作。');check(req.headers['sec-fetch-site']!=='cross-site',403,'请从管理后台操作。');
    if(path==='/admin'&&req.method==='GET'){res.writeHead(308,{Location:'/admin/'});res.end();return;}
-   const asset=/^\/admin\/(index.html|app.js|style.css|app-icon.png)?$/.exec(path);
+   const asset=/^\/admin\/(index.html|app.js|launch.js|style.css|app-icon.png|launch-identity.png|launch-background.png)?$/.exec(path);
    if(asset&&req.method==='GET'){const name=asset[1]||'index.html',type=name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.png')?'image/png':'text/html';res.writeHead(200,{'Content-Type':type+'; charset=utf-8'});res.end(readFileSync(new URL('./admin/public/'+name,import.meta.url)));return;}
    if(path==='/admin/api/login'&&req.method==='POST'){
     check(req.headers.origin===origin,403,'请从登录页面操作。');rate('login:'+client(req),8,15*60000);rate('login:global',60,60000);
@@ -105,6 +106,15 @@ export function createAdminHandler(store,options){
     const token=randomBytes(32).toString('base64url');sessions.set(digest(token),{until:now()+3600000});attempts.delete('login:'+client(req));res.setHeader('Set-Cookie',cookie(token,3600));return send(200,{expiresAt:now()+3600000});
    }
    const session=authorize(req);
+   if(path==='/admin/api/launch-screen'){
+    if(req.method==='GET')return send(200,store.launchScreen.get());
+    check(req.method==='PUT',405);check(req.headers.origin===origin,403,'请从管理后台操作。');rate('launch-write:'+session,20,60000);
+    return send(200,store.launchScreen.save(await requestBody(req)));
+   }
+   if(path==='/admin/api/launch-screen/image'){
+    check(req.method==='POST',405);check(req.headers.origin===origin,403,'请从管理后台操作。');rate('launch-upload:'+session,12,60000);
+    const {data,mime}=await readLaunchUpload(req);return send(201,store.launchScreen.upload(data,mime));
+   }
    if(path==='/admin/api/logout'&&req.method==='POST'){check(req.headers.origin===origin,403);sessions.delete(session);res.setHeader('Set-Cookie',cookie('',0));return send(200,{ok:true});}
    check(req.method==='GET',405,'管理后台仅支持查看和下载。');
    if(path==='/admin/api/session')return send(200,{expiresAt:sessions.get(session).until});
@@ -119,6 +129,6 @@ export function createAdminHandler(store,options){
    const live=/^\/admin\/api\/live\/(shared|temporary)\/([a-zA-Z0-9-]+)(\/download)?$/.exec(path);
    if(live){let data;if(live[1]==='temporary')data=await legacy('/'+encodeURIComponent(live[2]));else{check(uid.test(live[2]));const row=store.db.prepare(`SELECT g.live_enabled,g.live_expires_at,g.deleted,g.purged FROM shared_games g WHERE g.id=? AND NOT EXISTS(SELECT 1 FROM team_deletions d WHERE d.team_id=g.team_id AND d.restored_at IS NULL)`).get(live[2]);check(row?.live_enabled&&!row.deleted&&!row.purged&&row.live_expires_at>now(),404,'直播已关闭或到期。');data=gameDetail(live[2]);}return live[3]?download('Live-'+live[2],data):send(200,data);}
    throw new AdminError(404,'页面不存在。');
-  }catch(e){if(res.headersSent){res.destroy();return;}send(e instanceof AdminError?e.status:503,{error:e instanceof AdminError?e.message:'后台服务暂不可用，请稍后刷新。'});}
+  }catch(e){if(res.headersSent){res.destroy();return;}send(e instanceof AdminError||e instanceof LaunchScreenError?e.status:503,{error:e instanceof AdminError||e instanceof LaunchScreenError?e.message:'后台服务暂不可用，请稍后刷新。'});}
  };
 }

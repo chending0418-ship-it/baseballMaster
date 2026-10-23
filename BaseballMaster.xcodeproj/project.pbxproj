@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A20000000000000000000002 /* LaunchScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* LaunchScreenTests.swift */; };
+		A10000000000000000000043 /* ConfigurableLaunchScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000043 /* ConfigurableLaunchScreen.swift */; };
 		A10000000000000000000042 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000042 /* LaunchScreen.storyboard */; };
 		A10000000000000000000041 /* SituationRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000041 /* SituationRecording.swift */; };
 		A10000000000000000000040 /* BattedBall.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000040 /* BattedBall.swift */; };
@@ -69,6 +71,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		F20000000000000000000002 /* LaunchScreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchScreenTests.swift; sourceTree = "<group>"; };
+		F10000000000000000000043 /* ConfigurableLaunchScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurableLaunchScreen.swift; sourceTree = "<group>"; };
 		F10000000000000000000042 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		F10000000000000000000041 /* SituationRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SituationRecording.swift; sourceTree = "<group>"; };
 		F10000000000000000000040 /* BattedBall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattedBall.swift; sourceTree = "<group>"; };
@@ -154,6 +158,7 @@
 		G10000000000000000000001 /* BaseballMaster */ = {
 			isa = PBXGroup;
 			children = (
+				F10000000000000000000043 /* ConfigurableLaunchScreen.swift */,
 				F10000000000000000000042 /* LaunchScreen.storyboard */,
 				F10000000000000000000011 /* Assets.xcassets */,
 				F10000000000000000000001 /* BaseballMasterApp.swift */,
@@ -201,6 +206,7 @@
 		G20000000000000000000001 /* BaseballMasterTests */ = {
 			isa = PBXGroup;
 			children = (
+				F20000000000000000000002 /* LaunchScreenTests.swift */,
 				F20000000000000000000001 /* GameStoreTests.swift */,
 			);
 			path = BaseballMasterTests;
@@ -357,6 +363,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000043 /* ConfigurableLaunchScreen.swift in Sources */,
 				A10000000000000000000001 /* BaseballMasterApp.swift in Sources */,
 				A10000000000000000000002 /* DesignSystem.swift in Sources */,
 				A10000000000000000000003 /* Models.swift in Sources */,
@@ -400,6 +407,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A20000000000000000000002 /* LaunchScreenTests.swift in Sources */,
 				A20000000000000000000001 /* GameStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -1,6 +1,38 @@
 import XCTest
 
 final class BaseballMasterUITests: XCTestCase {
+    func testV311ConfigurableLaunchKeepsBrandIconsAndSkipsToHome() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--launch-screen-custom-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["launch-message"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["launch-message"].label.contains("固定品牌 图文保持清晰"))
+        XCTAssertTrue(app.images["launch-fixed-bm"].exists)
+        XCTAssertTrue(app.images["launch-fixed-app-icon"].exists)
+        let iconFrame = app.images["launch-fixed-app-icon"].frame
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "3.1.1 可配置开屏"; capture.lifetime = .keepAlways; add(capture)
+        app.buttons["skip-launch-screen"].tap()
+        XCTAssertTrue(app.navigationBars["比赛"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["start-new-game"].exists)
+        app.terminate(); app.launchArguments = ["--launch-screen-preview"]; app.launch()
+        XCTAssertTrue(app.staticTexts["launch-message"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.images["launch-fixed-app-icon"].frame.minY, iconFrame.minY, accuracy: 1, "Caption length must not move the fixed App icon")
+        app.buttons["skip-launch-screen"].tap()
+    }
+
+    func testV311BundledLaunchRetainsProductGreenAndDefaultMessage() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--launch-screen-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["launch-message"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["launch-message"].label, "每一球 都有迹可循")
+        XCTAssertTrue(app.images["launch-fixed-bm"].exists)
+        XCTAssertTrue(app.images["launch-fixed-app-icon"].exists)
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "3.1.1 默认缓存兜底开屏"; capture.lifetime = .keepAlways; add(capture)
+        app.buttons["skip-launch-screen"].tap()
+        XCTAssertTrue(app.navigationBars["比赛"].waitForExistence(timeout: 5))
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

@@ -14,6 +14,7 @@ private enum AppLaunchArguments {
 @main
 struct BaseballMasterApp: App {
     @StateObject private var store: GameStore
+    @StateObject private var launchScreen: LaunchScreenController
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -48,13 +49,15 @@ struct BaseballMasterApp: App {
         initialStore.runUpgradeReleaseAuditIfRequested()
         #endif
         _store = StateObject(wrappedValue: initialStore)
+        _launchScreen = StateObject(wrappedValue: LaunchScreenController.forApp(arguments: AppLaunchArguments.values))
     }
 
     var body: some Scene {
         WindowGroup {
-            LaunchRouterView()
+            AppLaunchContainer(controller: launchScreen, requiresDataRecovery: store.requiresDataRecovery) { LaunchRouterView() }
                 .environmentObject(store)
                 .onOpenURL { url in
+                    launchScreen.dismiss()
                     if let token = DevicePairingLink.token(from: url.absoluteString) {
                         store.selectedTab = 1
                         store.teamSharing.incomingPairing = DevicePairingLink.url(token).absoluteString
@@ -66,6 +69,7 @@ struct BaseballMasterApp: App {
                 }
                 .task { store.liveBroadcasts.setForeground(true); store.sharedMatches.setForeground(true); store.teamSharing.setForeground(true) }
                 .onChange(of: scenePhase) { phase in
+                    if phase == .background { launchScreen.dismiss() }
                     store.liveBroadcasts.setForeground(phase == .active)
                     store.sharedMatches.setForeground(phase == .active)
                     if phase != .inactive { store.teamSharing.setForeground(phase == .active) }
