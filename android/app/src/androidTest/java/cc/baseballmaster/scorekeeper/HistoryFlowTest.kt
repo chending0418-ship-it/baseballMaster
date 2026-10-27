@@ -56,10 +56,18 @@ class HistoryFlowTest {
     private fun find(selector: BySelector): UiObject2 {
         repeat(22) { i ->
             try {
-                if (android.os.Build.VERSION.SDK_INT >= 34) instrumentation.uiAutomation.clearCache()
-                device.findObject(selector)?.takeIf { it.visibleBounds.height() > 8 }?.let { return it }
-                device.findObject(By.scrollable(true))?.scroll(if (i < 11) Direction.DOWN else Direction.UP, .5f)
-            }catch(_:StaleObjectException){
+                if (android.os.Build.VERSION.SDK_INT >= 34)
+                    instrumentation.uiAutomation.clearCache()
+                device
+                    .findObject(selector)
+                    ?.takeIf { it.visibleBounds.height() > 8 }
+                    ?.let {
+                        return it
+                    }
+                device
+                    .findObject(By.scrollable(true))
+                    ?.scroll(if (i < 11) Direction.DOWN else Direction.UP, .5f)
+            } catch (_: StaleObjectException) {
                 // A modal may replace its scroll node between lookup and scroll. Re-query it;
                 // scoring actions themselves are never retried by this read/scroll helper.
             }
@@ -181,6 +189,9 @@ class HistoryFlowTest {
         val incoming = corrected.home.players[11].id
         assertEquals(1, corrected.pitching[first]!!.runs)
         assertEquals(1, corrected.pitching[incoming]!!.runs)
+        assertTrue(device.wait(Until.hasObject(By.text("完整记录")),10000))
+        assertTrue(device.wait(Until.gone(By.res("save-history-correction")),10000))
+        device.waitForIdle()
         device.pressBack()
         device.waitForIdle()
         click("pitch-calledStrike")
@@ -195,6 +206,9 @@ class HistoryFlowTest {
         assertEquals(2, restored.pitching[first]!!.runs)
         assertEquals(4, restored.pitching[first]!!.pitches)
         assertEquals(first, restored.pitcher.id)
+        assertTrue(device.wait(Until.hasObject(By.text("完整记录")),10000))
+        assertTrue(device.wait(Until.gone(By.res("save-history-correction")),10000))
+        device.waitForIdle()
         device.pressBack()
         device.waitForIdle()
         assertFalse(find(By.res("undo")).isEnabled)

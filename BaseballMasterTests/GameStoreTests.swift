@@ -7602,6 +7602,103 @@ private final class AndroidScoringScenario {
 }
 
 extension GameStoreTests {
+    func testAndroidCatalogExport() throws {
+        for mode in [GameMode.standard,.coachPitch,.slowPitch] {
+            for kind in RunnerEventKind.allCases {
+                let s=try AndroidScoringScenario("catalog-runner-\(mode.rawValue)-\(String(describing:kind))",mode:mode)
+                guard s.store.allowedRunnerEvents.contains(kind) else { continue }
+                for _ in 0..<3 {try s.play(.single)}
+                try s.runner(kind);try s.export(to:self)
+            }
+        }
+        for kind in ViolationKind.allCases {
+            let s=try AndroidScoringScenario("catalog-violation-\(String(describing:kind))")
+            try s.step(["kind":"violation","runnerKind":String(describing:kind)]){XCTAssertTrue(s.store.recordViolation(kind))}
+            for _ in 0..<3 {try s.play(.single)}
+            let moves=s.store.suggestedViolationDecisions(for:kind)
+            try s.step(["kind":"violation","runnerKind":String(describing:kind),"decisions":s.moves(moves)]){XCTAssertTrue(s.store.recordViolation(kind,decisions:moves))}
+            try s.export(to:self)
+        }
+        let expanded=try AndroidScoringScenario("catalog-expanded-slow",mode:.slowPitch)
+        var draft=expanded.store.lineupDraft(forHomeTeam:false)
+        draft.battingOrderIDs=expanded.store.game.awayTeam.players.map(\.id);draft.changes=["十二人扩展打序"]
+        let state=expanded.store.game
+        try expanded.step(["kind":"lineup","homeSide":false,"order":draft.battingOrderIDs.map{$0.uuidString.lowercased()},"positions":Dictionary(uniqueKeysWithValues:state.awayTeam.players.prefix(10).enumerated().map{(String($0.offset+1),$0.element.id.uuidString.lowercased())})]){XCTAssertTrue(expanded.store.saveLineup(draft))}
+        try expanded.play(.homeRun);try expanded.pitch(.foul);try expanded.export(to:self)
+    }
+
+    func testAndroidPerformanceExport() throws {
+        let s=try AndroidScoringScenario("performance")
+        let player=s.store.currentBatter
+        try s.pitch(.ball)
+        var observation=BattedBallObservation(type:.line);observation.selectRegion(.center)
+        try s.play(.single,observation:observation)
+        try s.simple("intentionalWalk"){s.store.recordIntentionalWalk()}
+        var current=try XCTUnwrap(s.store.activeStoredGame)
+        let date=Date(timeIntervalSince1970:1767198600) // 2025-12-31 16:30 UTC, 2026 in Shanghai.
+        current.playedAt=date;current.playedTimeZoneID="Asia/Shanghai"
+        var sources=[current]
+        let sourceID=UUID(uuidString:"D3000000-0000-0000-0000-000000000001")!
+        for n in 1...6 {
+            var copy=current;copy.id=UUID(uuidString:String(format:"D3000000-0000-0000-0000-%012d",n+1))!
+            copy.updatedAt=Date(timeIntervalSince1970:Double(100+n))
+            if n<=2 {copy.historySourceID=sourceID}
+            if n==3 {copy.rules.mode = .coachPitch}
+            if n==4 {copy.playedTimeZoneID="UTC"}
+            if n==5 {copy.state.statisticsIncomplete=true}
+            if n==6 {let t=copy.state.awayTeam;copy.state.awayTeam=Team(name:t.name,shortName:t.shortName,city:t.city,players:t.players)}
+            sources.append(copy)
+        }
+        s.store.games=sources
+        func expected(_ annual:Bool)throws->[String:Any]{let p=s.store.batterPerformance(playerID:player.id,annual:annual)
+            return ["line":try JSONSerialization.jsonObject(with:JSONEncoder().encode(p.line)),"gameCount":p.gameCount,"missingLocations":p.missingLocations,"contacts":p.contacts.count,"completedAppearances":p.completedAppearances]
+        }
+        let rows:[[String:Any]]=sources.enumerated().map{i,g in ["id":g.id.uuidString.lowercased(),"historySourceID":g.historySourceID?.uuidString.lowercased() as Any? ?? NSNull(),"mode":g.rules.gameMode.rawValue,"playedAt":Int64(g.playedAt!.timeIntervalSince1970*1000),"timeZoneID":g.playedTimeZoneID!,"updatedAt":Int64(g.updatedAt.timeIntervalSince1970*1000),"incomplete":g.state.statisticsIncomplete == true,"foreignTeam":i==6]}
+        let fixture:[String:Any]=["androidPerformance":1,"source":"actual iOS GameStore.batterPerformance @ 40df3d2","mode":"standard","initialGame":s.initialGame,"commands":s.steps.map{$0["command"]!},"playerID":player.id.uuidString.lowercased(),"sources":rows,"current":try expected(false),"annual":try expected(true)]
+        let attachment=XCTAttachment(data:try JSONSerialization.data(withJSONObject:fixture,options:[.sortedKeys,.prettyPrinted]),uniformTypeIdentifier:"public.json");attachment.name="android-performance.json";attachment.lifetime = .keepAlways;add(attachment)
+    }
+
+    func testAndroidRemainingRulesExport() throws {
+        let tb = try AndroidScoringScenario("remaining-tiebreak", innings: 1)
+        for _ in 0..<6 { try tb.play(.groundOut) }
+        try tb.step(["kind":"decision","flag":false]) { tb.store.resolveGameDecision(finish:false) }
+        try tb.step(["kind":"extraInning","flag":true,"runnerBases":[1,2]]) { tb.store.confirmExtraInning(useTiebreak:true,runnerBases:[.first,.second]) }
+        for (base,index) in [(Base.first,0),(Base.second,1)] {
+            let p=tb.store.game.awayTeam.players[index]
+            try tb.step(["kind":"placeTB","playerID":p.id.uuidString.lowercased(),"position":base.rawValue]) { tb.store.placeTiebreakRunner(p,on:base) }
+        }
+        try tb.play(.homeRun)
+        for _ in 0..<3 { try tb.play(.groundOut) }
+        try tb.simple("skipTB") { tb.store.skipTiebreakRunnerForCurrentHalf() }
+        try tb.export(to:self)
+
+        let ds=try AndroidScoringScenario("remaining-double-switch")
+        try ds.play(.single)
+        let h=ds.store.game.homeTeam
+        try ds.step(["kind":"doubleSwitch","playerID":h.players[0].id.uuidString.lowercased(),"replacementID":h.players[9].id.uuidString.lowercased(),"position":9,"secondPlayerID":h.players[8].id.uuidString.lowercased(),"secondReplacementID":h.players[10].id.uuidString.lowercased(),"secondPosition":1]) {
+            XCTAssertTrue(ds.store.performDoubleSwitch(firstOut:h.players[0],firstIn:h.players[9],firstPosition:.rightField,secondOut:h.players[8],secondIn:h.players[10],secondPosition:.pitcher))
+        }
+        try ds.pitch(.ball);try ds.play(.homeRun)
+        try ds.export(to:self)
+
+        for outcome in [PlayOutcome.single,.error] {
+            let r=try AndroidScoringScenario("remaining-review-\(String(describing:outcome))")
+            try r.play(.triple);try r.play(.pending)
+            let event=try XCTUnwrap(r.store.game.scoringEvents?.last), fielder=r.store.game.homeTeam.players[5]
+            try r.step(["kind":"review","position":1,"outcome":String(describing:outcome),"playerID":fielder.id.uuidString.lowercased(),"text":"复核后的击球记录"]) {
+                XCTAssertTrue(r.store.reviewPendingEvent(id:event.id,title:"复核后的击球记录",category:.battedBall,notation:nil,primaryPlayerID:event.primaryPlayerID,secondaryPlayerID:outcome == .error ? fielder.id : event.secondaryPlayerID,ballStatus:.live,resolvedOutcome:outcome,note:"已核对现场"))
+            }
+            try r.export(to:self)
+        }
+        let manual=try AndroidScoringScenario("remaining-manual-situation")
+        try manual.play(.single)
+        let runner=manual.store.game.awayTeam.players[0]
+        try manual.step(["kind":"situation","situation":["inning":2,"isTop":true,"balls":2,"strikes":1,"outs":1,"awayScore":3,"homeScore":1,"bases":[NSNull(),runner.id.uuidString.lowercased(),NSNull()],"batterIndex":2,"pitcherID":manual.store.currentPitcher.id.uuidString.lowercased()]]) {
+            XCTAssertTrue(manual.store.correctGameState(inning:2,isTop:true,balls:2,strikes:1,outs:1,awayScore:3,homeScore:1,batterIndex:2,pitcherID:manual.store.currentPitcher.id,baseRunners:[.second:runner]))
+        }
+        try manual.play(.homeRun);try manual.export(to:self)
+    }
+
     /// Separate evidence from the frozen scoring fixtures: history replay and interruption.
     func testAndroidHistoryParityExport() throws {
         func historyStep(_ s: AndroidScoringScenario, _ command: [String: Any], _ action: () throws -> Void) throws {

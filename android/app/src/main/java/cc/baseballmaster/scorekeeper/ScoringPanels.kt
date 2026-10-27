@@ -7,6 +7,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -16,9 +18,11 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
     var panel by rememberSaveable(game.id) { mutableStateOf("") }
-    var source by rememberSaveable(game.id) { mutableStateOf("") }
+    var sourceRevision by rememberSaveable(game.id) { mutableLongStateOf(game.revision) }
+    var source by remember(game.id) { mutableStateOf(game) }
     fun open(name: String) {
-        source = GameJson.encodeToString(game)
+        source = game
+        sourceRevision = game.revision
         panel = name
     }
     val enabled = !model.busy && !game.isFinal && !game.isScheduled && game.pendingDecision == null
@@ -51,7 +55,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         TextButton(
             model::undo,
-            enabled = !model.busy && game.cursor > game.correctionBoundary,
+            enabled = !model.busy && game.canUndo,
             modifier = Modifier.testTag("undo"),
         ) {
             Text("撤销")
@@ -70,13 +74,30 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
     if (game.practice)
         Row {
             Text("练习记分 · 不保存为正式比赛", Modifier.weight(1f), fontSize = 12.sp)
-            TextButton({ model.practice(game.rules.recordingMethod) }) { Text("重置练习") }
+            TextButton(
+                { model.practice(game.rules.recordingMethod, game.rules.mode) },
+                Modifier.testTag("reset-practice"),
+            ) {
+                Text("重置练习")
+            }
+        }
+    if (game.practice)
+        Choices("练习模式", GameMode.entries.associate { it.name to it.title }, game.rules.mode.name) {
+            model.practice(game.rules.recordingMethod, GameMode.valueOf(it))
+        }
+    if (game.requiresTiebreakPlacement || game.canConfirmExtraInning(System.currentTimeMillis()))
+        CardBlock {
+            Text(
+                if (game.requiresTiebreakPlacement) "请安排本半局 TB 自动跑者" else "请确认延长赛方式",
+                fontWeight = FontWeight.Bold,
+            )
+            TextButton({ open("advanced") }, Modifier.testTag("tiebreak-prompt")) { Text("处理比赛决定") }
         }
     if (game.isScheduled)
         CardBlock {
             Text("预告比赛", fontWeight = FontWeight.Bold)
             Text(game.scheduledAt?.let { formatMatchDate(it, game.playedTimeZoneID) } ?: "")
-            Button({ model.command(Command("activate")) }) { Text("进入比赛") }
+            Button({ model.command(Command("activate")) },Modifier.testTag("activate-scheduled")) { Text("进入比赛") }
         }
     if (game.isFinal)
         CardBlock {
@@ -127,7 +148,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
             },
         )
     if (panel.isNotEmpty()) {
-        val snapshot = remember(source) { GameJson.decodeFromString<Game>(source) }
+        val snapshot = source.copy(revision = sourceRevision)
         val close = { panel = "" }
         val save: (Command) -> Unit = { model.command(it, snapshot.revision, close) }
         when (panel) {
@@ -168,14 +189,20 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                     if (game.rules.mode == GameMode.slowPitch)
                         TextButton({ panel = "illegal" }, enabled = enabled) { Text("Illegal 宣告") }
                     TextButton({ panel = "substitution" }, enabled = enabled) { Text("换人／换投／守位") }
-                    TextButton({ panel = "lineup" }, enabled = enabled) { Text("双方阵容与打序") }
+                    TextButton({ panel = "lineup" }, enabled = !model.busy&&!game.isFinal&&game.pendingDecision==null) { Text("双方阵容与打序") }
                     TextButton({ panel = "violation" }, enabled = enabled) { Text("裁判判罚") }
                     TextButton({ panel = "time" }) { Text("比赛时间／预告") }
                     TextButton({ panel = "rules" }) { Text("本场比赛规则") }
+                    TextButton({ panel = "performance" }, Modifier.testTag("batter-performance")) {
+                        Text("打击表现／击球图")
+                    }
+                    TextButton({ panel = "advanced" }, Modifier.testTag("advanced-tools")) {
+                        Text("局面／复核／延长赛")
+                    }
                     TextButton({ panel = "clock" }) { Text("比赛计时") }
                     TextButton(
                         { panel = "finish" },
-                        enabled = enabled,
+                        enabled = !model.busy && !game.isFinal && !game.isScheduled,
                         modifier = Modifier.testTag("finish-game"),
                     ) {
                         Text("结束比赛")
@@ -217,7 +244,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                     save(Command("droppedThirdStrike", decisions = it))
                 }
             "substitution" -> SubstitutionEditor(snapshot, model.busy, close, save)
-            "lineup" -> LineupEditor(snapshot, model.busy, close, save)
+            "lineup" -> LineupEditor(snapshot, model.busy, close, save = save)
             "violation" -> ViolationEditor(snapshot, model.busy, close, save)
             "illegal" -> IllegalEditor(snapshot, model.busy, close, save)
             "finish" ->
@@ -249,6 +276,8 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                         }
                 }
             "clock" -> ClockEditor(game, model.busy, close) { model.command(it, done = close) }
+            "advanced" -> AdvancedPanel(game, model, close)
+            "performance" -> PerformanceSheet(game, model.games, close)
             "history" -> HistoryEditor(game, model, close)
         }
     }
@@ -287,90 +316,6 @@ private val CommandDraftSaver =
         save = { GameJson.encodeToString(it) },
         restore = { GameJson.decodeFromString<Command>(it) },
     )
-
-@Composable
-internal fun PlayEditor(
-    game: Game,
-    busy: Boolean,
-    dismiss: () -> Unit,
-    initial: Command? = null,
-    save: (Command) -> Unit,
-) {
-    var cmd by
-        rememberSaveable(game.id, game.revision, stateSaver = CommandDraftSaver) {
-            mutableStateOf(
-                initial
-                    ?: Command(
-                        "play",
-                        outcome = Outcome.single,
-                        decisions = MatchEngine.suggested(game, Outcome.single),
-                    )
-            )
-        }
-    fun update(f: (Command) -> Command) {
-        cmd = f(cmd)
-    }
-    var pro by rememberSaveable {
-        mutableStateOf(initial?.observation != null || game.rules.recordingMethod == "situation")
-    }
-    FormPage(
-        "击球记录",
-        busy,
-        true,
-        "save-play",
-        "记录",
-        dismiss,
-        {
-            val latest = cmd
-            save(
-                latest.copy(
-                    recordingMethod = if (pro) "situation" else "traditional",
-                    observation = if (pro) latest.observation ?: Observation() else null,
-                    timingRunCounts =
-                        if (MatchEngine.needsTiming(game, latest)) latest.timingRunCounts else null,
-                )
-            )
-        },
-    ) {
-        Choices("记分方式", mapOf("base" to "基础版", "pro" to "Pro 版"), if (pro) "pro" else "base") { key
-            ->
-            pro = key == "pro"
-            update { it.copy(observation = if (pro) it.observation ?: Observation() else null) }
-        }
-        Choices(
-            "打者结果",
-            Outcome.entries
-                .filter { game.rules.mode != GameMode.slowPitch || it != Outcome.sacrificeBunt }
-                .associate { it.name to it.title },
-            cmd.outcome!!.name,
-        ) { key ->
-            val outcome = Outcome.valueOf(key)
-            update {
-                it.copy(
-                    outcome = outcome,
-                    decisions = MatchEngine.suggested(game, outcome),
-                    timingRunCounts = null,
-                )
-            }
-        }
-        if (pro)
-            ObservationEditor(game, cmd.observation ?: Observation(), cmd.outcome!!) { f ->
-                update { it.copy(observation = f(it.observation ?: Observation())) }
-            }
-        RunnerDecisions(game, cmd.decisions.orEmpty(), pro) { f ->
-            update { it.copy(decisions = f(it.decisions.orEmpty()), timingRunCounts = null) }
-        }
-        if (MatchEngine.needsTiming(game, cmd))
-            TimingChoice(cmd.timingRunCounts) { value ->
-                update { it.copy(timingRunCounts = value) }
-            }
-        Text(
-            "核对本球所有跑者后保存。取消不会增加投球或统计。",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
 
 @Composable
 private fun RunnerEditor(
@@ -433,7 +378,7 @@ private fun RunnerEditor(
 }
 
 @Composable
-private fun RunnerDecisions(
+internal fun RunnerDecisions(
     game: Game,
     decisions: List<Decision>,
     pro: Boolean,
@@ -456,7 +401,7 @@ private fun RunnerDecisions(
             options["4"] = "得分"
             options["-1"] = "出局"
             Choices("最终位置", options, d.destination.toString()) { key ->
-                modify { it.copy(destination = key.toInt()) }
+                modify { d->val dest=key.toInt();d.copy(destination=dest,cause=if(!pro)d.cause else if(dest==0)"hit"else if(dest == -1&&d.cause=="hit")"tag"else if(dest != -1&&d.cause in listOf("tag","appeal"))"hit"else d.cause,fielding=if(pro&&dest==0)null else d.fielding) }
             }
             if (pro) {
                 Choices("进垒／出局原因", ScoringOptions.causes, d.cause) { cause ->
@@ -474,7 +419,7 @@ private fun RunnerDecisions(
 }
 
 @Composable
-private fun TimingChoice(value: Boolean?, change: (Boolean) -> Unit) {
+internal fun TimingChoice(value: Boolean?, change: (Boolean) -> Unit) {
     Choices(
         "若第三出局同时发生得分，按现场先后确认",
         mapOf("yes" to "得分先发生", "no" to "出局先发生"),
@@ -489,10 +434,11 @@ private fun TimingChoice(value: Boolean?, change: (Boolean) -> Unit) {
 }
 
 @Composable
-private fun ObservationEditor(
+internal fun ObservationEditor(
     game: Game,
     observation: Observation,
     outcome: Outcome,
+    onTypeChosen: () -> Unit = {},
     change: ((Observation) -> Observation) -> Unit,
 ) {
     var fieldMode by rememberSaveable { mutableStateOf("landing") }
@@ -504,6 +450,7 @@ private fun ObservationEditor(
             },
             observation.type,
         ) { type ->
+            onTypeChosen()
             change { it.copy(type = type) }
         }
         Choices(
@@ -580,7 +527,7 @@ private fun ObservationEditor(
 }
 
 @Composable
-private fun FieldingEditor(
+internal fun FieldingEditor(
     game: Game,
     fielding: Fielding,
     allowNone: Boolean,
@@ -673,7 +620,7 @@ private fun DecisionEditor(
 }
 
 @Composable
-private fun PlayerChoice(
+internal fun PlayerChoice(
     label: String,
     players: List<Player>,
     selected: String?,
@@ -683,7 +630,11 @@ private fun PlayerChoice(
     Column {
         Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Box {
-            OutlinedButton({ expanded = true }, enabled = players.isNotEmpty()) {
+            OutlinedButton(
+                { expanded = true },
+                modifier = Modifier.testTag("player-choice-$label"),
+                enabled = players.isNotEmpty(),
+            ) {
                 val p = players.firstOrNull { it.id == selected }
                 Text(
                     p?.let { "#${it.number} ${it.name}" }
@@ -693,11 +644,13 @@ private fun PlayerChoice(
             DropdownMenu(
                 expanded,
                 { expanded = false },
-                modifier = Modifier.heightIn(max = 360.dp),
+                modifier =
+                    Modifier.heightIn(max = 360.dp).semantics { testTagsAsResourceId = true },
             ) {
                 players.forEach { p ->
                     DropdownMenuItem(
                         text = { Text("#${p.number} ${p.name}") },
+                        modifier = Modifier.testTag("player-option-${p.id}"),
                         onClick = {
                             change(p.id)
                             expanded = false
@@ -807,8 +760,14 @@ private fun SubstitutionEditor(
 }
 
 @Composable
-private fun LineupEditor(game: Game, busy: Boolean, dismiss: () -> Unit, save: (Command) -> Unit) {
-    var home by rememberSaveable { mutableStateOf(true) }
+internal fun LineupEditor(
+    game: Game,
+    busy: Boolean,
+    dismiss: () -> Unit,
+    initialHome: Boolean = true,
+    save: (Command) -> Unit,
+) {
+    var home by rememberSaveable { mutableStateOf(initialHome) }
     val team = if (home) game.home else game.away
     var orderJson by
         rememberSaveable(home) {
@@ -896,7 +855,7 @@ private fun LineupEditor(game: Game, busy: Boolean, dismiss: () -> Unit, save: (
                 ) {
                     Text("↓")
                 }
-                if (game.rules.mode == GameMode.slowPitch && !game.openingPitchRecorded)
+                if (game.rules.mode == GameMode.slowPitch && game.isPregame)
                     TextButton(
                         { orderJson = GameJson.encodeToString(order - id) },
                         enabled = order.size > 10 && id !in positions.values,
@@ -905,10 +864,27 @@ private fun LineupEditor(game: Game, busy: Boolean, dismiss: () -> Unit, save: (
                     }
             }
         }
-        if (game.rules.mode == GameMode.slowPitch && !game.openingPitchRecorded)
+        if (game.rules.mode == GameMode.slowPitch && game.isPregame)
             PlayerChoice("增加打者", team.players.filter { it.id !in order }, null) {
                 orderJson = GameJson.encodeToString(order + it)
             }
+        if (game.isPregame) {
+            Text("赛前先发选择", fontWeight = FontWeight.Bold)
+            order.forEachIndexed { index, id ->
+                PlayerChoice("第 ${index+1} 棒", team.players, id) { incoming ->
+                    val ids = order.toMutableList()
+                    val other = ids.indexOf(incoming)
+                    ids[index] = incoming
+                    if (other >= 0) ids[other] = id
+                    val map = positions.mapValues { (_, pid) ->
+                        if (pid == id) incoming else if (other >= 0 && pid == incoming) id else pid
+                    }
+                    orderJson = GameJson.encodeToString(ids)
+                    positionsJson = GameJson.encodeToString(map)
+                    if (dh == id) dh = incoming
+                }
+            }
+        }
         HorizontalDivider()
         if (game.rules.dhEnabled) {
             PlayerChoice(
@@ -951,18 +927,29 @@ private fun ClockEditor(game: Game, busy: Boolean, dismiss: () -> Unit, save: (C
             now = System.currentTimeMillis()
         }
     }
-    val seconds = game.elapsed(now) / 1000
+    val seconds =
+        if (game.clockDisplayMode == "remaining" && game.rules.timeLimitMinutes != null)
+            (game.remainingTime(now) ?: 0) / 1000
+        else game.elapsed(now) / 1000
     FormPage("比赛计时", busy, false, "unused", "", dismiss, {}) {
         Text(
             "%02d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60),
             fontSize = 40.sp,
             fontWeight = FontWeight.Bold,
         )
+        if (game.rules.timeLimitMinutes != null)
+            Choices(
+                "计时显示",
+                mapOf("elapsed" to "已用时间", "remaining" to "剩余时间"),
+                game.clockDisplayMode,
+            ) {
+                if (it != game.clockDisplayMode) save(Command("clock", text = "display"))
+            }
         Text(if (game.clockRunningSince != null) "计时中" else "计时暂停")
         Text(game.rules.timeLimitMinutes?.let { "比赛时间限制 $it 分钟" } ?: "本场按局数进行")
         Button(
             { save(Command("clock", text = if (game.clockHasStarted) "resume" else "start")) },
-            enabled = !game.isFinal && game.clockRunningSince == null && !busy,
+            enabled = !game.isFinal && !game.isScheduled && game.clockRunningSince == null && !busy,
         ) {
             Text(if (game.clockHasStarted) "继续计时" else "Play Ball")
         }
@@ -989,7 +976,7 @@ private fun IllegalEditor(game: Game, busy: Boolean, dismiss: () -> Unit, save: 
         FormPage(
             "Illegal 宣告",
             busy,
-            result != "play",
+            result != "play" && (thrown || result in listOf("ball","none")),
             "save-illegal",
             "记录",
             dismiss,
@@ -1010,6 +997,7 @@ private fun IllegalEditor(game: Game, busy: Boolean, dismiss: () -> Unit, save: 
                 if (thrown) "yes" else "no",
             ) {
                 thrown = it == "yes"
+                if(!thrown&&result !in listOf("ball","none"))result="ball"
             }
             Choices(
                 "罚则",
@@ -1027,7 +1015,7 @@ private fun IllegalEditor(game: Game, busy: Boolean, dismiss: () -> Unit, save: 
                     "foul" to "界外",
                     "none" to "No Pitch",
                     "play" to "击球结果",
-                ),
+                ).filterKeys{thrown||it in listOf("ball","none")},
                 result,
             ) {
                 result = it
@@ -1265,6 +1253,8 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
             "insert-play" -> PlayEditor(before, model.busy, { screen = "insert" }, save = ::insert)
             "insert-runner" ->
                 RunnerEditor(before, model.busy, { screen = "insert" }, save = ::insert)
+            "insert-situation" ->
+                ManualSituationEditor(before, model.busy, { screen = "insert" }, ::insert)
             "insert-sub" -> SubstitutionEditor(before, model.busy, { screen = "insert" }, ::insert)
         }
         return
@@ -1274,6 +1264,9 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
             Text("补在第 ${selected+1} 条之前；保存前会核对之后每条记录的局次、棒次和跑者。")
             if (before == null) Text("此处之前存在冲突，请先修正前面的记录。")
             else {
+                TextButton({ screen = "insert-situation" }, Modifier.testTag("insert-situation")) {
+                    Text("补正历史局面")
+                }
                 TextButton({ screen = "insert-sub" }, Modifier.testTag("insert-substitution")) {
                     Text("换人／换投／守位")
                 }

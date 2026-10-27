@@ -17,7 +17,11 @@ class ScoringParityTest {
         for (file in fixtures.sortedBy { it.name }) {
             val fixture = GameJson.parseToJsonElement(file.readText()).jsonObject
             var game = GameJson.decodeFromJsonElement<Game>(fixture.getValue("initialGame"))
-            for((key,value)in fixture.getValue("initial").jsonObject)assertEquals("${file.name}: initial: $key",value,canonical(game)[key])
+            for ((key, value) in fixture.getValue("initial").jsonObject) assertEquals(
+                "${file.name}: initial: $key",
+                value,
+                canonical(game)[key],
+            )
             fixture.getValue("steps").jsonArray.forEachIndexed { index, element ->
                 val step = element.jsonObject
                 val command = step.getValue("command").jsonObject
@@ -153,6 +157,63 @@ class ScoringParityTest {
                     game.automaticRunnerIDs.filter { it in active }.sorted().map(::JsonPrimitive)
                 ),
             )
+        }
+    }
+
+    @Test
+    fun completeRunnerAndViolationCatalogMatchesIOS() {
+        val files =
+            File(System.getProperty("parity.fixtures"), "catalog").listFiles()!!.filter {
+                it.name.endsWith("-scoring.json")
+            }
+        assertTrue(files.size > 50)
+        val failures = mutableListOf<String>()
+        for (file in files) try {
+            val f = GameJson.parseToJsonElement(file.readText()).jsonObject
+            var game = GameJson.decodeFromJsonElement<Game>(f.getValue("initialGame"))
+            for((key,value)in f.getValue("initial").jsonObject)assertEquals("${file.name}: initial: $key",value,canonical(game)[key])
+            f.getValue("steps").jsonArray.forEachIndexed { i, e ->
+                val step = e.jsonObject
+                var c = GameJson.decodeFromJsonElement<Command>(step.getValue("command"))
+                if (c.kind in listOf("runner", "violation")) c = c.copy(decisions = null)
+                game = MatchEngine.apply(game, c.copy(at = (i + 1) * 1000L), "${file.name}-$i")
+                for ((key, value) in step.getValue("expected").jsonObject) assertEquals(
+                    "${file.name}: $i ${c.kind}: $key",
+                    value,
+                    canonical(game)[key],
+                )
+            }
+        } catch (f: Throwable) {
+            failures += "${file.name}: ${f.message}"
+        }
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
+    @Test
+    fun remainingRulesMatchIOS() {
+        val files =
+            File(System.getProperty("parity.fixtures"), "remaining").listFiles()!!.filter {
+                it.name.endsWith("-scoring.json")
+            }
+        assertEquals(5, files.size)
+        for (file in files) {
+            val fixture = GameJson.parseToJsonElement(file.readText()).jsonObject
+            var game = GameJson.decodeFromJsonElement<Game>(fixture.getValue("initialGame"))
+            for((key,value)in fixture.getValue("initial").jsonObject)assertEquals("${file.name}: initial: $key",value,canonical(game)[key])
+            fixture.getValue("steps").jsonArray.forEachIndexed { index, e ->
+                val step = e.jsonObject
+                var c = GameJson.decodeFromJsonElement<Command>(step.getValue("command"))
+                if (c.kind == "review") c = c.copy(eventID = game.entries[c.position!!].id)
+                game =
+                    MatchEngine.apply(game, c.copy(at = (index + 1) * 1000L), "${file.name}-$index")
+                for ((key, value) in step.getValue("expected").jsonObject) assertEquals(
+                    "${file.name}: $index ${c.kind}: $key",
+                    value,
+                    canonical(game)[key],
+                )
+                if (c.kind == "review")
+                    assertEquals(game.batting, MatchEngine.redo(MatchEngine.undo(game)).batting)
+            }
         }
     }
 

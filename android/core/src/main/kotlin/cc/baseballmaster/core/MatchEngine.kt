@@ -33,7 +33,9 @@ object MatchEngine {
             if (cmd.kind == "adjudication" && cmd.adjudication?.previousPlay == "cancel") {
                 require(input.cursor > 0) { "没有可以取消的上一结果" }
                 replay(input, input.journal, input.cursor - 1)
-            } else clone(input)
+            } else if (cmd.kind == "review" && input.checkpoint != null)
+                replay(input, input.journal, input.cursor)
+            else clone(input)
         val result = Session(base, cmd, id).run()
         result.journal =
             input.journal.take(input.cursor) +
@@ -47,6 +49,7 @@ object MatchEngine {
         result.cursor = result.journal.size
         result.checkpoint = start
         result.revision = input.revision + 1
+        result.updatedAt = cmd.at
         result.validate()
         return result
     }
@@ -77,13 +80,22 @@ object MatchEngine {
     }
 
     fun undo(input: Game): Game {
-        require(input.cursor > input.correctionBoundary) { "请从更正历史撤回更正，以保留审计记录" }
-        return replay(input, input.journal, input.cursor - 1)
+        val target =
+            (input.correctionBoundary until input.cursor).lastOrNull {
+                input.journal[it].command.kind !in setOf("clock", "date", "method")
+            }
+        require(target != null) { "没有可撤销的记分；更正请从更正历史撤回" }
+        return replay(input, input.journal, target)
     }
 
     fun redo(input: Game): Game {
         require(input.cursor < input.journal.size) { "没有可恢复的记录" }
-        return replay(input, input.journal, input.cursor + 1)
+        var target = input.cursor + 1
+        while (
+            target < input.journal.size &&
+                input.journal[target].command.kind in setOf("clock", "date", "method")
+        ) target++
+        return replay(input, input.journal, target)
     }
 
     fun correct(
@@ -257,6 +269,9 @@ object MatchEngine {
 
 internal class Session(val g: Game, val c: Command, val id: String) {
     private val before = g.situation()
+    private val ownersBefore = g.runnerPitcherIDs.toMap()
+    private val unearnedBefore = g.unearnedRunnerIDs.toSet()
+    private val automaticBefore = g.automaticRunnerIDs.toSet()
     private val oldBatter = g.batter
     private val oldPitcher = g.pitcher
     private var notation = ""
@@ -296,8 +311,17 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             g.rules = g.rules.copy(recordingMethod = it)
         }
         require(
-            c.kind in listOf("finish", "suspend", "reopen", "decision", "clock", "date", "note") ||
-                (!g.isFinal && g.pendingDecision == null)
+            c.kind in
+                listOf(
+                    "finish",
+                    "suspend",
+                    "reopen",
+                    "decision",
+                    "clock",
+                    "date",
+                    "note",
+                    "review",
+                ) || (!g.isFinal && g.pendingDecision == null)
         ) {
             "请先处理终场或半局确认"
         }
@@ -399,7 +423,8 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             }
             "illegal" -> {
                 require(g.rules.mode == GameMode.slowPitch) { "Illegal 仅用于成人慢垒" }
-                start()
+                require(c.wasThrown || c.outcome == null && (c.pitch == null || c.pitch == PitchAction.ball)) { "未实际投出时只可记录判罚坏球或 No Pitch" }
+                if(c.wasThrown) start()
                 if (c.outcome != null) play(c.outcome)
                 else if (c.pitch != null) pitch(c.pitch, c.wasThrown)
                 else {
@@ -411,7 +436,7 @@ internal class Session(val g: Game, val c: Command, val id: String) {
                     notation = "ILLEGAL-NP"
                     title = "No Pitch"
                 }
-                title = "Illegal · ${if(c.wasThrown)"实际投出" else "未实际投出"} · $title"
+                title = "Illegal · ${if(c.penaltyApplied)"罚则适用"else"未适用罚则，按最终结果"} · ${if(c.wasThrown)"实际投出" else "未实际投出"} · $title"
             }
             "adjudication" -> {
                 start()
@@ -426,8 +451,61 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             "pinchRunner" -> pinchRunner(c.position ?: error("请选择垒位"), c.playerID ?: error("请选择代跑"))
             "fielder" ->
                 replaceFielder(c.playerID ?: error("请选择原球员"), c.replacementID ?: error("请选择新球员"))
-            "position" -> position(c.playerID ?: error("请选择球员"), c.position ?: error("请选择守位"))
+            "position" -> {
+                require(c.playerID in g.fieldingPositions.values) { "只可调整实际在场的守备球员" }
+                position(c.playerID ?: error("请选择球员"), c.position ?: error("请选择守位"))
+            }
             "lineup" -> lineup()
+            "doubleSwitch" -> doubleSwitch()
+            "extraInning",
+            "enableTB" -> {
+                require(
+                    if (c.kind == "extraInning") g.canConfirmExtraInning(c.at)
+                    else g.canEnableTiebreak(c.at)
+                ) {
+                    "尚未满足延长赛或 TB 条件"
+                }
+                require(c.runnerBases.all { it in 1..3 })
+                g.extraInningConfirmed = true
+                if (c.kind == "enableTB" || c.flag) {
+                    g.tiebreakStartInning = g.inning
+                    g.tiebreakRunnerBases = c.runnerBases.distinct().sorted().ifEmpty { listOf(2) }
+                }
+                notation = if (g.tiebreakStartInning != null) "TB" else "EX"
+                title = if (notation == "TB") "启用 TB 垒上放人" else "确认普通延长赛"
+            }
+            "placeTB" -> {
+                val pid = c.playerID ?: error("请选择自动跑者")
+                val base =
+                    c.position
+                        ?: g.tiebreakRunnerBases.firstOrNull {
+                            "${g.halfKey}-base$it" !in g.tiebreakPlacementKeys &&
+                                g.bases[it - 1] == null
+                        }
+                        ?: error("本半局放人已完成")
+                require(
+                    g.requiresTiebreakPlacement &&
+                        base in g.tiebreakRunnerBases &&
+                        g.bases[base - 1] == null &&
+                        g.eligibleTiebreakRunners.any { it.id == pid }
+                ) {
+                    "自动跑者或放置垒位不适用"
+                }
+                g.bases = g.bases.toMutableList().apply { set(base - 1, pid) }
+                g.automaticRunnerIDs += pid
+                g.tiebreakPlacementKeys += "${g.halfKey}-base$base"
+                notation = "TB-R$base"
+                title = "TB 自动跑者置于 $base 垒"
+            }
+            "skipTB" -> {
+                require(g.requiresTiebreakPlacement)
+                g.tiebreakPlacementKeys += g.tiebreakRunnerBases.map { "${g.halfKey}-base$it" }
+                incomplete = true
+                notation = "TB?"
+                title = "本半局未放置 TB 自动跑者，待确认"
+            }
+            "review" -> review()
+
             "situation" -> situation(c.situation ?: error("请核对局面"))
             "swap" -> {
                 require(g.canSwapOpeningSides) { "仅能在比赛首球前互换先攻／后攻" }
@@ -485,6 +563,7 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             }
             "clock" -> {
                 require(!g.isFinal) { "终场后请先恢复比赛" }
+                require(!g.isScheduled) { "请先进入比赛再开始计时" }
                 when (c.text) {
                     "start",
                     "resume" -> {
@@ -496,6 +575,9 @@ internal class Session(val g: Game, val c: Command, val id: String) {
                         g.clockElapsedMs = g.elapsed(c.at)
                         g.clockRunningSince = null
                     }
+                    "display" ->
+                        g.clockDisplayMode =
+                            if (g.clockDisplayMode == "elapsed") "remaining" else "elapsed"
                     else -> error("未知计时操作")
                 }
                 notation = "CLOCK"
@@ -541,6 +623,7 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             }
             "note" -> {
                 require(c.text.isNotBlank())
+                title=c.text
                 notation = "NOTE"
             }
             else -> error("不支持的记录操作，原资料未修改")
@@ -560,6 +643,9 @@ internal class Session(val g: Game, val c: Command, val id: String) {
                 g.dismissedRunLimitHalf != g.halfKey
         )
             g.pendingDecision = "runLimit"
+        if (g.clockHasStarted && !g.isFinal && g.rules.mode != GameMode.coachPitch)
+            g.pitcherInnings[g.pitcher.id] =
+                (g.pitcherInnings[g.pitcher.id] ?: emptySet()) + g.inning
         g.entries =
             g.entries +
                 PitchEntry(
@@ -580,6 +666,9 @@ internal class Session(val g: Game, val c: Command, val id: String) {
                     before,
                     g.situation(),
                     incomplete,
+                    runnerOwnersBefore = ownersBefore,
+                    unearnedBefore = unearnedBefore,
+                    automaticBefore = automaticBefore,
                 )
         g.validate()
         return g
@@ -729,6 +818,7 @@ internal class Session(val g: Game, val c: Command, val id: String) {
         batterOwner: String = g.pitcher.id,
         unearnedBatter: Boolean = false,
     ): Pair<List<String>, Int> {
+        g.unearnedRunnerIDs += g.automaticRunnerIDs
         for (pid in g.bases.filterNotNull()) g.runnerPitcherIDs.putIfAbsent(pid, g.pitcher.id)
         val newBases = MutableList<String?>(3) { null }
         val scored = mutableListOf<String>()
@@ -958,7 +1048,10 @@ internal class Session(val g: Game, val c: Command, val id: String) {
         outcome = o
         notation = o.notation
         title = "${oldBatter.name} · ${o.title}"
-        incomplete = o in listOf(Outcome.other, Outcome.pendingOut, Outcome.pending)
+        incomplete =
+            o in listOf(Outcome.other, Outcome.pendingOut, Outcome.pending) ||
+                obs?.fielding?.status == "pending" ||
+                ds.any { it.cause == "pending" || it.fielding?.status == "pending" }
         walkOff()
         advance()
         registerOuts(res.second)
@@ -1193,7 +1286,24 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             "foreignSubstance",
             "battingOutOfTurn" -> incomplete = true
             else -> {
-                val ds = c.decisions ?: error("请核对裁判最终判罚和跑者位置")
+                val ds =
+                    c.decisions
+                        ?: (1..3)
+                            .mapNotNull { b -> g.bases[b - 1]?.let { Decision(it, b, 0) } }
+                            .let { moves ->
+                                if (
+                                    kind in
+                                        listOf(
+                                            "runnerInterference",
+                                            "coachInterference",
+                                            "passingRunner",
+                                        )
+                                )
+                                    moves.mapIndexed { i, d ->
+                                        if (i == 0) d.copy(destination = -1) else d
+                                    }
+                                else moves
+                            }
                 validate(ds, false)
                 val res = resolve(ds)
                 credit(res, false)
@@ -1211,6 +1321,7 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             "投手不在可用名单中"
         }
         val old = g.pitcher.id
+        require(pid != old) { "该球员已是当前投手" }
         g.bases.filterNotNull().forEach { g.runnerPitcherIDs.putIfAbsent(it, old) }
         g.walkResponsiblePitcherID =
             if (g.balls >= 3 || (g.balls == 2 && g.strikes < 2)) g.walkResponsiblePitcherID ?: old
@@ -1236,7 +1347,11 @@ internal class Session(val g: Game, val c: Command, val id: String) {
     }
 
     private fun replaceBatter(pid: String) {
-        require(g.battingTeam.players.any { it.id == pid } && pid !in g.battingOrder) {
+        require(
+            g.battingTeam.players.any { it.id == pid } &&
+                pid !in g.battingOrder &&
+                pid !in (if (g.isTop) g.awayPositions else g.homePositions).orEmpty().values
+        ) {
             "代打不在可用名单中或已在打序"
         }
         val old = g.batter.id
@@ -1257,7 +1372,11 @@ internal class Session(val g: Game, val c: Command, val id: String) {
 
     private fun pinchRunner(base: Int, pid: String) {
         require(base in 1..3 && g.bases[base - 1] != null)
-        require(g.battingTeam.players.any { it.id == pid } && pid !in g.battingOrder) {
+        require(
+            g.battingTeam.players.any { it.id == pid } &&
+                pid !in g.battingOrder &&
+                pid !in (if (g.isTop) g.awayPositions else g.homePositions).orEmpty().values
+        ) {
             "代跑不在可用名单中"
         }
         val old = g.bases[base - 1]!!
@@ -1317,6 +1436,10 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             g.awayPositions = positions
             g.awayPitcherID = positions[1]
         }
+        val currentDH = if (g.isTop) g.homeDesignatedHitterID else g.awayDesignatedHitterID
+        if (currentDH in positions.values && currentDH != positions[1]) {
+            if (g.isTop) g.homeDesignatedHitterID = null else g.awayDesignatedHitterID = null
+        }
         notation = "POSITION"
         title = "守位调整"
     }
@@ -1356,7 +1479,7 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             else g.awayOrder ?: g.away.players.map { it.id }
         val current = old[(if (home) g.homeBatterIndex else g.awayBatterIndex) % old.size]
         require(
-            if (g.rules.mode == GameMode.slowPitch && !g.openingPitchRecorded) order.size >= 10
+            if (g.rules.mode == GameMode.slowPitch && g.isPregame) order.size >= 10
             else order.size == old.size
         ) {
             "本场打序人数已固定"
@@ -1377,6 +1500,7 @@ internal class Session(val g: Game, val c: Command, val id: String) {
                 "DH 与守备身份不一致"
             }
         if (home) g.homeDesignatedHitterID = dh else g.awayDesignatedHitterID = dh
+        Participation.validate(g.rules, order, positions, dh)
         val newIndex = if (!g.openingPitchRecorded) 0 else order.indexOf(anchor)
         if (home) {
             g.homeOrder = order
@@ -1391,6 +1515,155 @@ internal class Session(val g: Game, val c: Command, val id: String) {
         }
         notation = "LINEUP"
         title = "阵容调整"
+    }
+
+    private fun doubleSwitch() {
+        val a = c.playerID ?: error("请选择第一名退场球员")
+        val b = c.secondPlayerID ?: error("请选择第二名退场球员")
+        val x = c.replacementID ?: error("请选择第一名替补")
+        val y = c.secondReplacementID ?: error("请选择第二名替补")
+        val p = c.position ?: error("请选择守位")
+        val q = c.secondPosition ?: error("请选择守位")
+        val positions = g.fieldingPositions
+        val order =
+            if (g.isTop) g.homeOrder ?: g.home.players.map { it.id }
+            else g.awayOrder ?: g.away.players.map { it.id }
+        val dh = if (g.isTop) g.homeDesignatedHitterID else g.awayDesignatedHitterID
+        require(dh == null) { "启用 DH 时请先处理 DH／投手关系" }
+        require(
+            a != b &&
+                x != y &&
+                a in positions.values &&
+                b in positions.values &&
+                x !in positions.values &&
+                y !in positions.values &&
+                x !in order &&
+                y !in order &&
+                g.fieldingTeam.players.any { it.id == x } &&
+                g.fieldingTeam.players.any { it.id == y } &&
+                p != q &&
+                p in positions &&
+                q in positions
+        ) {
+            "请核对两名退场球员、替补与守位"
+        }
+        require(positions.filterValues { it != a && it != b }.keys.none { it == p || it == q }) {
+            "所选守位仍由其他球员占用"
+        }
+        val next = positions.filterValues { it != a && it != b } + mapOf(p to x, q to y)
+        val nextOrder = order.map { if (it == a) x else if (it == b) y else it }
+        setTeamPositions(g.isTop, next)
+        if (g.isTop) {
+            g.homeOrder = nextOrder
+            g.homePitcherID = next[1]
+        } else {
+            g.awayOrder = nextOrder
+            g.awayPitcherID = next[1]
+        }
+        g.exitedPlayers += setOf(a, b)
+        notation = "DS"
+        title =
+            "双重换人：${g.fieldingTeam.players.first{it.id==x}.name}、${g.fieldingTeam.players.first{it.id==y}.name}上场"
+    }
+
+    private fun review() {
+        val index = g.entries.indexOfFirst { it.id == c.eventID && it.incomplete }
+        require(index >= 0 && c.text.isNotBlank()) { "请选择待确认事件并填写复核说明" }
+        val event = g.entries[index]
+        val resolved = c.outcome
+        if (event.outcome in listOf(Outcome.pending, Outcome.pendingOut, Outcome.other)) {
+            require(
+                resolved != null &&
+                    resolved !in listOf(Outcome.pending, Outcome.pendingOut, Outcome.other)
+            ) {
+                "请选择正式击球结果"
+            }
+            val batterMove = event.decisions.firstOrNull { it.origin == 0 } ?: error("原事件缺少打者去向")
+            val out = batterMove.destination == -1
+            require(
+                !(resolved.isHit || resolved in listOf(Outcome.error, Outcome.fieldersChoice)) ||
+                    !out
+            ) {
+                "原打者已出局，请先修正历史局面"
+            }
+            require(
+                resolved !in
+                    listOf(
+                        Outcome.groundOut,
+                        Outcome.flyOut,
+                        Outcome.lineOut,
+                        Outcome.foulFlyOut,
+                        Outcome.infieldFly,
+                        Outcome.sacrificeBunt,
+                        Outcome.sacrificeFly,
+                    ) || out
+            ) {
+                "原打者安全上垒，请先修正历史局面"
+            }
+            require(resolved != Outcome.homeRun || batterMove.destination == 4)
+            val bid = event.batterID ?: error("缺少原打者")
+            val pitcher = event.pitcherID
+            val line = bat(bid)
+            if (
+                event.outcome == Outcome.other &&
+                    resolved !in listOf(Outcome.sacrificeBunt, Outcome.sacrificeFly)
+            )
+                line.atBats++
+            if (resolved.isHit) {
+                line.hits++
+                if (resolved == Outcome.double) line.doubles++
+                if (resolved == Outcome.triple) line.triples++
+                if (resolved == Outcome.homeRun) line.homeRuns++
+                if (event.isTop) g.awayHits++ else g.homeHits++
+                pitcher?.let { pit(it).hits++ }
+            }
+            if (resolved in listOf(Outcome.sacrificeBunt, Outcome.sacrificeFly)) {
+                line.atBats = (line.atBats - 1).coerceAtLeast(0)
+                line.sacrifices++
+            }
+            if (resolved == Outcome.error) {
+                val pid = c.playerID ?: error("请选择当时的失误责任人")
+                require(event.participants.any { it.playerID == pid })
+                field(pid).errors++
+                if (event.isTop) g.homeErrors++ else g.awayErrors++
+            } else {
+                val runs =
+                    ((event.after?.let { it.awayScore + it.homeScore } ?: 0) -
+                            (event.before?.let { it.awayScore + it.homeScore } ?: 0))
+                        .coerceAtLeast(0)
+                line.runsBattedIn += runs
+                // Reconstruct ownership at this exact event; later pitching changes must not steal
+                // ER.
+                event.decisions
+                    .filter { it.destination == 4 }
+                    .take(runs)
+                    .filter {
+                        it.playerID !in event.unearnedBefore &&
+                            it.playerID !in event.automaticBefore
+                    }
+                    .forEach { d ->
+                        (event.runnerOwnersBefore[d.playerID] ?: pitcher)?.let {
+                            pit(it).earnedRuns++
+                        }
+                    }
+            }
+        }
+        g.entries =
+            g.entries.toMutableList().apply {
+                set(
+                    index,
+                    event.copy(
+                        text = c.text,
+                        notation = resolved?.notation ?: event.notation,
+                        outcome = resolved ?: event.outcome,
+                        incomplete = false,
+                        reviewNote = c.reviewNote ?: c.text,
+                        reviewedAt = c.at,
+                    ),
+                )
+            }
+        notation = "REVIEW"
+        title = "待确认记录已复核：${c.text}"
     }
 
     private fun situation(s: Situation) {
@@ -1428,7 +1701,11 @@ internal class Session(val g: Game, val c: Command, val id: String) {
         g.homeRunsByInning = score(g.homeRunsByInning, s.homeScore)
         g.awayRuns = s.awayScore
         g.homeRuns = s.homeScore
-        s.pitcherID?.let { changePitcher(it) }
+        require(g.bases.filterNotNull().all { it in g.battingOrder }) { "跑者必须属于当前进攻阵容" }
+        s.pitcherID?.let { pid ->
+            require(pid in g.fieldingPositions.values) { "当前投手必须是实际在场的守备球员" }
+            if (g.isTop) g.homePitcherID = pid else g.awayPitcherID = pid
+        }
         g.incompletePrefix = true
         g.statisticsIncomplete = true
         notation = "CORRECTION"

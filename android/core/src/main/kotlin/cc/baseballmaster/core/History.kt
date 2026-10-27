@@ -250,6 +250,7 @@ object History {
         game.historyRevisions = input.historyRevisions + revision
         game.correctionRevisions = input.correctionRevisions + "${revision.at} · ${revision.reason}"
         game.revision = input.revision + 1
+        game.updatedAt = revision.at
         game.validate()
         return game
     }
@@ -397,6 +398,12 @@ object History {
                             designatedHitterID = original.designatedHitterID?.let(::slot),
                         )
                 }
+                if (original.kind == "doubleSwitch")
+                    command =
+                        command.copy(
+                            playerID = original.playerID?.let(::participant),
+                            secondPlayerID = original.secondPlayerID?.let(::participant),
+                        )
                 val outgoing =
                     when (original.kind) {
                         "batter" -> state.batter.id
@@ -406,6 +413,10 @@ object History {
                         else -> null
                     }
                 state = Session(state, command, record.id).run()
+                if (original.kind == "doubleSwitch") {
+                    replacement(command.playerID!!, command.replacementID!!)
+                    replacement(command.secondPlayerID!!, command.secondReplacementID!!)
+                }
                 val incoming =
                     if (original.kind == "fielder") original.replacementID else original.playerID
                 if (

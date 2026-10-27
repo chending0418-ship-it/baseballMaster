@@ -30,6 +30,9 @@ data class Player(
     var number: String,
     var englishName: String = "",
     var position: Int = 0,
+    var jerseyNumbers: List<String> = listOf(number),
+    var chineseName: String? = null,
+    var archived: Boolean = false,
 )
 
 @Serializable
@@ -40,6 +43,8 @@ data class Team(
     val isOpponent: Boolean = false,
     var city: String = "",
     var shortName: String = name,
+    var archived: Boolean = false,
+    var source: String = "local",
 )
 
 @Serializable
@@ -59,6 +64,8 @@ data class Rules(
     val recordingMethod: String = "traditional",
     val designatedHitter: Boolean = false,
     val twoWayPlayer: Boolean = false,
+    val timeWarningMinutes: Int? = null,
+    val pitchWarningRemaining: Int? = null,
 ) {
     init {
         require(
@@ -72,8 +79,12 @@ data class Rules(
         require(recordingMethod in listOf("traditional", "situation"))
     }
 
-    val dhEnabled get() = mode == GameMode.standard && designatedHitter
-    val twoWayEnabled get() = dhEnabled && twoWayPlayer
+    val dhEnabled
+        get() = mode == GameMode.standard && designatedHitter
+
+    val twoWayEnabled
+        get() = dhEnabled && twoWayPlayer
+
     val fielders
         get() = if (mode == GameMode.slowPitch) 10 else 9
 
@@ -298,6 +309,12 @@ data class Command(
     val recordingMethod: String? = null,
     val timeUnknown: Boolean = false,
     val designatedHitterID: String? = null,
+    val secondPlayerID: String? = null,
+    val secondReplacementID: String? = null,
+    val secondPosition: Int? = null,
+    val runnerBases: List<Int> = listOf(2),
+    val eventID: String? = null,
+    val reviewNote: String? = null,
 )
 
 @Serializable
@@ -347,6 +364,11 @@ data class PitchEntry(
     val before: Situation? = null,
     val after: Situation? = null,
     val incomplete: Boolean = false,
+    val reviewNote: String? = null,
+    val reviewedAt: Long? = null,
+    val runnerOwnersBefore: Map<String, String> = emptyMap(),
+    val unearnedBefore: Set<String> = emptySet(),
+    val automaticBefore: Set<String> = emptySet(),
 )
 
 @Serializable
@@ -421,6 +443,14 @@ data class Game(
     var correctionBoundary: Int = 0,
     var statisticsIncomplete: Boolean = false,
     var pitcherInnings: MutableMap<String, Set<Int>> = mutableMapOf(),
+    var extraInningConfirmed: Boolean = false,
+    var tiebreakStartInning: Int? = null,
+    var tiebreakRunnerBases: List<Int> = listOf(2),
+    var tiebreakPlacementKeys: Set<String> = emptySet(),
+    var clockDisplayMode: String = if (rules.timed) "remaining" else "elapsed",
+    var historySourceID: String? = null,
+    var updatedAt: Long = 0,
+    var createdAt: Long = 0,
 ) {
     val battingTeam
         get() = if (isTop) away else home
@@ -454,9 +484,59 @@ data class Game(
                         ?: fieldingTeam.players.first().id)
             }
 
-    val canSwapOpeningSides get() = !openingPitchRecorded && !isFinal && pendingDecision==null && !halfEndedAwaitingDecision && inning==1 && isTop &&
-        balls==rules.initialBalls && strikes==rules.initialStrikes && outs==0 && homeRuns==0 && awayRuns==0 && bases.all{it==null} &&
-        pitching.values.all{it.pitches==0&&it.battersFaced==0} && batting.values.all{it.plateAppearances==0}
+    val canUndo
+        get() =
+            (correctionBoundary until cursor).any {
+                journal[it].command.kind !in setOf("clock", "date", "method")
+            }
+
+    val isPregame
+        get() = !isFinal && !clockHasStarted && startedAt == null && canSwapOpeningSides
+
+    fun canConfirmExtraInning(at: Long) =
+        !isFinal &&
+            (rules.regulationInnings?.let { inning > it }
+                ?: (rules.timed && (remainingTime(at) ?: 1) <= 0)) &&
+            homeRuns == awayRuns &&
+            !extraInningConfirmed
+
+    fun canEnableTiebreak(at: Long) =
+        !isFinal &&
+            (rules.regulationInnings?.let { inning > it }
+                ?: (rules.timed && (remainingTime(at) ?: 1) <= 0)) &&
+            tiebreakStartInning == null
+
+    val requiresTiebreakPlacement
+        get() =
+            !isFinal &&
+                tiebreakStartInning?.let { inning >= it } == true &&
+                tiebreakRunnerBases.any { "$halfKey-base$it" !in tiebreakPlacementKeys }
+
+    val eligibleTiebreakRunners
+        get() =
+            battingTeam.players.filter {
+                it.id in battingOrder && it.id != batter.id && it.id !in bases
+            }
+
+    fun remainingTime(at: Long) = rules.timeLimitMinutes?.let { it * 60000L - elapsed(at) }
+
+    val canSwapOpeningSides
+        get() =
+            !openingPitchRecorded &&
+                !isFinal &&
+                pendingDecision == null &&
+                !halfEndedAwaitingDecision &&
+                inning == 1 &&
+                isTop &&
+                balls == rules.initialBalls &&
+                strikes == rules.initialStrikes &&
+                outs == 0 &&
+                homeRuns == 0 &&
+                awayRuns == 0 &&
+                bases.all { it == null } &&
+                pitching.values.all { it.pitches == 0 && it.battersFaced == 0 } &&
+                batting.values.all { it.plateAppearances == 0 }
+
     val halfKey
         get() = "$inning-${if(isTop)"top" else "bottom"}"
 
@@ -489,7 +569,10 @@ data class Game(
 
     fun validate() {
         require(home.players.isNotEmpty() && away.players.isNotEmpty() && home.id != away.id)
-        require(home.players.map { it.id }.distinct().size == home.players.size && away.players.map { it.id }.distinct().size == away.players.size)
+        require(
+            home.players.map { it.id }.distinct().size == home.players.size &&
+                away.players.map { it.id }.distinct().size == away.players.size
+        )
         require(home.players.map { it.id }.intersect(away.players.map { it.id }.toSet()).isEmpty())
         require(
             bases.size == 3 &&
@@ -497,8 +580,15 @@ data class Game(
                 bases.filterNotNull().all { id -> battingTeam.players.any { it.id == id } }
         )
         require(balls in 0..3 && strikes in 0..2 && outs in 0..3 && inning >= 1)
-        require(homeRunsByInning.sum()==homeRuns && awayRunsByInning.sum()==awayRuns)
-        for((team,positions) in listOf(home to homePositions,away to awayPositions))if(positions!=null)require(positions.keys==(1..rules.fielders).toSet()&&positions.values.distinct().size==rules.fielders&&positions.values.all{id->team.players.any{it.id==id}})
+        require(homeRunsByInning.sum() == homeRuns && awayRunsByInning.sum() == awayRuns)
+        for ((team, positions) in listOf(home to homePositions, away to awayPositions)) if (
+            positions != null
+        )
+            require(
+                positions.keys == (1..rules.fielders).toSet() &&
+                    positions.values.distinct().size == rules.fielders &&
+                    positions.values.all { id -> team.players.any { it.id == id } }
+            )
         require(
             homeRuns >= 0 &&
                 awayRuns >= 0 &&

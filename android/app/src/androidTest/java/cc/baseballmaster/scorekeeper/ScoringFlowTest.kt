@@ -184,6 +184,8 @@ class ScoringFlowTest {
         click("game-$id")
         click("record-play")
         screenshot("01-play-base")
+        click("arrival-1")
+        click("cause-single")
         click("save-play")
         waitSaved("save-play")
         var game = stored().first
@@ -197,7 +199,8 @@ class ScoringFlowTest {
         assertEquals(first, game.bases[1])
         assertEquals(1, game.batting[first]!!.stolenBases)
         click("record-play")
-        text("本垒打").click()
+        click("arrival-4")
+        click("cause-homeRun")
         click("save-play")
         waitSaved("save-play")
         assertEquals(2, stored().first.awayRuns)
@@ -207,6 +210,7 @@ class ScoringFlowTest {
         assertEquals(2, awaitGame { it.awayRuns == 2 }.awayRuns)
         click("record-play")
         text("Pro 版").click()
+        click("pro-outcome-single")
         text("平飞").click()
         text("精确落点").click()
         tag("contact-field")
@@ -240,6 +244,7 @@ class ScoringFlowTest {
             device.wait(Until.hasObject(By.text("防守路线：8 → 4 → 3")), 5_000),
         )
         screenshot("02-play-pro")
+        click("play-next")
         click("save-play")
         waitSaved("save-play")
         game = stored().first
@@ -262,11 +267,14 @@ class ScoringFlowTest {
             }
         }
         click("edit-correction")
-        text("Pro 版").click()
         text("高飞").click()
+        click("play-next")
         click("save-play")
         waitSaved("save-play")
-        assertEquals("line", stored().first.entries.last().observation!!.type) // Preview cannot mutate the official record.
+        assertEquals(
+            "line",
+            stored().first.entries.last().observation!!.type,
+        ) // Preview cannot mutate the official record.
         assertEquals(stats, GameJson.encodeToString(stored().first.batting))
         click("save-history-correction")
         assertTrue(awaitGame { it.historyRevisions.size == 1 }.historyRevisions.size == 1)

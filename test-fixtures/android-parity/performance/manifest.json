@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "baseline": "40df3d2",
+  "generator": "BaseballMasterTests/GameStoreTests/testAndroidPerformanceExport",
+  "reference": "actual iOS XCTest result, synthetic data only",
+  "files": [
+    {
+      "path": "performance.json",
+      "sha256": "21c3e39e7c0bb69c702ea0d6bfeb096494236df9a0b82af4a7ae1a3b36f676dc",
+      "mode": "standard",
+      "steps": 3
+    }
+  ]
+}
