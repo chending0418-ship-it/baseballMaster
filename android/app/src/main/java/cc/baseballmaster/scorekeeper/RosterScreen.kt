@@ -23,10 +23,12 @@ internal fun RosterScreen(model: ScorekeeperViewModel, quickAdd: () -> Unit) {
     Choices("名单", mapOf("own" to "我的球队", "opponent" to "对手", "archived" to "已移除"), filter) {
         filter = it
     }
-    TextButton({ adding = true }, Modifier.testTag("add-roster")) {
-        Text(if (filter == "opponent") "添加对手" else "添加球队")
+    Row(Modifier.fillMaxWidth()) {
+        TextButton({ adding = true }, Modifier.weight(1f).testTag("add-roster")) {
+            Text(if (filter == "opponent") "添加对手" else "添加球队")
+        }
+        TextButton(quickAdd, Modifier.weight(1f).testTag("add-team")) { Text("批量创建球队与名单") }
     }
-    TextButton(quickAdd, Modifier.testTag("add-team")) { Text("批量创建球队与名单") }
     model.rosters
         .filter {
             if (filter == "archived") it.archived
@@ -41,25 +43,19 @@ internal fun RosterScreen(model: ScorekeeperViewModel, quickAdd: () -> Unit) {
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                 )
-                if (
-                    !t.isOpponent &&
-                        !t.archived &&
-                        t.source == "local" &&
-                        t.id != model.currentTeam?.id
-                )
-                    TextButton(
-                        { model.selectCurrentTeam(t.id) },
-                        Modifier.testTag("select-current-team-${t.id}"),
-                    ) {
-                        Text("设为当前球队")
-                    }
                 Text(
                     "${t.city} · ${t.players.count{!it.archived}} 名球员",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                TextButton({ teamID = t.id }, Modifier.testTag("roster-${t.id}")) {
-                    Text("球队资料与名单")
+                Row(Modifier.fillMaxWidth()) {
+                    if (!t.isOpponent && !t.archived && t.source == "local" && t.id != model.currentTeam?.id)
+                        TextButton({ model.selectCurrentTeam(t.id) }, Modifier.weight(1f).testTag("select-current-team-${t.id}")) {
+                            Text("设为当前球队")
+                        }
+                    TextButton({ teamID = t.id }, Modifier.weight(1f).testTag("roster-${t.id}")) {
+                        Text("球队资料与名单")
+                    }
                 }
             }
         }

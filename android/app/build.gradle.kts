@@ -24,6 +24,8 @@ android {
         }
     }
     buildFeatures { compose = true; buildConfig = true }
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../test-fixtures/android-parity/backup"))
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../BaseballMaster/Assets.xcassets/AppIcon.appiconset"))
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }

@@ -200,6 +200,19 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                         Text("局面／复核／延长赛")
                     }
                     TextButton({ panel = "clock" }) { Text("比赛计时") }
+                    if (!game.practice) {
+                        TextButton({ panel = "poster" }, Modifier.testTag("game-poster")) { Text("比赛宣传海报") }
+                        ReportShareButton("导出比赛报告 PDF", "export-game-pdf") { context ->
+                            ReportExport.game(context, game, false)
+                        }
+                        ReportShareButton("导出逐球记录 PDF", "export-play-by-play-pdf") { context ->
+                            ReportExport.game(context, game, true)
+                        }
+                        ReportShareButton("导出逐球纯文字 PDF", "export-play-text-pdf") { context ->
+                            ReportExport.game(context, game, true, textOnly = true)
+                        }
+                        TextButton({ panel = "appearance-exports" }, Modifier.testTag("export-single-appearance")) { Text("导出单打席 PDF") }
+                    }
                     TextButton(
                         { panel = "finish" },
                         enabled = !model.busy && !game.isFinal && !game.isScheduled,
@@ -277,6 +290,21 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                 }
             "clock" -> ClockEditor(game, model.busy, close) { model.command(it, done = close) }
             "advanced" -> AdvancedPanel(game, model, close)
+            "poster" -> GamePosterScreen(game, close)
+            "appearance-exports" -> FormPage("选择打席", false, true, "close-appearance-exports", "完成", close, close) {
+                AppearanceProjection.build(game).forEach { appearance ->
+                    val batter = (game.away.players + game.home.players).firstOrNull { it.id == appearance.batterID }
+                    CardBlock {
+                        Text("${if (appearance.isTop) "客队" else "主队"}第 ${appearance.sequence} 打席 · ${appearance.inning}局${if (appearance.isTop) "上" else "下"}", fontWeight = FontWeight.Bold)
+                        Text(batter?.let { "#${it.number} ${it.name}" } ?: "打者未记录")
+                        Text(appearance.events.lastOrNull()?.text ?: "打席进行中", fontSize = 12.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            ReportShareButton("详细 PDF", "export-appearance-detail-${appearance.id}") { context -> ReportExport.game(context, game, true, appearanceID = appearance.id) }
+                            ReportShareButton("文字 PDF", "export-appearance-text-${appearance.id}") { context -> ReportExport.game(context, game, true, textOnly = true, appearanceID = appearance.id) }
+                        }
+                    }
+                }
+            }
             "performance" -> PerformanceSheet(game, model.games, close)
             "history" -> HistoryEditor(game, model, close)
         }

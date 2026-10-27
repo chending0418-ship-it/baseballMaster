@@ -315,6 +315,8 @@ data class Command(
     val runnerBases: List<Int> = listOf(2),
     val eventID: String? = null,
     val reviewNote: String? = null,
+    /** Historical names captured with a cross-platform fielding observation. */
+    val participantSnapshots: List<Participant>? = null,
 )
 
 @Serializable

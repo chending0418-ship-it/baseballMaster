@@ -279,8 +279,9 @@ internal class Session(val g: Game, val c: Command, val id: String) {
     private var outcome: Outcome? = null
     private var decisions: List<Decision> = emptyList()
     private var incomplete = false
-    private val participants =
-        g.fieldingPositions.map { (pos, pid) ->
+    private val participants = c.participantSnapshots?.also { snapshots ->
+        require(snapshots.size <= g.rules.fielders && snapshots.map { it.position }.distinct().size == snapshots.size && snapshots.map { it.playerID }.distinct().size == snapshots.size && snapshots.all { it.position in 1..g.rules.fielders && g.fieldingPositions[it.position] == it.playerID }) { "历史守备球员资料与当时守位不符" }
+    } ?: g.fieldingPositions.map { (pos, pid) ->
             val p = g.fieldingTeam.players.first { it.id == pid }
             Participant(pos, p.id, p.name, p.number)
         }

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -213,6 +214,18 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         done()
     }
 
+    internal suspend fun deviceBackupBytes(): ByteArray = withContext(Dispatchers.IO) { repository.exportDeviceBackup(currentTeamID) }
+
+    internal suspend fun restoreDeviceBackup(bytes: ByteArray) {
+        val selected = withContext(Dispatchers.IO) { repository.restoreDeviceBackup(bytes) }
+        rememberCurrentTeam(selected)
+    }
+
+    fun importRosters(rosters: List<Team>, done: () -> Unit) = commit {
+        repository.importRosters(rosters)
+        done()
+    }
+
     fun createGame(
         team: Team,
         opponent: String,
@@ -390,7 +403,13 @@ internal val Accent = Color(0xFF217A57)
 @Composable
 internal fun BaseballTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
+    val defaultTypography = Typography()
     MaterialTheme(
+        typography = defaultTypography.copy(
+            bodyLarge = defaultTypography.bodyLarge.copy(lineHeight = 21.sp),
+            bodyMedium = defaultTypography.bodyMedium.copy(lineHeight = 18.sp),
+            bodySmall = defaultTypography.bodySmall.copy(lineHeight = 16.sp),
+        ),
         colorScheme =
             if (dark)
                 darkColorScheme(
@@ -478,20 +497,20 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                     Modifier.fillMaxSize()
                         .verticalScroll(key(tab) { rememberScrollState() })
                         .padding(horizontal = 18.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(22.dp),
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.section),
                 ) {
-                    Text(
+                    if (tab != 2) Text(
                         listOf("比赛", "球队", "统计", "我的")[tab],
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
                     )
                     when (tab) {
                         0 -> HomeScreen(model, { createTeam = true }, { newGame = true })
                         1 -> RosterScreen(model) { createTeam = true }
-                        2 -> StatsScreen(model.games)
-                        else -> ProfileScreen()
+                        2 -> StatisticsScreen(model)
+                        else -> ProfileScreen(model)
                     }
                 }
             if (model.error != null && !model.recoveryRequired)
@@ -552,8 +571,8 @@ internal fun CardBlock(modifier: Modifier = Modifier, content: @Composable Colum
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.padding(UiSpacing.cardInset),
+            verticalArrangement = Arrangement.spacedBy(UiSpacing.card),
             content = content,
         )
     }
@@ -775,29 +794,26 @@ private fun TeamsScreen(teams: List<Team>, add: () -> Unit) {
 }
 
 @Composable
-private fun StatsScreen(games: List<Game>) {
-    Text("本机记录", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-    CardBlock {
-        Text(
-            "${games.size}",
-            fontSize = 40.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text("场比赛")
-        HorizontalDivider()
-        Text("已保存 ${games.sumOf { it.totalPitches }} 球投球记录")
-    }
-}
-
-@Composable
-private fun ProfileScreen() {
+private fun ProfileScreen(model: ScorekeeperViewModel) {
+    var showRules by rememberSaveable { mutableStateOf(false) }
+    if (showRules) RulesScreen { showRules = false }
     Text("关于", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
     CardBlock {
         Text("棒球比赛记录大师", fontWeight = FontWeight.Bold)
         Text("Android ${BuildConfig.VERSION_NAME}")
         Text("开发预览版", color = MaterialTheme.colorScheme.primary)
         Text("此版本用于体验本机记分，资料保存在当前设备。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    CardBlock {
+        Text("棒球规则查询", fontWeight = FontWeight.Bold)
+        Text("常用规则解释与完整规则 PDF", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = { showRules = true }, modifier = Modifier.testTag("open-rules")) { Text("查看规则") }
+    }
+    CardBlock {
+        Text("备份与恢复", fontWeight = FontWeight.Bold)
+        Text("可核验 iOS 备份或仅导入球队名单；完整比赛互导正在开发。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        DeviceBackupControls(model)
+        BackupInspection(model)
     }
 }
 
@@ -866,8 +882,8 @@ internal fun FormPage(
                     else Spacer(Modifier.width(60.dp))
                 }
                 Column(
-                    Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = UiSpacing.formVerticalInset),
+                    verticalArrangement = Arrangement.spacedBy(UiSpacing.form),
                     content = content,
                 )
             }

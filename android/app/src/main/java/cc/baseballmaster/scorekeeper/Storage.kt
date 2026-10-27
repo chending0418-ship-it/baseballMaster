@@ -69,9 +69,15 @@ data class CorrectionDraftEntity(
 interface LocalDao {
     @Query("SELECT * FROM teams ORDER BY name") fun teams(): Flow<List<TeamEntity>>
 
+    @Query("SELECT * FROM teams") suspend fun allTeams(): List<TeamEntity>
+
     @Query("SELECT * FROM games ORDER BY updatedAt DESC") fun games(): Flow<List<GameEntity>>
 
     @Query("SELECT * FROM games WHERE id = :id") suspend fun game(id: String): GameEntity?
+
+    @Query("SELECT * FROM operations") suspend fun allOperations(): List<OperationEntity>
+
+    @Query("SELECT * FROM correction_drafts") suspend fun allCorrectionDrafts(): List<CorrectionDraftEntity>
 
     @Query("SELECT * FROM operations WHERE id = :id")
     suspend fun operation(id: String): OperationEntity?
@@ -96,6 +102,9 @@ interface LocalDao {
 
     @Query("SELECT * FROM correction_drafts WHERE gameID = :gameID")
     suspend fun correctionDraft(gameID: String): CorrectionDraftEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertCorrectionDraft(draft: CorrectionDraftEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveCorrectionDraft(draft: CorrectionDraftEntity)
@@ -147,6 +156,51 @@ abstract class LocalDatabase : RoomDatabase() {
 class GameRepository(private val db: LocalDatabase, private val beforeCommit: () -> Unit = {}) {
     val teams
         get() = db.dao().teams()
+
+    /** Import explicitly selected rosters only. Conflicting IDs abort the entire transaction. */
+    suspend fun importRosters(rosters: List<Team>) = db.withTransaction {
+        require(rosters.isNotEmpty()) { "备份中没有球队名单" }
+        require(rosters.map { it.id }.distinct().size == rosters.size) { "球队编号冲突" }
+        val playerIDs = rosters.flatMap { it.players }.map { it.id }
+        require(playerIDs.distinct().size == playerIDs.size) { "球员编号冲突" }
+        val stored = db.dao().allTeams()
+        val existingTeamIDs = stored.map { it.id.lowercase(java.util.Locale.ROOT) }.toSet()
+        for (team in rosters) {
+            require(team.id.lowercase(java.util.Locale.ROOT) !in existingTeamIDs) { "本机已存在同编号球队，未导入任何名单" }
+            require(team.source == "local" && team.name.isNotBlank())
+            team.players.forEach(Roster::validate)
+        }
+        // IDs may collide with players in another team even if team IDs differ.
+        val existing = stored.flatMap { GameJson.decodeFromString<Team>(it.payload).players }.map { it.id.lowercase(java.util.Locale.ROOT) }.toSet()
+        require(playerIDs.none { it.lowercase(java.util.Locale.ROOT) in existing }) { "本机已存在同编号球员，未导入任何名单" }
+        for (team in rosters) db.dao().insertTeam(TeamEntity(team.id, team.name, GameJson.encodeToString(team), team.isOpponent))
+        beforeCommit()
+    }
+
+    /** Export a consistent database snapshot including the operation ledger and correction drafts. */
+    suspend fun exportDeviceBackup(currentTeamID: String?): ByteArray = db.withTransaction {
+        AndroidDeviceBackup.encode(DeviceSnapshot(
+            currentTeamID = currentTeamID,
+            teams = db.dao().allTeams().map { DeviceTeam(it.id, it.name, it.payload, it.isOpponent) },
+            games = db.dao().allGames().map { DeviceGame(it.id, it.payload, it.revision, it.updatedAt, it.payloadVersion) },
+            operations = db.dao().allOperations().map { DeviceOperation(it.id, it.gameID, it.action, it.baseRevision, it.createdAt) },
+            drafts = db.dao().allCorrectionDrafts().map { DeviceDraft(it.gameID, it.payload, it.updatedAt) },
+        ))
+    }
+
+    /** Restore only into an empty database; no existing match or draft is ever overwritten. */
+    suspend fun restoreDeviceBackup(bytes: ByteArray): String? {
+        val snapshot = AndroidDeviceBackup.decode(bytes)
+        return db.withTransaction {
+            require(db.dao().allTeams().isEmpty() && db.dao().allGames().isEmpty() && db.dao().allOperations().isEmpty() && db.dao().allCorrectionDrafts().isEmpty()) { "本机已有资料，未覆盖任何数据" }
+            snapshot.teams.forEach { db.dao().insertTeam(TeamEntity(it.id, it.name, it.payload, it.isOpponent)) }
+            snapshot.games.forEach { db.dao().insertGame(GameEntity(it.id, it.payload, it.revision, it.updatedAt, it.payloadVersion)) }
+            snapshot.operations.forEach { db.dao().insertOperation(OperationEntity(it.id, it.gameID, it.action, it.baseRevision, it.createdAt)) }
+            snapshot.drafts.forEach { db.dao().insertCorrectionDraft(CorrectionDraftEntity(it.gameID, it.payload, it.updatedAt)) }
+            beforeCommit()
+            snapshot.currentTeamID
+        }
+    }
 
     val games
         get() = db.dao().games()
