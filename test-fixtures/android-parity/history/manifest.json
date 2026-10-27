@@ -1,0 +1,48 @@
+{
+  "schema": 2,
+  "baseline": "40df3d2",
+  "generator": "BaseballMasterTests/GameStoreTests/testAndroidHistoryParityExport",
+  "reference": "actual iOS XCTest result, synthetic data only",
+  "files": [
+    {
+      "path": "history-missed-position-scoring.json",
+      "sha256": "c4e659814eef4ce7a5f88c1d4cfdc1bd823cfcc24166f8ff53e845d232bf7719",
+      "mode": "standard",
+      "steps": 3
+    },
+    {
+      "path": "history-statistics-responsibility-scoring.json",
+      "sha256": "bb0a9c3aea6d46eefd6ad8ccfadf53b4ebd6ee855b078aa23f2d2844e9d3beea",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "history-missed-pitcher-revert-scoring.json",
+      "sha256": "cf11422674e28b8106818ff967a0b380b03083c43e734dc7fb345a3d8ce6f66e",
+      "mode": "standard",
+      "steps": 6
+    },
+    {
+      "path": "history-pinch-runner-reentry-scoring.json",
+      "sha256": "36c120e7e4f4ce33b62172d475245f8c1f2c50caa5c4bd7f046fdb67e1682700",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "history-suspension-scoring.json",
+      "sha256": "2c18a302ba1e7dcd1199c41484388cc74abcdb5edadc11bad60bd4977512c4be",
+      "mode": "standard",
+      "steps": 3
+    },
+    {
+      "path": "history-lineup-after-missed-pitcher-scoring.json",
+      "sha256": "4aed2d5410b9ac2597706b847da7bfa5ed609ffba2146d92fa95bd6020e3cc76",
+      "mode": "standard",
+      "steps": 4
+    }
+  ],
+  "evidenceRuns": [
+    "ios-parity-20261027-134938: original five fixtures",
+    "ios-parity-20261027-135719: added lineup fixture; earlier fixtures retained"
+  ]
+}

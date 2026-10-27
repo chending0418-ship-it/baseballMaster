@@ -56,6 +56,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,6 +78,11 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     var error by mutableStateOf<String?>(null); private set
     var openedGameID by mutableStateOf<String?>(saved["openedGameID"]); private set
     var practiceGame by mutableStateOf<Game?>(null); private set
+    private val historyMutex=Mutex()
+    var historyDraft by mutableStateOf<CorrectionDraft?>(null); private set
+    var historyDraftLoadedFor by mutableStateOf<String?>(null); private set
+    var historyDraftSaved by mutableStateOf(false); private set
+    private var historyLoadingID:String?=null
     val openedGame get() = practiceGame?.takeIf{it.id==openedGameID} ?: games.firstOrNull { it.id == openedGameID }
     fun practice(method: String = "traditional") {
         fun team(id:String,name:String)=Team(id,name,(1..12).map{Player("$id-$it","球员$it",it.toString())})
@@ -128,6 +135,38 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     fun correct(index: Int, replacement: Command?, reason: String, acceptContext: Boolean = false, baseRevision: Long? = null, done: () -> Unit = {}) {
         val game = openedGame ?: return
         commit { if(game.practice){check(baseRevision==null||baseRevision==game.revision){"练习局面已变化，请重新核对"};accept(MatchEngine.correct(game,index,replacement,reason,acceptContext))}else accept(repository.correct(game.id, index, replacement, reason, baseRevision ?: game.revision, acceptContext)); done() }
+    }
+    fun loadHistoryDraft(game:Game) {
+        if(historyDraftLoadedFor==game.id||historyLoadingID==game.id)return
+        historyLoadingID=game.id
+        viewModelScope.launch {
+            try {
+                val draft=historyMutex.withLock { if(game.practice)null else repository.loadCorrectionDraft(game.id) }
+                if(historyLoadingID==game.id){historyDraft=draft;historyDraftLoadedFor=game.id;historyDraftSaved=draft!=null}
+            }catch(failure:Exception){error="纠错草稿暂时无法读取，原资料已保留。"}
+            finally{if(historyLoadingID==game.id)historyLoadingID=null}
+        }
+    }
+    fun updateHistoryDraft(draft:CorrectionDraft) {
+        val game=openedGame?:return
+        check(draft.gameID==game.id)
+        historyDraft=draft;historyDraftLoadedFor=game.id;historyDraftSaved=false
+        viewModelScope.launch {
+            try {
+                historyMutex.withLock { if(!game.practice)repository.saveCorrectionDraft(draft) }
+                if(historyDraft==draft)historyDraftSaved=true
+            }catch(failure:Exception){error="草稿未保存到本机，请保留当前页面后重试。"}
+        }
+    }
+    fun discardHistoryDraft(done:()->Unit) = commit {
+        val game=openedGame?:return@commit
+        historyMutex.withLock { if(!game.practice)repository.discardCorrectionDraft(game.id) }
+        historyDraft=null;historyDraftSaved=false;done()
+    }
+    fun saveHistoryCorrection(draft:CorrectionDraft,done:()->Unit) = commit {
+        val game=openedGame?:return@commit
+        historyMutex.withLock { accept(if(game.practice)History.commit(game,draft)else repository.saveCorrection(draft)) }
+        historyDraft=null;historyDraftSaved=false;done()
     }
     override fun onCleared() { database.close() }
 }

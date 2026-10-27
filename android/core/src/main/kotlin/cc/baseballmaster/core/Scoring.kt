@@ -307,6 +307,11 @@ data class RecordedCommand(
     val batterID: String,
     val bases: List<String?>,
     val acceptContext: Boolean = false,
+    val context: HistoryContext? = null,
+    val inserted: Boolean = false,
+    val edited: Boolean = false,
+    val additionalErrors: List<ErrorCredit> = emptyList(),
+    val statisticsRuling: StatisticsRuling? = null,
 )
 
 @Serializable
@@ -412,6 +417,9 @@ data class Game(
     var checkpoint: String? = null,
     var incompletePrefix: Boolean = false,
     var correctionRevisions: List<String> = emptyList(),
+    var historyRevisions: List<HistoryRevision> = emptyList(),
+    var correctionBoundary: Int = 0,
+    var statisticsIncomplete: Boolean = false,
     var pitcherInnings: MutableMap<String, Set<Int>> = mutableMapOf(),
 ) {
     val battingTeam

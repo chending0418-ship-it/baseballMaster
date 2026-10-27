@@ -11,6 +11,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
@@ -50,7 +51,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         TextButton(
             model::undo,
-            enabled = !model.busy && game.cursor > 0,
+            enabled = !model.busy && game.cursor > game.correctionBoundary,
             modifier = Modifier.testTag("undo"),
         ) {
             Text("撤销")
@@ -233,7 +234,14 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                         )
                         .forEach { (reason, label) ->
                             TextButton(
-                                { save(Command("finish", text = reason)) },
+                                {
+                                    save(
+                                        Command(
+                                            if (reason == "suspended") "suspend" else "finish",
+                                            text = reason,
+                                        )
+                                    )
+                                },
                                 modifier = Modifier.testTag("finish-$reason"),
                             ) {
                                 Text(label)
@@ -241,7 +249,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                         }
                 }
             "clock" -> ClockEditor(game, model.busy, close) { model.command(it, done = close) }
-            "history" -> HistoryEditor(snapshot, model, close)
+            "history" -> HistoryEditor(game, model, close)
         }
     }
 }
@@ -274,9 +282,11 @@ internal fun Choices(
     }
 }
 
-private val CommandDraftSaver = androidx.compose.runtime.saveable.Saver<Command,String>(
-    save={GameJson.encodeToString(it)}, restore={GameJson.decodeFromString<Command>(it)}
-)
+private val CommandDraftSaver =
+    androidx.compose.runtime.saveable.Saver<Command, String>(
+        save = { GameJson.encodeToString(it) },
+        restore = { GameJson.decodeFromString<Command>(it) },
+    )
 
 @Composable
 internal fun PlayEditor(
@@ -286,10 +296,20 @@ internal fun PlayEditor(
     initial: Command? = null,
     save: (Command) -> Unit,
 ) {
-    var cmd by rememberSaveable(game.id,game.revision,stateSaver=CommandDraftSaver) {
-        mutableStateOf(initial?:Command("play",outcome=Outcome.single,decisions=MatchEngine.suggested(game,Outcome.single)))
+    var cmd by
+        rememberSaveable(game.id, game.revision, stateSaver = CommandDraftSaver) {
+            mutableStateOf(
+                initial
+                    ?: Command(
+                        "play",
+                        outcome = Outcome.single,
+                        decisions = MatchEngine.suggested(game, Outcome.single),
+                    )
+            )
+        }
+    fun update(f: (Command) -> Command) {
+        cmd = f(cmd)
     }
-    fun update(f:(Command)->Command){cmd=f(cmd)}
     var pro by rememberSaveable {
         mutableStateOf(initial?.observation != null || game.rules.recordingMethod == "situation")
     }
@@ -362,10 +382,20 @@ private fun RunnerEditor(
 ) {
     val options =
         ScoringOptions.runnerEvents.filterKeys { ScoringOptions.runnerAllowed(game.rules.mode, it) }
-    var cmd by rememberSaveable(game.id,game.revision,stateSaver=CommandDraftSaver) {
-        mutableStateOf(initial?:Command("runner",runnerKind=options.keys.first(),decisions=MatchEngine.suggestedRunner(game,options.keys.first())))
+    var cmd by
+        rememberSaveable(game.id, game.revision, stateSaver = CommandDraftSaver) {
+            mutableStateOf(
+                initial
+                    ?: Command(
+                        "runner",
+                        runnerKind = options.keys.first(),
+                        decisions = MatchEngine.suggestedRunner(game, options.keys.first()),
+                    )
+            )
+        }
+    fun update(f: (Command) -> Command) {
+        cmd = f(cmd)
     }
-    fun update(f:(Command)->Command){cmd=f(cmd)}
     FormPage(
         "跑者记录",
         busy,
@@ -530,7 +560,13 @@ private fun ObservationEditor(
                     }
                 },
             )
-            if(observation.precision=="point")Text(if(observation.x!=null&&observation.y!=null)"落点已记录"else"请点选球场落点",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.testTag("landing-selection-state"))
+            if (observation.precision == "point")
+                Text(
+                    if (observation.x != null && observation.y != null) "落点已记录" else "请点选球场落点",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("landing-selection-state"),
+                )
             FieldingEditor(
                 game,
                 observation.fielding ?: Fielding(status = ""),
@@ -1130,114 +1166,466 @@ private fun ViolationEditor(
     }
 }
 
+private fun historyTitle(command: Command) = History.title(command)
+
 @Composable
 private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -> Unit) {
-    var selected by rememberSaveable { mutableIntStateOf(-1) }
-    var reason by rememberSaveable { mutableStateOf("") }
-    var edit by rememberSaveable { mutableStateOf(false) }
-    val record = game.journal.getOrNull(selected)
-    if (record != null && edit) {
-        val base = remember(selected) { MatchEngine.stateBefore(game, selected) }
-        val save: (Command) -> Unit = {
-            model.correct(selected, it, reason, baseRevision = game.revision) {
-                selected = -1
-                edit = false
+    var screen by rememberSaveable(game.id) { mutableStateOf("list") }
+    var selected by rememberSaveable(game.id) { mutableIntStateOf(0) }
+    var discard by remember { mutableStateOf(false) }
+    LaunchedEffect(game.id) { model.loadHistoryDraft(game) }
+    val draft = model.historyDraft?.takeIf { it.gameID == game.id }
+    val record = draft?.records?.getOrNull(selected)
+    val before =
+        remember(game.revision, draft, selected) {
+            draft?.let { runCatching { History.stateBefore(game, it, selected) }.getOrNull() }
+        }
+    val preview by
+        produceState<CorrectionPreview?>(null, game.revision, draft) {
+            value = null
+            value = draft?.let {
+                withContext(kotlinx.coroutines.Dispatchers.Default) { History.preview(game, it) }
             }
         }
-        when (record.command.kind) {
-            "play" -> PlayEditor(base, model.busy, { edit = false }, record.command, save)
-            "runner" -> RunnerEditor(base, model.busy, { edit = false }, record.command, save)
-            "pitch" -> {
-                var pitch by rememberSaveable { mutableStateOf(record.command.pitch!!.name) }
-                FormPage(
-                    "投球纠错",
-                    model.busy,
-                    true,
-                    "save-correction",
-                    "保存",
-                    { edit = false },
-                    { save(record.command.copy(pitch = PitchAction.valueOf(pitch))) },
-                ) {
-                    Choices("投球结果", PitchAction.entries.associate { it.name to it.title }, pitch) {
-                        pitch = it
+    fun update(value: CorrectionDraft) {
+        model.updateHistoryDraft(value)
+    }
+    fun changeRecord(value: RecordedCommand) {
+        val d = draft ?: return
+        update(d.copy(records = d.records.toMutableList().apply { set(selected, value) }))
+    }
+    fun start(index: Int) {
+        val d = draft ?: History.draft(game)
+        update(d)
+        selected = index
+        screen = "detail"
+    }
+    fun amend(command: Command) {
+        val r = record ?: return
+        changeRecord(r.copy(command = command.copy(at = r.command.at), edited = true))
+        screen = "draft"
+    }
+    fun insert(command: Command) {
+        val d = draft ?: return
+        update(History.insert(game, d, selected, command))
+        screen = "draft"
+    }
+    if (discard)
+        AlertDialog(
+            onDismissRequest = { discard = false },
+            title = { Text("放弃纠错草稿？") },
+            text = { Text("比赛正式记录不会改变。") },
+            confirmButton = {
+                TextButton({
+                    model.discardHistoryDraft {
+                        screen = "list"
+                        discard = false
                     }
-                    Text(reason)
+                }) {
+                    Text("放弃草稿")
                 }
-            }
+            },
+            dismissButton = { TextButton({ discard = false }) { Text("继续核对") } },
+        )
+    if (screen == "edit" && record != null && before != null) {
+        when (record.command.kind) {
+            "play" -> PlayEditor(before, model.busy, { screen = "detail" }, record.command, ::amend)
+            "runner" ->
+                RunnerEditor(before, model.busy, { screen = "detail" }, record.command, ::amend)
+            "pitch" ->
+                HistoryPitchEditor(record.command, model.busy, { screen = "detail" }, ::amend)
+            "pitcher",
+            "batter",
+            "pinchRunner",
+            "fielder",
+            "position" -> SubstitutionEditor(before, model.busy, { screen = "detail" }, ::amend)
             else ->
-                FormPage("更正说明", model.busy, false, "unused", "", { edit = false }, {}) {
-                    Text("此记录可撤销后重新录入，或填写原因删除并重放后续记录。")
+                FormPage("更正记录", model.busy, false, "unused", "", { screen = "detail" }, {}) {
+                    Text("可在草稿中删除此操作，或在前后补记并核对重放结果。")
                 }
         }
-    } else if (record != null)
+        return
+    }
+    if (screen == "responsibility" && record != null && before != null) {
+        HistoryResponsibilityEditor(before, record, model.busy, { screen = "detail" }) {
+            changeRecord(it)
+            screen = "draft"
+        }
+        return
+    }
+    if (screen.startsWith("insert-") && draft != null && before != null) {
+        when (screen) {
+            "insert-pitch" ->
+                HistoryPitchEditor(
+                    Command("pitch", pitch = PitchAction.ball),
+                    model.busy,
+                    { screen = "insert" },
+                    ::insert,
+                )
+            "insert-play" -> PlayEditor(before, model.busy, { screen = "insert" }, save = ::insert)
+            "insert-runner" ->
+                RunnerEditor(before, model.busy, { screen = "insert" }, save = ::insert)
+            "insert-sub" -> SubstitutionEditor(before, model.busy, { screen = "insert" }, ::insert)
+        }
+        return
+    }
+    if (screen == "insert" && draft != null) {
+        FormPage("补记操作", model.busy, false, "unused", "", { screen = "draft" }, {}) {
+            Text("补在第 ${selected+1} 条之前；保存前会核对之后每条记录的局次、棒次和跑者。")
+            if (before == null) Text("此处之前存在冲突，请先修正前面的记录。")
+            else {
+                TextButton({ screen = "insert-sub" }, Modifier.testTag("insert-substitution")) {
+                    Text("换人／换投／守位")
+                }
+                TextButton({ screen = "insert-pitch" }, Modifier.testTag("insert-pitch")) {
+                    Text("漏记投球")
+                }
+                TextButton({ screen = "insert-play" }, Modifier.testTag("insert-play")) {
+                    Text("漏记击球")
+                }
+                TextButton(
+                    { screen = "insert-runner" },
+                    enabled = before.bases.any { it != null },
+                ) {
+                    Text("漏记跑垒")
+                }
+            }
+        }
+        return
+    }
+    if (screen == "detail" && record != null) {
         FormPage(
             "历史纠错",
             model.busy,
-            reason.isNotBlank(),
+            before != null,
             "edit-correction",
             "编辑",
-            { selected = -1 },
-            { edit = true },
+            { screen = "draft" },
+            { screen = "edit" },
         ) {
             Text(
-                game.entries.firstOrNull { it.id == record.id }?.text ?: "比赛操作",
+                "第 ${selected+1} 条 · ${historyTitle(record.command)}",
                 fontWeight = FontWeight.Bold,
             )
+            record.context?.let {
+                Text(
+                    "${it.inning}局${if(it.isTop)"上"else"下"} · 第 ${it.batterIndex+1} 棒",
+                    fontSize = 12.sp,
+                )
+            }
             OutlinedTextField(
-                reason,
-                { reason = it },
+                draft.reason,
+                { update(draft.copy(reason = it)) },
                 label = { Text("纠错原因") },
                 modifier = Modifier.fillMaxWidth().testTag("correction-reason"),
             )
-            Text("保存前重算后续记录。若打者或跑者发生冲突，会保留原比赛并提示核对。", fontSize = 12.sp)
+            Text("先在草稿中修改，再预览比分和统计变化。", fontSize = 12.sp)
+            TextButton({ screen = "insert" }, Modifier.testTag("insert-before")) {
+                Text("在此记录之前补记")
+            }
+            TextButton({
+                selected++
+                screen = "insert"
+            }) {
+                Text("在此记录之后补记")
+            }
+            TextButton({ screen = "responsibility" }, enabled = before != null) {
+                Text("补记失误／复核统计责任")
+            }
             TextButton(
                 {
-                    model.correct(selected, null, reason, baseRevision = game.revision) {
-                        selected = -1
-                    }
+                    changeRecord(record.copy(acceptContext = true, edited = true))
+                    screen = "draft"
                 },
-                enabled = reason.isNotBlank(),
-                modifier = Modifier.testTag("delete-correction"),
+                Modifier.testTag("accept-history-context"),
+                enabled = before != null,
             ) {
-                Text("删除此操作并重放")
+                Text("确认此记录归属重放后的局次与棒次")
+            }
+            TextButton(
+                {
+                    update(
+                        draft.copy(records = draft.records.filterIndexed { i, _ -> i != selected })
+                    )
+                    screen = "draft"
+                },
+                Modifier.testTag("delete-correction"),
+            ) {
+                Text("从草稿删除此操作")
             }
         }
-    else
-        FormPage("完整记录", model.busy, false, "unused", "", dismiss, {}) {
-            if (game.incompletePrefix) Text("部分历史过程不完整，请核对记录。")
-            game.entries.asReversed().forEach { entry ->
+        return
+    }
+    if (screen != "list" && draft != null) {
+        val result = preview
+        FormPage(
+            "更正预览",
+            model.busy,
+            result?.canSave == true && result.changes.isNotEmpty() && draft.reason.isNotBlank(),
+            "save-history-correction",
+            "保存更正",
+            { screen = "list" },
+            { model.saveHistoryCorrection(draft) { screen = "list" } },
+        ) {
+            OutlinedTextField(
+                draft.reason,
+                { update(draft.copy(reason = it)) },
+                label = { Text("更正原因") },
+                modifier = Modifier.fillMaxWidth().testTag("correction-reason"),
+            )
+            Text(
+                if (game.practice) "练习草稿仅保留在本次练习"
+                else if (model.historyDraftSaved) "草稿已保存在本机" else "正在保存草稿…",
+                Modifier.testTag("history-draft-status"),
+                fontSize = 12.sp,
+            )
+            Text("原比赛 ${game.awayRuns}:${game.homeRuns}", fontWeight = FontWeight.Bold)
+            if (result == null) Text("正在重放核对…")
+            else if (result.conflict != null) {
+                Text(
+                    result.conflict.orEmpty(),
+                    Modifier.testTag("history-conflict"),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                result.conflictID?.let { id ->
+                    TextButton({
+                        selected = draft.records.indexOfFirst { it.id == id }
+                        screen = "detail"
+                    }) {
+                        Text("核对冲突记录")
+                    }
+                }
+            } else {
+                val next = result.game!!
+                Text(
+                    "更正后 ${next.awayRuns}:${next.homeRuns}",
+                    Modifier.testTag("history-preview-score"),
+                    fontWeight = FontWeight.Bold,
+                )
+                if (next.statisticsIncomplete)
+                    Text("统计责任待确认，统计可能不完整。", color = MaterialTheme.colorScheme.error)
+                result.changes.forEach { Text(it, fontSize = 12.sp) }
+            }
+            draft.records.forEachIndexed { i, r ->
                 CardBlock {
                     Text(
-                        "${entry.inning}局${if(entry.isTop)"上"else"下"} · ${entry.notation}",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary,
+                        "${i+1}. ${historyTitle(r.command)}${if(r.inserted)" · 补记"else if(r.edited)" · 更正"else""}"
                     )
-                    Text(entry.text, fontWeight = FontWeight.SemiBold)
-                    entry.observation?.let { o ->
-                        Text(
-                            "${ScoringOptions.ballTypes[o.type]} · ${o.region?.let{ScoringOptions.regions[it]}?:if(o.precision=="point")"已记录落点"else"没有看清"}",
-                            fontSize = 12.sp,
-                        )
+                    TextButton(
+                        {
+                            selected = i
+                            screen = "detail"
+                        },
+                        Modifier.testTag("draft-record-$i"),
+                    ) {
+                        Text("核对／编辑")
                     }
-                    entry.observation?.fielding?.let { f ->
-                        Text(
-                            "路线 ${f.route.joinToString(" → "){pos->entry.participants.firstOrNull{it.position==pos}?.let{"$pos ${it.name}"}?:pos.toString()}}",
-                            fontSize = 12.sp,
-                        )
-                    }
-                    val index = game.journal.indexOfFirst { it.id == entry.id }
-                    if (index in 0 until game.cursor)
-                        TextButton({
-                            selected = index
-                            reason = ""
-                        }) {
-                            Text("纠错／补充本球")
-                        }
                 }
             }
-            if (game.correctionRevisions.isNotEmpty()) {
-                Text("纠错记录", fontWeight = FontWeight.Bold)
-                game.correctionRevisions.forEach { Text(it, fontSize = 12.sp) }
+            TextButton(
+                {
+                    selected = draft.records.size
+                    screen = "insert"
+                },
+                Modifier.testTag("history-append"),
+            ) {
+                Text("在末尾补记")
+            }
+            TextButton({ discard = true }, Modifier.testTag("discard-history-draft")) {
+                Text("放弃纠错草稿")
             }
         }
+        return
+    }
+    FormPage("完整记录", model.busy, false, "unused", "", dismiss, {}) {
+        if (model.historyDraftLoadedFor != game.id) Text("正在读取纠错草稿…")
+        else if (draft != null)
+            TextButton({ screen = "draft" }, Modifier.testTag("resume-history-draft")) {
+                Text("继续上次纠错草稿")
+            }
+        if (game.incompletePrefix || game.statisticsIncomplete) Text("部分历史过程或统计责任不完整，请核对记录。")
+        game.entries.asReversed().forEach { entry ->
+            CardBlock {
+                Text(
+                    "${entry.inning}局${if(entry.isTop)"上"else"下"} · ${entry.notation}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(entry.text, fontWeight = FontWeight.SemiBold)
+                entry.observation?.let { o ->
+                    Text(
+                        "${ScoringOptions.ballTypes[o.type]} · ${o.region?.let{ScoringOptions.regions[it]}?:if(o.precision=="point")"已记录落点"else"没有看清"}",
+                        fontSize = 12.sp,
+                    )
+                }
+                entry.observation?.fielding?.let { f ->
+                    Text(
+                        "路线 ${f.route.joinToString(" → "){pos->entry.participants.firstOrNull{it.position==pos}?.let{"$pos ${it.name}"}?:pos.toString()}}",
+                        fontSize = 12.sp,
+                    )
+                }
+                val index = game.journal.indexOfFirst { it.id == entry.id }
+                val draftIndex =
+                    if (draft == null) index else draft.records.indexOfFirst { it.id == entry.id }
+                if (index in 0 until game.cursor)
+                    TextButton(
+                        { start(draftIndex) },
+                        enabled =
+                            draftIndex >= 0 &&
+                                model.historyDraftLoadedFor == game.id &&
+                                !model.busy,
+                        modifier = Modifier.testTag("correct-record-$index"),
+                    ) {
+                        Text(if (draftIndex < 0) "草稿已删除此记录" else "纠错／补充本球")
+                    }
+            }
+        }
+        if (game.historyRevisions.isNotEmpty()) {
+            Text("更正历史", fontWeight = FontWeight.Bold)
+            game.historyRevisions.asReversed().forEach { revision ->
+                CardBlock {
+                    Text(revision.reason, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        java.time.Instant.ofEpochMilli(revision.at)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .format(
+                                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                            ),
+                        fontSize = 12.sp,
+                    )
+                    revision.summary.forEach { Text(it, fontSize = 12.sp) }
+                }
+            }
+            TextButton(
+                {
+                    update(History.revertingDraft(game))
+                    screen = "draft"
+                },
+                enabled = draft == null && !model.busy,
+                modifier = Modifier.testTag("revert-latest-correction"),
+            ) {
+                Text("撤回最近一次更正")
+            }
+        } else game.correctionRevisions.forEach { Text(it, fontSize = 12.sp) }
+    }
+}
+
+@Composable
+private fun HistoryPitchEditor(
+    initial: Command,
+    busy: Boolean,
+    dismiss: () -> Unit,
+    save: (Command) -> Unit,
+) {
+    var pitch by rememberSaveable { mutableStateOf(initial.pitch?.name ?: PitchAction.ball.name) }
+    FormPage(
+        "投球纠错",
+        busy,
+        true,
+        "save-correction",
+        "加入草稿",
+        dismiss,
+        { save(initial.copy(pitch = PitchAction.valueOf(pitch))) },
+    ) {
+        Choices("投球结果", PitchAction.entries.associate { it.name to it.title }, pitch) { pitch = it }
+    }
+}
+
+@Composable
+private fun HistoryResponsibilityEditor(
+    before: Game,
+    record: RecordedCommand,
+    busy: Boolean,
+    dismiss: () -> Unit,
+    save: (RecordedCommand) -> Unit,
+) {
+    var creditJSON by rememberSaveable {
+        mutableStateOf(GameJson.encodeToString(record.additionalErrors))
+    }
+    val credits = remember(creditJSON) { GameJson.decodeFromString<List<ErrorCredit>>(creditJSON) }
+    var reviewed by rememberSaveable { mutableStateOf(record.statisticsRuling != null) }
+    var rbi by rememberSaveable {
+        mutableStateOf(record.statisticsRuling?.runsBattedIn?.toString().orEmpty())
+    }
+    var earnedJSON by rememberSaveable {
+        mutableStateOf(
+            GameJson.encodeToString(
+                record.statisticsRuling?.earnedRuns?.mapValues { it.value.toString() }
+                    ?: emptyMap<String, String>()
+            )
+        )
+    }
+    val earned = remember(earnedJSON) { GameJson.decodeFromString<Map<String, String>>(earnedJSON) }
+    val valid =
+        (!reviewed ||
+            (rbi.toIntOrNull()?.let { it >= 0 } == true &&
+                earned.values.all { it.toIntOrNull()?.let { n -> n >= 0 } == true }))
+    FormPage(
+        "失误与统计责任",
+        busy,
+        valid,
+        "save-history-responsibility",
+        "加入草稿",
+        dismiss,
+        {
+            save(
+                record.copy(
+                    edited = true,
+                    additionalErrors = credits,
+                    statisticsRuling =
+                        if (reviewed)
+                            StatisticsRuling(
+                                rbi.toInt(),
+                                earned.mapValues { it.value.toInt() },
+                                record.statisticsRuling?.unearnedRunnerIDs ?: emptySet(),
+                            )
+                        else null,
+                )
+            )
+        },
+    ) {
+        Text("补记失误不会增加打席或投球；责任未确认时标记统计可能不完整。", fontSize = 12.sp)
+        before.fieldingTeam.players
+            .filter { it.id in before.fieldingPositions.values }
+            .forEach { player ->
+                val count = credits.firstOrNull { it.playerID == player.id }?.count ?: 0
+                Choices(
+                    "${player.name} #${player.number}",
+                    (0..9).associate { it.toString() to if (it == 0) "无" else "$it 次" },
+                    count.toString(),
+                ) { value ->
+                    val n = value.toInt()
+                    creditJSON =
+                        GameJson.encodeToString(
+                            credits.filter { it.playerID != player.id } +
+                                if (n > 0) listOf(ErrorCredit(player.id, n)) else emptyList()
+                        )
+                }
+            }
+        Row {
+            Checkbox(reviewed, { reviewed = it })
+            Text("人工确认本事件打点与投手责任", Modifier.padding(top = 13.dp))
+        }
+        if (reviewed) {
+            OutlinedTextField(rbi, { rbi = it }, label = { Text("本事件打点") }, singleLine = true)
+            before.fieldingTeam.players
+                .filter { it.id in before.pitching || it.id == before.pitcher.id }
+                .forEach { p ->
+                    OutlinedTextField(
+                        earned[p.id].orEmpty(),
+                        {
+                            earnedJSON =
+                                GameJson.encodeToString(
+                                    earned.toMutableMap().apply {
+                                        if (it.isBlank()) remove(p.id) else put(p.id, it)
+                                    }
+                                )
+                        },
+                        label = { Text("${p.name} 本事件自责分（留空沿用）") },
+                        singleLine = true,
+                    )
+                }
+            Text("数值会按本事件实际有效得分和各投手失分校验。", fontSize = 12.sp)
+        }
+    }
 }

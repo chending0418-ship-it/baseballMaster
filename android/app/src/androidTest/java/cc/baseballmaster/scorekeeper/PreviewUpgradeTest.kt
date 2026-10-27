@@ -45,7 +45,7 @@ class PreviewUpgradeTest {
             assertEquals(legacy,repo.pitch(legacy.id,originalEvent.action!!,0,originalEvent.id))
             assertEquals(source.payload,db.dao().game(legacy.id)!!.payload)
             val continued=repo.command(legacy.id,Command("play",outcome=Outcome.single),legacy.revision,"continued")
-            assertEquals(2,db.dao().game(legacy.id)!!.payloadVersion)
+            assertEquals(3,db.dao().game(legacy.id)!!.payloadVersion)
             assertEquals(2,continued.totalPitches);assertEquals(1,continued.awayHits);assertEquals(legacy.away.players.first().id,continued.bases[0])
             assertEquals(originalEvent.id,continued.entries.first().id)
             val undo=repo.undo(legacy.id,continued.revision,"undo-upgrade")

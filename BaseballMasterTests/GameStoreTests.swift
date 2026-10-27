@@ -7602,6 +7602,121 @@ private final class AndroidScoringScenario {
 }
 
 extension GameStoreTests {
+    /// Separate evidence from the frozen scoring fixtures: history replay and interruption.
+    func testAndroidHistoryParityExport() throws {
+        func historyStep(_ s: AndroidScoringScenario, _ command: [String: Any], _ action: () throws -> Void) throws {
+            try action()
+            XCTAssertNil(s.store.actionErrorMessage)
+            var expected = try s.canonical()
+            expected["statisticsIncomplete"] = s.store.game.statisticsIncomplete == true
+            expected["correctionCount"] = s.store.game.correctionRevisions?.count ?? 0
+            expected["clockRunning"] = s.store.game.clockRunningSince != nil
+            s.steps.append(["command": command, "expected": expected])
+        }
+        let suspended = try AndroidScoringScenario("history-suspension")
+        try suspended.play(.single)
+        try historyStep(suspended, ["kind": "suspend"]) { suspended.store.finishGame(reason: .suspended) }
+        XCTAssertFalse(suspended.store.game.isFinal)
+        try suspended.pitch(.ball)
+        try suspended.export(to: self)
+
+        let pitcher = try AndroidScoringScenario("history-missed-pitcher-revert")
+        try pitcher.play(.single)
+        let beforePitcher = pitcher.store.game, pitcherBoundary = pitcher.steps.count
+        let incoming = pitcher.store.game.homeTeam.players[11]
+        try pitcher.pitch(.ball); try pitcher.play(.homeRun)
+        try historyStep(pitcher, ["kind": "historyInsert", "index": pitcherBoundary,
+            "insert": ["kind": "pitcher", "playerID": incoming.id.uuidString.lowercased()]]) {
+            var draft = try pitcher.store.makeCorrectionDraft(); draft.reason = "补记换投"
+            draft.journal.operations.insert(HistoryOperation(command: .pitcher(incoming.id), before: beforePitcher, inserted: true), at: pitcherBoundary)
+            XCTAssertTrue(pitcher.store.saveCorrection(draft), pitcher.store.actionErrorMessage ?? "")
+        }
+        try pitcher.pitch(.calledStrike)
+        try historyStep(pitcher, ["kind": "historyRevert"]) {
+            let revision = try XCTUnwrap(pitcher.store.game.correctionRevisions?.last)
+            XCTAssertTrue(pitcher.store.saveCorrection(try pitcher.store.draftRevertingCorrection(revision)))
+        }
+        try pitcher.export(to: self)
+
+        let runners = try AndroidScoringScenario("history-pinch-runner-reentry")
+        let originalRunner = runners.store.currentBatter
+        try runners.play(.single)
+        let runnerBefore1 = runners.store.game, runnerBoundary1 = runners.steps.count
+        let substitute = runners.store.game.awayTeam.players[11]
+        let moves = [RunnerDecision(player: originalRunner, origin: .base(.first), destination: .base(.third)),
+                     RunnerDecision(player: runners.store.currentBatter, origin: .batter, destination: .base(.first))]
+        try runners.play(.single, decisions: moves)
+        let runnerBefore2 = runners.store.game, runnerBoundary2 = runners.steps.count
+        try runners.play(.homeRun)
+        let insertions: [[String: Any]] = [
+            ["index": runnerBoundary2, "insert": ["kind": "pinchRunner", "position": 3, "playerID": originalRunner.id.uuidString.lowercased()]],
+            ["index": runnerBoundary1, "insert": ["kind": "pinchRunner", "position": 1, "playerID": substitute.id.uuidString.lowercased()]]]
+        try historyStep(runners, ["kind": "historyInsertMany", "insertions": insertions]) {
+            var draft = try runners.store.makeCorrectionDraft(); draft.reason = "补记代跑及重新上场"
+            draft.journal.operations.insert(HistoryOperation(command: .pinchRunner(.third, originalRunner.id), before: runnerBefore2, inserted: true), at: runnerBoundary2)
+            draft.journal.operations.insert(HistoryOperation(command: .pinchRunner(.first, substitute.id), before: runnerBefore1, inserted: true), at: runnerBoundary1)
+            XCTAssertTrue(runners.store.saveCorrection(draft), runners.store.actionErrorMessage ?? "")
+        }
+        try runners.export(to: self)
+
+        let errors = try AndroidScoringScenario("history-statistics-responsibility")
+        try errors.play(.triple); try errors.play(.single)
+        let errorFielder = errors.store.game.homeTeam.players[1].id
+        try historyStep(errors, ["kind": "historyAmend", "index": 1,
+            "errors": [["playerID": errorFielder.uuidString.lowercased(), "count": 1]]]) {
+            var draft = try errors.store.makeCorrectionDraft(); draft.reason = "补记守备失误"
+            draft.journal.operations[1].errors = [HistoryErrorCredit(playerID: errorFielder)]
+            draft.journal.operations[1].edited = true
+            XCTAssertTrue(errors.store.saveCorrection(draft), errors.store.actionErrorMessage ?? "")
+        }
+        let responsible = errors.store.currentPitcher.id
+        try historyStep(errors, ["kind": "historyAmend", "index": 1,
+            "ruling": ["runsBattedIn": 0, "earnedRuns": [responsible.uuidString.lowercased(): 0], "unearnedRunnerIDs": []]]) {
+            var draft = try errors.store.makeCorrectionDraft(); draft.reason = "确认打点与投手责任"
+            draft.journal.operations[1].statisticsRuling = HistoryStatisticsRuling(runsBattedIn: 0, earnedRuns: [responsible: 0], unearnedRunnerIDs: [])
+            draft.journal.operations[1].edited = true
+            XCTAssertTrue(errors.store.saveCorrection(draft), errors.store.actionErrorMessage ?? "")
+        }
+        try errors.export(to: self)
+
+        let positions = try AndroidScoringScenario("history-missed-position")
+        var observation = BattedBallObservation(type: .ground); observation.selectRegion(.center)
+        observation.fielding = BattedBallFielding(status: .recorded, route: [.shortstop], errorPosition: .shortstop)
+        try positions.play(.error, observation: observation)
+        let positionBefore = positions.store.game, positionBoundary = positions.steps.count
+        let shortstop = positions.store.game.homeTeam.players[5]
+        try positions.play(.error, observation: observation)
+        try historyStep(positions, ["kind": "historyInsert", "index": positionBoundary,
+            "insert": ["kind": "position", "playerID": shortstop.id.uuidString.lowercased(), "position": 4]]) {
+            var draft = try positions.store.makeCorrectionDraft(); draft.reason = "补记守位交换"
+            draft.journal.operations.insert(HistoryOperation(command: .position(shortstop.id, .secondBase), before: positionBefore, inserted: true), at: positionBoundary)
+            XCTAssertTrue(positions.store.saveCorrection(draft), positions.store.actionErrorMessage ?? "")
+        }
+        try positions.export(to: self)
+
+        let lineup = try AndroidScoringScenario("history-lineup-after-missed-pitcher")
+        try lineup.pitch(.ball)
+        let lineupBefore = lineup.store.game, lineupBoundary = lineup.steps.count
+        var changes = lineup.store.lineupDraft(forHomeTeam: true)
+        changes.players[3].primaryPosition = .shortstop; changes.players[5].primaryPosition = .secondBase
+        changes.changes = ["二游交换"]
+        XCTAssertTrue(lineup.store.saveLineup(changes), lineup.store.actionErrorMessage ?? "")
+        let current = lineup.store.game
+        let positionsDTO = Dictionary(uniqueKeysWithValues: lineup.store.activeFielders.map { (String($0.primaryPosition.rawValue), $0.id.uuidString.lowercased()) })
+        lineup.steps.append(["command": ["kind": "lineup", "homeSide": true,
+            "order": current.homeBattingOrderIDs.map { $0.uuidString.lowercased() }, "positions": positionsDTO],
+            "expected": try lineup.canonical()])
+        try lineup.pitch(.calledStrike)
+        let newPitcher = current.homeTeam.players[11]
+        try historyStep(lineup, ["kind": "historyInsert", "index": lineupBoundary,
+            "insert": ["kind": "pitcher", "playerID": newPitcher.id.uuidString.lowercased()]]) {
+            var draft = try lineup.store.makeCorrectionDraft(); draft.reason = "阵容调整前漏记换投"
+            draft.journal.operations.insert(HistoryOperation(command: .pitcher(newPitcher.id), before: lineupBefore, inserted: true), at: lineupBoundary)
+            XCTAssertTrue(lineup.store.saveCorrection(draft), lineup.store.actionErrorMessage ?? "")
+        }
+        try lineup.export(to: self)
+    }
+
     func testAndroidScoringParityExport() throws {
         var scenarios: [AndroidScoringScenario] = []
         for mode in [GameMode.standard, .coachPitch, .slowPitch] {

@@ -17,8 +17,9 @@ for attachment in sorted(source.glob('*.json')):
                   'mode': value['mode'], 'steps': len(value['steps'])})
 assert files, 'No exported iOS fixtures found'
 scoring = all(item['path'].endswith('-scoring.json') for item in files)
+history = scoring and all(item['path'].startswith('history-') for item in files)
 if not scoring:
     assert {item['mode'] for item in files} == {'standard', 'coachPitch', 'slowPitch'}
 (destination / 'manifest.json').write_text(json.dumps({'schema': 2 if scoring else 1, 'baseline': '40df3d2',
-    'generator': 'BaseballMasterTests/GameStoreTests/' + ('testAndroidScoringParityExport' if scoring else 'testAndroidParitySeedExport'),
+    'generator': 'BaseballMasterTests/GameStoreTests/' + ('testAndroidHistoryParityExport' if history else 'testAndroidScoringParityExport' if scoring else 'testAndroidParitySeedExport'),
     'reference': 'actual iOS XCTest result, synthetic data only', 'files': files}, ensure_ascii=False, indent=2) + '\n')

@@ -37,6 +37,34 @@ class StorageTest {
             assertEquals(1L, restored.revision)
         } finally { db.close(); context.deleteDatabase(name) }
     }
+    @Test fun correctionDraftAuditAndOperationCommitTogetherWithRollbackAndRetry() = runBlocking {
+        val name="history-storage-${UUID.randomUUID()}.db"
+        var db=LocalDatabase.open(context,name)
+        try {
+            var repo=GameRepository(db)
+            val team=repo.createTeam("纠错合成球队",roster)
+            val fresh=repo.createGame(team,"合成对手",roster,GameMode.standard,false)
+            val original=repo.command(fresh.id,Command("play",outcome=Outcome.single),fresh.revision,"single")
+            val initial=History.draft(original)
+            val draft=initial.copy(reason="原球为二垒安打",records=initial.records.map{it.copy(command=it.command.copy(outcome=Outcome.double),edited=true)})
+            repo.saveCorrectionDraft(draft)
+            db.close();db=LocalDatabase.open(context,name);repo=GameRepository(db)
+            assertEquals(draft,repo.loadCorrectionDraft(original.id))
+            val oldRow=db.dao().game(original.id)!!
+            try {GameRepository(db){error("injected")}.saveCorrection(draft,"correction");fail("Failed correction committed")}catch(_:IllegalStateException){}
+            assertEquals(oldRow,db.dao().game(original.id));assertEquals(draft,repo.loadCorrectionDraft(original.id));assertNull(db.dao().operation("correction"))
+            val corrected=repo.saveCorrection(draft,"correction")
+            assertEquals(1,corrected.historyRevisions.size);assertNotNull(corrected.bases[1]);assertNull(corrected.bases[0])
+            assertNull(repo.loadCorrectionDraft(original.id));assertEquals(corrected,repo.saveCorrection(draft,"correction"))
+            assertEquals(2,db.dao().operationCount(original.id))
+            val stale=draft.copy(reason="旧草稿保留")
+            repo.saveCorrectionDraft(stale)
+            val before=db.dao().game(original.id)!!
+            try {repo.saveCorrection(stale,"stale-correction");fail("Stale draft overwrote scoring")}catch(_:IllegalStateException){}
+            assertEquals(before,db.dao().game(original.id));assertEquals(stale,repo.loadCorrectionDraft(original.id));assertNull(db.dao().operation("stale-correction"))
+            assertEquals(3,before.payloadVersion)
+        }finally{db.close();context.deleteDatabase(name)}
+    }
     @Test fun futureDatabaseVersionIsRejectedWithoutDeletingData() = runBlocking {
         val name = "future-test-${UUID.randomUUID()}.db"
         val db = LocalDatabase.open(context, name)

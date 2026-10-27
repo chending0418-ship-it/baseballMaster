@@ -16,6 +16,8 @@ data class GameEntity(@PrimaryKey val id: String, val payload: String, val revis
 @Entity(tableName = "operations", indices = [Index("gameID")], foreignKeys = [ForeignKey(
     entity = GameEntity::class, parentColumns = ["id"], childColumns = ["gameID"], onDelete = ForeignKey.RESTRICT)])
 data class OperationEntity(@PrimaryKey val id: String, val gameID: String, val action: String, val baseRevision: Long, val createdAt: Long)
+@Entity(tableName = "correction_drafts", foreignKeys = [ForeignKey(entity = GameEntity::class, parentColumns = ["id"], childColumns = ["gameID"], onDelete = ForeignKey.RESTRICT)])
+data class CorrectionDraftEntity(@PrimaryKey val gameID: String, val payload: String, val updatedAt: Long)
 
 @Dao interface LocalDao {
     @Query("SELECT * FROM teams WHERE isOpponent = 0 ORDER BY name") fun teams(): Flow<List<TeamEntity>>
@@ -27,13 +29,21 @@ data class OperationEntity(@PrimaryKey val id: String, val gameID: String, val a
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertGame(game: GameEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertOperation(operation: OperationEntity)
     @Update suspend fun updateGame(game: GameEntity)
+    @Query("SELECT * FROM correction_drafts WHERE gameID = :gameID") suspend fun correctionDraft(gameID: String): CorrectionDraftEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun saveCorrectionDraft(draft: CorrectionDraftEntity)
+    @Query("DELETE FROM correction_drafts WHERE gameID = :gameID") suspend fun deleteCorrectionDraft(gameID: String)
 }
-@Database(entities = [TeamEntity::class, GameEntity::class, OperationEntity::class], version = 2, exportSchema = true)
+@Database(entities = [TeamEntity::class, GameEntity::class, OperationEntity::class, CorrectionDraftEntity::class], version = 3, exportSchema = true)
 abstract class LocalDatabase : RoomDatabase() {
     abstract fun dao(): LocalDao
     companion object {
         fun open(context: Context, name: String = "baseballmaster.db") =
-            Room.databaseBuilder(context, LocalDatabase::class.java, name).addMigrations(MIGRATION_1_2).build()
+            Room.databaseBuilder(context, LocalDatabase::class.java, name).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS correction_drafts (gameID TEXT NOT NULL, payload TEXT NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(gameID), FOREIGN KEY(gameID) REFERENCES games(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+            }
+        }
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE games ADD COLUMN payloadVersion INTEGER NOT NULL DEFAULT 1")
@@ -63,7 +73,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
 
         db.withTransaction {
             db.dao().insertTeam(TeamEntity(opponent.id, opponent.name, GameJson.encodeToString(opponent), true))
-            db.dao().insertGame(GameEntity(game.id, GameJson.encodeToString(game), game.revision, System.currentTimeMillis(), 2))
+            db.dao().insertGame(GameEntity(game.id, GameJson.encodeToString(game), game.revision, System.currentTimeMillis(), 3))
             beforeCommit()
         }
         return game
@@ -86,7 +96,19 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             MatchEngine.correct(it, index, replacement, reason, acceptContext)
         }
 
-    private suspend fun mutate(gameID: String, baseRevision: Long, operationID: String, signature: String,
+    suspend fun loadCorrectionDraft(gameID: String): CorrectionDraft? = db.dao().correctionDraft(gameID)?.let {
+        GameJson.decodeFromString<CorrectionDraft>(it.payload).also { draft -> check(draft.gameID == gameID) }
+    }
+    suspend fun saveCorrectionDraft(draft: CorrectionDraft) = db.withTransaction {
+        val current=db.dao().game(draft.gameID)?:error("比赛不存在，草稿未覆盖原资料")
+        require(draft.baseRevision<=current.revision)
+        db.dao().saveCorrectionDraft(CorrectionDraftEntity(draft.gameID,GameJson.encodeToString(draft),System.currentTimeMillis()))
+    }
+    suspend fun discardCorrectionDraft(gameID: String) = db.dao().deleteCorrectionDraft(gameID)
+    suspend fun saveCorrection(draft: CorrectionDraft, operationID: String = UUID.randomUUID().toString()): Game =
+        mutate(draft.gameID,draft.baseRevision,operationID,GameJson.encodeToString(draft),clearDraft=true) { History.commit(it,draft) }
+
+    private suspend fun mutate(gameID: String, baseRevision: Long, operationID: String, signature: String, clearDraft: Boolean = false,
                                reduce: (Game) -> Game): Game = db.withTransaction {
         require(operationID.isNotBlank())
         val current = db.dao().game(gameID) ?: error("比赛不存在，原资料未修改")
@@ -99,7 +121,8 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         val next = reduce(MatchEngine.upgradeLegacy(decode(current)))
         check(next.revision == current.revision + 1) { "记录版本无效，原资料未修改" }
         db.dao().insertOperation(OperationEntity(operationID, gameID, signature, baseRevision, System.currentTimeMillis()))
-        db.dao().updateGame(GameEntity(gameID, GameJson.encodeToString(next), next.revision, System.currentTimeMillis(), 2))
+        db.dao().updateGame(GameEntity(gameID, GameJson.encodeToString(next), next.revision, System.currentTimeMillis(), 3))
+        if(clearDraft)db.dao().deleteCorrectionDraft(gameID)
         beforeCommit()
         next
     }
@@ -107,7 +130,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
     private data class CorrectionRequest(val index: Int, val replacement: Command?, val reason: String, val acceptContext: Boolean)
     companion object {
         fun decode(entity: GameEntity): Game {
-            check(entity.payloadVersion in 1..2) { "比赛格式较新，原资料已保留，请使用兼容版本" }
+            check(entity.payloadVersion in 1..3) { "比赛格式较新，原资料已保留，请使用兼容版本" }
             return GameJson.decodeFromString<Game>(entity.payload).also { check(it.revision == entity.revision); it.validate() }
         }
         fun parseRoster(text: String): List<Player> {

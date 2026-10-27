@@ -266,6 +266,10 @@ class ScoringFlowTest {
         text("高飞").click()
         click("save-play")
         waitSaved("save-play")
+        assertEquals("line", stored().first.entries.last().observation!!.type) // Preview cannot mutate the official record.
+        assertEquals(stats, GameJson.encodeToString(stored().first.batting))
+        click("save-history-correction")
+        assertTrue(awaitGame { it.historyRevisions.size == 1 }.historyRevisions.size == 1)
         game = stored().first
         assertEquals(stats, GameJson.encodeToString(game.batting))
         assertEquals("fly", game.entries.last().observation!!.type)
