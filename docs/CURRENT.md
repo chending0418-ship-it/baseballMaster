@@ -6,7 +6,7 @@
 | --- | --- |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.1（Build 1） |
 | iOS 开发基线 | `codex/dev-3.1.1`；固定 BM／App 图标、后台配置背景与文案的开屏已接入，见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)、[配置说明](releases/3.1.1/CONFIGURABLE-LAUNCH.md) |
-| Android 迁移 | `codex/android-migration`，从 `40df3d2` 建立隔离 worktree；按 iOS 3.1.1 全功能迁移；AN01／AN02 已完成，环境、原生工程及开发预览 APK 0.1.0-preview.2（2）已产出，Android 12 无 GMS／360 dp 与 Android 17／约 412 dp 验证通过，见 [阶段交接](releases/android/AN01-AN02.md)；AN03–AN08 仍见 [单份计划](plans/ANDROID-APK.md)，共享互通尚待 AN05，官网未发布下载 |
+| Android 迁移 | `codex/android-migration`，从 `40df3d2` 建立隔离 worktree；按 iOS 3.1.1 全功能迁移；AN01／AN02 已完成，环境、原生工程及开发预览 APK 0.1.0-preview.2（2）已产出，Android 12 无 GMS／360 dp 与 Android 17／约 412 dp 验证通过，见 [阶段交接](releases/android/AN01-AN02.md)；AN03 进行中，30 组 iOS 规则样本对照及原生记分／球场增量已实现，新增 0.1.0-preview.3，API 31／37 点选、保存、纠错与恢复通过，见 [AN03 记录](releases/android/AN03.md)；其余核心与界面继续补齐，AN04–AN08 接续，详见 [单份计划](plans/ANDROID-APK.md)，共享互通尚待 AN05，官网未发布下载 |
 | 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
 | 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
 | 发布材料 | [3.1.0 发布交接](releases/3.1.0/REVIEW-HANDOFF.md)、`output/releases/3.1.0/` |

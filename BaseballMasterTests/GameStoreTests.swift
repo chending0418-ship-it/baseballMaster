@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 import CoreData
 import PDFKit
 import SQLite3
@@ -7475,6 +7476,239 @@ extension GameStoreTests {
             attachment.name = "android-parity-\(mode.rawValue).json"
             attachment.lifetime = .keepAlways
             add(attachment)
+        }
+    }
+}
+
+// AN03 uses the shipping iOS engine as the oracle for complete scoring states.
+@MainActor
+private final class AndroidScoringScenario {
+    let store = GameStore(persistenceURL: nil)
+    let name: String
+    let mode: GameMode
+    var steps: [[String: Any]] = []
+    let initialPayload: StoredGame
+    var initialGame: [String: Any] = [:]
+    var initial: [String: Any] = [:]
+
+    init(_ name: String, mode: GameMode = .standard, innings: Int = 6, cap: Int? = nil) throws {
+        self.name = name; self.mode = mode
+        let count = mode == .slowPitch ? 10 : 9
+        func team(_ label: String, prefix: String) -> Team {
+            Team(id: UUID(uuidString: prefix + "0000-0000-0000-000000000000")!, name: label,
+                 shortName: label, city: "合成测试", players: (1...12).map { n in
+                Player(id: UUID(uuidString: prefix + String(format: "0000-0000-0000-%012d", n))!,
+                       chineseName: "球员\(n)", englishName: "", numbers: [n],
+                       primaryPosition: FieldPosition.allCases[min(n - 1, count - 1)])
+            })
+        }
+        let away = team("客队", prefix: "A2000000-"), home = team("主队", prefix: "B2000000-")
+        store.teams = [away]; store.currentTeam = away; store.opponentTeams = [home]
+        var rules = GameRules(scheduledInnings: innings, fieldersCount: count, timeLimitMinutes: mode == .slowPitch ? 90 : nil)
+        rules.mode = mode; rules.coachPitchLimit = 6; rules.halfInningRunLimit = cap
+        if mode == .slowPitch {
+            rules.competitionFormat = .timed; rules.initialBalls = 1; rules.initialStrikes = 1
+            rules.twoStrikeFoulPolicy = .oneExtraFoul; rules.rulesVersion = 2
+        }
+        func lineup(_ t: Team) -> [LineupAssignment] {
+            t.players.prefix(count).enumerated().map { LineupAssignment(playerID: $0.element.id,
+                battingOrder: $0.offset + 1, position: FieldPosition.allCases[$0.offset]) }
+        }
+        _ = try XCTUnwrap(store.startNewGame(opponent: home, isHome: false, rules: rules,
+                                              lineup: lineup(away), opponentLineup: lineup(home)))
+        initialPayload = try XCTUnwrap(store.activeStoredGame)
+        initial = try canonical()
+        func nativeTeam(_ t: Team) -> [String: Any] {
+            ["id": t.id.uuidString.lowercased(), "name": t.name,
+             "players": t.players.map { ["id": $0.id.uuidString.lowercased(), "name": $0.name,
+                                         "number": $0.numberText, "position": $0.primaryPosition.rawValue] }]
+        }
+        let g = store.game
+        initialGame = ["id": name, "home": nativeTeam(g.homeTeam), "away": nativeTeam(g.awayTeam),
+                       "rules": ["mode": mode.rawValue, "innings": innings, "halfRunLimit": cap as Any? ?? NSNull()],
+                       "homeOrder": g.homeBattingOrderIDs.map { $0.uuidString.lowercased() },
+                       "awayOrder": g.awayBattingOrderIDs.map { $0.uuidString.lowercased() },
+                       "homeRunsByInning": g.homeRunsByInning, "awayRunsByInning": g.awayRunsByInning]
+    }
+
+    func canonical() throws -> [String: Any] {
+        let g = store.game
+        func lines<T: Encodable>(_ values: [UUID: T]) throws -> [String: Any] {
+            try Dictionary(uniqueKeysWithValues: values.compactMap { key, value in
+                let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as! [String: Int]
+                return object.values.contains(where: { $0 != 0 }) ? (key.uuidString.lowercased(), object as Any) : nil
+            })
+        }
+        let active = Set(g.baseRunners.values.map(\.id))
+        return ["inning": g.inning, "isTop": g.isTop, "balls": g.balls, "strikes": g.strikes, "outs": g.outs,
+                "homeBatterIndex": g.homeBatterIndex, "awayBatterIndex": g.awayBatterIndex,
+                "appearancePitches": g.plateAppearancePitchCount ?? 0, "extraFoulUsed": g.extraFoulUsed ?? false,
+                "bases": (1...3).map { g.baseRunners[Base(rawValue: $0)!]?.id.uuidString.lowercased() as Any? ?? NSNull() },
+                "homeRuns": g.homeScore, "awayRuns": g.awayScore,
+                "homeRunsByInning": g.homeRunsByInning, "awayRunsByInning": g.awayRunsByInning,
+                "homeHits": g.homeHits, "awayHits": g.awayHits, "homeErrors": g.homeErrors, "awayErrors": g.awayErrors,
+                "batting": try lines(g.batting), "pitching": try lines(g.pitching), "fielding": try lines(g.fielding),
+                "homeOrder": g.homeBattingOrderIDs.map { $0.uuidString.lowercased() },
+                "awayOrder": g.awayBattingOrderIDs.map { $0.uuidString.lowercased() },
+                "pitcherID": g.currentPitcher.id.uuidString.lowercased(),
+                "runnerPitcherIDs": Dictionary(uniqueKeysWithValues: (g.runnerPitcherIDs ?? [:]).filter { active.contains($0.key) }.map { ($0.key.uuidString.lowercased(), $0.value.uuidString.lowercased()) }),
+                "unearnedRunnerIDs": (g.unearnedRunnerIDs ?? []).filter { active.contains($0) }.map { $0.uuidString.lowercased() }.sorted(),
+                "automaticRunnerIDs": (g.automaticRunnerIDs ?? []).filter { active.contains($0) }.map { $0.uuidString.lowercased() }.sorted(),
+                "walkResponsiblePitcherID": g.walkResponsiblePitcherID?.uuidString.lowercased() as Any? ?? NSNull(),
+                "strikeoutResponsibleBatterID": g.strikeoutResponsibleBatterID?.uuidString.lowercased() as Any? ?? NSNull(),
+                "isFinal": g.isFinal, "pendingDecision": g.pendingDecision?.rawValue as Any? ?? NSNull(),
+                "halfEndedAwaitingDecision": g.halfEndedAwaitingDecision ?? false]
+    }
+
+    func step(_ command: [String: Any], _ action: () -> Void) throws {
+        action(); XCTAssertNil(store.actionErrorMessage, "\(name): \(command)")
+        steps.append(["command": command, "expected": try canonical()])
+    }
+    func pitch(_ p: PitchAction) throws { try step(["kind": "pitch", "pitch": String(describing: p)]) { store.recordPitch(p) } }
+    func moves(_ ds: [RunnerDecision]) -> [[String: Any]] {
+        ds.map { d in
+            let origin: Int = switch d.origin { case .batter: 0; case .base(let b): b.rawValue }
+            let dest: Int = switch d.destination { case .hold: 0; case .out: -1; case .score: 4; case .base(let b): b.rawValue }
+            return ["playerID": d.player.id.uuidString.lowercased(), "origin": origin, "destination": dest]
+        }
+    }
+    func play(_ p: PlayOutcome, observation: BattedBallObservation? = nil, decisions: [RunnerDecision]? = nil, timing: Bool? = nil) throws {
+        let ds = decisions ?? store.suggestedRunnerDecisions(for: p)
+        var command: [String: Any] = ["kind": "play", "outcome": String(describing: p), "decisions": moves(ds)]
+        if let timing { command["timingRunCounts"] = timing }
+        if let observation {
+            command["observation"] = ["type": observation.type.rawValue, "precision": "region", "region": "center",
+                                       "fielding": ["status": observation.fielding?.status?.rawValue ?? "pending",
+                                                    "route": observation.fielding?.route.map(\.rawValue) ?? [],
+                                                    "errorPosition": observation.fielding?.errorPosition?.rawValue as Any? ?? NSNull()]]
+        }
+        try step(command) { XCTAssertTrue(store.applyPlay(p, decisions: ds, timingRunCounts: timing, observation: observation)) }
+    }
+    func runner(_ k: RunnerEventKind) throws {
+        let ds = store.suggestedRunnerEventDecisions(for: k)
+        try step(["kind": "runner", "runnerKind": String(describing: k), "decisions": moves(ds)]) {
+            XCTAssertTrue(store.recordRunnerEvent(k, decisions: ds))
+        }
+    }
+    func simple(_ kind: String, _ action: () -> Void) throws { try step(["kind": kind], action) }
+    func export(to test: XCTestCase) throws {
+        let fixture: [String: Any] = ["schema": 2, "source": "iOS GameStore @ 40df3d2 business logic", "scenario": name,
+            "mode": mode.rawValue, "initialGame": initialGame, "initial": initial, "steps": steps,
+            "iosInitialPayload": try JSONSerialization.jsonObject(with: JSONEncoder().encode(initialPayload))]
+        let data = try JSONSerialization.data(withJSONObject: fixture, options: [.prettyPrinted, .sortedKeys])
+        let a = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        a.name = "android-scoring-\(name).json"; a.lifetime = .keepAlways; test.add(a)
+    }
+}
+
+extension GameStoreTests {
+    func testAndroidScoringParityExport() throws {
+        var scenarios: [AndroidScoringScenario] = []
+        for mode in [GameMode.standard, .coachPitch, .slowPitch] {
+            let s = try AndroidScoringScenario("hits-\(mode.rawValue)", mode: mode); scenarios.append(s)
+            try s.pitch(.ball); try s.play(.single); try s.play(.double); try s.play(.triple); try s.play(.homeRun)
+            try s.play(.error); try s.play(.fieldersChoice); try s.play(.doublePlay)
+            try s.simple("undo") { s.store.undo() }; try s.simple("redo") { s.store.redo() }
+            try s.play(.flyOut); try s.play(.lineOut); try s.play(.foulFlyOut)
+            try s.simple("endHalf") { s.store.endCurrentHalf() }
+        }
+        for p in [PlayOutcome.sacrificeBunt, .sacrificeFly, .infieldFly, .triplePlay, .pending, .pendingOut, .other] {
+            let s = try AndroidScoringScenario("special-\(String(describing: p))"); scenarios.append(s)
+            if p == .sacrificeFly { try s.play(.triple) }
+            else if p != .other { try s.play(.single); if p == .infieldFly || p == .triplePlay { try s.play(.single) } }
+            try s.play(p)
+        }
+        let runners = try AndroidScoringScenario("runners"); scenarios.append(runners)
+        try runners.play(.single); try runners.runner(.stolenBase); try runners.runner(.wildPitch); try runners.runner(.passedBall)
+        try runners.play(.single); try runners.runner(.caughtStealing)
+        try runners.play(.single); try runners.runner(.pickoff)
+        try runners.play(.single); try runners.runner(.defensiveErrorAdvance); try runners.runner(.uncertainLooseBall)
+        let awards = try AndroidScoringScenario("awards-and-ownership"); scenarios.append(awards)
+        for _ in 0..<3 { try awards.pitch(.ball) }
+        let pitcher = awards.store.game.homeTeam.players[10]
+        try awards.step(["kind": "pitcher", "playerID": pitcher.id.uuidString.lowercased()]) { awards.store.changePitcher(to: pitcher) }
+        try awards.pitch(.ball); try awards.simple("hitByPitch") { awards.store.recordHitByPitch() }
+        try awards.simple("intentionalWalk") { awards.store.recordIntentionalWalk() }; try awards.play(.homeRun)
+        try awards.pitch(.calledStrike); try awards.pitch(.swingingStrike)
+        let replacement = awards.store.game.awayTeam.players[10]
+        try awards.step(["kind": "batter", "playerID": replacement.id.uuidString.lowercased()]) { awards.store.replaceCurrentBatter(with: replacement) }
+        try awards.pitch(.calledStrike)
+        let dropped = try AndroidScoringScenario("dropped-third-strike"); scenarios.append(dropped)
+        try dropped.pitch(.calledStrike); try dropped.pitch(.swingingStrike)
+        let ds = dropped.store.droppedThirdStrikeDecisions()
+        try dropped.step(["kind": "droppedThirdStrike", "decisions": dropped.moves(ds)]) { XCTAssertTrue(dropped.store.recordDroppedThirdStrike(decisions: ds)) }
+        try dropped.play(.homeRun)
+        for mode in [GameMode.standard, .coachPitch] {
+            let s = try AndroidScoringScenario("foul-bunt-\(mode.rawValue)", mode: mode); scenarios.append(s)
+            try s.pitch(.foul); try s.pitch(.foul); try s.simple("foulBunt") { s.store.recordFoulBuntStrikeout() }
+        }
+        let slow = try AndroidScoringScenario("illegal-slowPitch", mode: .slowPitch); scenarios.append(slow)
+        try slow.step(["kind": "illegal", "pitch": "ball", "wasThrown": false]) { XCTAssertTrue(slow.store.recordIllegalPitch(.ball, wasThrown: false)) }
+        try slow.step(["kind": "illegal", "wasThrown": true]) { XCTAssertTrue(slow.store.recordIllegalPitch(nil, wasThrown: true)) }
+        try slow.step(["kind": "illegal", "wasThrown": false]) { XCTAssertTrue(slow.store.recordIllegalPitch(nil, wasThrown: false)) }
+        try slow.pitch(.foul); try slow.pitch(.foul); try slow.pitch(.foul)
+        let cap = try AndroidScoringScenario("run-cap", cap: 2); scenarios.append(cap)
+        try cap.play(.single); try cap.play(.single); try cap.play(.homeRun)
+        try cap.step(["kind": "decision", "flag": false]) { cap.store.resolveGameDecision(finish: false) }
+        try cap.play(.homeRun); try cap.simple("endHalf") { cap.store.endCurrentHalf() }
+        let final = try AndroidScoringScenario("regulation-reopen", innings: 1); scenarios.append(final)
+        for _ in 0..<6 { try final.play(.groundOut) }
+        try final.step(["kind": "decision", "flag": true]) { final.store.resolveGameDecision(finish: true) }
+        try final.simple("reopen") { XCTAssertTrue(final.store.reopenGame()) }
+        let walkoff = try AndroidScoringScenario("walkoff", innings: 1); scenarios.append(walkoff)
+        for _ in 0..<3 { try walkoff.play(.groundOut) }
+        try walkoff.play(.homeRun); try walkoff.step(["kind": "decision", "flag": true]) { walkoff.store.resolveGameDecision(finish: true) }
+        for p in [PlayOutcome.groundOut, .flyOut, .error, .doublePlay] {
+            let s = try AndroidScoringScenario("pro-\(String(describing: p))"); scenarios.append(s)
+            if p == .doublePlay { try s.play(.single) }
+            var o = BattedBallObservation(type: p == .flyOut ? .fly : .ground); o.selectRegion(.center)
+            o.fielding = BattedBallFielding(status: .recorded, route: p == .doublePlay ? [.shortstop, .secondBase, .firstBase] : [.shortstop, .firstBase], errorPosition: p == .error ? .firstBase : nil)
+            try s.play(p, observation: o)
+        }
+        for counts in [false, true] {
+            let s = try AndroidScoringScenario("third-out-timing-\(counts)"); scenarios.append(s)
+            try s.play(.single); try s.play(.triple); try s.play(.groundOut); try s.play(.groundOut)
+            let third = try XCTUnwrap(s.store.game.baseRunners[.third]), batter = s.store.currentBatter
+            let ds = [RunnerDecision(player: third, origin: .base(.third), destination: .score), RunnerDecision(player: batter, origin: .batter, destination: .base(.first))]
+            // A separate tag on the existing runner can be the third out while another runner scores.
+            try s.play(.single, decisions: ds)
+            try s.play(.single)
+            let first = try XCTUnwrap(s.store.game.baseRunners[.first]), second = try XCTUnwrap(s.store.game.baseRunners[.second])
+            let ending = [RunnerDecision(player: first, origin: .base(.first), destination: .out), RunnerDecision(player: second, origin: .base(.second), destination: .score)]
+            try s.step(["kind": "runner", "runnerKind": "tagOut", "decisions": s.moves(ending), "timingRunCounts": counts]) { XCTAssertTrue(s.store.recordRunnerEvent(.tagOut, decisions: ending, timingRunCounts: counts)) }
+        }
+        let pinch = try AndroidScoringScenario("pinch-runner"); scenarios.append(pinch)
+        try pinch.play(.error)
+        let sub = pinch.store.game.awayTeam.players[11]
+        try pinch.step(["kind": "pinchRunner", "position": 1, "playerID": sub.id.uuidString.lowercased()]) { pinch.store.replaceRunner(on: .first, with: sub) }
+        try pinch.play(.homeRun)
+        for kind in [ViolationKind.balk, .batterOutOfBox, .catcherInterference, .foreignSubstance] {
+            let s = try AndroidScoringScenario("violation-\(String(describing: kind))"); scenarios.append(s)
+            try s.step(["kind": "violation", "runnerKind": String(describing: kind)]) { XCTAssertTrue(s.store.recordViolation(kind)) }
+            try s.play(.triple)
+            let ds = s.store.suggestedViolationDecisions(for: kind)
+            try s.step(["kind": "violation", "runnerKind": String(describing: kind), "decisions": s.moves(ds)]) { XCTAssertTrue(s.store.recordViolation(kind, decisions: ds)) }
+        }
+        for s in scenarios { try s.export(to: self) }
+    }
+}
+
+// Visual reference for the Android landing/defensive field. Uses the shipped SwiftUI view.
+extension GameStoreTests {
+    func testAndroidSituationFieldReferenceExport() throws {
+        let scenario = try AndroidScoringScenario("field-reference")
+        var observation = BattedBallObservation(type: .line)
+        observation.selectPoint(CGPoint(x: 1.0 / 3.0, y: 0.25))
+        let fielding = BattedBallFielding(status: .recorded, route: [.centerField, .secondBase, .firstBase])
+        for mode in [SituationFieldMode.landing, .defense] {
+            let view = SituationFieldView(game: scenario.store.game, observation: observation,
+                                          fielding: .constant(fielding), mode: mode)
+                .frame(width: 320, height: 260).environment(\.colorScheme, .light)
+            let renderer = ImageRenderer(content: view); renderer.scale = 3
+            let image = try XCTUnwrap(renderer.uiImage)
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "ios-situation-field-\(mode == .landing ? "landing" : "route")"
+            attachment.lifetime = .keepAlways; add(attachment)
         }
     }
 }

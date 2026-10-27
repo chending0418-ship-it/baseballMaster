@@ -75,15 +75,22 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     var recoveryRequired by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
     var openedGameID by mutableStateOf<String?>(saved["openedGameID"]); private set
-    val openedGame get() = games.firstOrNull { it.id == openedGameID }
+    var practiceGame by mutableStateOf<Game?>(null); private set
+    val openedGame get() = practiceGame?.takeIf{it.id==openedGameID} ?: games.firstOrNull { it.id == openedGameID }
+    fun practice(method: String = "traditional") {
+        fun team(id:String,name:String)=Team(id,name,(1..12).map{Player("$id-$it","球员$it",it.toString())})
+        val id="practice-${java.util.UUID.randomUUID()}"
+        practiceGame=Game(id,team("practice-home","主队"),team("practice-away","客队"),Rules(recordingMethod=method),practice=true,homeOrder=(1..9).map{"practice-home-$it"},awayOrder=(1..9).map{"practice-away-$it"})
+        open(id)
+    }
     init {
         viewModelScope.launch {
             combine(repository.teams, repository.games) { teams, games ->
-                teams.map { GameJson.decodeFromString<Team>(it.payload) } to games.map { check(it.payloadVersion == 1); GameJson.decodeFromString<Game>(it.payload) }
+                teams.map { GameJson.decodeFromString<Team>(it.payload) } to games.map { GameRepository.decode(it) }
             }.catch {
                 recoveryRequired = true; loading = false
                 error = "本机资料暂时无法读取，原始数据已保留。请保留此设备上的资料并联系支持。"
-            }.collect { (newTeams, newGames) -> teams = newTeams; games = newGames; loading = false }
+            }.collect { (newTeams, newGames) -> teams = newTeams; games = newGames.map { next -> games.firstOrNull{it.id==next.id&&it.revision>next.revision} ?: next }; loading = false }
         }
         // Credential creation is isolated from scoring and never contacts a service.
         viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { CredentialVault(application).secret() } } }
@@ -104,20 +111,30 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     fun createTeam(name: String, roster: String, done: () -> Unit) = commit {
         repository.createTeam(name, roster); done()
     }
-    fun createGame(team: Team, opponent: String, roster: String, mode: GameMode, isHome: Boolean, done: () -> Unit) = commit {
-        val game = repository.createGame(team, opponent, roster, mode, isHome)
-        open(game.id); done()
+    fun createGame(team: Team, opponent: String, roster: String, rules: Rules, isHome: Boolean, scheduledAt:Long?, done: () -> Unit) = commit {
+        val game = repository.createGame(team, opponent, roster, rules.mode, isHome, rules, scheduledAt)
+        accept(game); open(game.id); done()
+    }
+    private fun accept(game: Game) {
+        if(game.practice) practiceGame=game else games=listOf(game)+games.filter{it.id!=game.id}
     }
     fun pitch(action: PitchAction) {
         val game = openedGame ?: return
-        commit { repository.pitch(game.id, action, game.revision) }
+        commit { accept(if(game.practice) MatchEngine.apply(game,Command("pitch",pitch=action)) else repository.pitch(game.id, action, game.revision)) }
+    }
+    fun command(command: Command, baseRevision: Long? = null, done: () -> Unit = {}) { val game = openedGame ?: return; commit { if(game.practice){check(baseRevision==null||baseRevision==game.revision){"练习局面已变化，请重新核对"};accept(MatchEngine.apply(game,command))}else accept(repository.command(game.id, command, baseRevision ?: game.revision)); done() } }
+    fun undo() { val game = openedGame ?: return; commit { accept(if(game.practice)MatchEngine.undo(game)else repository.undo(game.id, game.revision)) } }
+    fun redo() { val game = openedGame ?: return; commit { accept(if(game.practice)MatchEngine.redo(game)else repository.redo(game.id, game.revision)) } }
+    fun correct(index: Int, replacement: Command?, reason: String, acceptContext: Boolean = false, baseRevision: Long? = null, done: () -> Unit = {}) {
+        val game = openedGame ?: return
+        commit { if(game.practice){check(baseRevision==null||baseRevision==game.revision){"练习局面已变化，请重新核对"};accept(MatchEngine.correct(game,index,replacement,reason,acceptContext))}else accept(repository.correct(game.id, index, replacement, reason, baseRevision ?: game.revision, acceptContext)); done() }
     }
     override fun onCleared() { database.close() }
 }
 
 private val Brand = Color(0xFF092A2A)
-private val Accent = Color(0xFF217A57)
-@Composable private fun BaseballTheme(content: @Composable () -> Unit) {
+internal val Accent = Color(0xFF217A57)
+@Composable internal fun BaseballTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
     MaterialTheme(colorScheme = if (dark) darkColorScheme(primary = Color(0xFF48B889), background = Color(0xFF111820),
         surface = Color(0xFF1B2632), onSurface = Color(0xFFE8F1F7), onBackground = Color(0xFFE8F1F7), outlineVariant = Color(0xFF31404D), outline = Color(0xFF31404D), secondaryContainer = Color(0xFF173D30))
@@ -151,7 +168,7 @@ private val Accent = Color(0xFF217A57)
             else if (model.recoveryRequired) Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("资料需要恢复", style = MaterialTheme.typography.headlineMedium)
                 Text(model.error ?: "原始数据已保留，请联系支持。")
-            } else if (game != null) GameScreen(game, model.busy, { model.open(null) }, model::pitch)
+            } else if (game != null) GameScreen(game, model.busy, { model.open(null) }, model::pitch) { ScoringPanels(game, model) }
             else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
                 Text(listOf("比赛", "球队", "统计", "我的")[tab], fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
                 when (tab) {
@@ -167,8 +184,8 @@ private val Accent = Color(0xFF217A57)
         }
     }
     if (createTeam) TeamDialog(model.busy, { createTeam = false }) { name, roster -> model.createTeam(name, roster) { createTeam = false; tab = 0 } }
-    if (newGame && model.teams.isNotEmpty()) NewGameDialog(model.teams, model.busy, { newGame = false }) { own, opponent, roster, mode, home ->
-        model.createGame(own, opponent, roster, mode, home) { newGame = false }
+    if (newGame && model.teams.isNotEmpty()) NewGameDialog(model.teams, model.busy, { newGame = false }) { own, opponent, roster, rules, home, scheduledAt ->
+        model.createGame(own, opponent, roster, rules, home, scheduledAt) { newGame = false }
     }
 }
 
@@ -182,7 +199,7 @@ private val Accent = Color(0xFF217A57)
         }
     }
 }
-@Composable private fun CardBlock(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+@Composable internal fun CardBlock(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
@@ -204,8 +221,9 @@ private val Accent = Color(0xFF217A57)
         Icon(Icons.Outlined.AddCircle, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(if (model.games.isEmpty()) "开始新比赛" else "再开始一场比赛", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
     }
     SectionTitle("正在进行", if (model.games.isEmpty()) null else "${model.games.size} 场")
-    if (model.games.isEmpty()) EmptyCard("没有进行中的比赛", "新比赛创建后会自动保存在这里，可在 App 重启后继续。", Icons.Outlined.PlayArrow)
-    model.games.forEach { game -> CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
+    TextButton({model.practice()},modifier=Modifier.testTag("start-practice")){Text("练习记分") }
+    if (model.games.none{!it.isFinal}) EmptyCard("没有进行中的比赛", "新比赛创建后会自动保存在这里，可在 App 重启后继续。", Icons.Outlined.PlayArrow)
+    model.games.filter{!it.isFinal}.forEach { game -> CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("${game.away.name}  vs  ${game.home.name}", fontSize = 17.sp, fontWeight = FontWeight.Bold)
@@ -216,7 +234,12 @@ private val Accent = Color(0xFF217A57)
         }
     } }
     SectionTitle("最近比赛", "按比赛日期排序")
-    EmptyCard("还没有已完成的比赛", "比赛结束并保存后，会按时间显示在这里。", Icons.Outlined.DateRange)
+    if(model.games.none{it.isFinal}) EmptyCard("还没有已完成的比赛", "比赛结束并保存后，会按时间显示在这里。", Icons.Outlined.DateRange)
+    model.games.filter{it.isFinal}.forEach{game->CardBlock(Modifier.testTag("game-${game.id}").clickable{model.open(game.id)}){
+        Text("${game.away.name}  vs  ${game.home.name}",fontWeight=FontWeight.Bold)
+        Text("${game.awayRuns} : ${game.homeRuns}",fontSize=24.sp,fontWeight=FontWeight.Black)
+        Text("已结束 · 查看完整记录",fontSize=13.sp,color=MaterialTheme.colorScheme.primary)
+    }}
 }
 @Composable private fun TeamMark(name: String, size: Int) {
     Box(Modifier.size(size.dp).background(Color(0xFF102A43), RoundedCornerShape(50)), contentAlignment = Alignment.Center) {
@@ -268,12 +291,12 @@ private val Accent = Color(0xFF217A57)
         Text("棒球比赛记录大师", fontWeight = FontWeight.Bold)
         Text("Android ${BuildConfig.VERSION_NAME}")
         Text("开发预览版", color = MaterialTheme.colorScheme.primary)
-        Text("此版本用于体验本机建队与投球记录。资料保存在当前设备。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("此版本用于体验本机记分，资料保存在当前设备。", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 private val SampleRoster = (1..10).joinToString("\n") { "示例球员$it,${if (it == 1) "00" else it.toString()}" }
-@Composable private fun FormPage(title: String, busy: Boolean, enabled: Boolean, saveTag: String, saveLabel: String, dismiss: () -> Unit, save: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+@Composable internal fun FormPage(title: String, busy: Boolean, enabled: Boolean, saveTag: String, saveLabel: String, dismiss: () -> Unit, save: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val dark = isSystemInDarkTheme()
     Dialog(onDismissRequest = { if (!busy) dismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val dialogView = LocalView.current
@@ -289,7 +312,7 @@ private val SampleRoster = (1..10).joinToString("\n") { "示例球员$it,${if (i
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = dismiss, enabled = !busy) { Text("取消", fontSize = 16.sp) }
                 Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-                TextButton(onClick = save, enabled = enabled && !busy, modifier = Modifier.testTag(saveTag)) { Text(if (busy) "保存中…" else saveLabel, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                if(saveLabel.isNotBlank()) TextButton(onClick = save, enabled = enabled && !busy, modifier = Modifier.testTag(saveTag)) { Text(if (busy) "保存中…" else saveLabel, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) } else Spacer(Modifier.width(60.dp))
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp), content = content)
         }
@@ -311,15 +334,20 @@ private val SampleRoster = (1..10).joinToString("\n") { "示例球员$it,${if (i
         }
     }
 }
-@Composable private fun NewGameDialog(teams: List<Team>, busy: Boolean, dismiss: () -> Unit, save: (Team, String, String, GameMode, Boolean) -> Unit) {
+@Composable private fun NewGameDialog(teams: List<Team>, busy: Boolean, dismiss: () -> Unit, save: (Team, String, String, Rules, Boolean, Long?) -> Unit) {
     var teamIndex by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
     var opponent by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var roster by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var modeName by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(GameMode.standard.name) }
     val mode = GameMode.valueOf(modeName)
     var ownHome by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-    FormPage("新建比赛", busy, opponent.isNotBlank() && roster.isNotBlank(), "start-game", "开始", dismiss,
-        { save(teams[teamIndex.coerceIn(teams.indices)], opponent, roster, mode, ownHome) }) {
+    var rules by remember(mode) { mutableStateOf<Rules?>(Rules(mode)) }
+    var scheduled by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var dateText by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(formatMatchDate(System.currentTimeMillis(),"Asia/Shanghai")) }
+    val scheduledDate=if(scheduled)runCatching{parseMatchDate(dateText,"Asia/Shanghai")}.getOrNull()else null
+
+    FormPage("新建比赛", busy, opponent.isNotBlank() && roster.isNotBlank() && rules!=null && (!scheduled||scheduledDate!=null), "start-game", if(scheduled)"安排"else"开始", dismiss,
+        { save(teams[teamIndex.coerceIn(teams.indices)], opponent, roster, rules!!, ownHome, scheduledDate) }) {
         CardBlock {
             Text("我的球队", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             teams.forEachIndexed { index, team -> Row(Modifier.fillMaxWidth().clickable { teamIndex = index }, verticalAlignment = Alignment.CenterVertically) {
@@ -335,6 +363,12 @@ private val SampleRoster = (1..10).joinToString("\n") { "示例球员$it,${if (i
             Row(verticalAlignment = Alignment.CenterVertically) { Text("我方主场", Modifier.weight(1f), fontSize = 15.sp); Switch(ownHome, { ownHome = it }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Accent, uncheckedThumbColor = Color(0xFFAAAAAA), uncheckedTrackColor = Color(0xFFE4E4E4), uncheckedBorderColor = Color.Transparent)) }
         }
         CardBlock {
+            Text("赛程与规则",fontSize=16.sp,fontWeight=FontWeight.Bold)
+            Row { Checkbox(scheduled,{scheduled=it});Text("安排预告比赛",Modifier.padding(top=13.dp)) }
+            if(scheduled)OutlinedTextField(dateText,{dateText=it},label={Text("预告时间 yyyy-MM-dd HH:mm")},singleLine=true)
+            RulesForm(Rules(mode)){rules=it}
+        }
+        CardBlock {
             Text("对方球员名单", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Text("每行：姓名,背号。普通／教练至少 9 人，慢垒至少 10 人。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(roster, { roster = it }, minLines = 5, maxLines = 10, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().testTag("opponent-roster"))
@@ -343,7 +377,7 @@ private val SampleRoster = (1..10).joinToString("\n") { "示例球员$it,${if (i
     }
 }
 
-@Composable private fun GameScreen(game: Game, busy: Boolean, back: () -> Unit, pitch: (PitchAction) -> Unit) {
+@Composable private fun GameScreen(game: Game, busy: Boolean, back: () -> Unit, pitch: (PitchAction) -> Unit, controls: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Box(Modifier.fillMaxWidth().height(44.dp)) {
             IconButton(onClick = back, modifier = Modifier.align(Alignment.CenterStart).testTag("back-home")) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回比赛", tint = MaterialTheme.colorScheme.primary) }
@@ -389,11 +423,12 @@ private val SampleRoster = (1..10).joinToString("\n") { "示例球员$it,${if (i
             PitchAction.entries.forEach { action ->
                 val color = when (action) { PitchAction.ball -> Accent; PitchAction.calledStrike, PitchAction.swingingStrike -> Color(0xFF9F4C0D); else -> Color(0xFF102A43) }
                 val title = when (action) { PitchAction.calledStrike -> "好球 · 看"; PitchAction.swingingStrike -> "好球 · 挥空"; else -> action.title }
-                Button(onClick = { pitch(action) }, enabled = !busy, contentPadding = PaddingValues(horizontal = 2.dp), shape = RoundedCornerShape(12.dp),
+                Button(onClick = { pitch(action) }, enabled = !busy && !game.isFinal && !game.isScheduled && game.pendingDecision == null, contentPadding = PaddingValues(horizontal = 2.dp), shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = color), modifier = Modifier.weight(1f).height(48.dp).testTag("pitch-${action.name}")) { Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
         Text("已保存 ${game.totalPitches} 球", modifier = Modifier.fillMaxWidth().testTag("save-status").padding(vertical = 8.dp), textAlign = TextAlign.Center, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+        controls()
     }
 }
 @Composable private fun MiniCount(label: String, value: Int, maximum: Int, color: Color, tag: String) {
@@ -405,7 +440,7 @@ private val SampleRoster = (1..10).joinToString("\n") { "示例球员$it,${if (i
         }
     }
 }
-@Composable private fun Field(game: Game, modifier: Modifier) {
+@Composable internal fun Field(game: Game, modifier: Modifier) {
     val field = if (isSystemInDarkTheme()) Color(0xFF245F49) else Color(0xFF2E765A)
     val dirt = if (isSystemInDarkTheme()) Color(0xFFA78356) else Color(0xFFD7B785)
     BoxWithConstraints(modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(field.copy(alpha = .86f))) {
@@ -436,7 +471,9 @@ private val SampleRoster = (1..10).joinToString("\n") { "示例球员$it,${if (i
             Offset(center.x+max(66f,d*1.1f),center.y-d*.72f),Offset(max(38f,center.x-d-66),center.y+35),
             Offset(center.x-max(66f,d*1.1f),center.y-d*.72f),Offset(w*.19f,max(51f,home.y-radius*.58f)),
             Offset(w*.5f,cfY),Offset(w*.81f,max(51f,home.y-radius*.58f)),Offset(w*.5f,(cfY+center.y-d)/2))
-        game.fieldingTeam.players.take(if(game.rules.mode==GameMode.slowPitch)10 else 9).forEachIndexed { index, player ->
+        game.fieldingPositions.toSortedMap().forEach { (position, id) ->
+            val index = position - 1
+            val player = game.fieldingTeam.players.first { it.id == id }
             val at=spots[index]
             Column(Modifier.offset((at.x-32).dp,(at.y-16).dp).size(64.dp,32.dp).background(if(index==0)Color(0xFF102A43)else Color.White.copy(alpha=.96f),RoundedCornerShape(9.dp)),
                 horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {

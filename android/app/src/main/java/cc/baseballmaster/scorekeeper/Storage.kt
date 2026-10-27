@@ -53,35 +53,63 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         db.dao().insertTeam(TeamEntity(team.id, team.name, GameJson.encodeToString(team), false))
         return team
     }
-    suspend fun createGame(own: Team, opponentName: String, roster: String, mode: GameMode, ownIsHome: Boolean): Game {
+    suspend fun createGame(own: Team, opponentName: String, roster: String, mode: GameMode, ownIsHome: Boolean, rules: Rules = Rules(mode), scheduledAt: Long? = null): Game {
         require(opponentName.trim().isNotEmpty()) { "请填写对手名称" }
+        require(rules.mode == mode)
         val required = if (mode == GameMode.slowPitch) 10 else 9
         val opponent = Team(UUID.randomUUID().toString(), opponentName.trim(), parseRoster(roster), true)
         require(own.players.size >= required && opponent.players.size >= required) { "双方至少需要 $required 名球员" }
-        val game = Game(UUID.randomUUID().toString(), if (ownIsHome) own else opponent, if (ownIsHome) opponent else own, Rules(mode))
+        val game = MatchFactory.create(UUID.randomUUID().toString(), if(ownIsHome)own else opponent, if(ownIsHome)opponent else own,rules,own.id,scheduledAt)
+
         db.withTransaction {
             db.dao().insertTeam(TeamEntity(opponent.id, opponent.name, GameJson.encodeToString(opponent), true))
-            db.dao().insertGame(GameEntity(game.id, GameJson.encodeToString(game), game.revision, System.currentTimeMillis()))
+            db.dao().insertGame(GameEntity(game.id, GameJson.encodeToString(game), game.revision, System.currentTimeMillis(), 2))
             beforeCommit()
         }
         return game
     }
-    suspend fun pitch(gameID: String, action: PitchAction, baseRevision: Long, operationID: String = UUID.randomUUID().toString()): Game = db.withTransaction {
+    suspend fun pitch(gameID: String, action: PitchAction, baseRevision: Long, operationID: String = UUID.randomUUID().toString()): Game =
+        mutate(gameID, baseRevision, operationID, action.name) { MatchEngine.apply(it, Command("pitch", pitch = action), operationID) }
+
+    suspend fun command(gameID: String, command: Command, baseRevision: Long, operationID: String = UUID.randomUUID().toString()): Game =
+        mutate(gameID, baseRevision, operationID, GameJson.encodeToString(command)) { MatchEngine.apply(it, command, operationID) }
+
+    suspend fun undo(gameID: String, baseRevision: Long, operationID: String = UUID.randomUUID().toString()): Game =
+        mutate(gameID, baseRevision, operationID, "undo") { MatchEngine.undo(it) }
+
+    suspend fun redo(gameID: String, baseRevision: Long, operationID: String = UUID.randomUUID().toString()): Game =
+        mutate(gameID, baseRevision, operationID, "redo") { MatchEngine.redo(it) }
+
+    suspend fun correct(gameID: String, index: Int, replacement: Command?, reason: String, baseRevision: Long,
+                        acceptContext: Boolean = false, operationID: String = UUID.randomUUID().toString()): Game =
+        mutate(gameID, baseRevision, operationID, GameJson.encodeToString(CorrectionRequest(index, replacement, reason, acceptContext))) {
+            MatchEngine.correct(it, index, replacement, reason, acceptContext)
+        }
+
+    private suspend fun mutate(gameID: String, baseRevision: Long, operationID: String, signature: String,
+                               reduce: (Game) -> Game): Game = db.withTransaction {
+        require(operationID.isNotBlank())
         val current = db.dao().game(gameID) ?: error("比赛不存在，原资料未修改")
-        check(current.payloadVersion == 1) { "比赛格式较新，原资料已保留，请使用兼容版本" }
         val prior = db.dao().operation(operationID)
         if (prior != null) {
-            require(prior.gameID == gameID && prior.action == action.name && prior.baseRevision == baseRevision) { "同一操作编号不能修改内容" }
-            return@withTransaction GameJson.decodeFromString<Game>(current.payload)
+            require(prior.gameID == gameID && prior.action == signature && prior.baseRevision == baseRevision) { "同一操作编号不能修改内容" }
+            return@withTransaction decode(current)
         }
         check(current.revision == baseRevision) { "比赛已更新，请核对后重试" }
-        val next = PitchReducer.apply(GameJson.decodeFromString(current.payload), action, operationID)
-        db.dao().insertOperation(OperationEntity(operationID, gameID, action.name, baseRevision, System.currentTimeMillis()))
-        db.dao().updateGame(GameEntity(gameID, GameJson.encodeToString(next), next.revision, System.currentTimeMillis()))
+        val next = reduce(MatchEngine.upgradeLegacy(decode(current)))
+        check(next.revision == current.revision + 1) { "记录版本无效，原资料未修改" }
+        db.dao().insertOperation(OperationEntity(operationID, gameID, signature, baseRevision, System.currentTimeMillis()))
+        db.dao().updateGame(GameEntity(gameID, GameJson.encodeToString(next), next.revision, System.currentTimeMillis(), 2))
         beforeCommit()
         next
     }
+    @kotlinx.serialization.Serializable
+    private data class CorrectionRequest(val index: Int, val replacement: Command?, val reason: String, val acceptContext: Boolean)
     companion object {
+        fun decode(entity: GameEntity): Game {
+            check(entity.payloadVersion in 1..2) { "比赛格式较新，原资料已保留，请使用兼容版本" }
+            return GameJson.decodeFromString<Game>(entity.payload).also { check(it.revision == entity.revision); it.validate() }
+        }
         fun parseRoster(text: String): List<Player> {
             val rows = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
             require(rows.isNotEmpty() && rows.size <= 200) { "请填写 1–200 名球员，每行一位" }
