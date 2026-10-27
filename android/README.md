@@ -1,8 +1,8 @@
 # BaseballMaster Android
 
-首个开发预览为 0.1.0-preview.2；最近已交付为 0.1.0-preview.4（versionCode 4），当前源码为 0.1.0-preview.5（versionCode 5）待验收候选。2026-10-27 应用户要求暂停，恢复前先读 [暂停检查点](../docs/releases/android/AN03.md#2026-10-27-暂停检查点)。最低 Android 12／API 31，编译及目标 API 37。功能和发布状态从 [CURRENT](../docs/CURRENT.md) 与 [单份迁移计划](../docs/plans/ANDROID-APK.md) 进入。
+最新阶段交付为 0.1.0-preview.5（versionCode 5）。最低 Android 12／API 31，编译及目标 API 37。功能和发布状态从 [CURRENT](../docs/CURRENT.md) 与 [单份迁移计划](../docs/plans/ANDROID-APK.md) 进入。
 
-源码结构：`core/` 为不依赖 Android 的规则／数据模块；`app/` 为 Compose、ViewModel、Room、Keystore 及平台接入。AN01／AN02 已完成；AN03 已新增通用记分、打投守统计、重放／纠错、名单、特殊阵容、终场恢复、练习与表现图，仍待完整最终验收。Pro 落点、路线和失误责任球场已按 iOS V4 实现并验证；AN03 其余用例及 AN04–AN08 尚未完成。内部 JSON 快照不直接上传为 iOS 的共享比赛 payload；共享协议适配与双向协作在后续阶段接入同一服务。
+源码结构：`core/` 为不依赖 Android 的规则／数据模块；`app/` 为 Compose、ViewModel、Room、Keystore 及平台接入。AN03 离线比赛核心已实现并通过阶段回归：名单、三模式记分、重放／纠错、特殊阵容、练习、表现图、当前球队与年度战绩；Pro 球场采用 iOS V4 设计，手机仅竖屏。48 条全量用例矩阵仍待 AN07 逐项登记；互导与共享协作分别待 AN04／AN05，内部 JSON 快照不直接上传为 iOS 的共享比赛 payload。
 
 本地已安装 Apple Silicon Android Studio Rabbit 1（2026.2.1.8）、JBR 25.0.3、SDK Command-line Tools 22.0、Build Tools 37.0.0、Platform Tools 37.0.1 及 Emulator 37.2.12。Gradle 9.6.0（wrapper SHA-256 固定）、AGP 9.4.0、Kotlin／Compose compiler 2.2.10、Compose BOM 2026.09.00、Room 2.8.5、KSP 2.3.12。构建 JDK 为 25，产物 JVM 目标为 17。
 
@@ -22,7 +22,7 @@ scripts/android/gradle.sh :core:test :app:assembleDebug :app:assembleRelease :ap
 
 App 运行依赖 AndroidX、Kotlin／kotlinx 均采用 Apache-2.0 许可；工具链和测试依赖按各自许可使用，Android SDK 许可由本机 SDK 管理器记录。本轮未加入分析、广告、登录或商业服务 SDK。详细阶段交接见 [AN01／AN02](../docs/releases/android/AN01-AN02.md)。
 
-AN03 当前候选关键原生流程（恢复后使用同轮构建的 App／仪器测试 APK，输出使用新目录）：
+AN03 关键原生流程（使用同轮构建的 App／仪器测试 APK，输出使用新目录）：
 
 ```sh
 python3 scripts/android/validate-scoring.py --serial emulator-5554 \

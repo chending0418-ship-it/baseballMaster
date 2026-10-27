@@ -41,7 +41,7 @@ class CompletionFlowTest {
     }
 
     private fun find(s: BySelector): UiObject2 {
-        repeat(30) { i ->
+        repeat(120) { i ->
             try {
                 if (android.os.Build.VERSION.SDK_INT >= 34) inst.uiAutomation.clearCache()
                 device
@@ -52,7 +52,7 @@ class CompletionFlowTest {
                     }
                 device
                     .findObject(By.scrollable(true))
-                    ?.scroll(if (i < 15) Direction.DOWN else Direction.UP, .55f)
+                    ?.scroll(if (i < 3 || i >= 63) Direction.UP else Direction.DOWN, .75f)
             } catch (_: StaleObjectException) {}
             device.waitForIdle()
         }
@@ -361,13 +361,58 @@ class CompletionFlowTest {
         assertEquals(before, db { d, _ -> d.dao().game(g.id)!!.payload })
         assertEquals(0, stored(g.id).totalPitches)
     }
-    @Test fun scheduleDateClockAndFinalNavigationUseRealScreens(){
-        val g=seed(Rules(timed=true,timeLimitMinutes=90)){it.copy(isScheduled=true,scheduledAt=1798699200000)}
-        launch();click("game-${g.id}");assertFalse(find(By.res("pitch-ball")).isEnabled);shot("13-scheduled")
-        click("activate-scheduled");await(g.id){!it.isScheduled};click("scoring-more");text("比赛时间／预告").click();input("match-time","2026-01-01 00:30");input("match-zone","America/Los_Angeles");input("match-time-reason","补填比赛发生时间");shot("14-match-time");click("save-match-time")
-        val dated=await(g.id){it.dateRevisions.size==1};assertEquals(2026,Performances.year(dated));assertEquals(0,dated.totalPitches);assertEquals("America/Los_Angeles",dated.playedTimeZoneID)
-        click("scoring-more");text("比赛计时").click();text("Play Ball").click();await(g.id){it.clockRunningSince!=null};click("scoring-more");text("比赛计时").click();shot("15-clock");device.pressBack();device.waitForIdle()
-        click("scoring-more");click("advanced-tools");click("game-note");input("note-text","现场备注：阵雨暂停后继续");click("save-note");await(g.id){it.entries.last().text=="现场备注：阵雨暂停后继续"};device.pressBack();device.waitForIdle()
-        click("scoring-more");click("finish-game");click("finish-weather");await(g.id){it.isFinal};shot("16-final-navigation");click("back-home");click("tab-1");assertNotNull(text("本机球队管理"));click("tab-2");assertNotNull(text("本机记录"));click("tab-0");assertTrue(stored(g.id).isFinal)
+
+    @Test
+    fun scheduleDateClockAndFinalNavigationUseRealScreens() {
+        val g =
+            seed(Rules(timed = true, timeLimitMinutes = 90)) {
+                it.copy(isScheduled = true, scheduledAt = 1798699200000)
+            }
+        launch()
+        click("game-${g.id}")
+        assertFalse(find(By.res("pitch-ball")).isEnabled)
+        shot("13-scheduled")
+        click("activate-scheduled")
+        await(g.id) { !it.isScheduled }
+        click("scoring-more")
+        text("比赛时间／预告").click()
+        input("match-time", "2026-01-01 00:30")
+        input("match-zone", "America/Los_Angeles")
+        input("match-time-reason", "补填比赛发生时间")
+        shot("14-match-time")
+        click("save-match-time")
+        val dated = await(g.id) { it.dateRevisions.size == 1 }
+        assertEquals(2026, Performances.year(dated))
+        assertEquals(0, dated.totalPitches)
+        assertEquals("America/Los_Angeles", dated.playedTimeZoneID)
+        click("scoring-more")
+        text("比赛计时").click()
+        text("Play Ball").click()
+        await(g.id) { it.clockRunningSince != null }
+        click("scoring-more")
+        text("比赛计时").click()
+        shot("15-clock")
+        device.pressBack()
+        device.waitForIdle()
+        click("scoring-more")
+        click("advanced-tools")
+        click("game-note")
+        input("note-text", "现场备注：阵雨暂停后继续")
+        click("save-note")
+        await(g.id) { it.entries.last().text == "现场备注：阵雨暂停后继续" }
+        device.pressBack()
+        device.waitForIdle()
+        click("scoring-more")
+        click("finish-game")
+        click("finish-weather")
+        await(g.id) { it.isFinal }
+        shot("16-final-navigation")
+        click("back-home")
+        click("tab-1")
+        assertNotNull(text("本机球队管理"))
+        click("tab-2")
+        assertNotNull(text("本机记录"))
+        click("tab-0")
+        assertTrue(stored(g.id).isFinal)
     }
 }

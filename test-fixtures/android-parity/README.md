@@ -15,4 +15,4 @@ AN03 的 `scoring/` 冻结 30 组、179 个状态，由 `testAndroidScoringParit
 
 2026-10-27 补充 `remaining/` 5 组／33 状态（突破僵局／延长赛、双换人、待复核与人工局面）和 `catalog/` 68 组／356 状态（三模式全部跑垒类型、17 类判罚的空垒／有跑者及慢垒 12 棒次）。与 scoring、history 合计 109 组／598 个状态；原投球 27 状态单独计算。`performance/` 为一份含 7 个来源的真实 iOS 本场／年度投影，覆盖来源去重、时区／跨年、模式及球队隔离和统计不完整提示。三类导出方法分别为 `testAndroidRemainingRulesExport`、`testAndroidCatalogExport`、`testAndroidPerformanceExport`；生成与 SHA-256 见各目录 manifest。
 
-Kotlin 核心当前 29 个方法通过；这不等于 AN03 的最终 APK 原生验收完成。`scope.json` 的 planned 保持待验收语义；暂停现场与剩余检查见 [AN03 暂停检查点](../../docs/releases/android/AN03.md#2026-10-27-暂停检查点)。
+Kotlin 核心回归及 AN03 本机比赛主要原生流程通过；范围和包级证据见 [AN03 开发记录](../../docs/releases/android/AN03.md)。`scope.json` 的 planned 保持逐项全量验收待登记语义；跨平台共享／互导及完整矩阵分别留在 AN04／AN05／AN07。

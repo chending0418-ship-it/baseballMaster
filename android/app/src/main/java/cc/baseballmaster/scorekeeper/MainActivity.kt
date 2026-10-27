@@ -71,6 +71,27 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     AndroidViewModel(application) {
     private val database = LocalDatabase.open(application)
     private val repository = GameRepository(database)
+    private val settings = application.getSharedPreferences("baseballmaster-settings", 0)
+    var currentTeamID by mutableStateOf(settings.getString("current_team_id", null))
+        private set
+
+    val currentTeam: Team?
+        get() = teams.firstOrNull { it.id == currentTeamID } ?: teams.firstOrNull()
+
+    private fun rememberCurrentTeam(id: String?) {
+        currentTeamID = id
+        settings
+            .edit()
+            .apply {
+                if (id == null) remove("current_team_id") else putString("current_team_id", id)
+            }
+            .apply()
+    }
+
+    fun selectCurrentTeam(id: String) {
+        if (teams.any { it.id == id }) rememberCurrentTeam(id)
+    }
+
     var teams by mutableStateOf<List<Team>>(emptyList())
         private set
 
@@ -145,6 +166,8 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
                     teams = newTeams.filter {
                         !it.isOpponent && !it.archived && it.source == "local"
                     }
+                    if (teams.none { it.id == currentTeamID })
+                        rememberCurrentTeam(teams.firstOrNull()?.id)
                     games = newGames.map { next ->
                         games.firstOrNull { it.id == next.id && it.revision > next.revision }
                             ?: next
@@ -350,6 +373,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
 
     fun createPreparedGame(game: Game, done: () -> Unit) = commit {
         val created = repository.createPreparedGame(game)
+        created.ourTeamID?.let(::selectCurrentTeam)
         accept(created)
         open(created.id)
         done()
@@ -452,7 +476,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
             else
                 Column(
                     Modifier.fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(key(tab) { rememberScrollState() })
                         .padding(horizontal = 18.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(22.dp),
                 ) {
@@ -487,7 +511,12 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
             }
         }
     if (newGame && model.teams.isNotEmpty())
-        NewGameDialog(model.teams, model.rosters, model.busy, { newGame = false }) { prepared ->
+        NewGameDialog(
+            model.teams.sortedBy { it.id != model.currentTeam?.id },
+            model.rosters,
+            model.busy,
+            { newGame = false },
+        ) { prepared ->
             model.createPreparedGame(prepared) { newGame = false }
         }
 }
@@ -532,16 +561,32 @@ internal fun CardBlock(modifier: Modifier = Modifier, content: @Composable Colum
 
 @Composable
 private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame: () -> Unit) {
-    val team = model.teams.firstOrNull()
+    val team = model.currentTeam
+    val ongoing = model.games.filter { !it.isFinal && !it.isScheduled }
+    val scheduled = model.games.filter { it.isScheduled && !it.isFinal }.sortedBy { it.scheduledAt }
+    val completed =
+        model.games
+            .filter { it.isFinal }
+            .sortedWith(
+                compareByDescending<Game> {
+                        it.playedAt ?: it.startedAt ?: it.scheduledAt ?: it.createdAt
+                    }
+                    .thenBy { it.id }
+            )
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(13.dp),
     ) {
         if (team != null) TeamMark(team.name, 56)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(team?.name ?: "尚未创建球队", fontSize = 24.sp, fontWeight = FontWeight.Black)
             Text(
-                "${java.time.Year.now()} 年 · ${team?.players?.size ?: 0} 名球员",
+                team?.name ?: "尚未创建球队",
+                Modifier.testTag("home-team-name"),
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Text(
+                "${java.time.Year.now()} 年 · ${team?.players?.count { !it.archived } ?: 0} 名球员",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -552,11 +597,13 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
             shape = RoundedCornerShape(50),
         ) {
             Text(
-                "暂无战绩",
+                HomeSummary.record(model.games, team?.id).label,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                modifier =
+                    Modifier.testTag("home-team-record")
+                        .padding(horizontal = 11.dp, vertical = 7.dp),
             )
         }
     }
@@ -581,58 +628,62 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
             fontWeight = FontWeight.SemiBold,
         )
     }
-    SectionTitle("正在进行", if (model.games.isEmpty()) null else "${model.games.size} 场")
+    SectionTitle("正在进行", if (ongoing.isEmpty()) null else "${ongoing.size} 场")
     TextButton({ model.practice() }, modifier = Modifier.testTag("start-practice")) { Text("练习记分") }
-    if (model.games.none { !it.isFinal })
+    if (ongoing.isEmpty())
         EmptyCard("没有进行中的比赛", "新比赛创建后会自动保存在这里，可在 App 重启后继续。", Icons.Outlined.PlayArrow)
-    model.games
-        .filter { !it.isFinal }
-        .forEach { game ->
-            CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            "${game.away.name}  vs  ${game.home.name}",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            "${game.inning}局${if (game.isTop) "上" else "下"}",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            "▶ 继续比赛",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.testTag("continue-game"),
-                        )
-                    }
+    ongoing.forEach { game ->
+        CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        "${game.awayRuns} : ${game.homeRuns}",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Black,
+                        "${game.away.name}  vs  ${game.home.name}",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "${game.inning}局${if (game.isTop) "上" else "下"}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "▶ 继续比赛",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.testTag("continue-game"),
                     )
                 }
-            }
-        }
-    SectionTitle("最近比赛", "按比赛日期排序")
-    if (model.games.none { it.isFinal })
-        EmptyCard("还没有已完成的比赛", "比赛结束并保存后，会按时间显示在这里。", Icons.Outlined.DateRange)
-    model.games
-        .filter { it.isFinal }
-        .forEach { game ->
-            CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
-                Text("${game.away.name}  vs  ${game.home.name}", fontWeight = FontWeight.Bold)
                 Text(
                     "${game.awayRuns} : ${game.homeRuns}",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Black,
                 )
-                Text("已结束 · 查看完整记录", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
             }
         }
+    }
+    if (scheduled.isNotEmpty()) {
+        SectionTitle("比赛预告", "${scheduled.size} 场")
+        scheduled.forEach { game ->
+            CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
+                Text("${game.away.name}  vs  ${game.home.name}", fontWeight = FontWeight.Bold)
+                Text("预告比赛 · 查看详情", color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+    SectionTitle("最近比赛", "按比赛日期排序")
+    if (completed.isEmpty()) EmptyCard("还没有已完成的比赛", "比赛结束并保存后，会按时间显示在这里。", Icons.Outlined.DateRange)
+    completed.forEach { game ->
+        CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
+            Text("${game.away.name}  vs  ${game.home.name}", fontWeight = FontWeight.Bold)
+            Text(
+                "${game.awayRuns} : ${game.homeRuns}",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Text("已结束 · 查看完整记录", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+        }
+    }
 }
 
 @Composable
@@ -780,6 +831,7 @@ internal fun FormPage(
             }
         }
         PortraitViewport("portrait-form") {
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
             Column(
                 Modifier.fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
@@ -818,6 +870,7 @@ internal fun FormPage(
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                     content = content,
                 )
+            }
             }
         }
     }

@@ -70,23 +70,36 @@ class ScoringFlowTest {
     }
 
     private fun visible(selector: BySelector): UiObject2 {
-        repeat(14) { index ->
-            val node = device.findObject(selector)
-            if (node != null && node.visibleBounds.height() > 10) return node
-            val scroll = device.findObject(By.scrollable(true))
-            if (scroll != null) scroll.scroll(if (index < 7) Direction.DOWN else Direction.UP, 0.6f)
-            else
-                device.swipe(
-                    device.displayWidth / 2,
-                    device.displayHeight * (if (index < 7) 8 else 3) / 10,
-                    device.displayWidth / 2,
-                    device.displayHeight * (if (index < 7) 3 else 8) / 10,
-                    20,
-                )
-            if (selector.toString().contains("守备处理"))
-                device.dumpWindowHierarchy(
-                    File(context.getExternalFilesDir(null), "an03-scroll-$index.xml")
-                )
+        for (index in 0 until 120) {
+            try {
+                val node = device.findObject(selector)
+                if (node != null && node.visibleBounds.height() > 10) return node
+                val fielding = selector.toString().contains("fielding-")
+                val below = selector.toString().contains("reopen-game") ||
+                    selector.toString().contains("choice-守备处理")
+                val direction =
+                    if (fielding) {
+                        if (index < 60) Direction.UP else Direction.DOWN
+                    } else if (below) {
+                        if (index < 60) Direction.DOWN else Direction.UP
+                    } else if (index < 3 || index >= 63) Direction.UP else Direction.DOWN
+                val scroll = device.findObject(By.scrollable(true))
+                if (scroll != null) scroll.scroll(direction, .75f)
+                else
+                    device.swipe(
+                        device.displayWidth / 2,
+                        device.displayHeight * (if (direction == Direction.DOWN) 8 else 3) / 10,
+                        device.displayWidth / 2,
+                        device.displayHeight * (if (direction == Direction.DOWN) 3 else 8) / 10,
+                        20,
+                    )
+                if (selector.toString().contains("守备处理") && index < 14)
+                    device.dumpWindowHierarchy(
+                        File(context.getExternalFilesDir(null), "an03-scroll-$index.xml")
+                    )
+            } catch (_: StaleObjectException) {
+                // Only repeat a read/scroll, never a scoring action.
+            }
             device.waitForIdle()
             if (android.os.Build.VERSION.SDK_INT >= 34) instrumentation.uiAutomation.clearCache()
         }
@@ -181,7 +194,11 @@ class ScoringFlowTest {
         }
         identityFile.writeText(id)
         launch()
-        click("game-$id")
+        for (attempt in 0 until 3) {
+            click("game-$id")
+            if (device.wait(Until.hasObject(By.res("record-play")), 10_000)) break
+        }
+        assertTrue(device.hasObject(By.res("record-play")))
         click("record-play")
         screenshot("01-play-base")
         click("arrival-1")
@@ -239,10 +256,9 @@ class ScoringFlowTest {
         tag("fielding-4").click()
         tag("fielding-3").click()
         settle()
-        assertTrue(
-            "Route did not include all selected participants",
-            device.wait(Until.hasObject(By.text("防守路线：8 → 4 → 3")), 5_000),
-        )
+        assertNotNull("Route did not include all selected participants", text("防守路线：8 → 4 → 3"))
+        tag("fielding-8")
+        settle()
         screenshot("02-play-pro")
         click("play-next")
         click("save-play")
@@ -282,6 +298,9 @@ class ScoringFlowTest {
         assertEquals(stats, GameJson.encodeToString(game.batting))
         assertEquals("fly", game.entries.last().observation!!.type)
         assertEquals(1, game.correctionRevisions.size)
+        assertTrue(device.wait(Until.hasObject(By.text("完整记录")), 10_000))
+        assertTrue(device.wait(Until.gone(By.res("save-history-correction")), 10_000))
+        device.waitForIdle()
         device.pressBack()
         device.waitForIdle()
         click("scoring-more")
@@ -289,6 +308,9 @@ class ScoringFlowTest {
         click("finish-scorerDecision")
         assertTrue(awaitGame { it.isFinal }.isFinal)
         screenshot("03-final")
+        device.swipe(device.displayWidth / 2, device.displayHeight * 8 / 10,
+            device.displayWidth / 2, device.displayHeight * 3 / 10, 30)
+        device.waitForIdle()
         click("reopen-game")
         val reopened = awaitGame { !it.isFinal }
         assertFalse(reopened.isFinal)

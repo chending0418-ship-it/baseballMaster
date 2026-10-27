@@ -34,7 +34,25 @@ internal fun RosterScreen(model: ScorekeeperViewModel, quickAdd: () -> Unit) {
         }
         .forEach { t ->
             CardBlock {
-                Text(t.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    t.name +
+                        if (t.id == model.currentTeam?.id && !t.isOpponent && !t.archived) " · 当前"
+                        else "",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (
+                    !t.isOpponent &&
+                        !t.archived &&
+                        t.source == "local" &&
+                        t.id != model.currentTeam?.id
+                )
+                    TextButton(
+                        { model.selectCurrentTeam(t.id) },
+                        Modifier.testTag("select-current-team-${t.id}"),
+                    ) {
+                        Text("设为当前球队")
+                    }
                 Text(
                     "${t.city} · ${t.players.count{!it.archived}} 名球员",
                     fontSize = 13.sp,
