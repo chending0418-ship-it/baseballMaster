@@ -1,3 +1,9 @@
+# Android 迁移分支（2026-10-27）
+
+用户要求先重新规划全功能 Android 迁移，并切新分支。已从 `codex/dev-3.1.1` 的 `40df3d2` 建立 `codex/android-migration`，使用隔离 worktree `/Users/JasonChan/.codex/worktrees/android-migration/baseball-scorekeeper`。原目录及其未提交备案迁移资料保留；这不是另一个独立仓库或磁盘分区。当前只更新计划和导航，未安装 Android 环境、创建工程、改 iOS 版本或部署。
+
+本条取代历史中的 Android 暂缓状态和早期单目录开发安排；原记录继续按日期保留。唯一计划为 [Android 全功能迁移与 APK 分发](plans/ANDROID-APK.md)，当前状态仍从 [CURRENT](CURRENT.md) 进入。Android 基线含尚未进入 main 的前置提交，后续先按各自 PR 处理前置改动，再更新 Android 分支、审查差异并创建 Android PR。本轮未推送或合并。
+
 # 3.1.1 开发分支（2026-10-22）
 
 用户已确认产品深绿 BM 开机图并授权接入 3.1.1；当前分支为 `codex/dev-3.1.1`，从当前工作区资料整理基线 `3eb09df` 建立，工程为 3.1.1（Build 1）。实现、验证与发布边界见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)，当前入口仍为 [CURRENT](CURRENT.md)。本轮不直接改 main，原迁移和版本历史记录保留如下。

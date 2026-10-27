@@ -4,6 +4,8 @@
 
 [文档索引](docs/README.md) · [项目目录说明](docs/PROJECT-STRUCTURE.md) · [输出文件入口](output/README.md)
 
+**Android 迁移规划（2026-10-27）：** 已在独立分支 `codex/android-migration` 按当前 iOS 3.1.1 全功能重新规划，不上应用市场、通过官网分发 APK，开发方自行安装环境并使用模拟器验证。计划与 AN01–AN08 统一见 [Android 迁移计划](docs/plans/ANDROID-APK.md)；目前仅完成规划与分支，尚未建立 Android 工程或产出 APK。此安排取代下方历史记录中的 Android 暂缓状态。
+
 **Git 协作约定（2026-10-22）：所有改动通过 PR 合入 main，不再直接推送 main，包括文档和发布材料。** 见 [流程](docs/BRANCHES.md#main-合入流程) 与 [完整历史 PR 索引](docs/maintenance/2026-10-22-pr-history.md)。
 
 **全局品牌与宣传设计约定（长期有效，2026-10-22 用户确认）**

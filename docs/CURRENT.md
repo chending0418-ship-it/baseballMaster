@@ -1,11 +1,12 @@
 # 棒球比赛记录大师当前入口
 
-更新日期：2026-10-23。本文件是当前状态与资料的唯一导航入口，旧文档内的日期记录保留为历史。
+更新日期：2026-10-27。本文件是当前状态与资料的唯一导航入口，旧文档内的日期记录保留为历史。
 
 | 项目 | 当前依据 |
 | --- | --- |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.1（Build 1） |
-| 当前开发 | `codex/dev-3.1.1`；固定 BM／App 图标、后台配置背景与文案的开屏已接入，见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)、[配置说明](releases/3.1.1/CONFIGURABLE-LAUNCH.md) |
+| iOS 开发基线 | `codex/dev-3.1.1`；固定 BM／App 图标、后台配置背景与文案的开屏已接入，见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)、[配置说明](releases/3.1.1/CONFIGURABLE-LAUNCH.md) |
+| Android 迁移 | `codex/android-migration`，从 `40df3d2` 建立隔离 worktree；按当前 iOS 3.1.1 全功能重新规划，仅官网 APK 分发、开发方自行安装环境并模拟验证；目前仅计划，工程／环境／APK 尚未建立，见 [Android 单份计划](plans/ANDROID-APK.md) |
 | 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
 | 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
 | 发布材料 | [3.1.0 发布交接](releases/3.1.0/REVIEW-HANDOFF.md)、`output/releases/3.1.0/` |
