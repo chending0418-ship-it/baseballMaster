@@ -23,16 +23,16 @@
 
 | 项目 | 本轮依据与安排 |
 | --- | --- |
-| 原工作现场 | `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper`，`codex/dev-3.1.1`；保留原有未提交备案迁移资料 |
+| 项目目录 | `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper`；iOS 保留 `BaseballMaster/`、`BaseballMaster.xcodeproj`，Android 位于同级 `android/`；原有未提交备案资料保留 |
 | Android 分支 | `codex/android-migration` |
-| 隔离工作区 | `/Users/JasonChan/.codex/worktrees/android-migration/baseball-scorekeeper`，同一 Git 仓库的 managed worktree，不另建独立仓库 |
+| 当前工作区 | 原项目目录，当前切至 `codex/android-migration`；此前使用的 `/Users/JasonChan/.codex/worktrees/android-migration/baseball-scorekeeper` 为历史 worktree |
 | 功能盘点基线 | `40df3d2`，iOS 工程 3.1.1（Build 1）；包含 3.1.0 完整功能及 3.1.1 可配置开屏的本地实现，不等于已上架版本 |
 | Android 源码 | 已建立同仓库 `android/`，沿用 BaseballMaster 产品名；现有 Swift 源码、Xcode 工程、Bundle ID 和版本保持 |
 | 共用协议与样本 | 继续使用 `collaboration/`、`live/`；后续平台无关样本归 `test-fixtures/android-parity/`，只放合成数据 |
 | 计划与证据 | 本文维护 TODO；交接归 `docs/releases/android/<版本>/`；截图、日志归 `output/validation/android/<阶段>/` |
 | 构建与交付 | Gradle 构建输出及缓存配置到 `output/cache/android/`；APK、校验值及清单归 `output/releases/android/<版本>/` |
 
-公共品牌与官网仍归 BaseballMaster.CC 根仓库，通过总导航定位真实路径；不能假定 worktree 的 `../../brand` 或 `../../website` 存在，不建立目录替身。SDK、IDE 采用本机标准安装位置；本机路径、签名及配置不进入代码。
+公共品牌与官网仍归 BaseballMaster.CC 根仓库，通过总导航定位真实路径，不建立目录替身。SDK、IDE 采用本机标准安装位置；本机路径、签名及配置不进入代码。
 
 Android 分支取自功能最完整的当前 3.1.1，因此包含尚未进入 main 的前置历史。后续先按各自 PR 处理 iOS／资料前置提交，再更新 Android 分支、审查最终差异并创建 Android PR，避免混入无关改动。进入 main 一律走 PR。本轮不推送、不建 PR、不合并。
 
@@ -238,3 +238,5 @@ AN01、AN02 已完成，详细实现、验证与边界统一见 [阶段交接](.
 - 2026-10-27：用户明确只支持竖屏；手机锁定 portrait，界面保持竖向单列，不制作横屏布局。Android 17 的系统强制大窗由竖向容器约束；旋转测试仅验证竖屏约束与草稿保留。鸿蒙兼容性单独待验，不把 Android APK 标为已支持鸿蒙；HarmonyOS 5+ 的卓易通兼容以实际支持为准。
 
 - 2026-10-27：用户要求先暂停、晚间继续；本轮增量、候选包和证据已保存，AN03 最终验收与 preview.5 交付尚未完成，详见暂停检查点。
+
+- 2026-10-27：用户要求 Android 回到原项目并区分 iOS／Android；保留原 iOS 工程名称及 Android 独立分支，将 Android 代码和验收资料迁入原项目，原备案未提交资料保留。AN03 仍暂停，验收尚未完成。
