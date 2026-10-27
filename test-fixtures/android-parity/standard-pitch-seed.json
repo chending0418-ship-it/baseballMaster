@@ -1,0 +1,631 @@
+{
+  "initial": {
+    "appearancePitches": 0,
+    "balls": 0,
+    "bases": [
+      -1,
+      -1,
+      -1
+    ],
+    "batterIndex": 0,
+    "extraFoulUsed": false,
+    "inning": 1,
+    "isTop": true,
+    "outs": 0,
+    "strikes": 0
+  },
+  "iosInitialPayload": {
+    "createdAt": 814764911.33365,
+    "id": "902A489E-DBF0-434C-80E8-01845081C364",
+    "isHome": false,
+    "isSpectator": false,
+    "lineup": [
+      {
+        "battingOrder": 1,
+        "playerID": "A1000000-0000-0000-0000-000000000001",
+        "position": 1
+      },
+      {
+        "battingOrder": 2,
+        "playerID": "A1000000-0000-0000-0000-000000000002",
+        "position": 2
+      },
+      {
+        "battingOrder": 3,
+        "playerID": "A1000000-0000-0000-0000-000000000003",
+        "position": 3
+      },
+      {
+        "battingOrder": 4,
+        "playerID": "A1000000-0000-0000-0000-000000000004",
+        "position": 4
+      },
+      {
+        "battingOrder": 5,
+        "playerID": "A1000000-0000-0000-0000-000000000005",
+        "position": 5
+      },
+      {
+        "battingOrder": 6,
+        "playerID": "A1000000-0000-0000-0000-000000000006",
+        "position": 6
+      },
+      {
+        "battingOrder": 7,
+        "playerID": "A1000000-0000-0000-0000-000000000007",
+        "position": 7
+      },
+      {
+        "battingOrder": 8,
+        "playerID": "A1000000-0000-0000-0000-000000000008",
+        "position": 8
+      },
+      {
+        "battingOrder": 9,
+        "playerID": "A1000000-0000-0000-0000-000000000009",
+        "position": 9
+      }
+    ],
+    "openingPitchRecorded": false,
+    "opponentTeamID": "B1000000-0000-0000-0000-000000000000",
+    "ourTeamID": "A1000000-0000-0000-0000-000000000000",
+    "playedTimeZoneID": "Asia/Shanghai",
+    "revision": 1,
+    "rules": {
+      "coachPitchLimit": 6,
+      "fieldersCount": 9,
+      "mode": "standard",
+      "scheduledInnings": 6
+    },
+    "scheduledAt": 814764911.332483,
+    "seasonID": "2026",
+    "secondaryLineup": [
+      {
+        "battingOrder": 1,
+        "playerID": "B1000000-0000-0000-0000-000000000001",
+        "position": 1
+      },
+      {
+        "battingOrder": 2,
+        "playerID": "B1000000-0000-0000-0000-000000000002",
+        "position": 2
+      },
+      {
+        "battingOrder": 3,
+        "playerID": "B1000000-0000-0000-0000-000000000003",
+        "position": 3
+      },
+      {
+        "battingOrder": 4,
+        "playerID": "B1000000-0000-0000-0000-000000000004",
+        "position": 4
+      },
+      {
+        "battingOrder": 5,
+        "playerID": "B1000000-0000-0000-0000-000000000005",
+        "position": 5
+      },
+      {
+        "battingOrder": 6,
+        "playerID": "B1000000-0000-0000-0000-000000000006",
+        "position": 6
+      },
+      {
+        "battingOrder": 7,
+        "playerID": "B1000000-0000-0000-0000-000000000007",
+        "position": 7
+      },
+      {
+        "battingOrder": 8,
+        "playerID": "B1000000-0000-0000-0000-000000000008",
+        "position": 8
+      },
+      {
+        "battingOrder": 9,
+        "playerID": "B1000000-0000-0000-0000-000000000009",
+        "position": 9
+      }
+    ],
+    "state": {
+      "activeAwayPitcherID": "A1000000-0000-0000-0000-000000000001",
+      "activeHomePitcherID": "B1000000-0000-0000-0000-000000000001",
+      "awayBatterIndex": 0,
+      "awayBattingOrderIDs": [
+        "A1000000-0000-0000-0000-000000000001",
+        "A1000000-0000-0000-0000-000000000002",
+        "A1000000-0000-0000-0000-000000000003",
+        "A1000000-0000-0000-0000-000000000004",
+        "A1000000-0000-0000-0000-000000000005",
+        "A1000000-0000-0000-0000-000000000006",
+        "A1000000-0000-0000-0000-000000000007",
+        "A1000000-0000-0000-0000-000000000008",
+        "A1000000-0000-0000-0000-000000000009"
+      ],
+      "awayErrors": 0,
+      "awayFieldingPlayerIDs": [
+        "A1000000-0000-0000-0000-000000000001",
+        "A1000000-0000-0000-0000-000000000002",
+        "A1000000-0000-0000-0000-000000000003",
+        "A1000000-0000-0000-0000-000000000004",
+        "A1000000-0000-0000-0000-000000000005",
+        "A1000000-0000-0000-0000-000000000006",
+        "A1000000-0000-0000-0000-000000000007",
+        "A1000000-0000-0000-0000-000000000008",
+        "A1000000-0000-0000-0000-000000000009"
+      ],
+      "awayHits": 0,
+      "awayRunsByInning": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "awayTeam": {
+        "city": "合成测试",
+        "id": "A1000000-0000-0000-0000-000000000000",
+        "name": "客队",
+        "players": [
+          {
+            "chineseName": "球员1",
+            "englishName": "",
+            "id": "A1000000-0000-0000-0000-000000000001",
+            "numbers": [
+              1
+            ],
+            "primaryPosition": 1
+          },
+          {
+            "chineseName": "球员2",
+            "englishName": "",
+            "id": "A1000000-0000-0000-0000-000000000002",
+            "numbers": [
+              2
+            ],
+            "primaryPosition": 2
+          },
+          {
+            "chineseName": "球员3",
+            "englishName": "",
+            "id": "A1000000-0000-0000-0000-000000000003",
+            "numbers": [
+              3
+            ],
+            "primaryPosition": 3
+          },
+          {
+            "chineseName": "球员4",
+            "englishName": "",
+            "id": "A1000000-0000-0000-0000-000000000004",
+            "numbers": [
+              4
+            ],
+            "primaryPosition": 4
+          },
+          {
+            "chineseName": "球员5",
+            "englishName": "",
+            "id": "A1000000-0000-0000-0000-000000000005",
+            "numbers": [
+              5
+            ],
+            "primaryPosition": 5
+          },
+          {
+            "chineseName": "球员6",
+            "englishName": "",
+            "id": "A1000000-0000-0000-0000-000000000006",
+            "numbers": [
+              6
+            ],
+            "primaryPosition": 6
+          },
+          {
+            "chineseName": "球员7",
+            "englishName": "",
+            "id": "A1000000-0000-0000-0000-000000000007",
+            "numbers": [
+              7
+            ],
+            "primaryPosition": 7
+          },
+          {
+            "chineseName": "球员8",
+            "englishName": "",
+            "id": "A1000000-0000-0000-0000-000000000008",
+            "numbers": [
+              8
+            ],
+            "primaryPosition": 8
+          },
+          {
+            "chineseName": "球员9",
+            "englishName": "",
+            "id": "A1000000-0000-0000-0000-000000000009",
+            "numbers": [
+              9
+            ],
+            "primaryPosition": 9
+          }
+        ],
+        "shortName": "客队"
+      },
+      "balls": 0,
+      "baseRunners": [],
+      "batting": [],
+      "currentPlateAppearanceID": "B54FBDAD-2BA5-43FD-ABB0-A9DF9560ECC8",
+      "fielding": [],
+      "homeBatterIndex": 0,
+      "homeBattingOrderIDs": [
+        "B1000000-0000-0000-0000-000000000001",
+        "B1000000-0000-0000-0000-000000000002",
+        "B1000000-0000-0000-0000-000000000003",
+        "B1000000-0000-0000-0000-000000000004",
+        "B1000000-0000-0000-0000-000000000005",
+        "B1000000-0000-0000-0000-000000000006",
+        "B1000000-0000-0000-0000-000000000007",
+        "B1000000-0000-0000-0000-000000000008",
+        "B1000000-0000-0000-0000-000000000009"
+      ],
+      "homeErrors": 0,
+      "homeFieldingPlayerIDs": [
+        "B1000000-0000-0000-0000-000000000001",
+        "B1000000-0000-0000-0000-000000000002",
+        "B1000000-0000-0000-0000-000000000003",
+        "B1000000-0000-0000-0000-000000000004",
+        "B1000000-0000-0000-0000-000000000005",
+        "B1000000-0000-0000-0000-000000000006",
+        "B1000000-0000-0000-0000-000000000007",
+        "B1000000-0000-0000-0000-000000000008",
+        "B1000000-0000-0000-0000-000000000009"
+      ],
+      "homeHits": 0,
+      "homeRunsByInning": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "homeTeam": {
+        "city": "合成测试",
+        "id": "B1000000-0000-0000-0000-000000000000",
+        "name": "主队",
+        "players": [
+          {
+            "chineseName": "球员1",
+            "englishName": "",
+            "id": "B1000000-0000-0000-0000-000000000001",
+            "numbers": [
+              1
+            ],
+            "primaryPosition": 1
+          },
+          {
+            "chineseName": "球员2",
+            "englishName": "",
+            "id": "B1000000-0000-0000-0000-000000000002",
+            "numbers": [
+              2
+            ],
+            "primaryPosition": 2
+          },
+          {
+            "chineseName": "球员3",
+            "englishName": "",
+            "id": "B1000000-0000-0000-0000-000000000003",
+            "numbers": [
+              3
+            ],
+            "primaryPosition": 3
+          },
+          {
+            "chineseName": "球员4",
+            "englishName": "",
+            "id": "B1000000-0000-0000-0000-000000000004",
+            "numbers": [
+              4
+            ],
+            "primaryPosition": 4
+          },
+          {
+            "chineseName": "球员5",
+            "englishName": "",
+            "id": "B1000000-0000-0000-0000-000000000005",
+            "numbers": [
+              5
+            ],
+            "primaryPosition": 5
+          },
+          {
+            "chineseName": "球员6",
+            "englishName": "",
+            "id": "B1000000-0000-0000-0000-000000000006",
+            "numbers": [
+              6
+            ],
+            "primaryPosition": 6
+          },
+          {
+            "chineseName": "球员7",
+            "englishName": "",
+            "id": "B1000000-0000-0000-0000-000000000007",
+            "numbers": [
+              7
+            ],
+            "primaryPosition": 7
+          },
+          {
+            "chineseName": "球员8",
+            "englishName": "",
+            "id": "B1000000-0000-0000-0000-000000000008",
+            "numbers": [
+              8
+            ],
+            "primaryPosition": 8
+          },
+          {
+            "chineseName": "球员9",
+            "englishName": "",
+            "id": "B1000000-0000-0000-0000-000000000009",
+            "numbers": [
+              9
+            ],
+            "primaryPosition": 9
+          }
+        ],
+        "shortName": "主队"
+      },
+      "inning": 1,
+      "isFinal": false,
+      "isTop": true,
+      "outs": 0,
+      "pitching": [],
+      "pitchingOutsAccountingVersion": 2,
+      "plateAppearancePitchCount": 0,
+      "plateAppearances": [
+        {
+          "batterIDs": [
+            "A1000000-0000-0000-0000-000000000001"
+          ],
+          "completed": false,
+          "id": "B54FBDAD-2BA5-43FD-ABB0-A9DF9560ECC8",
+          "inning": 1,
+          "interrupted": false,
+          "isTop": true
+        }
+      ],
+      "playLog": [
+        {
+          "id": "20135EDA-0A1C-41F0-B7A7-D651ADDBFFD8",
+          "inning": 1,
+          "isIncomplete": false,
+          "isTop": true,
+          "text": "已进入现场记分：客队 对 主队，等待 Play Ball",
+          "timestamp": 814764911.333507
+        }
+      ],
+      "rulesSnapshot": {
+        "coachPitchLimit": 6,
+        "fieldersCount": 9,
+        "mode": "standard",
+        "scheduledInnings": 6
+      },
+      "scheduledInnings": 6,
+      "strikes": 0
+    },
+    "status": 0,
+    "updatedAt": 814764911.34472
+  },
+  "mode": "standard",
+  "rules": {
+    "coachPitchLimit": 6,
+    "fieldersCount": 9,
+    "mode": "standard",
+    "scheduledInnings": 6
+  },
+  "schema": 1,
+  "source": "iOS GameStore @ 40df3d2",
+  "steps": [
+    {
+      "action": "ball",
+      "expected": {
+        "appearancePitches": 1,
+        "balls": 1,
+        "bases": [
+          -1,
+          -1,
+          -1
+        ],
+        "batterIndex": 0,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 0
+      }
+    },
+    {
+      "action": "calledStrike",
+      "expected": {
+        "appearancePitches": 2,
+        "balls": 1,
+        "bases": [
+          -1,
+          -1,
+          -1
+        ],
+        "batterIndex": 0,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 1
+      }
+    },
+    {
+      "action": "swingingStrike",
+      "expected": {
+        "appearancePitches": 3,
+        "balls": 1,
+        "bases": [
+          -1,
+          -1,
+          -1
+        ],
+        "batterIndex": 0,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 2
+      }
+    },
+    {
+      "action": "foul",
+      "expected": {
+        "appearancePitches": 4,
+        "balls": 1,
+        "bases": [
+          -1,
+          -1,
+          -1
+        ],
+        "batterIndex": 0,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 2
+      }
+    },
+    {
+      "action": "foul",
+      "expected": {
+        "appearancePitches": 5,
+        "balls": 1,
+        "bases": [
+          -1,
+          -1,
+          -1
+        ],
+        "batterIndex": 0,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 2
+      }
+    },
+    {
+      "action": "ball",
+      "expected": {
+        "appearancePitches": 6,
+        "balls": 2,
+        "bases": [
+          -1,
+          -1,
+          -1
+        ],
+        "batterIndex": 0,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 2
+      }
+    },
+    {
+      "action": "ball",
+      "expected": {
+        "appearancePitches": 7,
+        "balls": 3,
+        "bases": [
+          -1,
+          -1,
+          -1
+        ],
+        "batterIndex": 0,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 2
+      }
+    },
+    {
+      "action": "ball",
+      "expected": {
+        "appearancePitches": 0,
+        "balls": 0,
+        "bases": [
+          0,
+          -1,
+          -1
+        ],
+        "batterIndex": 1,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 0
+      }
+    },
+    {
+      "action": "calledStrike",
+      "expected": {
+        "appearancePitches": 1,
+        "balls": 0,
+        "bases": [
+          0,
+          -1,
+          -1
+        ],
+        "batterIndex": 1,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 1
+      }
+    },
+    {
+      "action": "calledStrike",
+      "expected": {
+        "appearancePitches": 2,
+        "balls": 0,
+        "bases": [
+          0,
+          -1,
+          -1
+        ],
+        "batterIndex": 1,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 0,
+        "strikes": 2
+      }
+    },
+    {
+      "action": "calledStrike",
+      "expected": {
+        "appearancePitches": 0,
+        "balls": 0,
+        "bases": [
+          0,
+          -1,
+          -1
+        ],
+        "batterIndex": 2,
+        "extraFoulUsed": false,
+        "inning": 1,
+        "isTop": true,
+        "outs": 1,
+        "strikes": 0
+      }
+    }
+  ]
+}

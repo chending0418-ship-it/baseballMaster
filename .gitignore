@@ -20,3 +20,12 @@ collaboration/.env
 /docs/releases/**/*.zip
 /docs/releases/**/*.pdf
 /docs/releases/2.3/BaseballMaster-2.3-AppStore/
+
+# Android local configuration, IDE state, credentials and build products.
+/android/.gradle/
+/android/.kotlin/
+/android/.idea/
+/android/local.properties
+/android/**/build/
+*.jks
+*.keystore

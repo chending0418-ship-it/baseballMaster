@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "baseline": "40df3d2",
+  "generator": "BaseballMasterTests/GameStoreTests/testAndroidParitySeedExport",
+  "reference": "actual iOS XCTest result, synthetic data only",
+  "files": [
+    {
+      "path": "coachPitch-pitch-seed.json",
+      "sha256": "f3d4ad40d72997bc859fc2c013018e29683b6f63e878e5151a657eeeb884eb92",
+      "mode": "coachPitch",
+      "steps": 6
+    },
+    {
+      "path": "slowPitch-pitch-seed.json",
+      "sha256": "68c3344aae108f078e8670b90ec5bc151f5b313c68dbd476420c5af245dd0934",
+      "mode": "slowPitch",
+      "steps": 7
+    },
+    {
+      "path": "standard-pitch-seed.json",
+      "sha256": "da48adfe595845f804b52fe060014716200112709503ce3db50867e1b043cf2e",
+      "mode": "standard",
+      "steps": 11
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # BaseballMaster Android 全功能迁移与 APK 分发计划
 
-更新日期：2026-10-27。状态：**已恢复规划，独立分支已建立；本轮计划评审后按阶段实施。Android 工程、工具链和 APK 尚未建立。** 本文为 Android 单份现行计划，取代 2026-10-13 的暂缓状态；原 AN01–AN08 编号继续使用。
+更新日期：2026-10-27。状态：**AN01、AN02 已完成；工具链、原生工程与首个开发预览 APK 0.1.0-preview.2（2）已交付。AN03–AN08 待实施。** 本文为 Android 单份现行计划，取代 2026-10-13 的暂缓状态；原 AN01–AN08 编号继续使用。
 
 ## 1. 用户要求与交付目标
 
@@ -13,9 +13,11 @@
 5. 全功能迁移，按当前 iOS 已实现功能核对，包含 3.1.0 与 3.1.1 的新增能力。
 6. 使用新的独立 Git 分支，与 iOS 和备案迁移现场隔离。
 
+2026-10-27 开发中用户再次确认：Android 与 iOS 的共享球队及比赛数据必须互通，不同用户可加入同一共享球队，按角色查看、记录和交接。两个平台使用同一服务及授权规则，不建立 Android 专属球队数据空间。界面沿用现有 iOS 信息架构与设计，不以 Compose 默认样式重新设计；官网产品入口固定为 `https://baseballmaster.cc/scorekeeper.html`。
+
 最终交付：可直接安装的签名 Release APK、完整功能对照及验收记录、升级说明、官网下载安装页面与版本描述文件。阶段 APK 用于检查进度，不降低最终全功能要求。
 
-本轮只交付计划和分支，不安装 SDK、不创建工程、不生成密钥、不修改 iOS 版本、不部署官网或服务。备案等待期间可本地开发和隔离联调；生产迁移、最终公网联调和公开下载按各自发布安排执行，不将 Android 开发视为服务器迁移的新授权。
+最初规划轮只建立分支和计划；用户随后明确授权完成 AN01／AN02，现已安装环境、建立工程、产出测试签名 APK，未修改 iOS 版本或部署官网／服务。备案等待期间可本地开发和隔离联调；生产迁移、最终公网联调和公开下载按各自发布安排执行，不将 Android 开发视为服务器迁移的新授权。
 
 ## 2. 基线、分支与目录
 
@@ -25,7 +27,7 @@
 | Android 分支 | `codex/android-migration` |
 | 隔离工作区 | `/Users/JasonChan/.codex/worktrees/android-migration/baseball-scorekeeper`，同一 Git 仓库的 managed worktree，不另建独立仓库 |
 | 功能盘点基线 | `40df3d2`，iOS 工程 3.1.1（Build 1）；包含 3.1.0 完整功能及 3.1.1 可配置开屏的本地实现，不等于已上架版本 |
-| Android 源码 | 后续放同仓库 `android/`，沿用 BaseballMaster 产品名；现有 Swift 源码、Xcode 工程、Bundle ID 和版本保持 |
+| Android 源码 | 已建立同仓库 `android/`，沿用 BaseballMaster 产品名；现有 Swift 源码、Xcode 工程、Bundle ID 和版本保持 |
 | 共用协议与样本 | 继续使用 `collaboration/`、`live/`；后续平台无关样本归 `test-fixtures/android-parity/`，只放合成数据 |
 | 计划与证据 | 本文维护 TODO；交接归 `docs/releases/android/<版本>/`；截图、日志归 `output/validation/android/<阶段>/` |
 | 构建与交付 | Gradle 构建输出及缓存配置到 `output/cache/android/`；APK、校验值及清单归 `output/releases/android/<版本>/` |
@@ -38,7 +40,7 @@ Android 分支取自功能最完整的当前 3.1.1，因此包含尚未进入 ma
 
 ## 3. 技术路线
 
-建议采用 **Kotlin + Jetpack Compose + Room 原生 Android App**，延续遗留方案。现有主体为 SwiftUI、Swift 记分逻辑、Core Data 和 Apple PDF／分享接口，没有可直接编译为 Android 的客户端核心。保留 iOS，通过同组比赛样本约束两端行为，控制本次改动范围。
+已采用 **Kotlin + Jetpack Compose + Room 原生 Android App**，延续遗留方案。现有主体为 SwiftUI、Swift 记分逻辑、Core Data 和 Apple PDF／分享接口，没有可直接编译为 Android 的客户端核心。保留 iOS，通过同组比赛样本约束两端行为，控制本次改动范围。
 
 | 层次 | 实现安排 |
 | --- | --- |
@@ -54,7 +56,7 @@ Android 分支取自功能最完整的当前 3.1.1，因此包含尚未进入 ma
 
 ## 4. 首版全功能对照
 
-下表全部属于首版；AN01 再细化到页面和可执行用例，实现与验收分别登记。
+下表全部属于首版；AN01 已细化为 48 条页面与操作用例，实现与验收分别登记。
 
 | ID | 迁移范围 | 当前源码依据 | 验收重点 |
 | --- | --- | --- | --- |
@@ -77,10 +79,10 @@ Android 分支取自功能最完整的当前 3.1.1，因此包含尚未进入 ma
 
 ## 5. 系统与尺寸基准
 
-以下为建议基准，AN01／AN02 建工程时登记实际版本和镜像：
+以下为 AN01 已冻结基准；实际工具、镜像与已测范围见 [AN01／AN02 交接](../releases/android/AN01-AN02.md)：
 
 - **最低 Android 12／API 31**，重点 Android 14–17，同时覆盖 12、13 的安装及关键回归。购买年份不直接决定系统版本，也不据此承诺具体市场占比。
-- 建议 `compileSdk`／`targetSdk` **37（Android 17）**；使用正式稳定工具与 SDK，建工程时复核 SDK 元数据、AGP／Gradle／JDK 兼容关系，不把预览依赖作为发行前提。本轮已核对 [Android 17 SDK 配置](https://developer.android.com/about/versions/17/setup-sdk)。
+- 已固定 `compileSdk`／`targetSdk` **37（Android 17）**；使用正式稳定工具与 SDK，建工程时复核 SDK 元数据、AGP／Gradle／JDK 兼容关系，不把预览依赖作为发行前提。本轮已核对 [Android 17 SDK 配置](https://developer.android.com/about/versions/17/setup-sdk)。
 - 手机以竖屏为主，重点可用宽度 **360、393、412、432 dp**，搭配不同高度及密度。小于 360 dp 的窄窗口不做专门布局和发布验收；不按英寸或 1080／1440 像素硬编码。
 - 600／840 dp 以上窗口提供可用的受限宽度或分区布局；横屏、分屏、折叠变化保留状态且主要操作可达，不另做平板／折叠屏专属操作体系。按 [Android 窗口尺寸类别](https://developer.android.com/develop/ui/compose/layouts/adaptive/use-window-size-classes)适配实际窗口。
 - 覆盖手势／三键导航、状态栏和挖孔安全区、键盘、字体 1.0／1.3／1.5、浅深色及长名单；不能靠缩小全部文字塞进球场。
@@ -91,9 +93,9 @@ Android 分支取自功能最完整的当前 3.1.1，因此包含尚未进入 ma
 
 ## 6. 环境与模拟器
 
-本轮只读检查：Apple Silicon `arm64`、macOS 26.5.2、可用磁盘约 272 GiB；标准位置没有 Android Studio／Android SDK，PATH 未发现 adb、emulator、sdkmanager、Gradle。`java_home -V` 未找到可用 JDK，`/usr/bin/java` 不能算已装环境；虚拟化加速尚未验证。
+已安装 Apple Silicon Android Studio Rabbit 1（2026.2.1.8）、JBR 25.0.3、Command-line Tools 22.0、Build Tools 37.0.0、Platform Tools 37.0.1、Emulator 37.2.12 及 API 31／37.0 ARM64 镜像；Hypervisor.Framework 加速实际检查通过。Gradle／AGP 和运行依赖已固定，见 [工程说明](../../android/README.md)。
 
-实施时由开发方完成：
+环境与后续扩展按以下方式维护（本轮已完成主测／最低版安装及独立 AVD，其他镜像与跨平台服务联调随对应阶段执行）：
 
 1. 安装 Apple Silicon 稳定版 Android Studio 及匹配 JDK，配置 SDK Command-line Tools、Platform Tools、Build Tools、正式 SDK／系统镜像和 Gradle Wrapper。
 2. 用 `emulator -accel-check` 与实际开机验证加速；Apple Silicon 采用 ARM64 镜像，参考 [官方模拟器加速说明](https://developer.android.com/studio/run/emulator-acceleration)。先装最低版和主测版，其他按需补齐；初期工程空间预算约 40–60 GB，实际占用另记。
@@ -121,8 +123,8 @@ Swift 与 Kotlin 两套实现的主要风险是规则分叉，先建立平台无
 
 | 阶段 | 完成条件 | 可审阅交付 | 当前状态 |
 | --- | --- | --- | --- |
-| AN01 范围冻结 | F01–F14 细化为页面／规则／格式／用例，固定支持系统、尺寸、包名及技术栈 | 对照矩阵、首批三模式样本、环境与依赖清单 | 初步盘点完成，细化和评审待进行 |
-| AN02 环境和首条链路 | 安装环境、建工程、核心／存储分层、凭证和恢复基础；记一球并杀进程恢复 | 阶段 APK、首页／记分截图、工具清单及恢复证据 | 待实施 |
+| AN01 范围冻结 | F01–F14 细化为页面／规则／格式／用例，固定支持系统、尺寸、包名及技术栈 | 对照矩阵、首批三模式样本、环境与依赖清单 | 已完成：48 条用例、三模式 iOS 样本及参数冻结 |
+| AN02 环境和首条链路 | 安装环境、建工程、核心／存储分层、凭证和恢复基础；记一球并杀进程恢复 | 阶段 APK、首页／记分截图、工具清单及恢复证据 | 已完成：0.1.0-preview.2，API 31／37 验证通过 |
 | AN03 完整比赛核心 | F01–F06：三模式、阵容、基础版／Pro、练习、观察／路线、撤销／纠错／终场 | 完整离线比赛 APK、规则对照、关键页截图 | 待实施 |
 | AN04 历史与输出 | F07–F09 及规则阅读：统计／年度图、PDF／海报／分享、备份／互导 | 完整离线功能 APK、导出样例及互导报告 | 待实施 |
 | AN05 球队协作 | F10–F12：身份、邀请／权限、同步／交接、冲突／撤权、配对／恢复、导入／档案 | iOS＋Android 联调 APK、双向交接及权限证据 | 待实施 |
@@ -131,8 +133,8 @@ Swift 与 Kotlin 两套实现的主要风险是规则分叉，先建立平台无
 | AN08 发布交付 | 正式签名／保管、版本／升级、下载页／描述文件、最终包；复核实际分发要求 | 签名 APK、SHA-256、证书指纹、官网候选材料与交接 | 待实施 |
 
 - [x] 找回旧计划，核对当前功能和环境，建立独立分支及隔离 worktree。
-- [ ] **AN01** 细化功能／样本并冻结首版基线、系统／尺寸、Android 标识与工具组合。
-- [ ] **AN02** 建环境和工程，通过本机记分／进程恢复并预演测试签名连续升级。
+- [x] **AN01** 细化功能／样本并冻结首版基线、系统／尺寸、Android 标识与工具组合。
+- [x] **AN02** 建环境和工程，通过本机记分／进程恢复并预演测试签名连续升级。
 - [ ] **AN03** 三模式、两种记分方式、换人／纠错／恢复、击球图和路线通过规则对照。
 - [ ] **AN04** 历史统计、导出、旧备份及双向互导通过。
 - [ ] **AN05** 同队跨平台权限、同步、记分交接、撤销与恢复通过。
@@ -140,7 +142,7 @@ Swift 与 Kotlin 两套实现的主要风险是规则分叉，先建立平台无
 - [ ] **AN07** 验收矩阵通过，阻断问题清零，残余限制逐项记录。
 - [ ] **AN08** 正式签名、覆盖升级、官网候选材料与 APK 完整交付，公开下载按实际执行登记。
 
-AN02 结束后结合工具链、规则对照结果估算后续阶段排期；AN03 与 AN05 为主要工作及风险。尚未跑通首条链路前不承诺完成日期，“先打出 APK”不等于迁移完成。
+AN02 已形成可重复构建和验证链路，三模式投球子集对照通过；完整规则／纠错的 AN03 与权限同步的 AN05 仍是主要工作。后续按这些阶段交付，不将当前 APK 视为全功能迁移完成，也不将尚未实现的工作绑定到承诺日期。
 
 ## 9. 验收矩阵
 
@@ -172,13 +174,13 @@ AN02 结束后结合工具链、规则对照结果估算后续阶段排期；AN0
 
 ## 10. 签名、官网与升级
 
-建议 Android `applicationId` 为 `cc.baseballmaster.scorekeeper`，首个正式 `versionName` 为 `1.0.0`、`versionCode` 从 1 递增，AN01 定稿。Android 1.0.0 表示首个 Android 正式版，功能对齐本文基线；iOS 编号保持。首次对外分发前固定包名和发布证书，内部测试用不同包名／密钥。
+AN01 已固定 Android `applicationId` 为 `cc.baseballmaster.scorekeeper`，首个正式 `versionName` 为 `1.0.0`、`versionCode` 从 1 递增。Android 1.0.0 表示首个 Android 正式版，功能对齐本文基线；iOS 编号保持。首次对外分发前固定包名和发布证书，内部测试用不同包名／密钥。
 
 正式密钥在 AN08 建立，由产品所有者长期持有，密钥及密码不进 Git／官网／普通输出；使用受限私有目录，制作加密备份并验证可恢复。未落实保管只能标为测试 APK。按 [Android 签名说明](https://developer.android.com/studio/publish/app-signing)执行 `apksigner verify` 和指纹核对，正式更新沿用同一证书。
 
 官网及 App 安排：
 
-- 候选入口 `https://baseballmaster.cc/android/`，源码归根仓库 `website/public/`；APK 使用带版本的不可变 URL，保留旧包。页面显示版本／日期、最低系统、大小、更新说明、SHA-256、隐私／支持及安装步骤。
+- 官网下载入口固定为现有产品页 `https://baseballmaster.cc/scorekeeper.html`，在其既有 `#download` 区增加 Android APK 下载与安装指引；不新增 `/android/` 独立产品入口。源码归根仓库 `website/public/`；APK 使用带版本的不可变资源 URL，保留旧包。页面显示版本／日期、最低系统、大小、更新说明、SHA-256、隐私／支持及安装步骤。
 - 版本描述提供 versionName／versionCode、minSdk、APK 地址、字节数、SHA-256、日期和说明；HTTPS 同源，发布顺序保证不会指向未上传完成的包。
 - App 检查更新后打开官网下载，经浏览器与系统安装器确认；不静默安装、不要求 root，不以开发者模式作为正常安装前提。首版不自行下载并请求 App 安装权限。
 - 依 [Android 官网分发说明](https://developer.android.com/distribute/marketing-tools/alternative-distribution)，用户需允许浏览器／文件来源安装未知应用；验证拒绝、取消与重试，说明内置浏览器必要时需在系统浏览器打开。
@@ -204,14 +206,15 @@ AN02 结束后结合工具链、规则对照结果估算后续阶段排期；AN0
 
 ## 12. 本轮完成与下一步
 
-本轮找回并重写旧计划，建立 `codex/android-migration` 和隔离 worktree，核对现有功能、数据格式、环境与官方分发／适配资料。未安装工具链、未开发、未产出 APK、未开放下载。
+AN01、AN02 已完成，详细实现、验证与边界统一见 [阶段交接](../releases/android/AN01-AN02.md)。48 条迁移用例与三模式真实 iOS 样本已固定；原生 Android 工程、Room／Keystore 与本机建队→记一球→杀进程恢复链路已建立。
 
-文档内本地链接与 `git diff --check` 已通过，改动仅涉及计划及其导航。原 `codex/dev-3.1.1` 的未提交资料保持原状；本轮没有运行 App 功能测试，不能当作 Android 验收。
+首个 APK 为 `output/releases/android/0.1.0-preview.2/BaseballMaster-0.1.0-preview.2.apk`，使用独立预览包名及测试证书；已在 Android 12 无 GMS／360 dp 与 Android 17／约 412 dp 安装验证。同签名覆盖、Room 1→2、比赛 payload 校验和设备凭证保留通过。最终关键截图在 `output/validation/android/an01-an02/screenshots-final/`。
 
-下一实施阶段：AN01 细化功能／样本，再执行 AN02 自行安装环境并交付第一条可安装、可恢复的记分链路。用户不需准备安卓设备。进度统一在本文维护，当前入口见 [CURRENT](../CURRENT.md)。
+当前 APK 尚未接入共享服务；同一共享球队的 iOS↔Android 加入、查看、记录与交接仍为 AN05 必须通过项。官网正式下载入口沿用产品页 `/scorekeeper.html#download`，本轮无网站／服务部署和公开下载。下一阶段为 AN03 完整比赛核心；当前入口见 [CURRENT](../CURRENT.md)。
 
 ## 13. 历史安排
 
 - 2026-10-08：曾安排 Android／APK 为后续 3.1，建议 Kotlin／Compose／Room，建立 AN01–AN08。
 - 2026-10-13：用户要求 Android、跨平台与 APK 暂缓，移出 iOS 3.1，保留旧方案。
 - 2026-10-27：重新启动规划，明确不上市场、官网 APK、开发方自行模拟、2024 年后主流尺寸、全功能及新分支；取代暂缓状态，本轮仍只做计划。
+- 2026-10-27：用户授权完成 AN01／AN02，并再次强调 iOS 视觉延续、共享球队与比赛双向互通，以及现有官网产品页为唯一下载入口；两阶段已按交接完成。

@@ -1,6 +1,6 @@
 # Android 迁移分支（2026-10-27）
 
-用户要求先重新规划全功能 Android 迁移，并切新分支。已从 `codex/dev-3.1.1` 的 `40df3d2` 建立 `codex/android-migration`，使用隔离 worktree `/Users/JasonChan/.codex/worktrees/android-migration/baseball-scorekeeper`。原目录及其未提交备案迁移资料保留；这不是另一个独立仓库或磁盘分区。当前只更新计划和导航，未安装 Android 环境、创建工程、改 iOS 版本或部署。
+用户要求先重新规划全功能 Android 迁移，并切新分支。已从 `codex/dev-3.1.1` 的 `40df3d2` 建立 `codex/android-migration`，使用隔离 worktree `/Users/JasonChan/.codex/worktrees/android-migration/baseball-scorekeeper`。原目录及其未提交备案迁移资料保留；这不是另一个独立仓库或磁盘分区。建立分支时仅更新计划；用户随后授权 AN01／AN02，现已安装工具链、建立工程、产出预览 APK 并完成两套模拟器验证，见 [阶段交接](releases/android/AN01-AN02.md)。iOS 版本和生产部署保持原状态。
 
 本条取代历史中的 Android 暂缓状态和早期单目录开发安排；原记录继续按日期保留。唯一计划为 [Android 全功能迁移与 APK 分发](plans/ANDROID-APK.md)，当前状态仍从 [CURRENT](CURRENT.md) 进入。Android 基线含尚未进入 main 的前置提交，后续先按各自 PR 处理前置改动，再更新 Android 分支、审查差异并创建 Android PR。本轮未推送或合并。
 

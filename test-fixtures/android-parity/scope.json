@@ -1,0 +1,488 @@
+{
+  "schema": 1,
+  "baseline": "40df3d2",
+  "allFeaturesRequired": true,
+  "caseCount": 48,
+  "cases": [
+    {
+      "id": "F01-01",
+      "feature": "F01",
+      "page": "首页／球队／名单",
+      "stage": "AN03",
+      "title": "建队与名单",
+      "trigger": "创建球队、中文／英文姓名、0 与 00 背号、同名球员",
+      "expected": "重开后稳定 ID、姓名和背号原文不变",
+      "status": "planned"
+    },
+    {
+      "id": "F01-02",
+      "feature": "F01",
+      "page": "首页／球队／名单",
+      "stage": "AN03",
+      "title": "资料隔离",
+      "trigger": "创建同名本机和共享球队",
+      "expected": "两个对象及比赛引用互不覆盖",
+      "status": "planned"
+    },
+    {
+      "id": "F01-03",
+      "feature": "F01",
+      "page": "首页／球队／名单",
+      "stage": "AN03",
+      "title": "归档与删除恢复",
+      "trigger": "归档或移除球队后查看历史",
+      "expected": "既有比赛与统计身份可追溯",
+      "status": "planned"
+    },
+    {
+      "id": "F02-01",
+      "feature": "F02",
+      "page": "比赛设置／赛程／阵容",
+      "stage": "AN03",
+      "title": "三模式新建",
+      "trigger": "双方完整阵容选择模式、主客和打序后开始",
+      "expected": "规则与球员对应，待打和守位正确",
+      "status": "planned"
+    },
+    {
+      "id": "F02-02",
+      "feature": "F02",
+      "page": "比赛设置／赛程／阵容",
+      "stage": "AN03",
+      "title": "换人与换投",
+      "trigger": "比赛中替换球员、守位、投手并重开",
+      "expected": "事件前后归属及历史快照保留",
+      "status": "planned"
+    },
+    {
+      "id": "F02-03",
+      "feature": "F02",
+      "page": "比赛设置／赛程／阵容",
+      "stage": "AN03",
+      "title": "预告与开赛",
+      "trigger": "安排未来比赛，首球前交换攻守，再开赛",
+      "expected": "赛程可恢复，首球后不可无条件交换",
+      "status": "planned"
+    },
+    {
+      "id": "F02-04",
+      "feature": "F02",
+      "page": "比赛设置／赛程／阵容",
+      "stage": "AN03",
+      "title": "比赛时间更正",
+      "trigger": "补填、赛后更正、跨时区和跨年",
+      "expected": "原值、修订、年度归属一致",
+      "status": "planned"
+    },
+    {
+      "id": "F03-01",
+      "feature": "F03",
+      "page": "比赛规则／计时",
+      "stage": "AN03",
+      "title": "普通投球",
+      "trigger": "四坏、三好、两好后连续界外",
+      "expected": "保送／三振／界外计数与 iOS 一致",
+      "status": "planned"
+    },
+    {
+      "id": "F03-02",
+      "feature": "F03",
+      "page": "比赛规则／计时",
+      "stage": "AN03",
+      "title": "教练投手",
+      "trigger": "连续坏球及达到投球上限",
+      "expected": "无坏球保送，球数上限正确出局",
+      "status": "planned"
+    },
+    {
+      "id": "F03-03",
+      "feature": "F03",
+      "page": "比赛规则／计时",
+      "stage": "AN03",
+      "title": "成人慢垒",
+      "trigger": "10 人 Free、扩展打序、初始 1-1",
+      "expected": "不生成虚构投球，换打席恢复初始球数",
+      "status": "planned"
+    },
+    {
+      "id": "F03-04",
+      "feature": "F03",
+      "page": "比赛规则／计时",
+      "stage": "AN03",
+      "title": "慢垒界外与 Illegal",
+      "trigger": "分别选择两种界外策略与是否实际投出",
+      "expected": "额外机会、投球数及判罚一致",
+      "status": "planned"
+    },
+    {
+      "id": "F03-05",
+      "feature": "F03",
+      "page": "比赛规则／计时",
+      "stage": "AN03",
+      "title": "时间和结束条件",
+      "trigger": "时间赛中断、重启、终场与提前结束",
+      "expected": "计时恢复且结束原因和比分正确",
+      "status": "planned"
+    },
+    {
+      "id": "F04-01",
+      "feature": "F04",
+      "page": "基础版／Pro／练习",
+      "stage": "AN03",
+      "title": "基础与 Pro 同场",
+      "trigger": "相同完整局面分别用两种方式记录",
+      "expected": "官方比分、统计、球数一致",
+      "status": "planned"
+    },
+    {
+      "id": "F04-02",
+      "feature": "F04",
+      "page": "基础版／Pro／练习",
+      "stage": "AN03",
+      "title": "取消与补充",
+      "trigger": "取消草稿，补充已保存本球",
+      "expected": "取消零写入、补充不增投球",
+      "status": "planned"
+    },
+    {
+      "id": "F04-03",
+      "feature": "F04",
+      "page": "基础版／Pro／练习",
+      "stage": "AN03",
+      "title": "安打与连续跑垒",
+      "trigger": "安打、触杀、双杀三杀及第三出局得分",
+      "expected": "显式跑者决定与有效得分一致",
+      "status": "planned"
+    },
+    {
+      "id": "F04-04",
+      "feature": "F04",
+      "page": "基础版／Pro／练习",
+      "stage": "AN03",
+      "title": "守备与失误",
+      "trigger": "选传球路线、责任守位和待确认事件",
+      "expected": "责任不由落点擅推，队失误与个人一致",
+      "status": "planned"
+    },
+    {
+      "id": "F04-05",
+      "feature": "F04",
+      "page": "基础版／Pro／练习",
+      "stage": "AN03",
+      "title": "练习",
+      "trigger": "连续记录后退出重入练习",
+      "expected": "不创建正式比赛或年度统计",
+      "status": "planned"
+    },
+    {
+      "id": "F05-01",
+      "feature": "F05",
+      "page": "历史纠错／恢复／终场",
+      "stage": "AN03",
+      "title": "撤销重做",
+      "trigger": "复杂事件撤销、重做并重启",
+      "expected": "状态与日志完整，不多计球",
+      "status": "planned"
+    },
+    {
+      "id": "F05-02",
+      "feature": "F05",
+      "page": "历史纠错／恢复／终场",
+      "stage": "AN03",
+      "title": "四类纠错",
+      "trigger": "漏换人、守位、局面和失误历史修正",
+      "expected": "重放后比分与球员归属一致",
+      "status": "planned"
+    },
+    {
+      "id": "F05-03",
+      "feature": "F05",
+      "page": "历史纠错／恢复／终场",
+      "stage": "AN03",
+      "title": "故障恢复",
+      "trigger": "断网、杀进程、重启、写入故障",
+      "expected": "已确认事件不丢失，失败不假成功",
+      "status": "planned"
+    },
+    {
+      "id": "F05-04",
+      "feature": "F05",
+      "page": "历史纠错／恢复／终场",
+      "stage": "AN03",
+      "title": "终场导航",
+      "trigger": "手动结束后返回首页或其他栏",
+      "expected": "正常导航、终场记录可回看",
+      "status": "planned"
+    },
+    {
+      "id": "F06-01",
+      "feature": "F06",
+      "page": "击球观察／本场年度图",
+      "stage": "AN03",
+      "title": "观察互斥与原子性",
+      "trigger": "球型、方向、落点、非法慢垒触击",
+      "expected": "非法输入不留半条事件或撤销项",
+      "status": "planned"
+    },
+    {
+      "id": "F06-02",
+      "feature": "F06",
+      "page": "击球观察／本场年度图",
+      "stage": "AN03",
+      "title": "路线姓名快照",
+      "trigger": "记录路线后换人、纠错和互导",
+      "expected": "历史显示当时参与人",
+      "status": "planned"
+    },
+    {
+      "id": "F06-03",
+      "feature": "F06",
+      "page": "击球观察／本场年度图",
+      "stage": "AN03",
+      "title": "本场年度图",
+      "trigger": "模式／年度过滤与不完整场次",
+      "expected": "纳入范围、去重、点位及表现与 iOS 一致",
+      "status": "planned"
+    },
+    {
+      "id": "F07-01",
+      "feature": "F07",
+      "page": "历史／筛选／统计",
+      "stage": "AN04",
+      "title": "打投守和比分",
+      "trigger": "同一组整场基准比赛生成统计",
+      "expected": "逐人和总计、投手实际出局数一致",
+      "status": "planned"
+    },
+    {
+      "id": "F07-02",
+      "feature": "F07",
+      "page": "历史／筛选／统计",
+      "stage": "AN04",
+      "title": "筛选去重",
+      "trigger": "日期、模式、赛季、同名对手及共享副本",
+      "expected": "集合正确且不重复累计",
+      "status": "planned"
+    },
+    {
+      "id": "F08-01",
+      "feature": "F08",
+      "page": "导出／分享",
+      "stage": "AN04",
+      "title": "PDF",
+      "trigger": "长中文名、多页逐球／比赛／个人球队报告",
+      "expected": "中文可读、页码表头正确、无遮挡",
+      "status": "planned"
+    },
+    {
+      "id": "F08-02",
+      "feature": "F08",
+      "page": "导出／分享",
+      "stage": "AN04",
+      "title": "海报和分享",
+      "trigger": "导出图片、PDF 并经系统文件和分享入口打开",
+      "expected": "原始数据一致，文件权限可用且不泄漏私有文件",
+      "status": "planned"
+    },
+    {
+      "id": "F09-01",
+      "feature": "F09",
+      "page": "备份／升级／导入档案",
+      "stage": "AN04",
+      "title": "双向备份",
+      "trigger": "旧格式 1–7 导入，Android 导出由 iOS 读取",
+      "expected": "校验通过且稳定 ID／历史完整",
+      "status": "planned"
+    },
+    {
+      "id": "F09-02",
+      "feature": "F09",
+      "page": "备份／升级／导入档案",
+      "stage": "AN04",
+      "title": "损坏与未来格式",
+      "trigger": "截断、错 checksum、未来 schema",
+      "expected": "拒绝导入并保留原库",
+      "status": "planned"
+    },
+    {
+      "id": "F09-03",
+      "feature": "F09",
+      "page": "备份／升级／导入档案",
+      "stage": "AN04",
+      "title": "球队档案与历史导入",
+      "trigger": "重复导入、映射球员、删除标记",
+      "expected": "不重复建场，不恢复已撤销权限",
+      "status": "planned"
+    },
+    {
+      "id": "F10-01",
+      "feature": "F10",
+      "page": "球队邀请／成员／角色",
+      "stage": "AN05",
+      "title": "免注册身份与邀请",
+      "trigger": "建队、单次和固定多人邀请、重复打开",
+      "expected": "身份可持久恢复，加入需明确核对",
+      "status": "planned"
+    },
+    {
+      "id": "F10-02",
+      "feature": "F10",
+      "page": "球队邀请／成员／角色",
+      "stage": "AN05",
+      "title": "角色与上限",
+      "trigger": "admin／scorer／member 和三名管理员边界",
+      "expected": "服务端拒绝越权，最后管理员受保护",
+      "status": "planned"
+    },
+    {
+      "id": "F10-03",
+      "feature": "F10",
+      "page": "球队邀请／成员／角色",
+      "stage": "AN05",
+      "title": "退出解散恢复",
+      "trigger": "退出、移除、解散与恢复",
+      "expected": "档案保留规则正确，链接不自动重新开放",
+      "status": "planned"
+    },
+    {
+      "id": "F11-01",
+      "feature": "F11",
+      "page": "同步／交接／冲突",
+      "stage": "AN05",
+      "title": "双向交接",
+      "trigger": "iOS→Android 及 Android→iOS 双方确认",
+      "expected": "同场仅当前写入设备可提交",
+      "status": "planned"
+    },
+    {
+      "id": "F11-02",
+      "feature": "F11",
+      "page": "同步／交接／冲突",
+      "stage": "AN05",
+      "title": "失联接管",
+      "trigger": "管理员接管后原设备离线回归",
+      "expected": "旧 epoch 拒绝，原草稿独立保留",
+      "status": "planned"
+    },
+    {
+      "id": "F11-03",
+      "feature": "F11",
+      "page": "同步／交接／冲突",
+      "stage": "AN05",
+      "title": "幂等与故障",
+      "trigger": "超时、响应丢失、重试、存储故障",
+      "expected": "先持久化再发送，不重复提交",
+      "status": "planned"
+    },
+    {
+      "id": "F11-04",
+      "feature": "F11",
+      "page": "同步／交接／冲突",
+      "stage": "AN05",
+      "title": "恢复代次和旧端",
+      "trigger": "服务恢复、旧格式客户端、游标变化",
+      "expected": "旧队列停止核对，未知语义不被丢弃覆盖",
+      "status": "planned"
+    },
+    {
+      "id": "F12-01",
+      "feature": "F12",
+      "page": "设备与安全",
+      "stage": "AN05",
+      "title": "配对恢复卡",
+      "trigger": "跨平台配对、恢复卡轮换和撤销设备",
+      "expected": "原凭证失效，秘密不在业务备份／URL 查询／日志",
+      "status": "planned"
+    },
+    {
+      "id": "F12-02",
+      "feature": "F12",
+      "page": "设备与安全",
+      "stage": "AN05",
+      "title": "权限负向",
+      "trigger": "跨队、降级、移除、恢复旧备份",
+      "expected": "服务端拒绝，缓存不充当授权",
+      "status": "planned"
+    },
+    {
+      "id": "F12-03",
+      "feature": "F12",
+      "page": "设备与安全",
+      "stage": "AN05",
+      "title": "Keystore 故障",
+      "trigger": "重开读取和损坏密文",
+      "expected": "密钥保护且不静默生成新身份",
+      "status": "planned"
+    },
+    {
+      "id": "F13-01",
+      "feature": "F13",
+      "page": "直播与历史观看",
+      "stage": "AN06",
+      "title": "独立共享直播",
+      "trigger": "Android 开播、iOS／网页看、再交接",
+      "expected": "比分／投打／阵容／路线一致",
+      "status": "planned"
+    },
+    {
+      "id": "F13-02",
+      "feature": "F13",
+      "page": "直播与历史观看",
+      "stage": "AN06",
+      "title": "观看三模式",
+      "trigger": "永久、指定与关闭，转发后撤销",
+      "expected": "实时链接与档案入口分离，撤销拒绝",
+      "status": "planned"
+    },
+    {
+      "id": "F13-03",
+      "feature": "F13",
+      "page": "直播与历史观看",
+      "stage": "AN06",
+      "title": "链接期限",
+      "trigger": "关闭、失联、终场一小时和赛后更正",
+      "expected": "不重新打开或错误延长期限",
+      "status": "planned"
+    },
+    {
+      "id": "F14-01",
+      "feature": "F14",
+      "page": "开屏／设置／规则／系统",
+      "stage": "AN06",
+      "title": "开屏配置",
+      "trigger": "默认、自定义、关闭、过期、离线与损坏缓存",
+      "expected": "固定品牌不变、不等网络、同源 SHA 与图片限制正确",
+      "status": "planned"
+    },
+    {
+      "id": "F14-02",
+      "feature": "F14",
+      "page": "开屏／设置／规则／系统",
+      "stage": "AN06",
+      "title": "链接和安装",
+      "trigger": "未装→官网下载→重开邀请、配对、拒绝授权",
+      "expected": "令牌不穿安装自动假承诺，原 iOS 入口可用",
+      "status": "planned"
+    },
+    {
+      "id": "F14-03",
+      "feature": "F14",
+      "page": "开屏／设置／规则／系统",
+      "stage": "AN06",
+      "title": "关于与规则",
+      "trigger": "规则阅读、隐私支持、真实备案资料",
+      "expected": "入口可打开、编号及处理环境与最终事实一致",
+      "status": "planned"
+    },
+    {
+      "id": "F14-04",
+      "feature": "F14",
+      "page": "开屏／设置／规则／系统",
+      "stage": "AN06",
+      "title": "系统窗口",
+      "trigger": "360–432dp、字体1.5、旋转、键盘、深色",
+      "expected": "主要操作可达、草稿和已保存记录不丢失",
+      "status": "planned"
+    }
+  ]
+}

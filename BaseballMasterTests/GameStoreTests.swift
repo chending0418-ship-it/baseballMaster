@@ -7403,3 +7403,78 @@ extension GameStoreTests {
         XCTAssertTrue(store.game.scoringEvents!.last!.needsReview)
     }
 }
+
+// Android migration reference generation. Only synthetic teams; no server access.
+extension GameStoreTests {
+    func testAndroidParitySeedExport() throws {
+        for mode in [GameMode.standard, .coachPitch, .slowPitch] {
+            let store = GameStore(persistenceURL: nil)
+            let count = mode == .slowPitch ? 10 : 9
+            func team(_ name: String, prefix: String) -> Team {
+                Team(id: UUID(uuidString: prefix + "0000-0000-0000-000000000000")!,
+                     name: name, shortName: name, city: "合成测试",
+                     players: (1...count).map { n in
+                    Player(id: UUID(uuidString: prefix + String(format: "0000-0000-0000-%012d", n))!,
+                           chineseName: "球员\(n)", englishName: "", numbers: [n],
+                           primaryPosition: FieldPosition.allCases[n - 1])
+                })
+            }
+            let away = team("客队", prefix: "A1000000-"), home = team("主队", prefix: "B1000000-")
+            store.teams = [away]; store.currentTeam = away; store.opponentTeams = [home]
+            var rules = GameRules(scheduledInnings: 6, fieldersCount: count, timeLimitMinutes: mode == .slowPitch ? 90 : nil)
+            rules.mode = mode; rules.coachPitchLimit = 6
+            if mode == .slowPitch {
+                rules.competitionFormat = .timed; rules.initialBalls = 1; rules.initialStrikes = 1
+                rules.twoStrikeFoulPolicy = .oneExtraFoul; rules.rulesVersion = 2
+            }
+            func lineup(_ t: Team) -> [LineupAssignment] {
+                t.players.enumerated().map { LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1,
+                                                               position: FieldPosition.allCases[$0.offset]) }
+            }
+            XCTAssertNotNil(store.startNewGame(opponent: home, isHome: false, rules: rules,
+                                               lineup: lineup(away), opponentLineup: lineup(home)))
+            let actions: [PitchAction]
+            switch mode {
+            case .standard: actions = [.ball, .calledStrike, .swingingStrike, .foul, .foul, .ball, .ball, .ball,
+                                       .calledStrike, .calledStrike, .calledStrike]
+            case .coachPitch: actions = Array(repeating: .ball, count: 6)
+            case .slowPitch: actions = [.foul, .foul, .ball, .foul, .ball, .ball, .ball]
+            }
+            func canonical() -> [String: Any] {
+                let g = store.game
+                let order = g.isTop ? g.awayBattingOrderIDs : g.homeBattingOrderIDs
+                return ["balls": g.balls, "strikes": g.strikes, "outs": g.outs, "inning": g.inning,
+                        "isTop": g.isTop, "batterIndex": g.isTop ? g.awayBatterIndex : g.homeBatterIndex,
+                        "appearancePitches": g.plateAppearancePitchCount ?? 0,
+                        "extraFoulUsed": g.extraFoulUsed ?? false,
+                        "bases": (1...3).map { base in
+                            g.baseRunners[Base(rawValue: base)!].flatMap { order.firstIndex(of: $0.id) } ?? -1
+                        }]
+            }
+            let initial = canonical()
+            let payload = try XCTUnwrap(store.activeStoredGame)
+            var steps: [[String: Any]] = []
+            for action in actions {
+                store.recordPitch(action)
+                XCTAssertNil(store.actionErrorMessage)
+                let key: String
+                switch action {
+                case .ball: key = "ball"
+                case .calledStrike: key = "calledStrike"
+                case .swingingStrike: key = "swingingStrike"
+                case .foul: key = "foul"
+                }
+                steps.append(["action": key, "expected": canonical()])
+            }
+            let fixture: [String: Any] = ["schema": 1, "source": "iOS GameStore @ 40df3d2",
+                "mode": mode.rawValue, "rules": try JSONSerialization.jsonObject(with: JSONEncoder().encode(rules)),
+                "initial": initial, "steps": steps,
+                "iosInitialPayload": try JSONSerialization.jsonObject(with: JSONEncoder().encode(payload))]
+            let data = try JSONSerialization.data(withJSONObject: fixture, options: [.prettyPrinted, .sortedKeys])
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = "android-parity-\(mode.rawValue).json"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+}
