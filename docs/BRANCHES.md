@@ -10,6 +10,12 @@
 
 本节为现行协作安排；以下日期较早的分支、路径和版本记录保留为历史。此处记录团队流程，并不声明 GitHub 分支保护已配置。
 
+## 历史分支归档（2026-10-27）
+
+用户确认先备份再清理：远端 39 个历史或已完成分支已移除，保留 `main`、`codex/dev-3.1.1`、`codex/android-migration`。每个旧分支的完整名称和提交位置保存于 GitHub 标签 `archive/branches-2026-10-27` 的 [branches.json](https://github.com/chending0418-ship-it/baseballMaster/blob/44eb797a373737202f38d3052e8362c55047d69c/branches.json)；归档提交的父节点保留所有 39 个旧分支头对应的对象。本机另保存完整 bundle 和恢复说明：`output/backups/maintenance/2026-10-27-branch-archive/`。清理前分别从本机 bundle 和 GitHub 标签在独立空仓库恢复／校验；不将本机未提交资料和 output 误写为已进入 Git。
+
+历史 PR 和提交记录保留。历史 PR #2 原以被归档的 `codex/pr-history-empty-baseline` 为目标，移除该引用可能影响 GitHub 比较视图；如需恢复，按归档清单取回该分支，核实目标名未被占用后再推送。日后已完成 PR 的临时开发分支可在确认提交已安全保存后清理；历史分支清理以用户指令和实际备份为准。
+
 # 统一项目目录（2026-10-27）
 
 用户要求 Android 放回原项目并与 iOS 区分。当前项目目录为 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper`，Android 在 `android/`，iOS 保留原 `BaseballMaster/`、`BaseballMaster.xcodeproj` 和测试目录；服务、文档与对照样本归同一项目。Android 继续使用 `codex/android-migration`，iOS 分支 `codex/dev-3.1.1` 及原有未提交备案资料保留。Android 原 worktree 为此前的工作现场，下文保留历史路径；目前应使用原项目目录。 旧 worktree 仍与当前 Codex 会话绑定、处于 detached 状态，应用不允许归档该主工作区；它只保留作历史副本，后续命令须显式使用原项目目录，不能继续在旧副本开发。Android 原输出已逐文件校验迁回；旧缓存保存在 `output/backups/android/worktree-migration-2026-10-27/`，新路径按需重建。
