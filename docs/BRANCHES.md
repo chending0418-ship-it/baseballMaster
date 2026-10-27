@@ -1,3 +1,15 @@
+# iOS 与 Android 分支管理（2026-10-27）
+
+按用户确认，比赛记录大师继续使用同一个仓库和默认分支 `main`。iOS 与 Android 分别在各自开发分支上工作；验收后通过 PR 合入 `main`，不直接推送 main。两个平台可独立开发与发布，发布版本和签名分别管理。
+
+- 项目使用 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper`；iOS 工程为 `BaseballMaster/` 和 `BaseballMaster.xcodeproj`，Android 工程为 `android/`。共享球队与直播服务沿用 `collaboration/`、`live/`，共享协议修改须验证两端兼容。
+- 新任务从最新 `main` 建立描述用途的开发分支，完成验证后提交、推送并创建目标为 `main` 的 PR；按用户授权合并，之后从新的 `main` 开展后续任务。无需永久维护两套平台主分支。
+- 当前 iOS 3.1.1 开发分支为 `codex/dev-3.1.1`；Android 迁移分支为 `codex/android-migration`。两者均已备份到 GitHub；分支保留各自实际未完成事项，不代表已发布。
+- Android 分支基于尚未进入 main 的 3.1.1 提交。按先后依赖先通过相应 PR 处理 iOS／项目资料前置改动，Android 准备好后再同步 main、审查差异并创建 Android PR；不得把尚未验收的 AN03 当作完成。当前 main 尚未包含 Android 工程，合入相应 PR 后才会同时包含两个平台。
+- 当前 Android AN03 暂停等待继续；跨平台共享球队的加入、查看、记录与交接按 Android 迁移计划的 AN05 验收，不把本地代码或单平台测试写成互通已完成。
+
+本节为现行协作安排；以下日期较早的分支、路径和版本记录保留为历史。此处记录团队流程，并不声明 GitHub 分支保护已配置。
+
 # 统一项目目录（2026-10-27）
 
 用户要求 Android 放回原项目并与 iOS 区分。当前项目目录为 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper`，Android 在 `android/`，iOS 保留原 `BaseballMaster/`、`BaseballMaster.xcodeproj` 和测试目录；服务、文档与对照样本归同一项目。Android 继续使用 `codex/android-migration`，iOS 分支 `codex/dev-3.1.1` 及原有未提交备案资料保留。Android 原 worktree 为此前的工作现场，下文保留历史路径；目前应使用原项目目录。 旧 worktree 仍与当前 Codex 会话绑定、处于 detached 状态，应用不允许归档该主工作区；它只保留作历史副本，后续命令须显式使用原项目目录，不能继续在旧副本开发。Android 原输出已逐文件校验迁回；旧缓存保存在 `output/backups/android/worktree-migration-2026-10-27/`，新路径按需重建。
