@@ -1,6 +1,6 @@
 # 统一项目目录（2026-10-27）
 
-用户要求 Android 放回原项目并与 iOS 区分。当前项目目录为 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper`，Android 在 `android/`，iOS 保留原 `BaseballMaster/`、`BaseballMaster.xcodeproj` 和测试目录；服务、文档与对照样本归同一项目。Android 继续使用 `codex/android-migration`，iOS 分支 `codex/dev-3.1.1` 及原有未提交备案资料保留。Android 原 worktree 为此前的工作现场，下文保留历史路径；目前应使用原项目目录。
+用户要求 Android 放回原项目并与 iOS 区分。当前项目目录为 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper`，Android 在 `android/`，iOS 保留原 `BaseballMaster/`、`BaseballMaster.xcodeproj` 和测试目录；服务、文档与对照样本归同一项目。Android 继续使用 `codex/android-migration`，iOS 分支 `codex/dev-3.1.1` 及原有未提交备案资料保留。Android 原 worktree 为此前的工作现场，下文保留历史路径；目前应使用原项目目录。 旧 worktree 仍与当前 Codex 会话绑定、处于 detached 状态，应用不允许归档该主工作区；它只保留作历史副本，后续命令须显式使用原项目目录，不能继续在旧副本开发。Android 原输出已逐文件校验迁回；旧缓存保存在 `output/backups/android/worktree-migration-2026-10-27/`，新路径按需重建。
 
 # Android 迁移分支（2026-10-27）
 
