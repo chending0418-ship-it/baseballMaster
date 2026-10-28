@@ -16,6 +16,7 @@ tasks.test {
     exclude("**/AppleSwiftWireReturnTest.class")
     exclude("**/TeamDirectoryIntegrationTest.class")
     exclude("**/StandaloneLiveIntegrationTest.class")
+    exclude("**/AppleCommandStateReturnTest.class")
 }
 tasks.register<Test>("liveServiceTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
@@ -42,4 +43,11 @@ tasks.register<Test>("swiftWireTest") {
     inputs.dir(providers.gradleProperty("swiftWireDirectory"))
     systemProperty("swift.wire.directory", providers.gradleProperty("swiftWireDirectory").orElse("").get())
     systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
+}
+tasks.register<Test>("swiftCommandStateTest") {
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    include("**/AppleCommandStateReturnTest.class")
+    inputs.dir(providers.gradleProperty("swiftCommandDirectory"))
+    systemProperty("swift.command.directory", providers.gradleProperty("swiftCommandDirectory").orElse("").get())
 }

@@ -30,6 +30,9 @@ private struct ScenarioStep: Decodable {
         result["clockRunning"]=store.game.clockRunningSince != nil
         result["statisticsIncomplete"]=store.game.statisticsIncomplete == true
         result["correctionCount"]=(store.game.correctionRevisions ?? []).count
+        let usage=store.game.pitcherInningUsage
+        result["pitcherInningUsage"]=Dictionary(uniqueKeysWithValues:usage.inningsByPitcher.map {($0.key.uuidString.lowercased(),$0.value.sorted())})
+        result["pitcherInningHistoryIncomplete"]=usage.hasIncompleteHistory
         return result
     }
     private static func differences(_ actual: [String:Any],_ expected: [String:MatchJSON]) throws -> [String] {
@@ -66,6 +69,7 @@ private struct ScenarioStep: Decodable {
             let executed=try canonical(store)
             let executionDifferences=try differences(executed,step.expected)
             var replayDifferences:[String]=[]
+            var checkpointCanonical:[String:Any]?
             let replayApplicable=store.game.historyJournal != nil
             if replayApplicable {
                 let draft=try store.makeCorrectionDraft()
@@ -73,13 +77,17 @@ private struct ScenarioStep: Decodable {
                 guard preview.canSave else {throw LocalDataError.invalid("Step \(index) replay: \(preview.conflict ?? "unknown")")}
                 replayView.game=preview.game
                 replayDifferences=try differences(canonical(replayView),step.expected)
+                replayView.game=try JSONDecoder().decode(GameState.self,from:draft.journal.checkpoint)
+                checkpointCanonical=try canonical(replayView)
             }
             let different=Array(Set(executionDifferences+replayDifferences)).sorted()
             let encoded=try JSONSerialization.jsonObject(with:JSONEncoder().encode(stored))
-            results.append(["step":index,"inputOperationID":step.id.uuidString,
+            var row:[String:Any]=["step":index,"inputOperationID":step.id.uuidString,
                             "scoreMatches":different.isEmpty,"differentFields":different,
                             "executionDifferentFields":executionDifferences,"replayDifferentFields":replayDifferences,
-                            "replayApplicable":replayApplicable,"actual":executed,"storedGame":encoded])
+                            "replayApplicable":replayApplicable,"actual":executed,"storedGame":encoded]
+            if let checkpointCanonical {row["checkpointCanonical"]=checkpointCanonical}
+            results.append(row)
         }
         let report:[String:Any]=["scenario":scenario.scenario,"passed":results.allSatisfy {$0["scoreMatches"] as? Bool == true},"steps":results]
         try JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]).write(to:output,options:.atomic)
