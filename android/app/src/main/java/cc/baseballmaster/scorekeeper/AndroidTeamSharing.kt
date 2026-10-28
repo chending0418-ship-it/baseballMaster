@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
  */
 internal class AndroidTeamSharing(private val local: GameRepository, private val session: TeamDirectorySession) {
     suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
+    suspend fun reconnect(confirmed: Boolean) = withContext(Dispatchers.IO) {session.reconnect(confirmed)}
     suspend fun retainIncomingLink(link: IncomingTeamLink) = withContext(Dispatchers.IO) {session.retainIncomingLink(link)}
     suspend fun consumeIncomingLink(id: String) = withContext(Dispatchers.IO) {session.consumeIncomingLink(id)}
     suspend fun reconcileAfterRecovery(confirmed: Boolean) = withContext(Dispatchers.IO) {session.reconcileAfterRecovery(confirmed)}

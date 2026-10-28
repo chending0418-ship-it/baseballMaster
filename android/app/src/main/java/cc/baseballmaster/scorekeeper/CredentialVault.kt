@@ -21,7 +21,7 @@ class CredentialVault internal constructor(
     private val commitEditor: (SharedPreferences.Editor) -> Boolean = { it.commit() },
     private val writeGuard: CredentialWriteGuard = sharedWriteGuard,
     private val now: () -> Long = System::currentTimeMillis,
-) : RotatingTeamCredentials {
+) : RotatingTeamCredentials, ReconnectingTeamCredentials {
     companion object {
         private val lock = Any()
         private val sharedWriteGuard = CredentialWriteGuard()
@@ -111,5 +111,27 @@ class CredentialVault internal constructor(
     }
     internal fun clearExpiredRotation(id: String) = synchronized(lock) {
         if (pendingRotation()?.id == id) persist(preferences.edit().remove("rotation_id").remove("rotation_sealed"))
+    }
+    override fun pendingReconnect(): TeamCredentialRotation? = synchronized(lock) {
+        checkReadable()
+        val id=preferences.getString("reconnect_id",null);val saved=preferences.getString("reconnect_sealed",null)
+        check((id==null)==(saved==null)) {"重新接入资料不完整，原文件已保留"}
+        if(id==null || saved==null) null else TeamCredentialRotation(id,java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(open(saved)))
+    }
+    override fun beginReconnect(): TeamCredentialRotation = synchronized(lock) {
+        stableEncryptionSecret()
+        pendingReconnect() ?: TeamCredentialRotation(java.util.UUID.randomUUID().toString(),TeamSecrets.random()).also {
+            persist(preferences.edit().putString("reconnect_id",it.id)
+                .putString("reconnect_sealed",seal(java.util.Base64.getUrlDecoder().decode(it.token))))
+        }
+    }
+    override fun activateReconnect(candidate: TeamCredentialRotation) = synchronized(lock) {
+        check(pendingReconnect()==candidate && preferences.contains("state_sealed")) {"重新接入资料已变化，未替换授权"}
+        persist(preferences.edit().putString("sealed",seal(java.util.Base64.getUrlDecoder().decode(candidate.token)))
+            .putLong("rotation_date",now()).remove("rotation_id").remove("rotation_sealed"))
+    }
+    override fun finishReconnect(candidate: TeamCredentialRotation) = synchronized(lock) {
+        check(pendingReconnect()==candidate && currentToken()==candidate.token) {"新授权尚未保存"}
+        persist(preferences.edit().remove("reconnect_id").remove("reconnect_sealed"))
     }
 }

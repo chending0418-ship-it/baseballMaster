@@ -67,6 +67,7 @@ internal fun androidTeamDirectory(context: Context, endpoint: String): TeamDirec
     val store = TeamDirectoryFile(File(app.noBackupFilesDir, "team-directory"), vault::stableEncryptionSecret)
     val rotator=TeamCredentialRotator(vault) { token -> TeamHttpTransport(endpoint,TeamCredentialProvider { token }) }
     val credentials = TeamCredentialProvider {
+        check(vault.pendingReconnect()==null) {"设备重新接入尚未完成，请续接"}
         val pending=vault.pendingRotation()
         if (pending != null || vault.rotationDue()) {
             val device=store.load().deviceID
@@ -82,7 +83,9 @@ internal fun androidTeamDirectory(context: Context, endpoint: String): TeamDirec
         }
         vault.currentToken()
     }
-    return TeamDirectorySession(TeamDirectoryClient(TeamHttpTransport(endpoint, credentials)), store, android.os.Build.MODEL)
+    val reconnect=TeamDeviceReconnector(vault,store,{token -> TeamHttpTransport(endpoint,TeamCredentialProvider {token})},android.os.Build.MODEL)
+    return TeamDirectorySession(TeamDirectoryClient(TeamHttpTransport(endpoint, credentials)), store, android.os.Build.MODEL,
+        reconnect::reconnect,{vault.pendingReconnect()!=null})
 }
 
 /** Explicit maintenance, never performed just because the app starts. Pending

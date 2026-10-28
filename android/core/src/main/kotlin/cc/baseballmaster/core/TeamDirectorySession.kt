@@ -57,6 +57,7 @@ import kotlinx.serialization.json.*
     val fixedInvitations: Map<String, FixedTeamInvitation> = emptyMap(),
     val incomingLinks: List<IncomingTeamLink> = emptyList(),
     val recoveryWork: List<PreservedRecoveryWork> = emptyList(),
+    val credentialExpired: Boolean = false, val reconnectRequestID: String? = null,
 ) {
     override fun toString() = "TeamDirectoryState(pending=${pending?.kind}, requiresRecoveryReview=$requiresRecoveryReview)"
 }
@@ -68,20 +69,32 @@ interface TeamDirectoryStorage {
     fun save(state: TeamDirectoryState)
 }
 
-class TeamDirectorySession(internal val client: TeamDirectoryClient, internal val storage: TeamDirectoryStorage, private val deviceLabel: String) {
-    fun snapshot(): TeamDirectoryState = synchronized(storage.monitor) { storage.load() }
+class TeamDirectorySession(internal val client: TeamDirectoryClient, internal val storage: TeamDirectoryStorage, private val deviceLabel: String,
+    private val reconnectDevice: ((Boolean)->String)? = null, private val hasPendingReconnect: ()->Boolean = {false},
+) {
+    private var expiredInMemory=false
+    init {client.authorizationExpired={ synchronized(storage.monitor) {
+        expiredInMemory=true
+        storage.save(storage.load().withExpiredAuthorization())
+    }}}
+    fun snapshot(): TeamDirectoryState = synchronized(storage.monitor) {
+        storage.load().let {if((expiredInMemory || hasPendingReconnect()) && !it.credentialExpired) it.withExpiredAuthorization() else it}
+    }
+    fun reconnect(confirmed: Boolean): String = synchronized(storage.monitor) {
+        val id=requireNotNull(reconnectDevice) {"当前设备暂不支持重新接入"}.invoke(confirmed)
+        expiredInMemory=false;id
+    }
 
     fun refresh(): TeamDirectory = synchronized(storage.monitor) { refreshLocked() }
     private fun refreshLocked(): TeamDirectory {
+        check(!hasPendingReconnect()) {"设备重新接入尚未完成，请续接；不会发送其他操作"}
         var state = storage.load()
         if (state.deviceID == null) {
             val id = client.enroll(deviceLabel)
             state = state.copy(deviceID = id); storage.save(state)
         }
-        val remote = try { client.teams() } catch (fault: TeamServiceFault) {
-            if (fault.status == 401) storage.save(state.copy(directory = null, profiles = emptyMap(), bindings = emptyList(), retainedSecrets = emptyList(), lastCompletion = null,matches=emptyMap(),matchCursors=emptyMap(),matchReceipts=emptyMap(),recoveryCards=emptyList(),pairing=null,outgoingPairing=null,fixedInvitations=emptyMap()))
-            throw fault
-        }
+        val remote = client.teams()
+        expiredInMemory=false
         storage.save(applyDirectory(state,remote))
         return remote
     }
@@ -133,7 +146,7 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         val cached = state.profiles[id]
         if (!force && cached != null && cached.profile.revision == member.revision) return@synchronized cached.profile
         val detail = try { client.detail(id) } catch (fault: TeamServiceFault) {
-            if (fault.status in setOf(401,403,404)) storage.save(state.copy(profiles = state.profiles - id, bindings = state.bindings.filterNot { it.cloudTeamID.equals(id,true) }))
+            if (fault.status in setOf(403,404)) storage.save(state.copy(profiles = state.profiles - id, bindings = state.bindings.filterNot { it.cloudTeamID.equals(id,true) }))
             throw fault
         }
         val final = refreshLocked(); val current = storage.load()
@@ -242,7 +255,8 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         // definitive rejection available as proof after a lost retry response.
         if(state.lastFailure!=null) storage.save(state.copy(lastFailure=null))
         val response = try { client.send(pending) } catch (fault: TeamServiceFault) {
-            storage.save(state.copy(lastFailure=DirectoryFailure(pending.id,fault.status,fault.code),requiresRecoveryReview=state.requiresRecoveryReview || fault.requiresRecoveryReview))
+            val failed=storage.load()
+            storage.save(failed.copy(lastFailure=DirectoryFailure(pending.id,fault.status,fault.code),requiresRecoveryReview=failed.requiresRecoveryReview || fault.requiresRecoveryReview))
             throw fault
         }
         val completed = DirectoryCompletion(pending, response)

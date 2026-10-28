@@ -40,7 +40,7 @@ internal class SharingUi(private val api: AndroidTeamSharing) {
     var members by mutableStateOf<List<SharedTeamMember>>(emptyList()); var invitations by mutableStateOf<List<TeamInvitation>>(emptyList())
     val team get()=state.directory?.teams?.singleOrNull { it.id==selectedID }
     val roster get()=state.profiles[selectedID]?.profile
-    val canPrepare get()=enabled && !busy && state.pending==null && !state.requiresRecoveryReview
+    val canPrepare get()=enabled && !busy && state.pending==null && !state.requiresRecoveryReview && !state.credentialExpired
     fun call(scope: CoroutineScope, block: suspend ()->Unit) {
         if(busy) return
         busy=true; error=null
@@ -122,6 +122,12 @@ internal object SharingClipboard {
         Text("进入共享页面后核对设备授权，不会自动上传本机球队或比赛。")
         if(!ui.fresh && !ui.state.directory?.teams.isNullOrEmpty()) Text("以下为本机缓存；操作先保留在本机，联网核对授权后才会发送。")
         ui.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+        if(ui.state.credentialExpired) {
+            Text("这台设备的球队授权已失效。重新接入会生成新设备身份，之后需通过邀请、原设备授权或管理恢复重新取得权限；原操作与本人比赛会留在本机待核对。")
+            TextButton(enabled=!ui.busy,onClick={confirmation=SharingConfirmation("重新接入球队服务","原本机球队和比赛会保留。失效设备的操作不会以新身份自动发送，旧邀请及管理卡将移除。确认重新接入？") {
+                ui.call(scope) {api.reconnect(true);ui.refresh()}
+            }}) {Text("重新接入")}
+        }
         if(ui.state.requiresRecoveryReview) {
             Text("服务恢复后需要核对，旧操作已保留，当前不会自动重做。",color=MaterialTheme.colorScheme.error)
             TextButton(enabled=!ui.busy,onClick={securityPage="review"}) {Text("恢复后核对")}

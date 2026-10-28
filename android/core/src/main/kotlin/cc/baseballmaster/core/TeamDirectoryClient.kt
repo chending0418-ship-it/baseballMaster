@@ -106,7 +106,14 @@ class TeamHttpTransport(baseURL: String, private val credentials: TeamCredential
 
 object TeamDirectoryJson { val format = Json { ignoreUnknownKeys = true; encodeDefaults = true } }
 
-class TeamDirectoryClient(internal val transport: TeamTransport) {
+class TeamDirectoryClient(transport: TeamTransport) {
+    internal var authorizationExpired: (() -> Unit)? = null
+    internal val transport=TeamTransport {method,path,body ->
+        try {transport.request(method,path,body)} catch(fault: TeamServiceFault) {
+            if(fault.status==401) authorizationExpired?.invoke()
+            throw fault
+        }
+    }
     @Serializable private data class Members(val members: List<SharedTeamMember>)
     @Serializable private data class Invitations(val invitations: List<TeamInvitation>)
     fun enroll(label: String): String {

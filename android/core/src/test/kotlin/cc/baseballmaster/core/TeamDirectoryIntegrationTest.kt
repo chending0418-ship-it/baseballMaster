@@ -28,6 +28,25 @@ class TeamDirectoryIntegrationTest {
         }
         override fun finishRotation(rotation: TeamCredentialRotation) { if(failFinish) throw IOException("injected credential finish"); check(pending==rotation); current=rotation.token; pending=null }
     }
+    private class ReconnectCredentials : ReconnectingTeamCredentials {
+        override val monitor=Any();val original=TeamSecrets.random();var current=original
+        private val stable=java.util.Base64.getUrlDecoder().decode(original)
+        var pending: TeamCredentialRotation?=null;var failBegin=false;var failActivate=false;var failFinish=false
+        override fun stableEncryptionSecret()=stable.copyOf()
+        override fun pendingReconnect()=pending
+        override fun beginReconnect(): TeamCredentialRotation {
+            if(failBegin) throw IOException("injected candidate write")
+            return pending ?: TeamCredentialRotation(UUID.randomUUID().toString(),TeamSecrets.random()).also {pending=it}
+        }
+        override fun activateReconnect(candidate: TeamCredentialRotation) {
+            if(failActivate) throw IOException("injected credential activation")
+            check(candidate==pending);current=candidate.token
+        }
+        override fun finishReconnect(candidate: TeamCredentialRotation) {
+            if(failFinish) throw IOException("injected candidate cleanup")
+            check(candidate==pending && current==candidate.token);pending=null
+        }
+    }
     private class Service : AutoCloseable {
         private val script = File(System.getProperty("parity.fixtures")).parentFile.parentFile.resolve("scripts/android/an05-local-service.mjs")
         private val process = ProcessBuilder("node", script.absolutePath).redirectError(ProcessBuilder.Redirect.DISCARD).start()
@@ -56,6 +75,84 @@ class TeamDirectoryIntegrationTest {
     private fun publishFixture(server: Service, transport: TeamTransport, team: RemoteTeam): SharedMatchDocument {
         val body=JsonObject(server.matchFixture() + ("operationID" to JsonPrimitive(UUID.randomUUID().toString())))
         return SharedMatchDocument(transport.request("POST","teams/${team.id}/games",body))
+    }
+
+    @Test(timeout=30000) fun expiredDeviceReconnectIsExplicitAndKeepsOldWorkWithoutReplayingIt() {
+        Service().use {server ->
+            val vault=ReconnectCredentials();val store=Memory();val owner=session(server.transport(vault.current),store)
+            val team=create(owner);val oldDevice=store.state.deviceID!!
+            val document=owner.match(team.id,publishFixture(server,server.transport(vault.current),team).id)
+            val control=owner.prepareMatchControl(document,MatchControl.force,oldDevice,true)
+            val pending=owner.prepareCreate("失效身份的旧请求","管理员")
+            server.change("credential",oldDevice)
+            assertEquals(401,assertThrows(TeamServiceFault::class.java) {owner.refresh()}.status)
+            assertTrue(store.state.credentialExpired);assertNull(store.state.directory)
+            val retained=store.state.recoveryWork.single()
+            assertEquals(pending,retained.directoryRequest!!.id);assertEquals(control,retained.matchRequests.single().id)
+            assertEquals(document.raw,retained.matches.single().document.raw)
+            var calls=0
+            val reconnect=TeamDeviceReconnector(vault,store,{token -> TeamTransport {m,p,b -> calls++;server.transport(token).request(m,p,b)}},"安卓重新接入")
+            assertThrows(IllegalArgumentException::class.java) {reconnect.reconnect(false)};assertEquals(0,calls)
+            val stable=vault.stableEncryptionSecret();val newDevice=reconnect.reconnect(true)
+            assertNotEquals(oldDevice,newDevice);assertEquals(1,calls);assertNotEquals(vault.original,vault.current)
+            assertArrayEquals(stable,vault.stableEncryptionSecret());assertNull(vault.pending)
+            assertNull(store.state.pending);assertTrue(store.state.matchPending.isEmpty());assertEquals(listOf(retained),store.state.recoveryWork)
+            assertTrue(store.state.requiresRecoveryReview);assertFalse(store.state.credentialExpired)
+            val renewed=session(server.transport(vault.current),store)
+            renewed.refresh();renewed.reconcileAfterRecovery(true)
+            assertTrue(renewed.refresh().teams.isEmpty());assertThrows(IllegalStateException::class.java) {renewed.sendPending()}
+        }
+    }
+
+    @Test(timeout=30000) fun reconnectResumesSameCandidateAfterLostEnrollmentActivationAndFinalSave() {
+        Service().use {server ->
+            val vault=ReconnectCredentials();val store=Memory();val owner=session(server.transport(vault.current),store)
+            create(owner);server.change("credential",store.state.deviceID!!)
+            assertThrows(TeamServiceFault::class.java) {owner.refresh()}
+            var lose=true;val enrolled=mutableSetOf<String>();var calls=0
+            val reconnect=TeamDeviceReconnector(vault,store,{token -> TeamTransport {m,p,b ->
+                val reply=server.transport(token).request(m,p,b);calls++;enrolled+=reply.getValue("deviceID").jsonPrimitive.content
+                if(lose) {lose=false;throw IOException("injected lost enrolment reply")};reply
+            }},"安卓重新接入")
+            assertThrows(IOException::class.java) {reconnect.reconnect(true)}
+            val candidate=vault.pending!!;assertEquals(candidate.id,store.state.reconnectRequestID)
+            vault.failActivate=true
+            assertThrows(IOException::class.java) {reconnect.reconnect(true)};assertEquals(candidate,vault.pending);assertEquals(vault.original,vault.current)
+            vault.failActivate=false;store.reject={it.deviceID!=null && !it.credentialExpired}
+            assertThrows(IOException::class.java) {reconnect.reconnect(true)}
+            assertEquals(candidate.token,vault.current);assertTrue(store.state.credentialExpired);assertEquals(candidate,vault.pending)
+            store.reject={false};val id=reconnect.reconnect(true)
+            assertEquals(setOf(id),enrolled);assertEquals(4,calls);assertNull(vault.pending);assertEquals(id,store.state.deviceID)
+        }
+    }
+
+    @Test(timeout=30000) fun reconnectDoesNotEnrollBeforeCandidateAndArchiveAreDurableAndResumesCleanup() {
+        Service().use {server ->
+            val vault=ReconnectCredentials();val store=Memory();val owner=session(server.transport(vault.current),store)
+            create(owner);server.change("credential",store.state.deviceID!!);assertThrows(TeamServiceFault::class.java) {owner.refresh()}
+            var calls=0
+            val reconnect=TeamDeviceReconnector(vault,store,{token -> TeamTransport {m,p,b -> calls++;server.transport(token).request(m,p,b)}},"安卓重新接入")
+            vault.failBegin=true;assertThrows(IOException::class.java) {reconnect.reconnect(true)};assertEquals(0,calls)
+            vault.failBegin=false;store.reject={it.reconnectRequestID!=null}
+            assertThrows(IOException::class.java) {reconnect.reconnect(true)};assertEquals(0,calls)
+            store.reject={false};vault.failFinish=true
+            assertThrows(IOException::class.java) {reconnect.reconnect(true)};assertEquals(1,calls)
+            val id=store.state.deviceID;assertFalse(store.state.credentialExpired);assertNotNull(vault.pending)
+            val guarded=TeamDirectorySession(TeamDirectoryClient(server.transport(vault.current)),store,"安卓",reconnect::reconnect,{vault.pending!=null})
+            assertTrue(guarded.snapshot().credentialExpired);assertThrows(IllegalStateException::class.java) {guarded.refresh()}
+            vault.failFinish=false;assertEquals(id,guarded.reconnect(true));assertNull(vault.pending);assertFalse(guarded.snapshot().credentialExpired)
+        }
+    }
+
+    @Test fun anyAuthenticatedRequestMarksExpiredAuthorizationAndHidesStaleRoleWhenSaveFails() {
+        val store=Memory();val team=RemoteTeam(UUID.randomUUID().toString(),"旧缓存球队",1,TeamRole.admin,UUID.randomUUID().toString(),1)
+        store.state=TeamDirectoryState(deviceID=UUID.randomUUID().toString(),directory=TeamDirectory(listOf(team),UUID.randomUUID().toString()))
+        val old=store.state;var fail=false
+        val transport=TeamTransport {_,_,_ -> if(fail) throw TeamServiceFault(401,"revoked") else error("unexpected request")}
+        val owner=session(transport,store)
+        store.reject={true};fail=true
+        assertThrows(IOException::class.java) {owner.client.teams()}
+        assertEquals(old,store.state);assertTrue(owner.snapshot().credentialExpired);assertNull(owner.snapshot().directory)
     }
 
     @Test(timeout = 30000) fun recoveryReviewPreservesOldWorkDownloadsCurrentDocumentsAndNeverReplaysOldRequests() {

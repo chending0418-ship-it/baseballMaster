@@ -39,6 +39,37 @@ class CredentialRotationStorageTest {
         assertFalse(saved.contains(candidate.token)); assertFalse(candidate.toString().contains(candidate.token))
     }
 
+    @Test fun reconnectKeepsEncryptionKeyAndCandidateAcrossActivationAndReopen() {
+        val vault=CredentialVault(context,key,writeGuard=CredentialWriteGuard());val old=vault.currentToken();val stable=vault.stableEncryptionSecret()
+        vault.beginRotation();val candidate=vault.beginReconnect()
+        assertEquals(old,vault.currentToken());assertFalse(candidate.toString().contains(candidate.token))
+        val reopened=CredentialVault(context,key,writeGuard=CredentialWriteGuard())
+        assertEquals(candidate,reopened.beginReconnect());reopened.activateReconnect(candidate)
+        val activated=CredentialVault(context,key,writeGuard=CredentialWriteGuard())
+        assertEquals(candidate.token,activated.currentToken());assertNull(activated.pendingRotation());assertEquals(candidate,activated.pendingReconnect())
+        assertArrayEquals(stable,activated.stableEncryptionSecret());activated.finishReconnect(candidate)
+        assertNull(CredentialVault(context,key,writeGuard=CredentialWriteGuard()).pendingReconnect())
+        assertFalse(context.getSharedPreferences("device_credentials",0).all.values.any {it.toString().contains(candidate.token)})
+    }
+
+    @Test fun failedReconnectCandidateCommitBlocksUnconfirmedSecretAndEveryVaultInProcess() {
+        val guard=CredentialWriteGuard();val vault=CredentialVault(context,key,writeGuard=guard);vault.stableEncryptionSecret()
+        val failing=CredentialVault(context,key,commitEditor={it.commit();false},writeGuard=guard)
+        assertThrows(IllegalStateException::class.java) {failing.beginReconnect()}
+        assertThrows(IllegalStateException::class.java) {vault.currentToken()}
+        assertThrows(IllegalStateException::class.java) {vault.pendingReconnect()}
+    }
+
+    @Test fun failedReconnectActivationPreservesResumableCandidateAndStableFileKey() {
+        val guard=CredentialWriteGuard();val vault=CredentialVault(context,key,writeGuard=guard);val stable=vault.stableEncryptionSecret();val candidate=vault.beginReconnect()
+        val failing=CredentialVault(context,key,commitEditor={it.commit();false},writeGuard=guard)
+        assertThrows(IllegalStateException::class.java) {failing.activateReconnect(candidate)}
+        assertThrows(IllegalStateException::class.java) {vault.currentToken()}
+        val reopened=CredentialVault(context,key,writeGuard=CredentialWriteGuard())
+        assertEquals(candidate,reopened.pendingReconnect());assertArrayEquals(stable,reopened.stableEncryptionSecret())
+        reopened.activateReconnect(candidate);reopened.finishReconnect(candidate)
+    }
+
     @Test fun aFailedSecretCommitCannotBeMistakenForAPersistedInMemoryPreference() {
         val guard=CredentialWriteGuard(); var commits=0
         val vault=CredentialVault(context,key,commitEditor={ it.commit(); commits++; false },writeGuard=guard)
