@@ -73,8 +73,8 @@ class MainActivity : ComponentActivity() {
         setContent { BaseballTheme(screenModel.appAppearance) { PortraitViewport("portrait-app") { AndroidLaunchContainer(screenModel) {ScorekeeperApp(screenModel)} } } }
     }
     override fun onNewIntent(intent: Intent) {super.onNewIntent(intent);setIntent(intent);receiveServiceIntent(intent)}
-    override fun onStart() {super.onStart();screenModel.live.setForeground(true)}
-    override fun onStop() {screenModel.live.setForeground(false);super.onStop()}
+    override fun onStart() {super.onStart();screenModel.setLiveForeground(true)}
+    override fun onStop() {screenModel.setLiveForeground(false);super.onStop()}
     private fun receiveServiceIntent(source: Intent) {
         val value=source.dataString;source.data=null
         if(source.action==Intent.ACTION_VIEW && value!=null) screenModel.receiveTeamLink(value)
@@ -86,6 +86,16 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private val database = LocalDatabase.open(application)
     private val repository = GameRepository(database)
     internal val live by lazy {AndroidLive(application,repository,viewModelScope) {recoveryRequired || loading}}
+    private var sharedPresence: kotlinx.coroutines.Job?=null
+    internal fun setLiveForeground(active: Boolean) {
+        live.setForeground(active);sharedPresence?.cancel();sharedPresence=null
+        if(active) sharedPresence=viewModelScope.launch {
+            while(true) {
+                if(!loading && !recoveryRequired) runCatching {sharing.maintainSharedLive()}.onFailure {if(it is kotlinx.coroutines.CancellationException) throw it}
+                kotlinx.coroutines.delay(10_000)
+            }
+        }
+    }
     internal val sharing by lazy { AndroidTeamSharing(repository,androidTeamDirectory(application,"https://baseballmaster.cc/api/v3")) }
     internal val launchRepository by lazy {AndroidLaunchScreenRepository.standard(application)}
     internal var launchDismissed by mutableStateOf(false)

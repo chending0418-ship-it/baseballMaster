@@ -41,6 +41,47 @@ class TeamDirectoryFileTest {
             store.save(value); assertFalse(bytes.contentEquals(File(dir,"directory-v1.sealed").readBytes()))
         } finally { dir.deleteRecursively() }
     }
+    @Test fun viewingRequestLinkReceiptAndReviewArchiveSurviveEncryptionAndFailedReplacement() {
+        val dir=folder()
+        try {
+            val game=UUID.randomUUID().toString();val team=UUID.randomUUID().toString();val member=UUID.randomUUID().toString();val epoch=UUID.randomUUID().toString();val id=UUID.randomUUID().toString();val token=TeamSecrets.random()
+            val request=PendingMatchWatch(id,team,game,MatchWatchAction.invitation,buildJsonObject {put("operationID",id);put("token",token)},member,1,epoch,1)
+            val receipt=CompletedMatchWatch(request,buildJsonObject {put("invitationID",UUID.randomUUID().toString());put("expiresAt",System.currentTimeMillis()+86_400_000)})
+            val link=MatchWatchLink(game,id,token,System.currentTimeMillis()+86_400_000,1,false)
+            val archive=PreservedRecoveryWork(UUID.randomUUID().toString(),epoch,epoch,System.currentTimeMillis(),watchRequests=listOf(request))
+            val value=TeamDirectoryState(watchPending=mapOf(game to request),watchReceipts=mapOf(game to receipt),watchLinks=mapOf(game to link),recoveryWork=listOf(archive))
+            val store=TeamDirectoryFile(dir,{key.copyOf()});store.save(value)
+            assertEquals(value,TeamDirectoryFile(dir,{key.copyOf()}).load());assertFalse(File(dir,"directory-v1.sealed").readBytes().toString(Charsets.UTF_8).contains(token))
+            assertFalse(request.toString().contains(token));assertFalse(receipt.toString().contains(token))
+            assertThrows(IOException::class.java) {TeamDirectoryFile(dir,{key.copyOf()}) {throw IOException("injected viewing write")}.save(value.copy(watchPending=emptyMap()))}
+            assertEquals(value,store.load())
+        } finally {dir.deleteRecursively()}
+    }
+    @Test fun foregroundPresenceNeverEnrollsAndOnlyHeartbeatsAnAlreadyEnabledOwnedBroadcast() = runBlocking {
+        val dir=folder();val db=Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),LocalDatabase::class.java).build()
+        try {
+            val store=TeamDirectoryFile(dir,{key.copyOf()});val calls=mutableListOf<String>()
+            val team=UUID.randomUUID().toString();val member=UUID.randomUUID().toString();val game=UUID.randomUUID().toString();val device=UUID.randomUUID().toString();val epoch=UUID.randomUUID().toString()
+            val directory=TeamDirectory(listOf(RemoteTeam(team,"球队",1,TeamRole.admin,member,1)),epoch)
+            val raw=buildJsonObject {
+                put("id",game);put("teamID",team);put("writerDeviceID",device);put("responsibleMemberID",member);put("serverRevision",1);put("writerEpoch",1);put("digest","a".repeat(64));put("deleted",false);put("canWrite",true)
+                put("liveEnabled",true);put("liveCode","a".repeat(32));put("liveExpiresAt",System.currentTimeMillis()+60_000)
+                put("payload",buildJsonObject {put("id",game);put("state",buildJsonObject {put("isFinal",false)})})
+            }
+            val session=TeamDirectorySession(TeamDirectoryClient(TeamTransport {method,path,_ ->
+                calls+="$method $path"
+                when(path) {"teams"->TeamDirectoryJson.format.encodeToJsonElement(directory).jsonObject;"teams/$team/games/$game","teams/$team/games/$game/live-heartbeat"->raw;else->error("unexpected request")}
+            }),store,"安卓")
+            val api=AndroidTeamSharing(GameRepository(db),session)
+            api.maintainSharedLive();assertTrue(calls.isEmpty())
+            val cache=CachedSharedMatch(SharedMatchDocument(raw),member,1,epoch)
+            val state=TeamDirectoryState(deviceID=device,directory=directory,matches=mapOf(game to cache))
+            store.save(state.copy(requiresRecoveryReview=true));api.maintainSharedLive();assertTrue(calls.isEmpty())
+            store.save(state.copy(deviceID=UUID.randomUUID().toString()));api.maintainSharedLive();assertTrue(calls.isEmpty())
+            store.save(state);api.maintainSharedLive()
+            assertEquals(1,calls.count {it=="POST teams/$team/games/$game/live-heartbeat"});assertTrue(calls.none {it=="POST devices"})
+        } finally {db.close();dir.deleteRecursively()}
+    }
 
     @Test fun failedReplacementRetainsTheOriginalPendingRequestAndExactCiphertext() {
         val dir = folder()

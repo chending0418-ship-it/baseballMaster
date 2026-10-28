@@ -93,6 +93,7 @@ internal object SharingClipboard {
     var editor by remember { mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.join) "join" else null) }; var player by remember {mutableStateOf<SharedRosterPlayer?>(null)}
     var securityPage by remember {mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.pair) "approve" else null)}
     var lifecyclePage by remember {mutableStateOf<String?>(null)}
+    var showMatches by remember {mutableStateOf(false)}
     var confirmation by remember {mutableStateOf<SharingConfirmation?>(null)}
     var invitationToShow by remember {mutableStateOf<FixedTeamInvitation?>(null)}; var shownCard by remember {mutableStateOf<SavedManagementCard?>(null)}
     var receiptBaseline by remember {mutableStateOf<String?>(null)}; var baselineLoaded by remember {mutableStateOf(false)}
@@ -162,6 +163,7 @@ internal object SharingClipboard {
             val team=ui.team; val profile=ui.roster
             if(team==null) Text("球队不可用，请刷新核对。") else {
                 Text(team.name,fontWeight=FontWeight.Bold); Text(team.role.title())
+                TextButton(enabled=ui.enabled && !ui.busy,onClick={showMatches=true}) {Text("球队比赛与观看设置")}
                 TextButton(enabled=!ui.busy,onClick={securityPage="devices"}) {Text("球队设备")}
                 if(team.role==TeamRole.admin) TextButton(enabled=ui.canPrepare && profile!=null,onClick={editor="profile"}) {Text("编辑球队资料")}
                 Text("现役名单与停用档案",fontWeight=FontWeight.Bold)
@@ -250,6 +252,7 @@ internal object SharingClipboard {
         securityPage=null;if(incoming?.kind==IncomingTeamLinkKind.pair) dismiss() else ui.call(scope){ui.refresh()}
     } }
     lifecyclePage?.let {page -> TeamLifecycleScreen(api,page,ui.selectedID) {lifecyclePage=null;ui.call(scope){ui.refresh()}} }
+    if(showMatches) SharedMatchesScreen(api,ui.selectedID) {showMatches=false;ui.call(scope){ui.refresh()}}
 }
 
 @Composable private fun SharingEditor(api: AndroidTeamSharing, ui: SharingUi, scope: CoroutineScope, kind: String, localTeams: List<Team>, player: SharedRosterPlayer?, initialLink: String = "", dismiss: ()->Unit) {

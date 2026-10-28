@@ -38,9 +38,9 @@
 | F08 PDF／海报／文件 | `ReportPDFRenderer`、`PlayByPlayPDFReport`、`StatisticsPDFReports`、`GamePoster` | `ReportExport`、`GamePoster`；阶段实现已有，长名单／实际分享面板及来源历史全面验收未完成 |
 | F09 互导／备份／旧版 | `LocalBackup`、`BackupViews`、`UpgradeProtection`、`HistoricalImportView` | `AppleBackupLibrary`、`AppleImportStorage`、core `AppleSourceBackup`／`AppleGameContinuation`；受限续记、只读旧版、原文保留已接，完整可编辑双向互导和 `.bmteam` 正式映射未完成，真实 v5 缺失 |
 | F10 球队协作 | `TeamCollaborationViews`、`TeamSharingStore` | `TeamSharingScreen`、`TeamDirectorySession`；建队／加入／名单／成员／固定邀请／退出已有，第十组已接解散／恢复；完整绑定管理及共享建赛仍缺 |
-| F11 比赛协作 | `SharedMatchViews`、`SharedMatches` | `SharedMatchDirectory` 读取／游标／交接控制基础已有；产品比赛列表／正式发布／PUT／完整内容编辑／离线更新和冲突核对尚缺，不开放产品交接 |
-| F12 安全／设备／恢复 | `TeamSecurityViews`、`TeamSecurity` | `TeamSecuritySession`、`TeamCredentialRotation`、`CredentialVault`；第八组已接配对、设备管理、管理恢复兑换和卡片分享，第九组补服务恢复核对，第十组补审计；撤销 Bearer 后明确重接入仍缺。界面未执行，AN07 用户明确不做 |
-| F13 直播／历史观看 | `LiveBroadcastViews`、`SharedMatchViews` | AN06 第三组已接独立直播／公共字段／加密发布凭证／重试和恢复保护，273 项开发回归通过；共享直播和历史观看三种权限仍缺，界面未执行，见 AN06-STANDALONE-LIVE。复用现有服务与网页 |
+| F11 比赛协作 | `SharedMatchViews`、`SharedMatches` | `SharedMatchDirectory` 读取／游标／交接控制基础已有；AN06 第四组补只读产品比赛列表；正式发布／PUT／完整内容编辑／离线更新和冲突核对尚缺，不开放产品交接 |
+| F12 安全／设备／恢复 | `TeamSecurityViews`、`TeamSecurity` | `TeamSecuritySession`、`TeamCredentialRotation`、`CredentialVault`；第八组已接配对、设备管理、管理恢复兑换和卡片分享，第九组补服务恢复核对，第十组补审计；第十一组补撤销 Bearer 后明确重接入和旧工作隔离。界面未执行，AN07 用户明确不做 |
+| F13 直播／历史观看 | `LiveBroadcastViews`、`SharedMatchViews` | AN06 第三组已接独立直播／公共字段／加密发布凭证／重试和恢复保护，273 项开发回归通过；第四组补共享直播、三种历史权限、指定成员和外部观看、加密持久请求及保活，283 项开发回归通过；界面和真实系统未执行，见 AN06-SHARED-WATCH。复用现有服务与网页 |
 | F14 规则／设置／开屏 | `ProfileViews`、`ConfigurableLaunchScreen` | AN06 第二组已接同源开屏／配置／缓存、外观／辅助提示、本地数据、关于／隐私／支持入口；规则沿用现有离线资料。UI／系统效果未执行，AN07 用户明确不做，详见 AN06-LAUNCH |
 
 ## 仍未迁移的共享页面

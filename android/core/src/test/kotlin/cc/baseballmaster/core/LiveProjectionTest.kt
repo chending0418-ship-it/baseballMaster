@@ -33,4 +33,12 @@ class LiveProjectionTest {
         for(bad in listOf(url+"?token=private",url+"#private",url.replace("baseballmaster.cc","example.com"))) assertThrows(IllegalArgumentException::class.java) {liveViewQr(bad)}
         for(bad in listOf("https://example.com/livestreaming/novideo","http://baseballmaster.cc/livestreaming/novideo","https://baseballmaster.cc/livestreaming/novideo?token=private")) assertThrows(IllegalArgumentException::class.java) {LiveHttpTransport(bad)}
     }
+    @Test fun sharedWatchQRKeepsInvitationsInFragmentsAndRejectsQueriesAndWrongOrigins() {
+        val code="aB0_".repeat(8);val token=TeamSecrets.random()
+        for(url in listOf("https://baseballmaster.cc/watch/#$code","https://baseballmaster.cc/watch/#$code/$token","https://baseballmaster.cc/watch/#live/$code")) {
+            val qr=watchViewQr(url)
+            assertEquals(url,MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(qr.width,qr.height,qr.pixels)))).text)
+        }
+        for(url in listOf("https://example.com/watch/#$code/$token","https://baseballmaster.cc/watch/?token=$token#$code","https://baseballmaster.cc/watch/#$code/invalid")) assertThrows(IllegalArgumentException::class.java) {watchViewQr(url)}
+    }
 }

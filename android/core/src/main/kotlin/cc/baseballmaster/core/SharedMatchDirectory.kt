@@ -59,7 +59,8 @@ fun TeamDirectorySession.match(teamID: String, gameID: String): SharedMatchDocum
     check(directory.recoveryEpoch == final.recoveryEpoch && member == finalMember) { "权限或球队资料正在变化，请重新读取" }
     val old = state.matches[document.id]
     check(old == null || document.revision >= old.document.revision && document.writerEpoch >= old.document.writerEpoch) { "比赛修订或记分代次倒退，请核对服务恢复状态" }
-    storage.save(state.copy(matches=state.matches + (document.id to CachedSharedMatch(document,member.memberID,member.accessEpoch,directory.recoveryEpoch))))
+    val links=state.watchLinks.filter { (key,link) -> key!=document.id || link.url(document)!=null }
+    storage.save(state.copy(matches=state.matches + (document.id to CachedSharedMatch(document,member.memberID,member.accessEpoch,directory.recoveryEpoch)),watchLinks=links))
     document
 }
 
@@ -125,6 +126,7 @@ fun TeamDirectorySession.prepareMatchControl(expected: SharedMatchDocument, kind
             MatchControl.force -> { require(confirmRisk && member.role == TeamRole.admin && targetDeviceID != null) { "接管需要管理员明确核对旧设备未同步风险" }; put("targetDeviceID",appleUUID(targetDeviceID)); put("confirmRisk",true) }
         }
     }
+    check(current.id !in state.watchPending) {"本场观看操作结果待确认，请先续取"}
     storage.save(state.copy(matchPending=state.matchPending + (current.id to PendingMatchControl(id,current.teamID,current.id,kind,body,member.memberID,member.accessEpoch,directory.recoveryEpoch))))
     id
 }

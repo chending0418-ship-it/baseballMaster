@@ -6,6 +6,10 @@ import java.util.UUID
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /** Uses the repository's real Node/SQLite service on loopback, never production. */
 class TeamDirectoryIntegrationTest {
@@ -57,11 +61,19 @@ class TeamDirectoryIntegrationTest {
             input.write(buildJsonObject { put("kind", kind); teamID?.let { put("teamID", it) } }.toString()); input.newLine(); input.flush()
             assertEquals("true", GameJson.parseToJsonElement(output.readLine()).jsonObject.getValue("updated").jsonPrimitive.content)
         }
-        fun matchFixture(): JsonObject {
-            input.write("{\"kind\":\"fixture\"}"); input.newLine(); input.flush()
+        fun matchFixture(final: Boolean=false): JsonObject {
+            input.write(buildJsonObject {put("kind","fixture");put("final",final)}.toString()); input.newLine(); input.flush()
             return GameJson.parseToJsonElement(output.readLine()).jsonObject.getValue("document").jsonObject
         }
         fun transport(secret: String = TeamSecrets.random()) = TeamHttpTransport(endpoint, TeamCredentialProvider { secret }, allowLoopbackHttp = true)
+        fun publicRequest(method: String,path: String,body: JsonObject?=null,cookie: String?=null): Pair<Int,JsonObject> {
+            val http=OkHttpClient.Builder().proxy(java.net.Proxy.NO_PROXY).build()
+            return http.newCall(Request.Builder().url("$endpoint/$path").header("Origin","https://baseballmaster.cc").header("X-BM-Protocol","1")
+                .apply {cookie?.let {header("Cookie","bm_view=$it")}}
+                .method(method,body?.toString()?.toRequestBody("application/json".toMediaType())).build()).execute().use {
+                it.code to GameJson.parseToJsonElement(it.body!!.string()).jsonObject
+            }
+        }
         override fun close() { input.close(); if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) process.destroyForcibly(); output.close() }
     }
     private fun session(transport: TeamTransport, store: Memory = Memory()) = TeamDirectorySession(TeamDirectoryClient(transport),store,"安卓测试设备")
@@ -72,9 +84,137 @@ class TeamDirectoryIntegrationTest {
         admin.prepareInvite(team.id,role); val invite = admin.sendPending().request.body.getValue("token").jsonPrimitive.content
         member.refresh(); member.prepareJoin(invite,"同名成员"); member.sendPending(); member.refresh()
     }
-    private fun publishFixture(server: Service, transport: TeamTransport, team: RemoteTeam): SharedMatchDocument {
-        val body=JsonObject(server.matchFixture() + ("operationID" to JsonPrimitive(UUID.randomUUID().toString())))
+    private fun publishFixture(server: Service, transport: TeamTransport, team: RemoteTeam,final: Boolean=false): SharedMatchDocument {
+        val body=JsonObject(server.matchFixture(final) + ("operationID" to JsonPrimitive(UUID.randomUUID().toString())))
         return SharedMatchDocument(transport.request("POST","teams/${team.id}/games",body))
+    }
+
+    @Test(timeout=30000) fun historicalWatchingPublicRestrictedAndClosedKeepTheFullArchiveAndRevokeImmediately() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();val owner=session(actual,store);val team=create(owner)
+            var document=owner.match(team.id,publishFixture(server,actual,team,true).id);val original=document.payload
+            val code=document.watchURL.substringAfter('#')
+            assertEquals(404,server.publicRequest("GET","watch/$code").first)
+            assertThrows(IllegalArgumentException::class.java) {owner.prepareWatchMode(document,HistoricalWatchMode.public,false)}
+            owner.prepareWatchMode(document,HistoricalWatchMode.public,true);owner.sendWatching(document.id)
+            document=owner.match(team.id,document.id);assertEquals(200,server.publicRequest("GET","watch/$code").first)
+            owner.prepareWatchMode(document,HistoricalWatchMode.restricted,true);owner.sendWatching(document.id)
+            document=owner.match(team.id,document.id);assertEquals(403,server.publicRequest("GET","watch/$code").first)
+            owner.prepareWatchInvitation(document);owner.sendWatching(document.id);val link=store.state.watchLinks.getValue(document.id)
+            assertNotNull(link.url(document));assertFalse(link.toString().contains(link.token))
+            val viewerSession=TeamSecrets.random()
+            assertEquals(200,server.publicRequest("POST","watch/$code/apply",buildJsonObject {put("token",link.token);put("session",viewerSession);put("nickname","外部观看者")}).first)
+            assertEquals(403,server.publicRequest("GET","watch/$code",cookie=viewerSession).first)
+            val viewer=owner.matchViewers(team.id,document.id).viewers.single();assertEquals("pending",viewer.status)
+            owner.prepareExternalViewer(document,viewer,true);owner.sendWatching(document.id)
+            document=owner.match(team.id,document.id);assertEquals(200,server.publicRequest("GET","watch/$code",cookie=viewerSession).first)
+            owner.prepareWatchMode(document,HistoricalWatchMode.closed,true);owner.sendWatching(document.id);document=owner.match(team.id,document.id)
+            assertEquals(404,server.publicRequest("GET","watch/$code",cookie=viewerSession).first)
+            assertEquals(original,document.payload);assertTrue(store.state.watchLinks.isEmpty())
+            owner.prepareWatchMode(document,HistoricalWatchMode.restricted,true);owner.sendWatching(document.id);document=owner.match(team.id,document.id)
+            assertEquals(403,server.publicRequest("GET","watch/$code",cookie=viewerSession).first)
+            assertThrows(IllegalArgumentException::class.java) {owner.prepareExternalViewer(document,owner.matchViewers(team.id,document.id).viewers.single(),true)}
+        }
+    }
+
+    @Test(timeout=30000) fun specifiedMemberTicketDoesNotGrantManagementAndRevocationEndsExistingBrowserAccess() {
+        Service().use {server ->
+            val adminTransport=server.transport();val owner=session(adminTransport);val team=create(owner)
+            val memberStore=Memory();val member=session(server.transport(),memberStore);join(owner,team,member,TeamRole.member)
+            var document=owner.match(team.id,publishFixture(server,adminTransport,team,true).id)
+            owner.prepareWatchMode(document,HistoricalWatchMode.restricted,true);owner.sendWatching(document.id);document=owner.match(team.id,document.id)
+            val memberID=member.snapshot().directory!!.teams.single().memberID
+            owner.prepareViewerMember(document,memberID,true);owner.sendWatching(document.id);document=owner.match(team.id,document.id)
+            val memberView=member.match(team.id,document.id)
+            assertFalse(memberView.canManageWatch)
+            assertThrows(IllegalArgumentException::class.java) {member.prepareWatchMode(memberView,HistoricalWatchMode.public,true)}
+            member.prepareWatchTicket(memberView);member.sendWatching(document.id)
+            val ticket=memberStore.state.watchLinks.getValue(document.id);val viewerSession=TeamSecrets.random();val code=document.watchURL.substringAfter('#')
+            assertEquals(200,server.publicRequest("POST","watch/$code/apply",buildJsonObject {put("token",ticket.token);put("session",viewerSession);put("nickname","本队成员")}).first)
+            assertEquals(200,server.publicRequest("GET","watch/$code",cookie=viewerSession).first)
+            owner.prepareViewerMember(document,memberID,false);owner.sendWatching(document.id)
+            assertEquals(403,server.publicRequest("GET","watch/$code",cookie=viewerSession).first)
+        }
+    }
+
+    @Test(timeout=30000) fun lostWatchingReceiptRetriesSameInvitationAndPermissionsRatherThanMintingNewSecrets() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();var loseAccess=true;var loseInvitation=true
+            val owner=session(TeamTransport {m,p,b -> val reply=actual.request(m,p,b)
+                if(p.endsWith("/access") && loseAccess) {loseAccess=false;throw IOException("lost access receipt")}
+                if(p.endsWith("/viewer-invitations") && loseInvitation) {loseInvitation=false;throw IOException("lost invitation receipt")};reply
+            },store)
+            val team=create(owner);var document=owner.match(team.id,publishFixture(server,actual,team,true).id)
+            val op=owner.prepareWatchMode(document,HistoricalWatchMode.restricted,true)
+            assertThrows(IOException::class.java) {owner.sendWatching(document.id)};assertEquals(op,store.state.watchPending.getValue(document.id).id)
+            owner.sendWatching(document.id);document=owner.match(team.id,document.id);assertEquals(2L,document.accessVersion)
+            val invite=owner.prepareWatchInvitation(document);val token=store.state.watchPending.getValue(document.id).body.getValue("token")
+            assertThrows(IOException::class.java) {owner.sendWatching(document.id)}
+            assertThrows(IllegalStateException::class.java) {owner.prepareWatchInvitation(document)}
+            owner.sendWatching(document.id);assertEquals(invite,store.state.watchLinks.getValue(document.id).operationID);assertEquals(token.jsonPrimitive.content,store.state.watchLinks.getValue(document.id).token)
+            assertTrue(store.state.watchPending.isEmpty())
+        }
+    }
+
+    @Test(timeout=30000) fun sharedLiveUsesWriterAuthorizationAndExpiresIndependentlyOfArchiveWatching() {
+        Service().use {server ->
+            val actual=server.transport();val owner=session(actual);val team=create(owner);val member=session(server.transport());join(owner,team,member,TeamRole.member)
+            var document=owner.match(team.id,publishFixture(server,actual,team).id);val original=document.payload
+            assertThrows(IllegalArgumentException::class.java) {member.prepareSharedLive(member.match(team.id,document.id),true,true)}
+            owner.prepareSharedLive(document,true,true);owner.sendWatching(document.id);document=owner.match(team.id,document.id)
+            val code=document.sharedLiveURL!!.substringAfter("live/");assertEquals(200,server.publicRequest("GET","live/$code").first)
+            owner.sharedLiveHeartbeat(team.id,document.id)
+            owner.prepareSharedLive(document,false,true);owner.sendWatching(document.id)
+            assertEquals(404,server.publicRequest("GET","live/$code").first);document=owner.match(team.id,document.id);assertEquals(original,document.payload)
+            owner.prepareSharedLive(document,true,true);owner.sendWatching(document.id);document=owner.match(team.id,document.id)
+            val nextCode=document.sharedLiveURL!!.substringAfter("live/");assertNotEquals(code,nextCode)
+            server.change("advance","3600001");assertEquals(404,server.publicRequest("GET","live/$nextCode").first)
+            owner.sharedLiveHeartbeat(team.id,document.id);assertEquals(404,server.publicRequest("GET","live/$nextCode").first)
+        }
+    }
+
+    @Test(timeout=30000) fun recoveryAndRevocationPreservePendingViewingActionsWithoutReplayingThem() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();val owner=session(actual,store);val team=create(owner)
+            val document=owner.match(team.id,publishFixture(server,actual,team,true).id)
+            val id=owner.prepareWatchMode(document,HistoricalWatchMode.public,true)
+            server.change("recovery");owner.refresh()
+            assertEquals(id,store.state.recoveryWork.single().watchRequests.single().id)
+            assertThrows(IllegalStateException::class.java) {owner.sendWatching(document.id)}
+            owner.reconcileAfterRecovery(true);assertTrue(store.state.watchPending.isEmpty())
+            assertEquals(HistoricalWatchMode.closed,owner.match(team.id,document.id).watchMode)
+            owner.prepareWatchMode(owner.match(team.id,document.id),HistoricalWatchMode.public,true)
+            server.change("credential",store.state.deviceID!!);assertThrows(TeamServiceFault::class.java) {owner.refresh()}
+            assertEquals(2,store.state.recoveryWork.sumOf {it.watchRequests.size});assertTrue(store.state.watchLinks.isEmpty())
+        }
+    }
+    @Test(timeout=30000) fun watchingRequestsSaveBeforeSendingAndLostLocalReceiptCanRetryAfterItsOwnVersionChanges() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();var mutations=0
+            val owner=session(TeamTransport {m,p,b -> if(m=="POST" && p.endsWith("/access")) mutations++;actual.request(m,p,b)},store)
+            val team=create(owner);var document=owner.match(team.id,publishFixture(server,actual,team,true).id)
+            store.reject={it.watchPending.isNotEmpty()}
+            assertThrows(IOException::class.java) {owner.prepareWatchMode(document,HistoricalWatchMode.public,true)};assertEquals(0,mutations)
+            store.reject={false};val op=owner.prepareWatchMode(document,HistoricalWatchMode.public,true)
+            store.reject={it.watchPending.isEmpty() && it.watchReceipts.isNotEmpty()}
+            assertThrows(IOException::class.java) {owner.sendWatching(document.id)};assertEquals(op,store.state.watchPending.getValue(document.id).id)
+            store.reject={false};owner.sendWatching(document.id);document=owner.match(team.id,document.id)
+            assertEquals(HistoricalWatchMode.public,document.watchMode);assertEquals(2L,document.accessVersion)
+            assertTrue(store.state.watchPending.isEmpty());assertEquals(op,store.state.watchReceipts.getValue(document.id).request.id)
+        }
+    }
+    @Test(timeout=30000) fun definiteAccessConflictCanBePreservedForReviewWithoutAutomaticResubmission() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();val owner=session(actual,store);val team=create(owner)
+            val document=owner.match(team.id,publishFixture(server,actual,team,true).id)
+            val op=owner.prepareWatchMode(document,HistoricalWatchMode.public,true)
+            actual.request("POST","teams/${team.id}/games/${document.id}/access",buildJsonObject {put("operationID",UUID.randomUUID().toString());put("baseAccessVersion",document.accessVersion);put("mode","restricted")})
+            assertEquals(409,assertThrows(TeamServiceFault::class.java) {owner.sendWatching(document.id)}.status)
+            assertThrows(IllegalArgumentException::class.java) {owner.parkWatching(document.id,false)}
+            owner.parkWatching(document.id,true);assertTrue(store.state.watchPending.isEmpty())
+            assertEquals(op,store.state.recoveryWork.single().watchRequests.single().id)
+            assertEquals(HistoricalWatchMode.restricted,owner.match(team.id,document.id).watchMode)
+        }
     }
 
     @Test(timeout=30000) fun expiredDeviceReconnectIsExplicitAndKeepsOldWorkWithoutReplayingIt() {

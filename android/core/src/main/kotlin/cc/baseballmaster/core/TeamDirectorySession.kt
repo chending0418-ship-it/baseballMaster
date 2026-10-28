@@ -58,6 +58,8 @@ import kotlinx.serialization.json.*
     val incomingLinks: List<IncomingTeamLink> = emptyList(),
     val recoveryWork: List<PreservedRecoveryWork> = emptyList(),
     val credentialExpired: Boolean = false, val reconnectRequestID: String? = null,
+    val watchPending: Map<String,PendingMatchWatch> = emptyMap(),val watchReceipts: Map<String,CompletedMatchWatch> = emptyMap(),
+    val watchLinks: Map<String,MatchWatchLink> = emptyMap(),val watchFailures: Map<String,DirectoryFailure> = emptyMap(),
 ) {
     override fun toString() = "TeamDirectoryState(pending=${pending?.kind}, requiresRecoveryReview=$requiresRecoveryReview)"
 }
@@ -131,6 +133,8 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
             matches = state.matches.filterValues { cache -> accessible(cache.document.teamID)?.let { team -> cache.memberID.equals(team.memberID,true) && cache.accessEpoch == team.accessEpoch && cache.recoveryEpoch == remote.recoveryEpoch } == true },
             matchCursors = state.matchCursors.filterKeys { accessible(it) != null },
             matchReceipts = state.matchReceipts.filterValues { accessible(it.request.teamID) != null },
+            watchReceipts=state.watchReceipts.filterValues {accessible(it.request.teamID)!=null},
+            watchLinks=state.watchLinks.filterKeys {id -> state.matches[id]?.document?.teamID?.let {accessible(it)!=null}==true},
             fixedInvitations = state.fixedInvitations.filter { (id,_) -> accessible(id)?.role==TeamRole.admin },
             lastCompletion = state.lastCompletion?.takeIf { completion ->
                 if (completion.request.kind in setOf(DirectoryRequestKind.create,DirectoryRequestKind.invite,DirectoryRequestKind.fixedInvite)) usableSecret(completion)

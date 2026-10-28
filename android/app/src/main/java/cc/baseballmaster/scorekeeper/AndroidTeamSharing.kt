@@ -4,6 +4,7 @@ import cc.baseballmaster.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 
 /** App-facing suspend API. Local Room data is read only; bindings and shared
  * rosters stay in the independent encrypted directory, never imported over it.
@@ -42,6 +43,32 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     suspend fun archiveRejectedOperation(operationID: String, confirmed: Boolean) = withContext(Dispatchers.IO) { session.archiveRejectedOperation(operationID,confirmed) }
     suspend fun matches(teamID: String) = withContext(Dispatchers.IO) { session.matches(teamID) }
     suspend fun match(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.match(teamID,gameID) }
+    suspend fun viewers(teamID: String,gameID: String) = withContext(Dispatchers.IO) {session.matchViewers(teamID,gameID)}
+    suspend fun watchMode(expected: SharedMatchDocument,mode: HistoricalWatchMode,confirmed: Boolean) = withContext(Dispatchers.IO) {session.prepareWatchMode(expected,mode,confirmed)}
+    suspend fun watchMember(expected: SharedMatchDocument,id: String,allow: Boolean) = withContext(Dispatchers.IO) {session.prepareViewerMember(expected,id,allow)}
+    suspend fun watchExternal(expected: SharedMatchDocument,viewer: MatchViewer,allow: Boolean) = withContext(Dispatchers.IO) {session.prepareExternalViewer(expected,viewer,allow)}
+    suspend fun watchInvitation(expected: SharedMatchDocument) = withContext(Dispatchers.IO) {session.prepareWatchInvitation(expected)}
+    suspend fun watchTicket(expected: SharedMatchDocument) = withContext(Dispatchers.IO) {session.prepareWatchTicket(expected)}
+    suspend fun sharedLive(expected: SharedMatchDocument,enabled: Boolean,confirmed: Boolean) = withContext(Dispatchers.IO) {session.prepareSharedLive(expected,enabled,confirmed)}
+    suspend fun sendWatching(gameID: String) = withContext(Dispatchers.IO) {session.sendWatching(gameID)}
+    suspend fun parkWatching(gameID: String,confirmed: Boolean) = withContext(Dispatchers.IO) {session.parkWatching(gameID,confirmed)}
+    suspend fun sharedHeartbeat(teamID: String,gameID: String) = withContext(Dispatchers.IO) {session.sharedLiveHeartbeat(teamID,gameID)}
+    /** Foreground presence only for an already enabled broadcast owned by this
+     * device. An empty/unreviewed cache never enrolls or contacts the service.
+     */
+    suspend fun maintainSharedLive() = withContext(Dispatchers.IO) {
+        val state=session.snapshot()
+        val directory=state.directory ?: return@withContext
+        if(state.deviceID==null || state.credentialExpired || state.requiresRecoveryReview) return@withContext
+        val candidates=state.matches.values.map {it.document}.filter {doc ->
+            !doc.deleted && doc.canWrite && doc.writerDeviceID==state.deviceID && doc.liveAvailable && !doc.finalForWatching &&
+                directory.teams.any {it.id==doc.teamID && it.role!=TeamRole.member}
+        }
+        for(doc in candidates) {
+            ensureActive()
+            runCatching {session.sharedLiveHeartbeat(doc.teamID,doc.id)}
+        }
+    }
     suspend fun participants(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.matchParticipants(teamID,gameID) }
     suspend fun prepareHandoff(expected: SharedMatchDocument, kind: MatchControl, targetDeviceID: String? = null, confirmRisk: Boolean = false) = withContext(Dispatchers.IO) { session.prepareMatchControl(expected,kind,targetDeviceID,confirmRisk) }
     suspend fun sendHandoff(gameID: String) = withContext(Dispatchers.IO) { session.sendMatchControl(gameID) }

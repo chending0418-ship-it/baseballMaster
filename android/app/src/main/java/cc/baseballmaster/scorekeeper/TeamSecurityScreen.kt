@@ -100,7 +100,7 @@ import kotlinx.serialization.json.JsonObject
                 Text("服务恢复备份后，需要重新确认能访问的球队和比赛。之前未完成的邀请、删除和记分交接不会自动继续。")
                 Text("本机记录先保留供核对，再获取球队当前已保存的记录。需要补录时，请交给管理员核对；旧记录不会自动覆盖球队比赛。")
                 val work=ui.state.recoveryWork
-                Text("已保留 ${work.sumOf {it.matches.size}} 份比赛记录、${work.count {it.directoryRequest!=null}+work.sumOf {it.matchRequests.size}} 笔待核对操作。")
+                Text("已保留 ${work.sumOf {it.matches.size}} 份比赛记录、${work.count {it.directoryRequest!=null}+work.sumOf {it.matchRequests.size+it.watchRequests.size}} 笔待核对操作。")
                 if(!ui.state.requiresRecoveryReview) Text("核对已完成。请逐场查看保留记录，需要补录时交给管理员。")
                 TextButton(enabled=!ui.busy && ui.state.requiresRecoveryReview,onClick={confirmation=SharingConfirmation("开始核对恢复后的资料？","本机旧记录会保留，之前未完成的操作不会继续。已失效的访问、邀请和观看链接不会恢复。") {
                     ui.call(scope){api.reconcileAfterRecovery(true);refresh()}
@@ -113,6 +113,7 @@ import kotlinx.serialization.json.JsonObject
                     }
                     item.directoryRequest?.let {Text("球队操作 ${it.id.takeLast(6)} · 已保留，不会自动重做")}
                     item.matchRequests.forEach {Text("比赛交接 ${it.gameID.takeLast(6)} · 已保留，不会自动重做")}
+                    item.watchRequests.forEach {Text("观看操作 ${it.gameID.takeLast(6)} · 已保留，不会自动重做")}
                 } }
             }
             "newDevice" -> {

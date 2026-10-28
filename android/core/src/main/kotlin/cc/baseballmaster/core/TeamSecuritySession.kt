@@ -159,5 +159,6 @@ internal fun TeamDirectoryState.applyingSecurity(pending: PendingDirectoryReques
 private fun TeamDirectoryState.withoutTeam(id: String): TeamDirectoryState = copy(
     directory=directory?.copy(teams=directory.teams.filterNot { it.id.equals(id,true) }),profiles=profiles - appleUUID(id),
     bindings=bindings.filterNot { it.cloudTeamID.equals(id,true) },matches=matches.filterValues { !it.document.teamID.equals(id,true) },matchCursors=matchCursors - appleUUID(id),
+    watchReceipts=watchReceipts.filterValues {!it.request.teamID.equals(id,true)},watchLinks=watchLinks.filterKeys {key -> matches[key]?.document?.teamID?.equals(id,true)!=true},
     matchReceipts=matchReceipts.filterValues { !it.request.teamID.equals(id,true) },retainedSecrets=retainedSecrets.filterNot { (it.request.teamID ?: it.response["teamID"]?.jsonPrimitive?.content).equals(id,true) },
     recoveryCards=recoveryCards.filterNot { it.teamID.equals(id,true) },fixedInvitations=fixedInvitations - appleUUID(id))

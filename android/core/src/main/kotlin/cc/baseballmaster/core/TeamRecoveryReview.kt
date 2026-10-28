@@ -12,6 +12,7 @@ internal val TeamServiceFault.requiresRecoveryReview: Boolean
     val id: String, val previousEpoch: String?, val recoveryEpoch: String, val savedAt: Long,
     val directoryRequest: PendingDirectoryRequest? = null,
     val matchRequests: List<PendingMatchControl> = emptyList(), val matches: List<CachedSharedMatch> = emptyList(),
+    val watchRequests: List<PendingMatchWatch> = emptyList(),
 ) {
     init {appleUUID(id);previousEpoch?.let(::appleUUID);appleUUID(recoveryEpoch);require(savedAt>0)}
     override fun toString()="PreservedRecoveryWork(id=$id, matches=${matches.size}, controls=${matchRequests.size})"
@@ -20,10 +21,11 @@ internal val TeamServiceFault.requiresRecoveryReview: Boolean
 internal fun TeamDirectoryState.preservingRecoveryWork(epoch: String): TeamDirectoryState {
     val request=pending?.takeUnless {p -> recoveryWork.any {it.directoryRequest?.id==p.id}}
     val controls=matchPending.values.filterNot {p -> recoveryWork.any {a -> a.matchRequests.any {it.id==p.id}}}
-    val authored=matches.values.filter {it.document.writerDeviceID==deviceID || it.document.id in matchPending}
+    val watches=watchPending.values.filterNot {p -> recoveryWork.any {a -> a.watchRequests.any {it.id==p.id}}}
+    val authored=matches.values.filter {it.document.writerDeviceID==deviceID || it.document.id in matchPending || it.document.id in watchPending}
         .filterNot {c -> recoveryWork.any {a -> a.matches.any {it.document.id==c.document.id && it.document.revision==c.document.revision && it.document.digest==c.document.digest}}}
-    if(request==null && controls.isEmpty() && authored.isEmpty()) return this
-    val saved=PreservedRecoveryWork(UUID.randomUUID().toString(),directory?.recoveryEpoch,appleUUID(epoch),System.currentTimeMillis(),request,controls,authored)
+    if(request==null && controls.isEmpty() && authored.isEmpty() && watches.isEmpty()) return this
+    val saved=PreservedRecoveryWork(UUID.randomUUID().toString(),directory?.recoveryEpoch,appleUUID(epoch),System.currentTimeMillis(),request,controls,authored,watches)
     return copy(recoveryWork=recoveryWork+saved)
 }
 
@@ -70,7 +72,7 @@ fun TeamDirectorySession.reconcileAfterRecovery(confirmed: Boolean): TeamDirecto
     check(client.teams()==remote) {"服务资料再次变化，请重新核对"}
     storage.save(preserved.copy(directory=remote,profiles=profiles,matches=documents,matchCursors=cursors,
         pending=null,lastFailure=null,lastCompletion=null,retainedSecrets=emptyList(),fixedInvitations=emptyMap(),
-        matchPending=emptyMap(),matchReceipts=emptyMap(),pairing=null,outgoingPairing=null,recoveryCards=emptyList(),
+        matchPending=emptyMap(),matchReceipts=emptyMap(),watchPending=emptyMap(),watchReceipts=emptyMap(),watchLinks=emptyMap(),watchFailures=emptyMap(),pairing=null,outgoingPairing=null,recoveryCards=emptyList(),
         bindings=preserved.bindings.filter {binding ->
             val prior=preserved.directory?.teams?.singleOrNull {it.id.equals(binding.cloudTeamID,true)}
             prior!=null && remote.teams.any {it.id.equals(binding.cloudTeamID,true) && it.memberID==prior.memberID && it.accessEpoch==prior.accessEpoch}

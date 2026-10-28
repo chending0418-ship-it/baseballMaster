@@ -26,6 +26,11 @@ fun liveViewQr(url: String,size: Int=256): TeamInvitationQr {
     require(Regex("https://baseballmaster\\.cc/livestreaming/novideo/[A-F0-9]{24}").matches(url))
     return serviceQr(url,size)
 }
+fun watchViewQr(url: String,size: Int=256): TeamInvitationQr {
+    require(Regex("https://baseballmaster\\.cc/watch/#(?:live/[A-Za-z0-9_-]{32}|[A-Za-z0-9_-]{32}(?:/[A-Za-z0-9_-]{43})?)").matches(url))
+    url.substringAfter("/watch/#").takeIf {!it.startsWith("live/") && '/' in it}?.substringAfter('/')?.let(TeamSecrets::validate)
+    return serviceQr(url,size)
+}
 private fun serviceQr(url: String,size: Int): TeamInvitationQr {
     require(size in 128..1024)
     val matrix=MultiFormatWriter().encode(url,BarcodeFormat.QR_CODE,size,size,mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M))

@@ -17,7 +17,7 @@ internal fun TeamDirectoryState.withExpiredAuthorization(): TeamDirectoryState {
     val preserved=preservingRecoveryWork(directory?.recoveryEpoch ?: java.util.UUID.randomUUID().toString())
     return preserved.copy(credentialExpired=true,directory=null,profiles=emptyMap(),bindings=emptyList(),
         retainedSecrets=emptyList(),lastCompletion=null,matches=emptyMap(),matchCursors=emptyMap(),
-        matchReceipts=emptyMap(),recoveryCards=emptyList(),pairing=null,outgoingPairing=null,fixedInvitations=emptyMap())
+        matchReceipts=emptyMap(),watchReceipts=emptyMap(),watchLinks=emptyMap(),recoveryCards=emptyList(),pairing=null,outgoingPairing=null,fixedInvitations=emptyMap())
 }
 
 class TeamDeviceReconnector(
@@ -32,7 +32,7 @@ class TeamDeviceReconnector(
             val candidate=vault.beginReconnect()
             check(original.reconnectRequestID==null || original.reconnectRequestID==candidate.id) {"重新接入资料已变化，请重新核对"}
             val isolated=original.withExpiredAuthorization().copy(deviceID=null,reconnectRequestID=candidate.id,
-                pending=null,lastFailure=null,matchPending=emptyMap(),requiresRecoveryReview=true)
+                pending=null,lastFailure=null,matchPending=emptyMap(),watchPending=emptyMap(),watchFailures=emptyMap(),requiresRecoveryReview=true)
             // Old work is archived before even enrolling the new credential.
             storage.save(isolated)
             val id=TeamDirectoryClient(transportFor(candidate.token)).enroll(deviceLabel)
