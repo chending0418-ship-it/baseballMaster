@@ -133,7 +133,11 @@ fun TeamDirectorySession.sendMatchControl(gameID: String): CompletedMatchControl
     val id=appleUUID(gameID); val pending=requireNotNull(storage.load().matchPending[id])
     val (directory,member)=member(pending.teamID); val state=storage.load()
     check(directory.recoveryEpoch == pending.recoveryEpoch && member.memberID.equals(pending.memberID,true) && member.accessEpoch == pending.accessEpoch) { "共享权限代次已变化，原操作保留待核对" }
-    val response=SharedMatchDocument(client.transport.request("POST",matchPath(pending.teamID,id)+"/handoff/${pending.kind.name}",pending.body))
+    val raw=try {client.transport.request("POST",matchPath(pending.teamID,id)+"/handoff/${pending.kind.name}",pending.body)} catch(fault: TeamServiceFault) {
+        if(fault.requiresRecoveryReview) storage.save(state.copy(requiresRecoveryReview=true))
+        throw fault
+    }
+    val response=SharedMatchDocument(raw)
     require(response.id == id && response.teamID == pending.teamID)
     val receipt=CompletedMatchControl(pending,response)
     // Old idempotent responses prove receipt only. They never revive cached

@@ -121,7 +121,10 @@ internal object SharingClipboard {
         Text("进入共享页面后核对设备授权，不会自动上传本机球队或比赛。")
         if(!ui.fresh && !ui.state.directory?.teams.isNullOrEmpty()) Text("以下为本机缓存；操作先保留在本机，联网核对授权后才会发送。")
         ui.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-        if(ui.state.requiresRecoveryReview) Text("服务恢复后需要核对，旧操作已保留，当前不会自动重做。",color=MaterialTheme.colorScheme.error)
+        if(ui.state.requiresRecoveryReview) {
+            Text("服务恢复后需要核对，旧操作已保留，当前不会自动重做。",color=MaterialTheme.colorScheme.error)
+            TextButton(enabled=!ui.busy,onClick={securityPage="review"}) {Text("恢复后核对")}
+        }
         ui.state.pending?.let {pending ->
             CardBlock {
                 Text("有一笔操作结果待确认",fontWeight=FontWeight.Bold)
@@ -140,6 +143,7 @@ internal object SharingClipboard {
             TextButton(enabled=ui.enabled && !ui.busy,onClick={securityPage="newDevice"}) {Text("接入这台新设备")}
             TextButton(enabled=ui.enabled && !ui.busy,onClick={securityPage="approve"}) {Text("授权我的新设备")}
             TextButton(enabled=ui.enabled && !ui.busy,onClick={securityPage="recover"}) {Text("恢复球队管理权")}
+            if(ui.state.recoveryWork.isNotEmpty()) TextButton(enabled=!ui.busy,onClick={securityPage="review"}) {Text("查看本机保留记录")}
             Text("已加入的球队",fontWeight=FontWeight.Bold)
             if(ui.enabled && ui.state.directory?.teams.isNullOrEmpty()) Text("尚未加入共享球队。")
             ui.state.directory?.teams.orEmpty().forEach {team -> CardBlock {
@@ -191,7 +195,7 @@ internal object SharingClipboard {
                     Text("同一球队使用固定链接，可邀请多人，以成员身份加入。加入后管理员可调整为记录员。")
                     val fixed=ui.state.fixedInvitations[team.id]
                     if(fixed!=null) {
-                        TextButton(enabled=ui.enabled && !ui.busy,onClick={invitationToShow=fixed}) {Text("查看／分享球队邀请")}
+                        TextButton(enabled=ui.enabled && !ui.busy && !ui.state.requiresRecoveryReview,onClick={invitationToShow=fixed}) {Text("查看／分享球队邀请")}
                         TextButton(enabled=ui.canPrepare,onClick={confirmation=SharingConfirmation("更换球队邀请链接？","旧链接将立即失效。已加入成员保持原身份和权限，请向新成员分享新链接。") {
                             ui.mutate(scope) {api.prepareFixedInvite(team.id,true)}
                         }}) {Text("更换邀请链接")}
@@ -232,7 +236,7 @@ internal object SharingClipboard {
             dismissButton={TextButton(enabled=!ui.busy,onClick={shownCard=null;ui.call(scope){ui.refresh()}}) {Text("稍后保存，返回球队")}})
     }
     editor?.let {kind -> SharingEditor(api,ui,scope,kind,localTeams,player,if(kind=="join") incoming?.url.orEmpty() else "") {editor=null} }
-    securityPage?.let {page -> TeamSecurityScreen(api,page,ui.selectedID,incoming?.url.orEmpty()) {
+    securityPage?.let {page -> TeamSecurityScreen(api,page,ui.selectedID,incoming?.takeIf {it.kind==IncomingTeamLinkKind.pair}?.url.orEmpty()) {
         securityPage=null;if(incoming?.kind==IncomingTeamLinkKind.pair) dismiss() else ui.call(scope){ui.refresh()}
     } }
 }

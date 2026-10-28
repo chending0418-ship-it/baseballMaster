@@ -18,7 +18,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="baseballmaster.cc" />
+                <data android:scheme="https" /><data android:host="baseballmaster.cc" />
                 <data android:path="/join" /><data android:path="/join/" />
                 <data android:path="/pair" /><data android:path="/pair/" />
             </intent-filter>
@@ -26,8 +26,8 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="baseballmaster" android:host="join" />
-                <data android:scheme="baseballmaster" android:host="pair" />
+                <data android:scheme="baseballmaster" />
+                <data android:host="join" /><data android:host="pair" />
             </intent-filter>
         </activity>
     </application>

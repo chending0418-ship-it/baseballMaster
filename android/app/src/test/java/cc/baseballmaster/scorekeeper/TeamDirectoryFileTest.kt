@@ -150,4 +150,18 @@ class TeamDirectoryFileTest {
             links.forEach {assertFalse(bytes.contains(it.token))}
         } finally {dir.deleteRecursively()}
     }
+    @Test fun recoveryReviewArchiveKeepsTheOriginalPendingBodyOnlyInsideEncryptedStorage() {
+        val dir=folder()
+        try {
+            val id=java.util.UUID.randomUUID().toString();val epoch=java.util.UUID.randomUUID().toString();val secret=TeamSecrets.random()
+            val request=PendingDirectoryRequest(DirectoryRequestKind.create,kotlinx.serialization.json.buildJsonObject {
+                put("operationID",kotlinx.serialization.json.JsonPrimitive(id));put("recoveryToken",kotlinx.serialization.json.JsonPrimitive(secret))
+            },epoch)
+            val archive=PreservedRecoveryWork(java.util.UUID.randomUUID().toString(),epoch,java.util.UUID.randomUUID().toString(),123,directoryRequest=request)
+            val value=TeamDirectoryState(recoveryWork=listOf(archive));TeamDirectoryFile(dir,{key.copyOf()}).save(value)
+            assertEquals(value,TeamDirectoryFile(dir,{key.copyOf()}).load())
+            assertFalse(File(dir,"directory-v1.sealed").readBytes().toString(Charsets.UTF_8).contains(secret))
+            assertFalse(archive.toString().contains(secret))
+        } finally {dir.deleteRecursively()}
+    }
 }

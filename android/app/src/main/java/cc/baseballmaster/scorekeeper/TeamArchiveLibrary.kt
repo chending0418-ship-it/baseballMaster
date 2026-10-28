@@ -203,7 +203,7 @@ private fun ArchivePages(page: Int, count: Int, enabled: Boolean, select: (Int) 
 }
 
 @Composable
-private fun ArchiveGameHistory(stored: JsonObject, dismiss: () -> Unit) {
+internal fun ArchiveGameHistory(stored: JsonObject, secure: Boolean = false, dismiss: () -> Unit) {
     var loaded by remember(stored) { mutableStateOf<AppleArchiveHistory?>(null) }
     var failure by remember(stored) { mutableStateOf<String?>(null) }
     LaunchedEffect(stored) {
@@ -213,7 +213,7 @@ private fun ArchiveGameHistory(stored: JsonObject, dismiss: () -> Unit) {
     }
     val history = loaded
     if (history == null) {
-        FormPage("档案比赛历史", false, true, "", "", dismiss, {}) {
+        FormPage("档案比赛历史", false, true, "", "", dismiss, {},secure=secure) {
             Text(failure?.let { "无法读取历史：$it。原始档案已保留。" } ?: "正在读取历史…")
         }
         return
@@ -223,7 +223,7 @@ private fun ArchiveGameHistory(stored: JsonObject, dismiss: () -> Unit) {
     val sections = listOf("逐球日志", "记分事件", "打席", "历史操作", "更正审计")
     val rows = listOf(history.logs, history.events, history.appearances, history.operations, history.corrections)[section]
     fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
-    FormPage("档案比赛历史", false, true, "", "", dismiss, {}) {
+    FormPage("档案比赛历史", false, true, "", "", dismiss, {},secure=secure) {
         Text("原始只读历史", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("archive-history-title"))
         Text("保留原编号及顺序，不从当前局面推算历史；此页不能续记或撤回更正。")
         if (!history.hasJournal) Text("此记录没有操作日志，无法据此完整重放或纠错。")

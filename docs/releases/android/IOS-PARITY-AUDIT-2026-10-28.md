@@ -50,7 +50,7 @@
 - `SharedTeamDetailView`：共享新建比赛、共享比赛列表、冲突草稿、完整绑定。不能将 `source=shared` 改成 local 绕过现有仓库保护。
 - `NewDevicePairingView`、`ApproveDevicePairingView`、`TeamDevicesView`：第八组已对应 `TeamSecurityScreen` 的 newDevice／approve／devices，双端确认、四词短语和设备移除已接；界面未执行。
 - `RecoverTeamManagementView`：第八组已对应 `TeamSecurityScreen` 的 recover，预览、失效范围确认、唯一新卡保存和续取已接；界面未执行。
-- `ServiceRecoveryReviewView`：恢复代次变更后的明确人工核对；当前阻断是保护，不得直接清 flag 后发送旧请求。
+- `ServiceRecoveryReviewView`：第九组已接明确人工核对，先保留旧工作、读取当前完整资料、核对授权和服务确认，成功持久化后才解除恢复阻断；旧请求不会发送。普通访问代次变化的保护不能借此绕过。
 - `DissolvedTeamsView`、`DissolveTeamView`、`TeamAuditView`：仍需按现行角色、时限和审计分页实现。
 - `SharedMatchesListView`、`PublishSharedMatchView`、`SharedMatchDetailView`、`PreservedMatchDraftsView`、`SharedConflictReviewView`、`SharedConflictDetailView`、`HistoricalImportView`、`SharedPlayerLinksView`：读取 API 基础不足以开放编辑／交接，先解决完整内容和持久恢复。
 

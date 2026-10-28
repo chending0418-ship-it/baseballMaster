@@ -58,6 +58,88 @@ class TeamDirectoryIntegrationTest {
         return SharedMatchDocument(transport.request("POST","teams/${team.id}/games",body))
     }
 
+    @Test(timeout = 30000) fun recoveryReviewPreservesOldWorkDownloadsCurrentDocumentsAndNeverReplaysOldRequests() {
+        Service().use {server ->
+            val transport=server.transport();val store=Memory();val owner=session(transport,store);val team=create(owner)
+            val published=publishFixture(server,transport,team);val document=owner.match(team.id,published.id)
+            val control=owner.prepareMatchControl(document,MatchControl.force,store.state.deviceID,true)
+            val pending=owner.prepareCreate("不应自动建立的球队","管理员")
+            server.change("recovery");owner.refresh()
+            assertTrue(store.state.requiresRecoveryReview);assertTrue(store.state.matches.isEmpty())
+            assertEquals(pending,store.state.recoveryWork.single().directoryRequest!!.id)
+            assertEquals(control,store.state.recoveryWork.single().matchRequests.single().id)
+            assertEquals(document.raw,store.state.recoveryWork.single().matches.single().document.raw)
+            assertThrows(IllegalArgumentException::class.java) {owner.reconcileAfterRecovery(false)}
+            owner.reconcileAfterRecovery(true)
+            assertFalse(store.state.requiresRecoveryReview);assertNull(store.state.pending);assertTrue(store.state.matchPending.isEmpty())
+            assertEquals(document.payload,store.state.matches.getValue(document.id).document.payload)
+            assertEquals(1,owner.refresh().teams.size)
+            assertThrows(IllegalStateException::class.java) {owner.sendPending()}
+            owner.prepareInvite(team.id,TeamRole.member);owner.sendPending()
+            assertEquals(1,store.state.recoveryWork.size)
+        }
+    }
+
+    @Test(timeout = 30000) fun lostRecoveryAcknowledgementAndFailedLocalCommitKeepTheGateAndOriginalRequest() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();var lose=true;var acknowledgements=0
+            val owner=session(TeamTransport {method,path,body ->
+                val response=actual.request(method,path,body)
+                if(path=="devices/recovery-review") {acknowledgements++;if(lose) {lose=false;throw IOException("injected lost review acknowledgement")}}
+                response
+            },store)
+            create(owner);val pending=owner.prepareCreate("待核对原请求","管理员")
+            server.change("recovery");owner.refresh()
+            assertThrows(IOException::class.java) {owner.reconcileAfterRecovery(true)}
+            assertTrue(store.state.requiresRecoveryReview);assertEquals(pending,store.state.pending!!.id)
+            store.reject={!it.requiresRecoveryReview}
+            assertThrows(IOException::class.java) {owner.reconcileAfterRecovery(true)}
+            assertTrue(store.state.requiresRecoveryReview);assertEquals(pending,store.state.pending!!.id)
+            store.reject={false};owner.reconcileAfterRecovery(true)
+            assertEquals(3,acknowledgements);assertEquals(1,store.state.recoveryWork.size)
+            assertFalse(store.state.requiresRecoveryReview);assertNull(store.state.pending)
+            assertEquals(1,owner.refresh().teams.size)
+        }
+    }
+
+    @Test(timeout = 30000) fun restoreOrPermissionChangeDuringReviewCannotClearTheGateAgainstAnEarlierSnapshot() {
+        for(kind in listOf("recovery","access")) Service().use {server ->
+            val actual=server.transport();val store=Memory();var change=false;var acknowledgements=0;var teamID: String?=null
+            val owner=session(TeamTransport {method,path,body ->
+                val response=actual.request(method,path,body)
+                if(change && method=="GET" && path.contains("/games?cursor=")) {change=false;server.change(kind,teamID)}
+                if(path=="devices/recovery-review") acknowledgements++
+                response
+            },store)
+            teamID=create(owner).id;val pending=owner.prepareCreate("待核对原请求","管理员")
+            server.change("recovery");owner.refresh();change=true
+            assertThrows(IllegalStateException::class.java) {owner.reconcileAfterRecovery(true)}
+            assertEquals(0,acknowledgements);assertTrue(store.state.requiresRecoveryReview);assertEquals(pending,store.state.pending!!.id)
+            owner.refresh();owner.reconcileAfterRecovery(true)
+            assertFalse(store.state.requiresRecoveryReview);assertEquals(1,store.state.recoveryWork.size)
+        }
+    }
+
+    @Test(timeout = 30000) fun restoreBetweenPermissionRefreshAndMutationImmediatelyClosesTheLocalGate() {
+        for(control in listOf(false,true)) Service().use {server ->
+            val actual=server.transport();val store=Memory();var restore=false
+            val owner=session(TeamTransport {method,path,body ->
+                if(restore && method=="POST" && (path.endsWith("/invitations") || path.contains("/handoff/"))) {restore=false;server.change("recovery")}
+                actual.request(method,path,body)
+            },store)
+            val team=create(owner)
+            val document=if(control) owner.match(team.id,publishFixture(server,actual,team).id) else null
+            val id=if(document!=null) owner.prepareMatchControl(document,MatchControl.force,store.state.deviceID,true) else owner.prepareInvite(team.id,TeamRole.member)
+            restore=true
+            val fault=assertThrows(TeamServiceFault::class.java) {if(document!=null) owner.sendMatchControl(document.id) else owner.sendPending()}
+            assertEquals("recovery_review",fault.code);assertTrue(store.state.requiresRecoveryReview)
+            owner.reconcileAfterRecovery(true)
+            val work=store.state.recoveryWork.single()
+            if(document!=null) assertEquals(id,work.matchRequests.single().id) else assertEquals(id,work.directoryRequest!!.id)
+            assertFalse(store.state.requiresRecoveryReview)
+        }
+    }
+
     @Test(timeout = 30000) fun currentIOSFixedInvitationIsReusableByMultipleMembersAndStableWhenFetchedAgain() {
         Service().use { server ->
             val store=Memory(); val owner=session(server.transport(),store); val team=create(owner)

@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import cc.baseballmaster.core.*
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonObject
 
 /** Ports TeamSecurityViews.swift. Tokens/previews stay out of SavedState and ordinary exports. */
 @Composable internal fun TeamSecurityScreen(api: AndroidTeamSharing, initialPage: String, teamID: String = "", initialLink: String = "", dismiss: ()->Unit) {
@@ -41,6 +42,7 @@ import kotlinx.serialization.json.jsonPrimitive
     var revealedLink by remember {mutableStateOf<String?>(null)}
     var card by remember {mutableStateOf<SavedManagementCard?>(null)}
     var recoveredTeamID by remember {mutableStateOf<String?>(null)}
+    var preservedGame by remember {mutableStateOf<JsonObject?>(null)}
     var foreground by remember {mutableStateOf(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))}
     var baseline by remember {mutableStateOf<String?>(null)}; var loaded by remember {mutableStateOf(false)}
     DisposableEffect(owner) {
@@ -78,7 +80,7 @@ import kotlinx.serialization.json.jsonPrimitive
             else if(page=="devices" && !ui.busy) ui.call(scope){refresh()}
         }
     }
-    val title=when(page) {"newDevice"->"接入这台新设备";"approve"->"授权我的新设备";"recover"->"恢复球队管理权";else->"球队设备"}
+    val title=when(page) {"newDevice"->"接入这台新设备";"approve"->"授权我的新设备";"recover"->"恢复球队管理权";"review"->"恢复后核对";else->"球队设备"}
     FormPage(title,ui.busy,!ui.busy,"refresh-team-security","刷新",{
         if(page=="approve" && initialPage=="devices") {page="devices";pairingPreview=null;input=""} else dismiss()
     },{ui.call(scope){refresh()}},secure=true,dismissLabel="返回") {
@@ -94,6 +96,25 @@ import kotlinx.serialization.json.jsonPrimitive
             }) {Text("保留为待核对")}
         } }
         when(page) {
+            "review" -> {
+                Text("服务恢复备份后，需要重新确认能访问的球队和比赛。之前未完成的邀请、删除和记分交接不会自动继续。")
+                Text("本机记录先保留供核对，再获取球队当前已保存的记录。需要补录时，请交给管理员核对；旧记录不会自动覆盖球队比赛。")
+                val work=ui.state.recoveryWork
+                Text("已保留 ${work.sumOf {it.matches.size}} 份比赛记录、${work.count {it.directoryRequest!=null}+work.sumOf {it.matchRequests.size}} 笔待核对操作。")
+                if(!ui.state.requiresRecoveryReview) Text("核对已完成。请逐场查看保留记录，需要补录时交给管理员。")
+                TextButton(enabled=!ui.busy && ui.state.requiresRecoveryReview,onClick={confirmation=SharingConfirmation("开始核对恢复后的资料？","本机旧记录会保留，之前未完成的操作不会继续。已失效的访问、邀请和观看链接不会恢复。") {
+                    ui.call(scope){api.reconcileAfterRecovery(true);refresh()}
+                }}) {Text("保留本机记录并核对")}
+                work.forEach {item -> CardBlock {
+                    Text("恢复前保留记录",fontWeight=FontWeight.Bold)
+                    item.matches.forEach {match ->
+                        Text("比赛 ${match.document.id.takeLast(6)} · 修订 ${match.document.revision}")
+                        match.document.payload?.let {payload -> TextButton(onClick={preservedGame=payload}) {Text("查看保留比赛原始历史")}}
+                    }
+                    item.directoryRequest?.let {Text("球队操作 ${it.id.takeLast(6)} · 已保留，不会自动重做")}
+                    item.matchRequests.forEach {Text("比赛交接 ${it.gameID.takeLast(6)} · 已保留，不会自动重做")}
+                } }
+            }
             "newDevice" -> {
                 Text("这台手机作为新设备。请用原设备打开配对请求，选择一支球队并核对短语；只关联该队，不转移比赛记分权。")
                 val saved=ui.state.pairing; val pair=saved?.request
@@ -202,4 +223,5 @@ import kotlinx.serialization.json.jsonPrimitive
             else TextButton(onClick={reveal=true}) {Text("显示恢复卡")}
         }},confirmButton={TextButton(enabled=!ui.busy && reveal,onClick={ui.call(scope){api.confirmRecoveryCardSaved(saved.teamID,saved.version);card=null}}) {Text("我已保存恢复卡")}},dismissButton={TextButton(enabled=!ui.busy,onClick={card=null}) {Text("稍后保存")}})
     }
+    preservedGame?.let {stored -> ArchiveGameHistory(stored,secure=true) {preservedGame=null} }
 }
