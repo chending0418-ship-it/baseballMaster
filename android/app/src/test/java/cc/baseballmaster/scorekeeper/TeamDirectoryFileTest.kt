@@ -96,4 +96,23 @@ class TeamDirectoryFileTest {
             assertEquals(original,db.dao().allTeams())
         } finally { db.close(); dir.deleteRecursively() }
     }
+
+    @Test fun aFullOpaqueMatchAndItsPendingHandoffSurviveEncryptedReopenAndFailedReplacement() {
+        val dir=folder()
+        try {
+            val epoch=UUID.randomUUID().toString(); val team=UUID.randomUUID().toString(); val game=UUID.randomUUID().toString(); val device=UUID.randomUUID().toString(); val member=UUID.randomUUID().toString()
+            val raw=buildJsonObject {
+                put("id",game); put("teamID",team); put("writerDeviceID",device); put("responsibleMemberID",member)
+                put("serverRevision",1); put("writerEpoch",1); put("digest","a".repeat(64)); put("deleted",false); put("canWrite",true)
+                put("payload",buildJsonObject { put("id",UUID.randomUUID().toString()); put("unknownHistory",buildJsonArray { add("keep-original-audit") }) })
+            }
+            val id=UUID.randomUUID().toString(); val request=PendingMatchControl(id,team,game,MatchControl.propose,buildJsonObject { put("operationID",id) },member,1,epoch)
+            val value=TeamDirectoryState(deviceID=device,matches=mapOf(game to CachedSharedMatch(SharedMatchDocument(raw),member,1,epoch)),matchPending=mapOf(game to request))
+            val store=TeamDirectoryFile(dir,{key.copyOf()}); store.save(value)
+            assertEquals(value,TeamDirectoryFile(dir,{key.copyOf()}).load())
+            val failing=TeamDirectoryFile(dir,{key.copyOf()}) { throw IOException("injected handoff full") }
+            assertThrows(IOException::class.java) { failing.save(value.copy(matchPending=emptyMap())) }
+            assertEquals(value,store.load()); assertFalse(File(dir,"directory-v1.sealed").readText().contains("keep-original-audit"))
+        } finally { dir.deleteRecursively() }
+    }
 }

@@ -24,7 +24,8 @@
 | `1d0615a` | 来源保护比赛实际导入、Room 3→4、Android 来源备份格式 2 | [来源导入](AN04-IMPORT-2026-10-28.md) |
 | `b0669e5` | 不挤分保送、非第三出局三振的双事件续记 | 同上第六组；156 项 JVM＋11 份 Swift 互读 |
 | `4452a86` | AN05 身份／目录／邀请与加密持久请求 | [AN05 第一组](AN05-DIRECTORY-2026-10-28.md)；171 项测试 |
-| 含本文的名单／成员提交 | AN05 共享名册、成员管理、独立绑定、冲突草稿和撤权清理 | [AN05 第二组](AN05-ROSTER-2026-10-28.md) |
+| `617c969` | AN05 共享名册、成员管理、独立绑定、冲突草稿和撤权清理 | [AN05 第二组](AN05-ROSTER-2026-10-28.md) |
+| 含本文的交接队列提交 | F11 比赛 JSON／游标读取、独立持久交接控制、旧回执后核对权限 | [AN05 第三组](AN05-MATCHES-2026-10-28.md)；190 项测试 |
 
 接手先检查，不覆盖未提交工作：
 
@@ -51,7 +52,7 @@ git log -10 --oneline
 | App `Storage.kt`、`AppleImportStorage.kt` | Room schema 4，3→4 只新增来源 BLOB／关联／原操作 ID 索引；不能使用 destructive migration |
 | `AndroidDeviceBackup.kt` | 无来源仍为原格式 1，含来源使用格式 2；恢复只接受空库、整批事务，删除来源再重算哈希不能绕过保护 |
 | `TeamDirectoryClient.kt`、`SharedTeamRoster.kt` | 当前 `/api/v3` 的 Kotlin 客户端和 DTO；API 日期为 Unix 毫秒，比赛 payload 仍为 Swift 2001 起秒数 |
-| `TeamDirectorySession.kt` | 单笔持久身份操作、固定 operationID、权限／代次前置核对、共享缓存、独立绑定、明确冲突草稿；不是每场比赛同步队列 |
+| `TeamDirectorySession.kt`、`SharedMatchDirectory.kt` | 单笔持久身份操作及每场独立交接控制、固定 operationID、权限／代次核对、缓存、绑定、冲突草稿；不是离线记分更新队列 |
 | App `CredentialVault.kt`、`TeamDirectoryFile.kt` | Keystore 保护设备秘密，noBackupFilesDir 下单独 AES-GCM；不进入普通备份／报告／导出或日志 |
 | App `AndroidTeamSharing.kt` | IO 协程应用 API，读取真实本机球队后准备发布，保持原 Room 记录不变；未接产品菜单 |
 | `collaboration/`、Swift `TeamCollaboration`／`TeamSharingStore`／`SharedMatches`／`TeamSecurity` | 只读参考现行角色／权限／版本、同步、交接、配对和恢复；不要只按旧 PROTOCOL 段落猜测行为 |
@@ -72,7 +73,7 @@ git log -10 --oneline
 
 F10 基础及名单／成员协议已开始，缺产品共享菜单、完整绑定管理、固定多人邀请及生命周期接入。当前原生建赛仍仅接受本机球队；不能只把 `source` 改成 local 绕过共享保护。
 
-F11 继续：读取 Swift `SharedMatches.swift` 的 wire 模型及持久队列、现行 `collaboration/games.mjs`／`drafts.mjs`。实现球队／比赛绑定、明确发布、增量 cursor、每场加密队列、修订／writerEpoch／formatVersion、交接申请／接受／强制接管、响应丢失重试、撤权／离线冲突草稿和恢复隔离。完整比赛写入受 AN04 payload 转换约束；不能上传 Android 内部 Game JSON 冒充 iOS StoredGame。
+F11 已接 JSON 读取、增量游标、交接／强制接管协议及每场控制队列，详见第三组。产品交接入口仍关闭：接收比赛的完整安卓记分／恢复能力尚缺。继续读取 Swift `SharedMatches.swift` 的 wire 模型及持久队列、现行 `collaboration/games.mjs`／`drafts.mjs`。继续完成球队／比赛绑定、正式发布、离线记分更新队列、formatVersion、撤权／离线冲突草稿和恢复隔离；不要重复已有游标和控制队列。完整比赛写入受 AN04 payload 转换约束；不能上传 Android 内部 Game JSON 冒充 iOS StoredGame。
 
 F12 继续：设备配对、管理恢复卡、旧凭证轮换及撤销、恢复后人工核对和审计。旧请求遇 recoveryEpoch／accessEpoch 变化仍阻断，未提供自动解除；先按现行服务实现明确核对，不直接清空标志重放。
 
@@ -86,7 +87,7 @@ AN08：正式包名、长期证书、保管、覆盖升级、官网候选材料�
 
 ## 工具链和复现
 
-本云端：Linux、JDK 25.0.5、SDK platform 37.0、build-tools 37.0.0；AGP 9.4.0、Gradle wrapper 9.6.0、Kotlin 2.2.10、KSP 2.3.12；Node 24.19.0。Robolectric 4.16，API31 Native SQLite。默认脚本原为 macOS/zsh；Linux 可显式用 bash 执行。
+本云端：Linux、JDK 25.0.5、SDK platform 37.0、build-tools 37.0.0；AGP 9.4.0、Gradle wrapper 9.6.0、Kotlin 2.2.10、KSP 2.3.12；Node 24.19.0。Robolectric 4.16，API31 Native SQLite。当前综合回归 190 项（128 core＋23 原服务＋39 app），构建／lint 通过；最终证据见第三组。默认脚本原为 macOS/zsh；Linux 可显式用 bash 执行。
 
 若同一工作区仍在，工具变量位于 `output/cache/android/tooling/env.sh`，先读取路径并 source（其中只是本机 JDK／SDK 和代理设置，不是用户凭证）。新环境此文件不会随 Git 存在，须配置免费官方 JDK／Android SDK 的 JAVA_HOME、ANDROID_HOME；不要将某台机器的绝对路径写回源码。遵循云端网络代理和 CA，不关闭 TLS 验证、不打印环境秘密。
 

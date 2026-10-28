@@ -44,6 +44,10 @@ import kotlinx.serialization.json.*
     val bindings: List<SharedTeamBinding> = emptyList(),
     val lastFailure: DirectoryFailure? = null,
     val reviewedRequests: List<ReviewedDirectoryRequest> = emptyList(),
+    val matches: Map<String, CachedSharedMatch> = emptyMap(),
+    val matchCursors: Map<String, Long> = emptyMap(),
+    val matchPending: Map<String, PendingMatchControl> = emptyMap(),
+    val matchReceipts: Map<String, CompletedMatchControl> = emptyMap(),
 ) {
     override fun toString() = "TeamDirectoryState(pending=${pending?.kind}, requiresRecoveryReview=$requiresRecoveryReview)"
 }
@@ -55,7 +59,7 @@ interface TeamDirectoryStorage {
     fun save(state: TeamDirectoryState)
 }
 
-class TeamDirectorySession(private val client: TeamDirectoryClient, private val storage: TeamDirectoryStorage, private val deviceLabel: String) {
+class TeamDirectorySession(internal val client: TeamDirectoryClient, internal val storage: TeamDirectoryStorage, private val deviceLabel: String) {
     fun snapshot(): TeamDirectoryState = synchronized(storage.monitor) { storage.load() }
 
     fun refresh(): TeamDirectory = synchronized(storage.monitor) { refreshLocked() }
@@ -66,7 +70,7 @@ class TeamDirectorySession(private val client: TeamDirectoryClient, private val 
             state = state.copy(deviceID = id); storage.save(state)
         }
         val remote = try { client.teams() } catch (fault: TeamServiceFault) {
-            if (fault.status == 401) storage.save(state.copy(directory = null, profiles = emptyMap(), bindings = emptyList(), retainedSecrets = emptyList(), lastCompletion = null))
+            if (fault.status == 401) storage.save(state.copy(directory = null, profiles = emptyMap(), bindings = emptyList(), retainedSecrets = emptyList(), lastCompletion = null,matches=emptyMap(),matchCursors=emptyMap(),matchReceipts=emptyMap()))
             throw fault
         }
         storage.save(applyDirectory(state,remote))
@@ -94,6 +98,9 @@ class TeamDirectorySession(private val client: TeamDirectoryClient, private val 
             profiles = state.profiles.filter { (id, cache) -> accessible(id)?.let { member -> cache.memberID.equals(member.memberID,true) && cache.accessEpoch == member.accessEpoch && cache.recoveryEpoch == remote.recoveryEpoch } == true },
             bindings = state.bindings.filter { accessible(it.cloudTeamID) != null },
             retainedSecrets = state.retainedSecrets.filter(::usableSecret),
+            matches = state.matches.filterValues { cache -> accessible(cache.document.teamID)?.let { team -> cache.memberID.equals(team.memberID,true) && cache.accessEpoch == team.accessEpoch && cache.recoveryEpoch == remote.recoveryEpoch } == true },
+            matchCursors = state.matchCursors.filterKeys { accessible(it) != null },
+            matchReceipts = state.matchReceipts.filterValues { accessible(it.request.teamID) != null },
             lastCompletion = state.lastCompletion?.takeIf { completion ->
                 if (completion.request.kind in setOf(DirectoryRequestKind.create,DirectoryRequestKind.invite)) usableSecret(completion)
                 else completion.request.teamID?.let { accessible(it) != null } ?: !changed

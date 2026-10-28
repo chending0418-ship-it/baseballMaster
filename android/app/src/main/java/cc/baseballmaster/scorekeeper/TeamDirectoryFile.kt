@@ -32,7 +32,7 @@ internal class TeamDirectoryFile(
         if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return@synchronized TeamDirectoryState()
         val sealed = file.openRead().use { stream ->
             val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
-            while (true) { val n = stream.read(buffer); if (n < 0) break; check(output.size() + n <= 4_194_304) { "协作资料过大，原文件已保留" }; output.write(buffer,0,n) }
+            while (true) { val n = stream.read(buffer); if (n < 0) break; check(output.size() + n <= 100 * 1_048_576) { "协作资料过大，原文件已保留" }; output.write(buffer,0,n) }
             output.toByteArray()
         }
         check(sealed.size >= 28) { "协作资料损坏，原文件已保留" }
@@ -45,7 +45,7 @@ internal class TeamDirectoryFile(
     override fun save(state: TeamDirectoryState) = synchronized(monitor) {
         check(folder.isDirectory || folder.mkdirs()) { "协作目录尚未保存" }
         val plain = GameJson.encodeToString(TeamDirectoryState.serializer(), state).toByteArray()
-        check(plain.size <= 4_194_276) { "协作资料过大，原文件已保留" }
+        check(plain.size <= 100 * 1_048_576 - 28) { "协作资料过大，原文件已保留" }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key()); cipher.updateAAD(aad)
         val sealed = cipher.iv + cipher.doFinal(plain)

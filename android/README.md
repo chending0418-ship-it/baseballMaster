@@ -52,3 +52,5 @@ AN04 已增加应用内来源保护导入及原文／续记文件保存，Room 3
 AN05 已开始设备身份／球队目录／邀请 API 和独立加密请求存储，使用现有 `/api/v3`，不自动上传本机球队。当前基础层未接产品共享入口，完整比赛同步／交接、配对恢复仍待继续。显式本地原服务集成：`scripts/android/gradle.sh :core:teamServiceTest`（需 Node 24；使用 `scripts/android/an05-local-service.mjs` 仅在 127.0.0.1 动态端口和内存 SQLite 运行，不读取部署配置）。普通 `:core:test` 不要求 Node，不发外部请求。范围与证据见 [AN05 首批开发](../docs/releases/android/AN05-DIRECTORY-2026-10-28.md)。
 
 AN05 第二组已扩展共享名单、成员／邀请管理、独立本机来源绑定、冲突草稿与撤权缓存清理；应用调用从 `AndroidTeamSharing` 进入，尚未接产品菜单或共享建赛。换 agent 继续开发请先读 [安卓统一交接](../docs/releases/android/ANDROID-HANDOFF-2026-10-28.md)，不要把基础 API 完成当作 AN05 整体验收。
+
+AN05 第三组已增加完整共享 JSON／游标读取与每场持久交接控制，当前 190 项回归通过。正式发布／PUT 记分更新、Room 共享比赛及产品交接入口仍未接通，须先完成 AN04 转换和 F11 编辑恢复；见 [第三组范围](../docs/releases/android/AN05-MATCHES-2026-10-28.md)。独立协作文件上限现为 100 MiB，HTTP 按现行接口为 18 MiB。

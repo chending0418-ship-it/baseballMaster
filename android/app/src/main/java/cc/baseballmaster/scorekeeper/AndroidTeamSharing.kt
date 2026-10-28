@@ -26,4 +26,9 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     suspend fun prepareRevoke(teamID: String, invitationID: String) = withContext(Dispatchers.IO) { session.prepareRevoke(teamID,invitationID) }
     suspend fun sendPending() = withContext(Dispatchers.IO) { session.sendPending() }
     suspend fun keepRejectedAsDraft(operationID: String) = withContext(Dispatchers.IO) { session.keepRejectedAsDraft(operationID) }
+    suspend fun matches(teamID: String) = withContext(Dispatchers.IO) { session.matches(teamID) }
+    suspend fun match(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.match(teamID,gameID) }
+    suspend fun participants(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.matchParticipants(teamID,gameID) }
+    suspend fun prepareHandoff(expected: SharedMatchDocument, kind: MatchControl, targetDeviceID: String? = null, confirmRisk: Boolean = false) = withContext(Dispatchers.IO) { session.prepareMatchControl(expected,kind,targetDeviceID,confirmRisk) }
+    suspend fun sendHandoff(gameID: String) = withContext(Dispatchers.IO) { session.sendMatchControl(gameID) }
 }

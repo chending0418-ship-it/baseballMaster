@@ -71,12 +71,13 @@ class TeamHttpTransport(baseURL: String, private val credentials: TeamCredential
             (base.scheme == "https" || allowLoopbackHttp && base.scheme == "http" && base.host in setOf("127.0.0.1", "localhost", "[::1]"))) { "球队服务地址无效" }
     }
     override fun request(method: String, path: String, body: JsonObject?): JsonObject {
-        require(method in setOf("GET", "POST", "PATCH", "DELETE") && Regex("[a-z0-9/-]+").matches(path) && !path.startsWith('/') && !path.contains("//"))
+        val cursorPath = Regex("teams/[a-f0-9-]{36}/games\\?cursor=[0-9]{1,10}").matches(path)
+        require(method in setOf("GET", "POST", "PUT", "PATCH", "DELETE") && (Regex("[a-z0-9/-]+").matches(path) || method == "GET" && cursorPath) && !path.startsWith('/') && !path.contains("//"))
         // Saving the device secret must succeed before opening any connection.
         val token = TeamSecrets.validate(credentials.token())
         try {
             val bytes = body?.toString()?.toByteArray(Charsets.UTF_8)
-            require(bytes == null || bytes.size <= 1_048_576) { "请求过大，未发送" }
+            require(bytes == null || bytes.size <= 18 * 1_048_576) { "请求过大，未发送" }
             val request = Request.Builder().url(base.toASCIIString().trimEnd('/') + "/" + path)
                 .header("Authorization", "Bearer $token").header("X-BM-Protocol", "1")
                 .header("Content-Type", "application/json").header("Accept-Encoding", "identity").header("Cache-Control", "no-store")
@@ -87,7 +88,7 @@ class TeamHttpTransport(baseURL: String, private val credentials: TeamCredential
             if (status in 300..399) throw TeamServiceFault(status, "redirect_refused")
             val responseBytes = reply.body?.byteStream()?.use { stream ->
                 val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
-                while (true) { val n = stream.read(buffer); if (n < 0) break; require(output.size() + n <= 4_194_304); output.write(buffer, 0, n) }
+                while (true) { val n = stream.read(buffer); if (n < 0) break; require(output.size() + n <= 18 * 1_048_576); output.write(buffer, 0, n) }
                 output.toByteArray()
             } ?: byteArrayOf()
             val response = runCatching { AppleWireJson.parse(responseBytes).jsonObject }.getOrNull()
@@ -104,7 +105,7 @@ class TeamHttpTransport(baseURL: String, private val credentials: TeamCredential
 
 object TeamDirectoryJson { val format = Json { ignoreUnknownKeys = true; encodeDefaults = true } }
 
-class TeamDirectoryClient(private val transport: TeamTransport) {
+class TeamDirectoryClient(internal val transport: TeamTransport) {
     @Serializable private data class Members(val members: List<SharedTeamMember>)
     @Serializable private data class Invitations(val invitations: List<TeamInvitation>)
     fun enroll(label: String): String {

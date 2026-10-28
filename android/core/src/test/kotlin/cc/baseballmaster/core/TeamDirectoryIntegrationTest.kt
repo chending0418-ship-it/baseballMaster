@@ -26,6 +26,10 @@ class TeamDirectoryIntegrationTest {
             input.write(buildJsonObject { put("kind", kind); teamID?.let { put("teamID", it) } }.toString()); input.newLine(); input.flush()
             assertEquals("true", GameJson.parseToJsonElement(output.readLine()).jsonObject.getValue("updated").jsonPrimitive.content)
         }
+        fun matchFixture(): JsonObject {
+            input.write("{\"kind\":\"fixture\"}"); input.newLine(); input.flush()
+            return GameJson.parseToJsonElement(output.readLine()).jsonObject.getValue("document").jsonObject
+        }
         fun transport(secret: String = TeamSecrets.random()) = TeamHttpTransport(endpoint, TeamCredentialProvider { secret }, allowLoopbackHttp = true)
         override fun close() { input.close(); if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) process.destroyForcibly(); output.close() }
     }
@@ -36,6 +40,140 @@ class TeamDirectoryIntegrationTest {
     private fun join(admin: TeamDirectorySession, team: RemoteTeam, member: TeamDirectorySession, role: TeamRole = TeamRole.scorer) {
         admin.prepareInvite(team.id,role); val invite = admin.sendPending().request.body.getValue("token").jsonPrimitive.content
         member.refresh(); member.prepareJoin(invite,"同名成员"); member.sendPending(); member.refresh()
+    }
+    private fun publishFixture(server: Service, transport: TeamTransport, team: RemoteTeam): SharedMatchDocument {
+        val body=JsonObject(server.matchFixture() + ("operationID" to JsonPrimitive(UUID.randomUUID().toString())))
+        return SharedMatchDocument(transport.request("POST","teams/${team.id}/games",body))
+    }
+
+    @Test(timeout = 30000) fun fullOpaqueMatchAndCursorKeepWireIdentityAndUnknownHistoryFields() {
+        Service().use { server ->
+            val transport=server.transport(); val store=Memory(); val owner=session(transport,store); val team=create(owner)
+            val created=publishFixture(server,transport,team)
+            assertEquals(created.id,owner.matches(team.id).single().id)
+            val full=owner.match(team.id,created.id)
+            assertNotEquals(full.id,full.payload!!.getValue("id").jsonPrimitive.content)
+            assertEquals(listOf("original-event","audit-checkpoint"),full.payload!!.getValue("opaqueFutureHistory").jsonObject.getValue("retained").jsonArray.map { it.jsonPrimitive.content })
+            val cursor=store.state.matchCursors.getValue(team.id); assertTrue(cursor > 0)
+            assertEquals(full.payload,owner.matches(team.id).single().payload); assertEquals(cursor,store.state.matchCursors.getValue(team.id))
+        }
+    }
+
+    @Test(timeout = 30000) fun handoffAcceptSavesTheFullDocumentAndChangesWriterWithoutRewritingPayload() {
+        Service().use { server ->
+            val transport=server.transport(); val ownerStore=Memory(); val owner=session(transport,ownerStore); val team=create(owner)
+            val targetStore=Memory(); val target=session(server.transport(),targetStore); join(owner,team,target)
+            val created=publishFixture(server,transport,team); val before=owner.match(team.id,created.id)
+            val targetID=targetStore.state.deviceID!!
+            assertTrue(owner.matchParticipants(team.id,created.id).any { it.jsonObject.getValue("deviceID").jsonPrimitive.content == targetID })
+            owner.prepareMatchControl(before,MatchControl.propose,targetID); owner.sendMatchControl(created.id)
+            val offered=target.match(team.id,created.id); assertFalse(owner.match(team.id,created.id).canWrite)
+            val op=target.prepareMatchControl(offered,MatchControl.accept)
+            assertEquals(before.payload,targetStore.state.matches.getValue(created.id).document.payload)
+            assertEquals(op,target.sendMatchControl(created.id).request.id)
+            val current=target.match(team.id,created.id)
+            assertEquals(2,current.writerEpoch); assertEquals(targetID,current.writerDeviceID); assertTrue(current.canWrite)
+            assertEquals(before.payload,current.payload); assertFalse(owner.match(team.id,created.id).canWrite)
+        }
+    }
+
+    @Test(timeout = 30000) fun lostAcceptResponseKeepsTheSameOperationAcrossRestart() {
+        Service().use { server ->
+            val transport=server.transport(); val owner=session(transport); val team=create(owner)
+            val targetTransport=server.transport(); val store=Memory(); var drop=true
+            val client=TeamTransport { method,path,body ->
+                val response=targetTransport.request(method,path,body)
+                if (path.endsWith("handoff/accept") && drop) { drop=false; throw IOException("injected accept loss") }; response
+            }
+            val target=session(client,store); join(owner,team,target)
+            val created=publishFixture(server,transport,team)
+            owner.prepareMatchControl(owner.match(team.id,created.id),MatchControl.propose,store.state.deviceID); owner.sendMatchControl(created.id)
+            val id=target.prepareMatchControl(target.match(team.id,created.id),MatchControl.accept)
+            assertThrows(IOException::class.java) { target.sendMatchControl(created.id) }
+            assertEquals(id,store.state.matchPending.getValue(created.id).id)
+            val restarted=session(client,store); assertEquals(id,restarted.sendMatchControl(created.id).request.id)
+            assertEquals(2,restarted.match(team.id,created.id).writerEpoch)
+            assertTrue(store.state.matchPending.isEmpty())
+        }
+    }
+
+    @Test(timeout = 30000) fun controlSaveFailureSendsNothingAndForceRequiresTheReviewedVersionAndRiskConsent() {
+        Service().use { server ->
+            val transport=server.transport(); val store=Memory(); val owner=session(transport,store); val team=create(owner)
+            val other=session(server.transport()); join(owner,team,other)
+            val created=publishFixture(server,transport,team); val before=owner.match(team.id,created.id); val targetID=other.snapshot().deviceID!!
+            store.reject={ it.matchPending.isNotEmpty() }
+            assertThrows(IOException::class.java) { owner.prepareMatchControl(before,MatchControl.propose,targetID) }
+            store.reject={ false }; assertNull(owner.match(team.id,created.id).handoff)
+            assertThrows(IllegalArgumentException::class.java) { owner.prepareMatchControl(before,MatchControl.force,targetID) }
+            owner.prepareMatchControl(before,MatchControl.force,targetID,true); owner.sendMatchControl(created.id)
+            assertEquals(targetID,other.match(team.id,created.id).writerDeviceID)
+            assertThrows(IllegalStateException::class.java) { owner.prepareMatchControl(before,MatchControl.force,store.state.deviceID,true) }
+        }
+    }
+
+    @Test(timeout = 30000) fun revokedTeamClearsDownloadedMatchesAndCursorsButKeepsUnconfirmedControl() {
+        Service().use { server ->
+            val transport=server.transport(); val owner=session(transport); val team=create(owner)
+            val store=Memory(); val target=session(server.transport(),store); join(owner,team,target)
+            val created=publishFixture(server,transport,team)
+            owner.prepareMatchControl(owner.match(team.id,created.id),MatchControl.propose,store.state.deviceID); owner.sendMatchControl(created.id)
+            val offered=target.match(team.id,created.id); target.matches(team.id)
+            val op=target.prepareMatchControl(offered,MatchControl.accept)
+            val member=owner.members(team.id).single { it.id == store.state.directory!!.teams.single().memberID }
+            owner.prepareMember(team.id,member,TeamRole.member,true); owner.sendPending()
+            assertThrows(IllegalStateException::class.java) { target.sendMatchControl(created.id) }
+            assertTrue(store.state.matches.isEmpty()); assertTrue(store.state.matchCursors.isEmpty()); assertEquals(op,store.state.matchPending.getValue(created.id).id)
+        }
+    }
+
+    @Test(timeout = 30000) fun expiredCursorRebuildsMetadataWithoutDroppingTheUnconfirmedControl() {
+        Service().use { server ->
+            val transport=server.transport(); val store=Memory(); val owner=session(transport,store); val team=create(owner)
+            val target=session(server.transport()); join(owner,team,target)
+            val created=publishFixture(server,transport,team); owner.matches(team.id)
+            val full=owner.match(team.id,created.id)
+            val pending=owner.prepareMatchControl(full,MatchControl.propose,target.snapshot().deviceID)
+            repeat(2) { n -> transport.request("POST","teams/${team.id}/games/${created.id}/handoff/force",buildJsonObject {
+                put("operationID",UUID.randomUUID().toString()); put("baseRevision",1); put("writerEpoch",n+1); put("targetDeviceID",store.state.deviceID); put("confirmRisk",true)
+            }) }
+            server.change("compact",team.id)
+            val current=owner.matches(team.id).single()
+            assertEquals(3,current.writerEpoch); assertEquals(pending,store.state.matchPending.getValue(created.id).id)
+            assertNull(current.payload); assertEquals(full.payload,owner.match(team.id,created.id).payload)
+        }
+    }
+
+    @Test(timeout = 30000) fun retryingAnOldProposeReceiptFetchesCurrentAuthorityInsteadOfRevivingTheHandoff() {
+        Service().use { server ->
+            val transport=server.transport(); var drop=true; val store=Memory()
+            val owner=session(TeamTransport { method,path,body ->
+                val response=transport.request(method,path,body)
+                if(path.endsWith("handoff/propose") && drop) { drop=false; throw IOException("injected proposal loss") }; response
+            },store)
+            val team=create(owner); val target=session(server.transport()); join(owner,team,target)
+            val created=publishFixture(server,transport,team)
+            owner.prepareMatchControl(owner.match(team.id,created.id),MatchControl.propose,target.snapshot().deviceID)
+            assertThrows(IOException::class.java) { owner.sendMatchControl(created.id) }
+            target.prepareMatchControl(target.match(team.id,created.id),MatchControl.accept); target.sendMatchControl(created.id)
+            val oldReceipt=owner.sendMatchControl(created.id)
+            assertEquals(1,oldReceipt.response.writerEpoch)
+            val current=store.state.matches.getValue(created.id).document
+            assertEquals(2,current.writerEpoch); assertNull(current.handoff); assertFalse(current.canWrite)
+            assertEquals(target.snapshot().deviceID,current.writerDeviceID)
+        }
+    }
+
+    @Test(timeout = 30000) fun eachMatchHasAnIndependentDurableHandoffRequest() {
+        Service().use { server ->
+            val transport=server.transport(); val store=Memory(); val owner=session(transport,store); val team=create(owner)
+            val target=session(server.transport()); join(owner,team,target)
+            val games=List(2) { publishFixture(server,transport,team) }
+            games.forEach { game -> owner.prepareMatchControl(owner.match(team.id,game.id),MatchControl.propose,target.snapshot().deviceID) }
+            assertEquals(2,store.state.matchPending.size)
+            owner.sendMatchControl(games.first().id); assertEquals(setOf(games.last().id),store.state.matchPending.keys)
+            owner.sendMatchControl(games.last().id); assertTrue(store.state.matchPending.isEmpty())
+        }
     }
 
     @Test(timeout = 30000) fun seededRosterKeepsLocalIDsAndZeroLabelsWithoutOverwritingTheOriginalTeam() {
