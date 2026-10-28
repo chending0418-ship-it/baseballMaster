@@ -22,7 +22,7 @@ PendingMatchWatch 按场单独加密保存原 operationID、body、权限／恢�
 
 ## 开发验证
 
-冻结 **283 项：149 core＋63 原协作服务＋8 原直播服务＋63 app，0 失败／错误／跳过**，App／AndroidTest 编译及 lint 通过；lint 0 错误／18 警告。`output/validation/android/an06-shared-watch/freeze` 有 XML、lint 和摘要。
+冻结 **283 项：149 core＋63 原协作服务＋8 原直播服务＋63 app，0 失败／错误／跳过**，App／AndroidTest 编译及 lint 通过；lint 0 错误／19 警告。`output/validation/android/an06-shared-watch/freeze` 有 XML、lint 和摘要。新增 1 条是浏览器入口 Uri.parse 的 UseKtx 建议，不是构建错误。
 
 - final.log：全部开发任务通过；presence-final.log 在补齐跨页面前台保活和存储测试后，协作服务、app 测试、两种编译和 lint 再次通过。普通 core／独立直播未因只有 App 跟进而无意义重跑。
 - 初次 3 项失败是匿名测试请求漏现行 X-BM-Protocol: 1，返回 426；补头后通过，保留 initial.log。前台跟进首次编译遇跨模块 nullable smart cast，改为稳定局部 directory 后通过，失败 presence-followup.log 保留。
