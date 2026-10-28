@@ -156,6 +156,39 @@ class AppleImportTransactionTest {
         } finally { db.close() }
     }
 
+    @Test fun scoringWalkIsAtomicIdempotentAndRestoresWithItsOriginalCorrectionAudit() = runBlocking {
+        val db = database(); val restored = database()
+        try {
+            val repo = GameRepository(db); val original = source(); val receipt = repo.importAppleBackup(original)
+            var game = GameRepository.decode(db.dao().allGames().single()); var sequence=0L
+            suspend fun ball() {
+                game=repo.command(game.id,Command("pitch",pitch=PitchAction.ball,at=1_800_000_000_002 + sequence++ * 1000),game.revision)
+            }
+            while(game.bases.any {it==null}) {while(game.balls<3) ball();ball()}
+            while(game.balls<3) ball()
+            val before=repo.exportAppleBackup(receipt.id); val row=db.dao().game(game.id); val ledger=db.dao().allOperations()
+            val scorer=requireNotNull(game.bases[2]); val pitcher=game.runnerPitcherIDs.getValue(scorer)
+            assertTrue(game.unearnedRunnerIDs.contains(scorer))
+            val id=UUID.randomUUID().toString(); val command=Command("pitch",pitch=PitchAction.ball,at=1_800_000_100_009)
+            val failing=GameRepository(db) {throw SQLiteFullException("injected scoring walk full")}
+            try {failing.command(game.id,command,game.revision,id);fail("Expected rollback")} catch(_: SQLiteFullException) {}
+            assertEquals(row,db.dao().game(game.id));assertEquals(ledger,db.dao().allOperations());assertArrayEquals(before,repo.exportAppleBackup(receipt.id))
+            val next=repo.command(game.id,command,game.revision,id); val current=repo.exportAppleBackup(receipt.id)
+            assertEquals(game.awayRuns+1,next.awayRuns)
+            assertEquals(game.pitching.getValue(pitcher).earnedRuns,next.pitching.getValue(pitcher).earnedRuns)
+            assertEquals(next,repo.command(game.id,command,game.revision,id));assertEquals(ledger.size+1,db.dao().allOperations().size)
+            assertArrayEquals(original,repo.exportAppleBackup(receipt.id,original=true))
+            val other=GameRepository(restored);other.restoreDeviceBackup(repo.exportDeviceBackup(next.ourTeamID))
+            assertEquals(next,other.command(game.id,command,game.revision,id));assertArrayEquals(current,other.exportAppleBackup(receipt.id))
+            val beforeState=AppleBackupEnvelope.inspect(before).snapshot.getValue("games").jsonArray.single().jsonObject.getValue("state").jsonObject
+            val afterState=AppleBackupEnvelope.inspect(current).snapshot.getValue("games").jsonArray.single().jsonObject.getValue("state").jsonObject
+            assertEquals(beforeState["correctionRevisions"],afterState["correctionRevisions"])
+            assertEquals(beforeState.getValue("scoringEvents").jsonArray.toList(),afterState.getValue("scoringEvents").jsonArray.dropLast(2))
+            artifact("source-after-scoring-walk.bmbackup",current)
+            artifact("source-after-scoring-walk-restore.bmbackup",other.exportAppleBackup(receipt.id))
+        } finally {db.close();restored.close()}
+    }
+
     @Test fun conflictingTeamAndUnsupportedFileCannotPartiallyImport() = runBlocking {
         val db = database()
         try {

@@ -80,17 +80,73 @@ class AppleTerminalPitchTest {
         }
     }
 
-    @Test fun thirdOutAndScoringWalkRemainRejectedWithoutChangingAnySourceBytes() {
+    @Test fun thirdOutRemainsRejectedWithoutChangingAnySourceBytes() {
         var plan = strikeout(strikeout(base(), PitchAction.calledStrike), PitchAction.swingingStrike)
         repeat(2) { plan = pitch(plan, PitchAction.calledStrike) }
         val before = plan.export()
         assertThrows(Exception::class.java) { pitch(plan, PitchAction.calledStrike) }
         assertArrayEquals(before, plan.export())
-        var walks = base()
-        repeat(2) { repeat(3) { walks = pitch(walks, PitchAction.ball) }; walks = pitch(walks, PitchAction.ball) }
-        repeat(3) { walks = pitch(walks, PitchAction.ball) }
-        val loaded = walks.export()
-        assertThrows(Exception::class.java) { pitch(walks, PitchAction.ball) }
-        assertArrayEquals(loaded, walks.export())
+    }
+
+    @Test fun basesLoadedWalkKeepsTheOriginalAuditAndChargesTheActualEarnedOrUnearnedRunner() {
+        for ((file, earned) in listOf("ios-reference-v7.bmbackup" to 1,"ios-correction-reference.bmbackup" to 0)) {
+            val original = File(System.getProperty("parity.fixtures"), "backup/$file").readBytes()
+            var plan = AppleSourceBackup.prepare(original)
+            while (plan.games().single().bases.any { it == null }) {
+                while (plan.games().single().balls < 3) plan = pitch(plan,PitchAction.ball)
+                plan = pitch(plan,PitchAction.ball)
+            }
+            while (plan.games().single().balls < 3) plan = pitch(plan,PitchAction.ball)
+            val old = plan.games().single(); val before = plan.export(); val beforeState = state(before)
+            val scorer = requireNotNull(old.bases[2]); val responsible = old.runnerPitcherIDs.getValue(scorer)
+            val next = pitch(plan,PitchAction.ball); val game = next.games().single(); val after = state(next.export())
+            assertEquals(old.awayRuns + 1,game.awayRuns); assertEquals(old.homeRuns,game.homeRuns)
+            assertEquals((old.batting[scorer]?.runs ?: 0) + 1,game.batting.getValue(scorer).runs)
+            assertEquals((old.batting[old.batter.id]?.runsBattedIn ?: 0) + 1,game.batting.getValue(old.batter.id).runsBattedIn)
+            assertEquals(old.pitching.getValue(responsible).runs + 1,game.pitching.getValue(responsible).runs)
+            assertEquals(old.pitching.getValue(responsible).earnedRuns + earned,game.pitching.getValue(responsible).earnedRuns)
+            assertFalse(game.bases.contains(scorer))
+            // iOS retains historical responsibility until the half changes.
+            assertEquals(responsible,game.runnerPitcherIDs[scorer])
+            assertEquals(old.unearnedRunnerIDs.contains(scorer),game.unearnedRunnerIDs.contains(scorer))
+            val events = after.getValue("scoringEvents").jsonArray
+            assertEquals(listOf(JsonPrimitive(scorer.uppercase())),events.last().jsonObject.getValue("effectiveScorerIDs").jsonArray.toList())
+            assertEquals("得分",events.last().jsonObject.getValue("runnerMovements").jsonArray.first().jsonObject.getValue("destination").jsonPrimitive.content)
+            assertTrue(events.last().jsonObject.getValue("title").jsonPrimitive.content.endsWith("，挤回 1 分"))
+            assertEquals(beforeState.getValue("scoringEvents").jsonArray.toList(),events.dropLast(2))
+            assertEquals(beforeState.getValue("playLog").jsonArray.toList(),after.getValue("playLog").jsonArray.dropLast(2))
+            assertEquals(beforeState["correctionRevisions"],after["correctionRevisions"])
+            assertEquals(beforeState.getValue("historyJournal").jsonObject.getValue("checkpoint"),after.getValue("historyJournal").jsonObject.getValue("checkpoint"))
+            assertArrayEquals(before,plan.export())
+            val reopened = AppleSourceBackup.validateLineage(original,next.export())
+            assertEquals(game.awayRuns,reopened.games().single().awayRuns)
+            assertEquals(game.awayRuns,pitch(reopened,PitchAction.ball).games().single().awayRuns)
+        }
+    }
+
+    @Test fun scoringWalkThatNeedsARunLimitDecisionStillRejectsWithoutChangingTheSource() {
+        // Synthetic rule variant, not evidence of an actual legacy iOS export.
+        val bytes = source(); val inspection = AppleBackupEnvelope.inspect(bytes)
+        val stored = inspection.snapshot.getValue("games").jsonArray.single().jsonObject
+        val state = stored.getValue("state").jsonObject
+        val rules = JsonObject(stored.getValue("rules").jsonObject + ("halfInningRunLimit" to JsonPrimitive(1)))
+        val journal = state.getValue("historyJournal").jsonObject
+        val checkpoint = AppleWireJson.parse(java.util.Base64.getDecoder().decode(journal.getValue("checkpoint").jsonPrimitive.content)).jsonObject
+        val newCheckpoint = JsonObject(checkpoint + ("rulesSnapshot" to rules)).toString().toByteArray()
+        val newJournal = JsonObject(journal + ("checkpoint" to JsonPrimitive(java.util.Base64.getEncoder().encodeToString(newCheckpoint))))
+        val newState = JsonObject(state + mapOf("rulesSnapshot" to rules,"historyJournal" to newJournal))
+        val newStored = JsonObject(stored + mapOf("rules" to rules,"state" to newState))
+        val payload = JsonObject(inspection.snapshot + ("games" to JsonArray(listOf(newStored)))).toString().toByteArray()
+        val checksum = java.security.MessageDigest.getInstance("SHA-256").digest(payload).joinToString("") {"%02x".format(it)}
+        val synthetic = JsonObject(AppleWireJson.parse(bytes).jsonObject + mapOf("checksum" to JsonPrimitive(checksum),"payload" to JsonPrimitive(java.util.Base64.getEncoder().encodeToString(payload)))).toString().toByteArray()
+        var plan = AppleSourceBackup.prepare(synthetic)
+        while(plan.games().single().bases.any {it==null}) {
+            while(plan.games().single().balls<3) plan=pitch(plan,PitchAction.ball)
+            plan=pitch(plan,PitchAction.ball)
+        }
+        while(plan.games().single().balls<3) plan=pitch(plan,PitchAction.ball)
+        val before=plan.export()
+        assertThrows(IllegalArgumentException::class.java) {pitch(plan,PitchAction.ball)}
+        assertArrayEquals(before,plan.export())
     }
 }

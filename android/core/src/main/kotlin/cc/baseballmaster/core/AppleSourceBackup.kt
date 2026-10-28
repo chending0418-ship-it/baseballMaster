@@ -82,7 +82,7 @@ class AppleSourceBackup private constructor(
             oldGames.zip(newGames).forEach { (before, after) ->
                 require(JsonObject(before - "state" - "revision" - "updatedAt") == JsonObject(after - "state" - "revision" - "updatedAt")) { "来源比赛资料被改写" }
                 val oldState = before.getValue("state").jsonObject; val newState = after.getValue("state").jsonObject
-                val mutable = setOf("balls", "strikes", "plateAppearancePitchCount", "pitching", "playLog", "scoringEvents", "historyJournal", "batting", "homeBatterIndex", "awayBatterIndex", "outs", "baseRunners", "runnerPitcherIDs", "unearnedRunnerIDs", "plateAppearances", "currentPlateAppearanceID")
+                val mutable = setOf("balls", "strikes", "plateAppearancePitchCount", "pitching", "playLog", "scoringEvents", "historyJournal", "batting", "homeBatterIndex", "awayBatterIndex", "outs", "baseRunners", "runnerPitcherIDs", "unearnedRunnerIDs", "plateAppearances", "currentPlateAppearanceID", "homeRunsByInning", "awayRunsByInning")
                 require(oldState.filterKeys { it !in mutable } == newState.filterKeys { it !in mutable }) { "来源局面或纠错审计被改写" }
                 val oldJournal = oldState.getValue("historyJournal").jsonObject; val newJournal = newState.getValue("historyJournal").jsonObject
                 require(JsonObject(oldJournal - "operations") == JsonObject(newJournal - "operations")) { "来源检查点被改写" }
