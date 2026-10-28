@@ -1,5 +1,6 @@
 package cc.baseballmaster.scorekeeper
 
+import cc.baseballmaster.core.AppleWireJson
 import cc.baseballmaster.core.CorrectionDraft
 import cc.baseballmaster.core.GameJson
 import cc.baseballmaster.core.Roster
@@ -9,6 +10,7 @@ import java.util.Base64
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
 
 /** Android-local recovery snapshot; this is explicitly not an iOS .bmbackup. */
 @Serializable internal data class DeviceTeam(val id: String, val name: String, val payload: String, val isOpponent: Boolean)
@@ -32,11 +34,11 @@ internal object AndroidDeviceBackup {
     }
     fun decode(bytes: ByteArray): DeviceSnapshot {
         require(bytes.size <= LIMIT) { "备份超过 100 MB" }
-        val outer = json.decodeFromString<DeviceEnvelope>(bytes.toString(Charsets.UTF_8))
+        val outer = json.decodeFromJsonElement<DeviceEnvelope>(AppleWireJson.parse(bytes))
         require(outer.format == FORMAT && outer.version == 1) { "备份格式或版本不受支持" }
         val payload = Base64.getDecoder().decode(outer.payload)
         require(hash(payload) == outer.checksum) { "备份校验失败" }
-        return json.decodeFromString<DeviceSnapshot>(payload.toString(Charsets.UTF_8)).also(::validate)
+        return json.decodeFromJsonElement<DeviceSnapshot>(AppleWireJson.parse(payload)).also(::validate)
     }
     private fun validate(snapshot: DeviceSnapshot) {
         require(snapshot.teams.map { it.id }.distinct().size == snapshot.teams.size && snapshot.games.map { it.id }.distinct().size == snapshot.games.size && snapshot.operations.map { it.id }.distinct().size == snapshot.operations.size && snapshot.drafts.map { it.gameID }.distinct().size == snapshot.drafts.size) { "备份编号重复" }

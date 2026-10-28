@@ -8,10 +8,11 @@ import kotlinx.serialization.json.*
 /**
  * Research-only, append-only iOS continuation. Not connected to editable app import/export.
  *
- * Only local, ongoing standard games with a clean pitch/simple-single journal are editable.
+ * Only local, ongoing standard games with supported pitch/single/no-out error journals are editable.
+ * Supported correction journals must share the original checkpoint; audit/review flags remain intact.
  * Existing events/logs/appearances/checkpoint stay opaque and immutable AFTER replay verification;
  * newly appended nonterminal pitches are genuinely replayed and encoded, not a copy-only import.
- * Corrections, substitutions, terminal pitches, legacy histories and unknown selected-game fields
+ * Substitutions, terminal pitches, legacy histories and unknown selected-game fields
  * are rejected. Unedited snapshot records outside the selected game are preserved.
  */
 internal class AppleGameContinuation private constructor(
@@ -38,8 +39,12 @@ internal class AppleGameContinuation private constructor(
             state.arrayValue("plateAppearances").map { it.jsonObject.id("id") }).toSet()
         val eventID = stableID(id, "event0"); val logID = stableID(id, "log0")
         require(listOf(id, eventID, logID).distinct().size == 3 && listOf(id, eventID, logID).none { it in allIDs }) { "续记编号重复，原资料未修改" }
-        val sourceDates = listOf(stored.getValue("updatedAt"), state.getValue("clockRunningSince")) +
-            (journal.arrayValue("operations") + state.arrayValue("scoringEvents") + state.arrayValue("playLog")).map { it.jsonObject.getValue("timestamp") }
+        val auditDates = state.optional("correctionRevisions")?.jsonArray.orEmpty().flatMap { raw ->
+            val revision = raw.jsonObject
+            listOf(revision.getValue("date")) + revision.objectValue("previousJournal").arrayValue("operations").flatMap { op -> listOfNotNull(op.jsonObject.optional("timestamp"), op.jsonObject.optional("correctedAt")) }
+        }
+        val sourceDates = auditDates + listOf(stored.getValue("updatedAt"), state.getValue("clockRunningSince")) +
+            (journal.arrayValue("operations") + state.arrayValue("scoringEvents") + state.arrayValue("playLog")).flatMap { row -> listOfNotNull(row.jsonObject.optional("timestamp"), row.jsonObject.optional("correctedAt"), row.jsonObject.optional("reviewedAt")) }
         // Decimal tokens avoid accepting a backward sub-millisecond time due to Double rounding.
         val lastMillis = sourceDates.maxOf { BigDecimal(it.jsonPrimitive.content) }.add(BigDecimal("978307200")).movePointRight(3)
         require(atMillis > 0 && BigDecimal.valueOf(atMillis) >= lastMillis) { "续记时间早于原比赛" }
@@ -139,6 +144,13 @@ internal class AppleGameContinuation private constructor(
             supportedSource(stored)
             val game = AppleReplayPrototype.replay(stored)
             verifySourceContexts(stored, game)
+            val revisions = stored.objectValue("state").optional("correctionRevisions")?.jsonArray.orEmpty()
+            require(revisions.size == game.historyRevisions.size)
+            revisions.zip(game.historyRevisions).forEach { (raw, revision) ->
+                val previous = History.run(game.copy(checkpoint = revision.previousCheckpoint), revision.previousRecords, revision.previousRecords.size, strict = true)
+                require(previous.canSave) { previous.conflict ?: "更正前历史不能严格重放" }
+                verifySourceContexts(stored, requireNotNull(previous.game), raw.jsonObject.objectValue("previousJournal"))
+            }
             require(game.rules.mode == GameMode.standard && !game.isFinal && game.pendingDecision == null && !game.halfEndedAwaitingDecision) { "比赛不能在此研究续记" }
             val state = stored.objectValue("state")
             verifyCurrentAppearance(state, game)
@@ -179,8 +191,23 @@ internal class AppleGameContinuation private constructor(
             val runningSince = state.optional("clockRunningSince")?.jsonPrimitive
             require(runningSince != null && !runningSince.isString && runningSince.doubleOrNull?.isFinite() == true) { "研究续记暂不支持暂停或未启动的时钟" }
             require(stored.optional("startedAt") != null) { "比赛开始时间缺失，不能研究续记" }
-            require(state.optional("correctionRevisions")?.jsonArray.isNullOrEmpty()) { "历史更正尚未支持研究续记；原记录保留" }
-            require(state.optional("statisticsIncomplete")?.jsonPrimitive?.boolean != true && state.optional("pitchingOutsReviewRequired")?.jsonPrimitive?.boolean != true) { "待复核比赛不能研究续记" }
+            val corrections = state.optional("correctionRevisions")?.jsonArray.orEmpty()
+            corrections.forEach { raw ->
+                val revision = raw.jsonObject
+                revision.only(setOf("id", "date", "reason", "previousJournal", "appliedOperationIDs", "summary"))
+                val previous = revision.objectValue("previousJournal")
+                previous.only(setOf("version", "checkpoint", "operations", "legacyPrefix"))
+                require(!previous.getValue("legacyPrefix").jsonPrimitive.boolean) { "旧版更正前缀不能研究续记" }
+                val checkpoint = AppleWireJson.parse(Base64.getDecoder().decode(previous.string("checkpoint"))).jsonObject
+                checkStateShape(checkpoint)
+                require(checkpoint == AppleWireJson.parse(Base64.getDecoder().decode(state.objectValue("historyJournal").string("checkpoint"))).jsonObject) { "更正更换过检查点，尚不支持研究续记" }
+                previous.arrayValue("operations").forEach { checkSupportedOperation(it.jsonObject) }
+            }
+            require(state.optional("pitchingOutsReviewRequired")?.jsonPrimitive?.boolean != true) { "投手出局待复核不能研究续记" }
+            require(state.optional("statisticsIncomplete")?.jsonPrimitive?.boolean != true || corrections.isNotEmpty()) { "非更正产生的待复核比赛尚不支持研究续记" }
+            require((state.arrayValue("playLog").none { it.jsonObject.getValue("isIncomplete").jsonPrimitive.boolean } &&
+                state.arrayValue("scoringEvents").none { it.jsonObject.getValue("needsReview").jsonPrimitive.boolean }) ||
+                state.optional("statisticsIncomplete")?.jsonPrimitive?.boolean == true) { "待复核标记与比赛状态不一致" }
             require(state.optional("pendingDecision") == null && state.optional("halfEndedAwaitingDecision")?.jsonPrimitive?.boolean != true) { "比赛有未处理确认" }
             require(state.optional("homeDesignatedHitterID") == null && state.optional("awayDesignatedHitterID") == null && state.optional("walkResponsiblePitcherID") == null && state.optional("strikeoutResponsibleBatterID") == null) { "特殊阵容／统计责任暂不支持" }
             require(listOf("automaticRunnerIDs", "homeExitedPlayerIDs", "awayExitedPlayerIDs").all { state.optional(it)?.jsonArray.isNullOrEmpty() }) { "特殊跑者或换人暂不支持" }
@@ -212,29 +239,7 @@ internal class AppleGameContinuation private constructor(
             }
             checkLineup("lineup", ownHome); checkLineup("secondaryLineup", !ownHome)
             val operations = journal.arrayValue("operations").map { it.jsonObject }; require(operations.isNotEmpty()) { "首球与开赛时钟暂不支持" }
-            operations.forEach { operation ->
-                operation.only(setOf("id", "command", "context", "timestamp", "title", "eventIDs", "logIDs", "nextAppearanceID", "inserted", "edited", "acceptsNewContext", "errors"))
-                require(!operation.getValue("inserted").jsonPrimitive.boolean && !operation.getValue("edited").jsonPrimitive.boolean && !operation.getValue("acceptsNewContext").jsonPrimitive.boolean && operation.arrayValue("errors").isEmpty()) { "更正操作尚未支持研究续记" }
-                val command = operation.objectValue("command"); require(command.size == 1)
-                when (command.keys.single()) {
-                    "pitch" -> { val body = command.objectValue("pitch"); body.only(setOf("_0")); require(body.string("_0") in PitchAction.entries.map { it.title }) }
-                    "play" -> {
-                        val body = command.objectValue("play"); body.only(setOf("_0", "_2")); require(body.string("_0") == Outcome.single.title) { "研究来源暂仅支持基础一垒安打" }
-                        body.arrayValue("_2").forEach { raw ->
-                            val decision = raw.jsonObject; decision.only(setOf("id", "player", "origin", "destination")); checkPlayer(decision.objectValue("player"))
-                            require(decision.id("id") == decision.objectValue("player").id("id"))
-                            for ((key, choices) in listOf("origin" to setOf("batter", "base"), "destination" to setOf("hold", "out", "score", "base"))) {
-                                val variant = decision.objectValue(key); require(variant.size == 1 && variant.keys.single() in choices)
-                                val fields = variant.values.single().jsonObject
-                                if (variant.keys.single() == "base") { fields.only(setOf("_0")); require(fields.getValue("_0").jsonPrimitive.let { !it.isString && it.intOrNull in 1..3 }) }
-                                else require(fields.isEmpty())
-                            }
-                        }
-                    }
-                    else -> error("原比赛含尚未支持的操作，不能研究续记")
-                }
-                operation.objectValue("context").only(setOf("inning", "isTop", "batterIndex", "homeOrder", "awayOrder", "homeFielders", "awayFielders", "positions", "runners"))
-            }
+            operations.forEach(::checkSupportedOperation)
             val events = state.arrayValue("scoringEvents"); val logs = state.arrayValue("playLog")
             val prefixEvents = checkpoint.optional("scoringEvents")?.jsonArray ?: JsonArray(emptyList()); val prefixLogs = checkpoint.arrayValue("playLog")
             require(events.take(prefixEvents.size) == prefixEvents.toList() && logs.take(prefixLogs.size) == prefixLogs.toList()) { "检查点事件或日志不一致" }
@@ -246,6 +251,38 @@ internal class AppleGameContinuation private constructor(
                 require(operation.arrayValue("eventIDs").all { eventsByID.getValue(uuid(it)).jsonObject.optional("logEntryID")?.let(::uuid) in ownedLogs }) { "事件日志归属不一致" }
             }
             state.id("currentPlateAppearanceID")
+        }
+
+        private fun checkSupportedOperation(operation: JsonObject) {
+            operation.only(setOf("id", "command", "context", "timestamp", "title", "eventIDs", "logIDs", "nextAppearanceID", "inserted", "edited", "acceptsNewContext", "errors", "correctedAt"))
+            operation.checkBooleans("inserted", "edited", "acceptsNewContext")
+            require(!operation.getValue("acceptsNewContext").jsonPrimitive.boolean && operation.arrayValue("errors").isEmpty()) { "重新指定上下文或补记失误暂不支持研究续记" }
+            val command = operation.objectValue("command"); require(command.size == 1)
+            when (command.keys.single()) {
+                "pitch" -> { val body = command.objectValue("pitch"); body.only(setOf("_0")); require(body.string("_0") in PitchAction.entries.map { it.title }) }
+                "play" -> {
+                    val body = command.objectValue("play"); body.only(setOf("_0", "_1", "_2")); require(body.string("_0") in setOf(Outcome.single.title, Outcome.error.title)) { "研究来源暂仅支持基础一垒安打或失误上垒" }
+                    body.optional("_1")?.jsonObject?.let { defense ->
+                        defense.only(setOf("id", "title", "notation", "routePositions", "assistPositions", "putoutPositions", "errorPosition"))
+                        // Empty route with one assigned error is the supported no-out error play.
+                        require(body.string("_0") == Outcome.error.title &&
+                            listOf("routePositions", "assistPositions", "putoutPositions").all { defense.arrayValue(it).isEmpty() } &&
+                            defense.getValue("errorPosition").jsonPrimitive.let { !it.isString && it.intOrNull in 1..9 }) { "此守备操作尚未支持研究续记" }
+                    }
+                    body.arrayValue("_2").forEach { raw ->
+                        val decision = raw.jsonObject; decision.only(setOf("id", "player", "origin", "destination")); checkPlayer(decision.objectValue("player"))
+                        require(decision.id("id") == decision.objectValue("player").id("id"))
+                        for ((key, choices) in listOf("origin" to setOf("batter", "base"), "destination" to setOf("hold", "out", "score", "base"))) {
+                            val variant = decision.objectValue(key); require(variant.size == 1 && variant.keys.single() in choices)
+                            val fields = variant.values.single().jsonObject
+                            if (variant.keys.single() == "base") { fields.only(setOf("_0")); require(fields.getValue("_0").jsonPrimitive.let { !it.isString && it.intOrNull in 1..3 }) }
+                            else require(fields.isEmpty())
+                        }
+                    }
+                }
+                else -> error("原比赛含尚未支持的操作，不能研究续记")
+            }
+            operation.objectValue("context").only(setOf("inning", "isTop", "batterIndex", "homeOrder", "awayOrder", "homeFielders", "awayFielders", "positions", "runners"))
         }
 
         private fun checkRules(value: JsonObject) {
@@ -265,11 +302,11 @@ internal class AppleGameContinuation private constructor(
             for (key in listOf("homeTeam", "awayTeam")) state.objectValue(key).let { team -> team.only(setOf("id", "name", "shortName", "city", "players", "isDemo")); team.checkBooleans("isDemo"); team.arrayValue("players").forEach { checkPlayer(it.jsonObject) } }
             state.arrayValue("baseRunners").chunked(2).forEach { checkPlayer(it[1].jsonObject) }
             for ((key, sample) in listOf("batting" to GameJson.encodeToJsonElement(BattingLine()).jsonObject, "pitching" to GameJson.encodeToJsonElement(PitchingLine()).jsonObject, "fielding" to GameJson.encodeToJsonElement(FieldingLine()).jsonObject)) state.arrayValue(key).chunked(2).forEach { it[1].jsonObject.only(sample.keys) }
-            state.arrayValue("playLog").forEach { it.jsonObject.only(setOf("id", "inning", "isTop", "text", "timestamp", "isIncomplete")); require(!it.jsonObject.getValue("isIncomplete").jsonPrimitive.boolean) }
+            state.arrayValue("playLog").forEach { it.jsonObject.only(setOf("id", "inning", "isTop", "text", "timestamp", "isIncomplete")); it.jsonObject.checkBooleans("isIncomplete") }
             state.optional("scoringEvents")?.jsonArray?.forEach { raw ->
                 val event = raw.jsonObject
-                event.only(setOf("id", "logEntryID", "inning", "isTop", "timestamp", "category", "title", "notation", "primaryPlayerID", "secondaryPlayerID", "plateAppearanceBatterID", "plateAppearanceID", "effectiveScorerIDs", "runnerMovements", "needsReview", "ballStatus", "resolvedOutcome", "automaticRunnerRuns", "beforeSituation", "afterSituation"))
-                require(!event.getValue("needsReview").jsonPrimitive.boolean)
+                event.only(setOf("id", "logEntryID", "inning", "isTop", "timestamp", "category", "title", "notation", "primaryPlayerID", "secondaryPlayerID", "plateAppearanceBatterID", "plateAppearanceID", "effectiveScorerIDs", "runnerMovements", "needsReview", "ballStatus", "resolvedOutcome", "automaticRunnerRuns", "beforeSituation", "afterSituation", "reviewedAt", "reviewNote", "defensiveRoute"))
+                event.checkBooleans("needsReview")
                 event.optional("effectiveScorerIDs")?.jsonArray?.forEach(::uuid)
                 event.arrayValue("runnerMovements").forEach { it.jsonObject.only(setOf("playerID", "origin", "destination")) }
                 for (key in listOf("beforeSituation", "afterSituation")) event.optional(key)?.jsonObject?.let { snapshot ->
@@ -315,7 +352,7 @@ internal class AppleGameContinuation private constructor(
                 require(labels.isNotEmpty() && labels.distinct().size == labels.size && labels.all { it == "00" || it.toIntOrNull()?.let { number -> number in 0..99 && number.toString() == it } == true } && labels.map(String::toInt) == numbers) { "球员背号原文无效" }
             }
         }
-        private fun verifySourceContexts(stored: JsonObject, game: Game) {
+        private fun verifySourceContexts(stored: JsonObject, game: Game, rawJournal: JsonObject = stored.objectValue("state").objectValue("historyJournal")) {
             val state = stored.objectValue("state")
             val positions = (state.objectValue("homeTeam").arrayValue("players") + state.objectValue("awayTeam").arrayValue("players"))
                 .associate { it.jsonObject.id("id") to it.jsonObject.getValue("primaryPosition").jsonPrimitive.int }
@@ -323,7 +360,7 @@ internal class AppleGameContinuation private constructor(
             // contexts are not independent evidence. Re-run strictly and compare normalized output.
             val checked = History.run(game, game.journal, game.journal.size, strict = true)
             require(checked.canSave) { checked.conflict ?: "原历史上下文无法严格重放" }
-            val operations = state.objectValue("historyJournal").arrayValue("operations")
+            val operations = rawJournal.arrayValue("operations")
             require(operations.size == checked.records.size) { "原历史操作数量不一致" }
             operations.zip(checked.records).forEach { (raw, record) ->
                 val context = raw.jsonObject.objectValue("context"); val actual = requireNotNull(record.context)

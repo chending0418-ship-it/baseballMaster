@@ -23,8 +23,8 @@ class AppleGameContinuationTest {
         val bytes = payload.toString().toByteArray()
         return outer.with("payload", JsonPrimitive(Base64.getEncoder().encodeToString(bytes))).with("checksum", JsonPrimitive(sha(bytes))).toString().toByteArray()
     }
-    private fun syntheticMutation(change: (JsonObject) -> JsonObject): ByteArray {
-        val bytes = fixture(); val snapshot = inspect(bytes).snapshot; val game = snapshot.getValue("games").jsonArray.first().jsonObject
+    private fun syntheticMutation(bytes: ByteArray = fixture(), change: (JsonObject) -> JsonObject): ByteArray {
+        val snapshot = inspect(bytes).snapshot; val game = snapshot.getValue("games").jsonArray.first().jsonObject
         return rewrap(AppleWireJson.parse(bytes).jsonObject, snapshot.with("games", JsonArray(listOf(change(game)))))
     }
 
@@ -129,7 +129,7 @@ class AppleGameContinuationTest {
         assertEquals(0, continuation.preview().homeRuns)
     }
 
-    @Test fun unknownCommandPayloadsSharedGamesAndCorrectionsStayBlocked() {
+    @Test fun unknownCommandPayloadsSharedGamesAndLegacyStayBlocked() {
         val unknown = syntheticMutation { game ->
             val state = state(game); val journal = state.getValue("historyJournal").jsonObject; val operations = journal.getValue("operations").jsonArray.toMutableList()
             val first = operations[0].jsonObject; val body = first.getValue("command").jsonObject.getValue("pitch").jsonObject.with("futurePenalty", JsonPrimitive(true))
@@ -139,8 +139,65 @@ class AppleGameContinuationTest {
         assertThrows(Exception::class.java) { session(unknown) }
         assertThrows(Exception::class.java) { session(syntheticMutation { it.with("sharedTeamID", JsonPrimitive("eeeeeeee-0000-0000-0000-000000000001")) }) }
         assertThrows(Exception::class.java) { session(syntheticMutation { it.with("futureGameRule", JsonPrimitive(true)) }) }
-        assertThrows(Exception::class.java) { session(fixture("ios-correction-reference.bmbackup")) }
         assertThrows(Exception::class.java) { session(fixture("ios-original-v6.bmbackup")) }
+    }
+
+    @Test fun actualIOSCorrectionCanBeContinuedWithoutRewritingItsAuditOrOriginalIdentities() {
+        val source = fixture("ios-correction-reference.bmbackup")
+        val original = state(stored(source))
+        val continuation = session(source)
+        assertArrayEquals(source, continuation.exportBackup())
+        assertTrue(continuation.preview().statisticsIncomplete)
+        val appended = continuation.appendNonterminalPitch(PitchAction.calledStrike, op1, time)
+        assertTrue(appended.preview().statisticsIncomplete)
+        val output = appended.exportBackup()
+        val after = state(stored(output))
+        assertEquals(original.getValue("correctionRevisions"), after.getValue("correctionRevisions"))
+        for (key in listOf("playLog", "scoringEvents"))
+            assertEquals(original.getValue(key).jsonArray.toList(), after.getValue(key).jsonArray.dropLast(1))
+        for (key in listOf("plateAppearances", "currentPlateAppearanceID")) assertEquals(original[key], after[key])
+        assertEquals(original.getValue("historyJournal").jsonObject.getValue("operations").jsonArray.toList(),
+            after.getValue("historyJournal").jsonObject.getValue("operations").jsonArray.dropLast(1))
+        assertArrayEquals(output, AppleGameContinuation.restore(appended.serialize()).exportBackup())
+        val game = appended.preview()
+        val restored = History.preview(game, History.revertingDraft(game))
+        assertTrue(restored.canSave)
+        assertEquals(1, restored.game!!.awayHits)
+        assertEquals(1, restored.game!!.strikes)
+        assertArrayEquals(source, continuation.exportBackup())
+    }
+
+    @Test fun correctedSourcesCannotHideReviewMarkersOrUnknownPreviousCommands() {
+        val source = fixture("ios-correction-reference.bmbackup")
+        val hidden = syntheticMutation(source) { it.with("state", state(it).with("statisticsIncomplete", JsonPrimitive(false))) }
+        assertThrows(Exception::class.java) { session(hidden) }
+        for (badContext in listOf(false, true)) {
+            val invalid = syntheticMutation(source) { game ->
+                val old = state(game)
+                val revisions = old.getValue("correctionRevisions").jsonArray.toMutableList()
+                val revision = revisions[0].jsonObject
+                val previous = revision.getValue("previousJournal").jsonObject
+                val ops = previous.getValue("operations").jsonArray.toMutableList()
+                val first = ops[0].jsonObject
+                ops[0] = if (badContext) first.with("context", first.getValue("context").jsonObject.with("batterIndex", JsonPrimitive(8)))
+                    else first.with("command", buildJsonObject { put("futureAction", buildJsonObject {}) })
+                revisions[0] = revision.with("previousJournal", previous.with("operations", JsonArray(ops)))
+                game.with("state", old.with("correctionRevisions", JsonArray(revisions)))
+            }
+            assertThrows(Exception::class.java) { session(invalid) }
+        }
+    }
+
+    @Test fun appendCannotPrecedeCorrectionAuditTimeEvenIfUpdatedAtIsEarlier() {
+        val source = fixture("ios-correction-reference.bmbackup")
+        val future = syntheticMutation(source) { game ->
+            val old = state(game)
+            val revisions = old.getValue("correctionRevisions").jsonArray.map { it.jsonObject.with("date", JsonPrimitive((time + 10_000) / 1000.0 - 978307200)) }
+            game.with("state", old.with("correctionRevisions", JsonArray(revisions)))
+        }
+        val continuation = session(future)
+        assertThrows(Exception::class.java) { continuation.appendNonterminalPitch(PitchAction.ball, op1, time) }
+        assertArrayEquals(future, continuation.exportBackup())
     }
 
     @Test fun wrongHalfCurrentAppearanceIsRejectedBeforeAnEditableSessionExists() {

@@ -6,7 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
 /** Reject ambiguous JSON before inspecting an externally supplied backup or archive. */
-internal object AppleWireJson {
+object AppleWireJson {
     private const val MAX_DEPTH = 128
     private val number = Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?")
     private fun validateUnicode(value: String) {

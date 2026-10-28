@@ -178,6 +178,7 @@ internal object AppleReplayPrototype {
             require(prefix.map { it.id }.toSet() == applied) { "更正历史与后续操作不一致" }
             game.correctionBoundary = prefix.size
         }
+        game.statisticsIncomplete = state.bool("statisticsIncomplete") || game.statisticsIncomplete
         game.revision = stored["revision"]?.jsonPrimitive?.longOrNull ?: game.revision
         validateResult(game, state)
         return game

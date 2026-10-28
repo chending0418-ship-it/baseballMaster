@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import cc.baseballmaster.core.AppleArchiveHistory
 import cc.baseballmaster.core.AppleTeamArchive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -152,12 +153,13 @@ private fun TeamArchiveLibrary(dismiss: () -> Unit) {
 private fun TeamArchiveReader(archive: AppleTeamArchive, busy: Boolean, dismiss: () -> Unit, export: () -> Unit) {
     var playerPage by remember(archive) { mutableIntStateOf(0) }
     var gamePage by remember(archive) { mutableIntStateOf(0) }
+    var selectedGame by remember(archive) { mutableStateOf<JsonObject?>(null) }
     val profile = archive.manifest.getValue("profile").jsonObject
     val players = profile.getValue("players").jsonArray
     fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
     FormPage("本机球队档案", busy, true, "", "", dismiss, {}) {
         Text(archive.summary.teamName, fontWeight = FontWeight.Bold)
-        Text("导出时的只读快照；共享球队后续修改不会更新这份档案。比赛历史原文完整保存在文件中，此页暂只展示名单与比分。")
+        Text("导出时的只读快照；共享球队后续修改不会更新这份档案。可查看原始逐球、打席与更正审计；仅供阅读，不可编辑或撤回更正。")
         TextButton(onClick = export, enabled = !busy, modifier = Modifier.testTag("export-team-archive")) { Text("保存原始 .bmteam 文件") }
         Text("球队名单（${players.size} 人）", fontWeight = FontWeight.Bold)
         players.drop(playerPage * 20).take(20).forEach { raw ->
@@ -181,12 +183,14 @@ private fun TeamArchiveReader(archive: AppleTeamArchive, busy: Boolean, dismiss:
                     val home = state.getValue("homeTeam").jsonObject.text("name")
                     fun score(key: String) = state.getValue(key).jsonArray.sumOf { it.jsonPrimitive.long }
                     Text("$away  ${score("awayRunsByInning")} : ${score("homeRunsByInning")}  $home", fontWeight = FontWeight.Bold)
+                    TextButton(onClick = { selectedGame = stored }, enabled = !busy, modifier = Modifier.testTag("archive-game-history")) { Text("查看逐球与更正历史") }
                     Text(if (deleted) "导出时已在回收站" else when (stored.getValue("status").jsonPrimitive.int) { 1 -> "已结束"; 2 -> "预告比赛"; else -> "进行中" })
                 }
             }
         }
         ArchivePages(gamePage, archive.records.size, enabled = !busy) { gamePage = it }
     }
+    selectedGame?.let { stored -> ArchiveGameHistory(stored) { selectedGame = null } }
 }
 
 @Composable
@@ -195,5 +199,68 @@ private fun ArchivePages(page: Int, count: Int, enabled: Boolean, select: (Int) 
         TextButton(onClick = { select(page - 1) }, enabled = enabled && page > 0) { Text("上一页") }
         Text("${page + 1} / ${(count + 19) / 20}")
         TextButton(onClick = { select(page + 1) }, enabled = enabled && (page + 1) * 20 < count) { Text("下一页") }
+    }
+}
+
+@Composable
+private fun ArchiveGameHistory(stored: JsonObject, dismiss: () -> Unit) {
+    var loaded by remember(stored) { mutableStateOf<AppleArchiveHistory?>(null) }
+    var failure by remember(stored) { mutableStateOf<String?>(null) }
+    LaunchedEffect(stored) {
+        try { loaded = withContext(Dispatchers.Default) { AppleArchiveHistory.read(stored) } }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { failure = e.message ?: "历史内容无法读取" }
+    }
+    val history = loaded
+    if (history == null) {
+        FormPage("档案比赛历史", false, true, "", "", dismiss, {}) {
+            Text(failure?.let { "无法读取历史：$it。原始档案已保留。" } ?: "正在读取历史…")
+        }
+        return
+    }
+    var section by remember { mutableIntStateOf(0) }
+    var page by remember { mutableIntStateOf(0) }
+    val sections = listOf("逐球日志", "记分事件", "打席", "历史操作", "更正审计")
+    val rows = listOf(history.logs, history.events, history.appearances, history.operations, history.corrections)[section]
+    fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
+    FormPage("档案比赛历史", false, true, "", "", dismiss, {}) {
+        Text("原始只读历史", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("archive-history-title"))
+        Text("保留原编号及顺序，不从当前局面推算历史；此页不能续记或撤回更正。")
+        if (!history.hasJournal) Text("此记录没有操作日志，无法据此完整重放或纠错。")
+        sections.forEachIndexed { index, title ->
+            TextButton(onClick = { section = index; page = 0 }, modifier = Modifier.testTag("archive-history-section-$index")) {
+                Text("${if (section == index) "● " else ""}$title")
+            }
+        }
+        Text("${sections[section]} · ${rows.size} 条", modifier = Modifier.testTag("archive-history-count"))
+        if (rows.isEmpty()) Text("原文件未包含此类记录")
+        rows.drop(page * 20).take(20).forEachIndexed { index, row ->
+            CardBlock {
+                Text("${page * 20 + index + 1}. ${row.text("title").ifBlank { row.text("text").ifBlank { row.text("reason") } }}", fontWeight = FontWeight.Bold)
+                Text("ID: ${row.text("id")}")
+                when (section) {
+                    0 -> Text("第 ${row.text("inning")} 局${if (row.text("isTop") == "true") "上" else "下"}")
+                    1 -> {
+                        Text("${row.text("category")} · ${row.text("notation")}")
+                        Text("关联日志：${row.text("logEntryID")}\n关联打席：${row.text("plateAppearanceID")}")
+                    }
+                    2 -> {
+                        Text("第 ${row.text("inning")} 局${if (row.text("isTop") == "true") "上" else "下"} · ${if (row.text("completed") == "true") "已完成" else "未完成"}${if (row.text("interrupted") == "true") " · 中断" else ""}")
+                        Text("打者：${row["batterIDs"]?.jsonArray?.joinToString { it.jsonPrimitive.content }.orEmpty()}")
+                    }
+                    3 -> {
+                        Text("${row["command"]?.jsonObject?.keys?.joinToString().orEmpty()}${if (row.text("edited") == "true") " · 已编辑" else ""}${if (row.text("inserted") == "true") " · 补记" else ""}")
+                        Text("事件 ${row["eventIDs"]?.jsonArray?.size ?: 0} 条 · 日志 ${row["logIDs"]?.jsonArray?.size ?: 0} 条")
+                    }
+                    4 -> {
+                        row["summary"]?.jsonArray?.forEach { Text(it.jsonPrimitive.content) }
+                        val previous = row["previousJournal"]?.jsonObject
+                        Text("保留更正前操作 ${previous?.get("operations")?.jsonArray?.size ?: 0} 条及原始检查点")
+                    }
+                }
+
+            }
+        }
+        ArchivePages(page, rows.size, enabled = true) { page = it }
     }
 }
