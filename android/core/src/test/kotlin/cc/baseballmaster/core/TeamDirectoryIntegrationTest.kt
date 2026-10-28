@@ -57,6 +57,54 @@ class TeamDirectoryIntegrationTest {
         val body=JsonObject(server.matchFixture() + ("operationID" to JsonPrimitive(UUID.randomUUID().toString())))
         return SharedMatchDocument(transport.request("POST","teams/${team.id}/games",body))
     }
+
+    @Test(timeout = 30000) fun currentIOSFixedInvitationIsReusableByMultipleMembersAndStableWhenFetchedAgain() {
+        Service().use { server ->
+            val store=Memory(); val owner=session(server.transport(),store); val team=create(owner)
+            owner.prepareFixedInvite(team.id); owner.sendPending(); val first=store.state.fixedInvitations.getValue(team.id)
+            repeat(2) {
+                val member=session(server.transport()); member.refresh()
+                assertEquals(TeamRole.member,member.invitationPreview(first.url).role)
+                member.prepareJoin(first.token,"同名成员"); member.sendPending()
+                assertEquals(TeamRole.member,member.refresh().teams.single().role)
+            }
+            owner.prepareFixedInvite(team.id); owner.sendPending()
+            assertEquals(first,store.state.fixedInvitations.getValue(team.id))
+            assertEquals(3,owner.members(team.id).size); assertEquals(1,owner.invitations(team.id).size)
+        }
+    }
+
+    @Test(timeout = 30000) fun rotatingFixedLinkRetriesTheSameRequestAndNeverRemovesExistingMembers() {
+        Service().use { server ->
+            val actual=server.transport(); val store=Memory(); var drop=true
+            val owner=session(TeamTransport { method,path,body ->
+                val response=actual.request(method,path,body)
+                if(path.endsWith("/team-invitation") && body?.get("rotate")?.jsonPrimitive?.boolean==true && drop) {drop=false;throw IOException("injected fixed-link response loss")}; response
+            },store)
+            val team=create(owner); owner.prepareFixedInvite(team.id); owner.sendPending(); val old=store.state.fixedInvitations.getValue(team.id)
+            val member=session(server.transport()); member.refresh(); member.prepareJoin(old.token,"成员"); member.sendPending(); member.refresh()
+            val id=owner.prepareFixedInvite(team.id,true); assertThrows(IOException::class.java) {owner.sendPending()}; assertEquals(id,store.state.pending!!.id)
+            owner.sendPending(); val current=store.state.fixedInvitations.getValue(team.id)
+            assertNotEquals(old.token,current.token); assertEquals(team.id,member.refresh().teams.single().id)
+            assertEquals(410,assertThrows(TeamServiceFault::class.java) {member.invitationPreview(old.url)}.status)
+            assertEquals(TeamRole.member,member.invitationPreview(current.url).role)
+            assertEquals(1,owner.invitations(team.id).size)
+        }
+    }
+
+    @Test(timeout = 30000) fun revokedFixedLinkAndDowngradedAdminDoNotKeepAnActiveInvitationCache() {
+        Service().use { server ->
+            val store=Memory(); val owner=session(server.transport(),store); val team=create(owner)
+            val other=session(server.transport()); join(owner,team,other,TeamRole.member)
+            owner.prepareMember(team.id,owner.members(team.id).single {it.id!=team.memberID},TeamRole.admin); owner.sendPending(); other.refresh()
+            owner.prepareFixedInvite(team.id); owner.sendPending(); val first=store.state.fixedInvitations.getValue(team.id)
+            other.prepareRevoke(team.id,first.invitation.invitationID); other.sendPending(); owner.invitations(team.id)
+            assertTrue(store.state.fixedInvitations.isEmpty())
+            owner.prepareFixedInvite(team.id); owner.sendPending()
+            other.prepareMember(team.id,other.members(team.id).single {it.id==team.memberID},TeamRole.member); other.sendPending(); owner.refresh()
+            assertTrue(store.state.fixedInvitations.isEmpty()); assertNull(store.state.lastCompletion)
+        }
+    }
     private fun pair(owner: TeamDirectorySession, team: RemoteTeam, target: TeamDirectorySession): DevicePairing {
         target.refresh(); target.preparePairing("新的安卓设备"); target.sendPending()
         val saved=target.snapshot().pairing!!; val preview=owner.previewPairing(team.id,saved.token)

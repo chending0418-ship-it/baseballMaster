@@ -131,4 +131,13 @@ class TeamDirectoryFileTest {
             assertFalse(bytes.contains(token)); assertFalse(bytes.contains(candidate))
         } finally { dir.deleteRecursively() }
     }
+    @Test fun reusableMemberInvitationSurvivesEncryptedReopenWithoutPlaintextToken() {
+        val dir=folder()
+        try {
+            val id=java.util.UUID.randomUUID().toString(); val saved=FixedTeamInvitation(id,TeamSecrets.random(),TeamInvitation(java.util.UUID.randomUUID().toString(),8640000000000000L,TeamRole.member))
+            val value=TeamDirectoryState(fixedInvitations=mapOf(id to saved)); TeamDirectoryFile(dir,{key.copyOf()}).save(value)
+            assertEquals(value,TeamDirectoryFile(dir,{key.copyOf()}).load())
+            assertFalse(File(dir,"directory-v1.sealed").readBytes().toString(Charsets.UTF_8).contains(saved.token))
+        } finally {dir.deleteRecursively()}
+    }
 }

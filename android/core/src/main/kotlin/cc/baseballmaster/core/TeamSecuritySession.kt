@@ -151,4 +151,4 @@ private fun TeamDirectoryState.withoutTeam(id: String): TeamDirectoryState = cop
     directory=directory?.copy(teams=directory.teams.filterNot { it.id.equals(id,true) }),profiles=profiles - appleUUID(id),
     bindings=bindings.filterNot { it.cloudTeamID.equals(id,true) },matches=matches.filterValues { !it.document.teamID.equals(id,true) },matchCursors=matchCursors - appleUUID(id),
     matchReceipts=matchReceipts.filterValues { !it.request.teamID.equals(id,true) },retainedSecrets=retainedSecrets.filterNot { (it.request.teamID ?: it.response["teamID"]?.jsonPrimitive?.content).equals(id,true) },
-    recoveryCards=recoveryCards.filterNot { it.teamID.equals(id,true) })
+    recoveryCards=recoveryCards.filterNot { it.teamID.equals(id,true) },fixedInvitations=fixedInvitations - appleUUID(id))

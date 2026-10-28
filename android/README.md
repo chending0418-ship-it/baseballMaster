@@ -14,13 +14,13 @@ scripts/android/gradle.sh :core:test :app:assembleDebug :app:assembleRelease :ap
 
 脚本默认使用 `/Applications/Android Studio.app` 内 JDK 和 `~/Library/Android/sdk`；可通过标准 `JAVA_HOME`／`ANDROID_HOME` 覆盖。构建输出和 Gradle 用户缓存均在 `output/cache/android/`。Room 的 `schemas/` 是迁移契约，应提交；`.gradle`、`.kotlin`、IDE、本机路径与签名文件不提交。
 
-预览包名为 `cc.baseballmaster.scorekeeper.preview`，使用 Android 本机测试签名，Release 为不可调试的预览构建。正式包名 `cc.baseballmaster.scorekeeper` 与长期签名另在 AN08 固定；不把测试密钥用作对外发行密钥。APK 是包含 ARM64 在内的完整包，不依赖 Google 服务；AN05 已声明 INTERNET 权限，但当前启动／本机记分不发起协作请求，未接共享 UI 或默认生产连接。
+预览包名为 `cc.baseballmaster.scorekeeper.preview`，使用 Android 本机测试签名，Release 为不可调试的预览构建。正式包名 `cc.baseballmaster.scorekeeper` 与长期签名另在 AN08 固定；不把测试密钥用作对外发行密钥。APK 是包含 ARM64 在内的完整包，不依赖 Google 服务；AN05 已声明 INTERNET 权限，启动／本机记分不发起协作请求。当前“球队 → 球队共享”已接入现行 HTTPS，明确进入时会连接；自动化须注入独立测试 API，不打开默认入口操作生产。
 
 当前 AN03 原生验收使用下方脚本，新增合成比赛且不清空现有资料。AN02 的旧基线按其交接及对应提交复现；不把旧 APK 与当前仪器测试 APK 混用。脚本检查仪器测试正文，不能只看 adb 返回码。Android 17 使用 UiAutomator，避开旧 Espresso 的 InputManager 反射问题。
 
 初始 Room schema 1→2 只增加比赛 payloadVersion，2→3 新增独立纠错草稿表；两步都保留原比赛 JSON。当前本机 payloadVersion 为 4，旧 1／2／3 可读取且仅在实际修改时升级。未来 schema 或未知 payload 拒绝读取／编辑并保留原库；不使用 destructive migration。操作 ID 和比赛修订在同一事务落盘，失败回滚，重试不能多记一球。
 
-App 运行依赖 AndroidX、Kotlin／kotlinx 和 AN05 新增 OkHttp 4.12.0／传递依赖 Okio 均采用 Apache-2.0 许可；工具链和测试依赖按各自许可使用，Android SDK 许可由本机 SDK 管理器记录。本轮未加入分析、广告、登录或商业服务 SDK。详细阶段交接见 [AN01／AN02](../docs/releases/android/AN01-AN02.md)。
+App 运行依赖 AndroidX、Kotlin／kotlinx、OkHttp 4.12.0／传递依赖 Okio 及二维码 ZXing Core 3.5.3 均采用 Apache-2.0 许可；工具链和测试依赖按各自许可使用，Android SDK 许可由本机 SDK 管理器记录。本轮未加入分析、广告、登录或商业服务 SDK。详细阶段交接见 [AN01／AN02](../docs/releases/android/AN01-AN02.md)。
 
 AN03 关键原生流程（使用同轮构建的 App／仪器测试 APK，输出使用新目录）：
 
@@ -59,4 +59,4 @@ AN05 第四组已移植两阶段凭证轮换及现有 90 天维护；本机加�
 
 AN05 第五组已增加配对、设备移除及管理恢复卡协议／持久状态，明确确认后才发安全操作，未知网络结果不换编号。产品配对／恢复 UI、卡片安全导出／复制、撤销 Bearer 后重接入及全库恢复核对仍未接通；见 [安全记录](../docs/releases/android/AN05-SECURITY-2026-10-28.md)。
 
-AN05 第六组已将 F10 名单／成员协议接入“我的 → 球队共享”，先明确启用再联网，支持建队、邀请预览入队、名单和成员管理、单次邀请、退出及恢复卡查看／轮换。界面未实际执行；默认入口指向现行 HTTPS，不可对其直接跑联网 UI 测试，应注入独立测试 API。完整共享记分仍关闭，见 [应用入口范围](../docs/releases/android/AN05-UI-2026-10-28.md)。
+AN05 第六组接入 F10 菜单，第七组逐页对照 iOS 后校正为“球队 → 球队共享”，进入时连接，主要邀请使用固定多人 member 链接、二维码和系统分享。建队增加名单范围确认及成功后的掩码恢复卡提醒。226 项非 UI 回归及构建／lint 通过，界面和系统效果未实际执行，完整共享记分仍关闭。现行行为和缺口见 [iOS 对照](../docs/releases/android/IOS-PARITY-AUDIT-2026-10-28.md) 与 [第七组记录](../docs/releases/android/AN05-PARITY-2026-10-28.md)；前面各组的“尚未接菜单”属于历史阶段状态。

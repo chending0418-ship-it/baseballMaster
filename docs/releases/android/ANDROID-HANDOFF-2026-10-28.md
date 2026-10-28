@@ -9,6 +9,7 @@
 3. 不购买、不合并或直接写 main、不操作生产、不发布中间 APK；正式签名和公开分发另行确认。可本地构建 debug／test APK，但不是交付／发布。
 4. 用户先接手全部界面测试，最新又明确“界面测试能做就做，不做也没事”。因此可选择有条件的 UI 验证，但不能把未测写成通过；优先完成实际数据／协议功能。
 5. 最新要求：今天连续推进开发、做好完整交接，按计划分阶段提交推送，不等最后一次性提交。无需每阶段重新索取同类授权。
+6. 用户追问迁移方式：这是现有 iOS 的原生 Android 迁移。技术代码需移植，功能／页面流程以 iOS 为准；先读 [iOS 源码对照及缺口](IOS-PARITY-AUDIT-2026-10-28.md)，不能只把 API 接上就称为完成迁移。
 
 先读根 AGENTS.md 及 [单份现行计划](../../plans/ANDROID-APK.md)。当前云端缺少上级工作区／品牌目录，不能创建替身或引用用户电脑上的绝对路径。根规则中已撤销的历史说明不作为当前开发限制。
 
@@ -28,7 +29,8 @@
 | `416b645` | F11 比赛 JSON／游标读取、独立持久交接控制、旧回执后核对权限 | [AN05 第三组](AN05-MATCHES-2026-10-28.md)；190 项测试 |
 | `4fab89b` | 固定本机加密秘密、现行两阶段设备凭证轮换、90 天维护和写失败保护 | [AN05 第四组](AN05-CREDENTIALS-2026-10-28.md) |
 | `7807c8c` | 配对／设备移除／管理恢复、唯一新卡持久续取与过期请求归档 | [AN05 第五组](AN05-SECURITY-2026-10-28.md) |
-| 含本文的应用共享入口提交 | F10 菜单、建队／入队／名单／成员／邀请管理和恢复卡查看／轮换；UI 未执行 | [AN05 第六组](AN05-UI-2026-10-28.md) |
+| `02abe9b` | F10 菜单、建队／入队／名单／成员／邀请管理和恢复卡查看／轮换；UI 未执行 | [AN05 第六组](AN05-UI-2026-10-28.md) |
+| 第七组（包含本表更新的提交） | 对照 iOS 校正球队页入口、连接／建队流程，补固定多人邀请、二维码／系统分享；226 项非 UI 回归 | [AN05 第七组](AN05-PARITY-2026-10-28.md) |
 
 接手先检查，不覆盖未提交工作：
 
@@ -74,11 +76,11 @@ git log -10 --oneline
 
 ### AN05（进行中）
 
-F10 基础及名单／成员协议已接应用共享菜单，含建队／入队／名单／成员／邀请管理与恢复卡查看／轮换；界面未执行。仍缺完整绑定管理、固定多人邀请及生命周期全面验证。当前原生建赛仍仅接受本机球队；不能只把 `source` 改成 local 绕过共享保护。
+F10 基础及名单／成员协议已接“球队 → 球队共享”，含建队／入队／名单／成员／固定多人邀请及恢复卡查看／轮换；按当前 iOS 校正来源披露、范围确认、创建后提示保存卡片及返回层级。固定邀请已有二维码和系统分享代码，界面／系统行为未执行。仍缺完整绑定管理、解散恢复和生命周期全面验证。当前原生建赛仍仅接受本机球队；不能只把 `source` 改成 local 绕过共享保护。
 
 F11 已接 JSON 读取、增量游标、交接／强制接管协议及每场控制队列，详见第三组。产品交接入口仍关闭：接收比赛的完整安卓记分／恢复能力尚缺。继续读取 Swift `SharedMatches.swift` 的 wire 模型及持久队列、现行 `collaboration/games.mjs`／`drafts.mjs`。继续完成球队／比赛绑定、正式发布、离线记分更新队列、formatVersion、撤权／离线冲突草稿和恢复隔离；不要重复已有游标和控制队列。完整比赛写入受 AN04 payload 转换约束；不能上传 Android 内部 Game JSON 冒充 iOS StoredGame。
 
-F12 已实现两阶段凭证轮换、90 天维护、旧密文兼容与 SharedPreferences 写失败后阻断（第四组），以及配对／设备移除／管理恢复协议和持久状态（第五组）。继续：配对／恢复兑换／设备移除的产品界面、二维码／系统链接、恢复卡导出及复制的实际系统验证、撤销 Bearer 后明确重新接入、全库 recoveryEpoch 变化后的人工核对和审计界面。旧请求遇 recoveryEpoch／accessEpoch 变化仍阻断，未提供自动解除；先按现行服务实现明确核对，不直接清空标志重放。
+F12 已实现两阶段凭证轮换、90 天维护、旧密文兼容与 SharedPreferences 写失败后阻断（第四组），以及配对／设备移除／管理恢复协议和持久状态（第五组）。继续：配对／恢复兑换／设备移除的产品界面、配对二维码和系统链接、恢复卡导出及复制的实际系统验证、撤销 Bearer 后明确重新接入、全库 recoveryEpoch 变化后的人工核对和审计界面。旧请求遇 recoveryEpoch／accessEpoch 变化仍阻断，未提供自动解除；先按现行服务实现明确核对，不直接清空标志重放。
 
 ### AN06／AN07／AN08
 
@@ -90,7 +92,7 @@ AN08：正式包名、长期证书、保管、覆盖升级、官网候选材料�
 
 ## 工具链和复现
 
-本云端：Linux、JDK 25.0.5、SDK platform 37.0、build-tools 37.0.0；AGP 9.4.0、Gradle wrapper 9.6.0、Kotlin 2.2.10、KSP 2.3.12；Node 24.19.0。Robolectric 4.16，API31 Native SQLite。前三组综合回归 190 项（128 core＋23 原服务＋39 app）；第四／五组新增凭证和安全回归，最新冻结数及证据见第六组。默认脚本原为 macOS/zsh；Linux 可显式用 bash 执行。
+本云端：Linux、JDK 25.0.5、SDK platform 37.0、build-tools 37.0.0；AGP 9.4.0、Gradle wrapper 9.6.0、Kotlin 2.2.10、KSP 2.3.12；Node 24.19.0。Robolectric 4.16，API31 Native SQLite。第七组冻结 **226 项（134 core＋44 原服务＋48 app），0 失败／错误／跳过**，App／AndroidTest 构建和 lint 通过，lint 15 警告。默认脚本原为 macOS/zsh；Linux 可显式用 bash 执行。
 
 若同一工作区仍在，工具变量位于 `output/cache/android/tooling/env.sh`，先读取路径并 source（其中只是本机 JDK／SDK 和代理设置，不是用户凭证）。新环境此文件不会随 Git 存在，须配置免费官方 JDK／Android SDK 的 JAVA_HOME、ANDROID_HOME；不要将某台机器的绝对路径写回源码。遵循云端网络代理和 CA，不关闭 TLS 验证、不打印环境秘密。
 
@@ -99,7 +101,7 @@ AN08：正式包名、长期证书、保管、覆盖升级、官网候选材料�
 bash scripts/android/gradle.sh :core:test :core:teamServiceTest :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
 ```
 
-`:core:teamServiceTest` 需 Node 24，只运行 `scripts/android/an05-local-service.mjs` 启动的 127.0.0.1 动态端口和内存 SQLite；不读生产配置。普通 core 测试不要求 Node。不要启动 `collaboration/npm start`，它会选择持久数据库默认路径；也不要运行任何 deploy／verify-production 脚本。应用第六组的默认共享入口已指向既有 HTTPS，UI 自动化不得直接启用它；应直接给 TeamSharingScreen 注入独立测试 API／存储和 fake transport，详见第六组。
+`:core:teamServiceTest` 需 Node 24，只运行 `scripts/android/an05-local-service.mjs` 启动的 127.0.0.1 动态端口和内存 SQLite；不读生产配置。普通 core 测试不要求 Node。不要启动 `collaboration/npm start`，它会选择持久数据库默认路径；也不要运行任何 deploy／verify-production 脚本。默认共享入口指向既有 HTTPS，**当前明确打开共享页就会连接**，UI 自动化不得直接打开；应给 TeamSharingScreen 注入独立测试 API／存储和 fake transport，详见第六／七组。
 
 Swift 6.2.3 Linux 位于本机 `output/cache/android/tooling/swift/`。显式设置 SWIFTC 后，**严格按顺序**执行：
 
@@ -120,6 +122,6 @@ bash scripts/android/gradle.sh :core:swiftWireTest -PswiftWireDirectory=<上述�
 - Room 集成使用 API31 Android JVM＋Native SQLite，未启动 Activity；注入 SQLiteFullException 只证明事务回滚，不能称为实际磁盘已填满。
 - 已保留失败记录：旧 UI stale node／系统 ANR、Swift 与样本生产重叠导致校验错批、测试对原球数／revision 的错误假设、跨模块 nullable smart cast 编译错误。修复与最终结果各阶段文档分开登记，不把失败当通过。
 - 确认所有 Gradle 任务最终 BUILD SUCCESSFUL、XML 无 failures/errors/skipped，再登记通过。UP-TO-DATE 只代表复用相同输入，不说成重新运行全部测试。每阶段提交推送后用 ls-remote 核对远端提交，保留干净工作树。
-- 全局遗留：缺省时区接口差异、ERA 7 局口径、旧协议管理员上限文字。只在计划第 14 节记录，等两端上线后统一处理，不在迁移中改全局。
+- 全局遗留：缺省时区接口差异、ERA 7 局口径、旧协议管理员上限和固定邀请秘密来源描述。只在计划第 14 节记录，等两端上线后统一处理，不在迁移中改全局。
 
 接手结束时更新本文及对应阶段文档，说明实际提交、通过／失败／未测、下一处可修改的入口。不要把 AN04 未完成说成仅剩界面，不要把 AN05 原服务集成说成真实 iOS 联调，也不要把本地构建说成正式发布。

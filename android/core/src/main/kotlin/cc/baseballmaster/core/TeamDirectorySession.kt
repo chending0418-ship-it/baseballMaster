@@ -4,7 +4,7 @@ import java.util.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
-@Serializable enum class DirectoryRequestKind { create, join, invite, leave, roster, member, revoke, security }
+@Serializable enum class DirectoryRequestKind { create, join, invite, leave, roster, member, revoke, security, fixedInvite }
 @Serializable data class PendingDirectoryRequest(
     val kind: DirectoryRequestKind, val body: JsonObject, val recoveryEpoch: String,
     val teamID: String? = null, val accessEpoch: Long? = null,
@@ -22,6 +22,7 @@ import kotlinx.serialization.json.*
         DirectoryRequestKind.member -> "teams/${appleUUID(requireNotNull(teamID))}/members/${appleUUID(requireNotNull(targetID))}"
         DirectoryRequestKind.revoke -> "teams/${appleUUID(requireNotNull(teamID))}/invitations/${appleUUID(requireNotNull(targetID))}"
         DirectoryRequestKind.security -> securityPath()
+        DirectoryRequestKind.fixedInvite -> "teams/${appleUUID(requireNotNull(teamID))}/team-invitation"
     }
     val method: String get() = when (kind) {
         DirectoryRequestKind.roster, DirectoryRequestKind.member -> "PATCH"
@@ -53,6 +54,7 @@ import kotlinx.serialization.json.*
     val matchReceipts: Map<String, CompletedMatchControl> = emptyMap(),
     val pairing: SavedDevicePairing? = null, val outgoingPairing: DevicePairing? = null,
     val recoveryCards: List<SavedManagementCard> = emptyList(),
+    val fixedInvitations: Map<String, FixedTeamInvitation> = emptyMap(),
 ) {
     override fun toString() = "TeamDirectoryState(pending=${pending?.kind}, requiresRecoveryReview=$requiresRecoveryReview)"
 }
@@ -75,7 +77,7 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
             state = state.copy(deviceID = id); storage.save(state)
         }
         val remote = try { client.teams() } catch (fault: TeamServiceFault) {
-            if (fault.status == 401) storage.save(state.copy(directory = null, profiles = emptyMap(), bindings = emptyList(), retainedSecrets = emptyList(), lastCompletion = null,matches=emptyMap(),matchCursors=emptyMap(),matchReceipts=emptyMap(),recoveryCards=emptyList(),pairing=null,outgoingPairing=null))
+            if (fault.status == 401) storage.save(state.copy(directory = null, profiles = emptyMap(), bindings = emptyList(), retainedSecrets = emptyList(), lastCompletion = null,matches=emptyMap(),matchCursors=emptyMap(),matchReceipts=emptyMap(),recoveryCards=emptyList(),pairing=null,outgoingPairing=null,fixedInvitations=emptyMap()))
             throw fault
         }
         storage.save(applyDirectory(state,remote))
@@ -113,8 +115,9 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
             matches = state.matches.filterValues { cache -> accessible(cache.document.teamID)?.let { team -> cache.memberID.equals(team.memberID,true) && cache.accessEpoch == team.accessEpoch && cache.recoveryEpoch == remote.recoveryEpoch } == true },
             matchCursors = state.matchCursors.filterKeys { accessible(it) != null },
             matchReceipts = state.matchReceipts.filterValues { accessible(it.request.teamID) != null },
+            fixedInvitations = state.fixedInvitations.filter { (id,_) -> accessible(id)?.role==TeamRole.admin },
             lastCompletion = state.lastCompletion?.takeIf { completion ->
-                if (completion.request.kind in setOf(DirectoryRequestKind.create,DirectoryRequestKind.invite)) usableSecret(completion)
+                if (completion.request.kind in setOf(DirectoryRequestKind.create,DirectoryRequestKind.invite,DirectoryRequestKind.fixedInvite)) usableSecret(completion)
                 else completion.request.teamID?.let { accessible(it) != null } ?: !changed
             })
     }
@@ -143,7 +146,10 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         requireAdmin(refreshLocked(), teamID); client.members(teamID)
     }
     fun invitations(teamID: String): List<TeamInvitation> = synchronized(storage.monitor) {
-        requireAdmin(refreshLocked(), teamID); client.invitations(teamID)
+        requireAdmin(refreshLocked(), teamID); val result=client.invitations(teamID)
+        val state=storage.load(); val id=appleUUID(teamID); val fixed=state.fixedInvitations[id]
+        if(fixed!=null && result.none {it.invitationID.equals(fixed.invitation.invitationID,true)}) storage.save(state.copy(fixedInvitations=state.fixedInvitations - id))
+        result
     }
     private fun requireAdmin(directory: TeamDirectory, teamID: String) {
         check(!storage.load().requiresRecoveryReview) { "请先核对恢复后的球队资料" }
@@ -172,6 +178,9 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         put("token", TeamSecrets.random()); put("role", role.name)
     }
     fun prepareLeave(teamID: String): String = prepare(DirectoryRequestKind.leave, appleUUID(teamID)) { }
+    fun prepareFixedInvite(teamID: String, rotate: Boolean = false): String = prepare(DirectoryRequestKind.fixedInvite,appleUUID(teamID)) {
+        requireAdmin(requireNotNull(storage.load().directory),teamID); put("rotate",rotate)
+    }
 
     fun prepareProfile(teamID: String, baseRevision: Long, name: String, shortName: String, city: String): String =
         prepare(DirectoryRequestKind.roster,appleUUID(teamID)) {
@@ -249,6 +258,11 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
             if(token!=null && version!=null && version>0) next=next.copy(recoveryCards=next.recoveryCards + SavedManagementCard(appleUUID(response.getValue("teamID").jsonPrimitive.content),pending.body.getValue("name").jsonPrimitive.content.trim(),token,version))
         }
         if(pending.kind==DirectoryRequestKind.security) next=next.applyingSecurity(pending,response)
+        if(pending.kind==DirectoryRequestKind.fixedInvite) {
+            val invitation=TeamDirectoryJson.format.decodeFromJsonElement<FixedTeamInvitation>(response)
+            next=next.copy(fixedInvitations=next.fixedInvitations + (appleUUID(invitation.teamID) to invitation))
+        }
+        if(pending.kind==DirectoryRequestKind.revoke) next=next.copy(fixedInvitations=next.fixedInvitations.filterValues { !it.invitation.invitationID.equals(pending.targetID,true) })
         storage.save(next)
         completed
     }

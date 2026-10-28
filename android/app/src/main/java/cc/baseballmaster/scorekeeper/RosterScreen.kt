@@ -13,12 +13,19 @@ import java.util.UUID
 
 @Composable
 internal fun RosterScreen(model: ScorekeeperViewModel, quickAdd: () -> Unit) {
+    var showSharing by rememberSaveable { mutableStateOf(false) }
     var teamID by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf("own") }
     var editingTeam by rememberSaveable { mutableStateOf(false) }
     var editingPlayer by rememberSaveable { mutableStateOf<String?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
     val team = model.rosters.firstOrNull { it.id == teamID }
+    if (showSharing) TeamSharingScreen(model.sharing, model.teams) { showSharing = false }
+    CardBlock {
+        Text("球队共享", fontWeight = FontWeight.Bold)
+        Text("创建共享球队，或通过邀请加入；本机球队继续独立保存。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = { showSharing = true }, modifier = Modifier.testTag("open-team-sharing")) { Text("管理共享球队") }
+    }
     Text("本机球队管理", fontSize = 22.sp, fontWeight = FontWeight.Bold)
     Choices("名单", mapOf("own" to "我的球队", "opponent" to "对手", "archived" to "已移除"), filter) {
         filter = it

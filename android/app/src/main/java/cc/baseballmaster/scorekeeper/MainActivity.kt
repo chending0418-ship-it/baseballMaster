@@ -806,20 +806,13 @@ private fun TeamsScreen(teams: List<Team>, add: () -> Unit) {
 @Composable
 private fun ProfileScreen(model: ScorekeeperViewModel) {
     var showRules by rememberSaveable { mutableStateOf(false) }
-    var showSharing by rememberSaveable { mutableStateOf(false) }
     if (showRules) RulesScreen { showRules = false }
-    if (showSharing) TeamSharingScreen(model.sharing,model.teams) { showSharing=false }
     Text("关于", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
     CardBlock {
         Text("棒球比赛记录大师", fontWeight = FontWeight.Bold)
         Text("Android ${BuildConfig.VERSION_NAME}")
         Text("开发预览版", color = MaterialTheme.colorScheme.primary)
-        Text("默认仅本机记分，球队共享需要明确启用。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-    CardBlock {
-        Text("球队共享",fontWeight=FontWeight.Bold)
-        Text("创建共享球队，或通过邀请加入；本机球队继续独立保存。",color=MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick={showSharing=true},modifier=Modifier.testTag("open-team-sharing")) { Text("管理共享球队") }
+        Text("默认仅本机记分；进入球队共享后连接球队服务。", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     CardBlock {
         Text("棒球规则查询", fontWeight = FontWeight.Bold)
@@ -848,6 +841,7 @@ internal fun FormPage(
     dismiss: () -> Unit,
     save: () -> Unit,
     secure: Boolean = false,
+    dismissLabel: String = "取消",
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
@@ -878,7 +872,7 @@ internal fun FormPage(
                     Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(onClick = dismiss, enabled = !busy) { Text("取消", fontSize = 16.sp) }
+                    TextButton(onClick = dismiss, enabled = !busy) { Text(dismissLabel, fontSize = 16.sp) }
                     Text(
                         title,
                         fontSize = 17.sp,
