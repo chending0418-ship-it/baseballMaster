@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -69,7 +70,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         receiveServiceIntent(intent)
-        setContent { BaseballTheme { PortraitViewport("portrait-app") { ScorekeeperApp(screenModel) } } }
+        setContent { BaseballTheme(screenModel.appAppearance) { PortraitViewport("portrait-app") { AndroidLaunchContainer(screenModel) {ScorekeeperApp(screenModel)} } } }
     }
     override fun onNewIntent(intent: Intent) {super.onNewIntent(intent);setIntent(intent);receiveServiceIntent(intent)}
     private fun receiveServiceIntent(source: Intent) {
@@ -83,6 +84,18 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private val database = LocalDatabase.open(application)
     private val repository = GameRepository(database)
     internal val sharing by lazy { AndroidTeamSharing(repository,androidTeamDirectory(application,"https://baseballmaster.cc/api/v3")) }
+    internal val launchRepository by lazy {AndroidLaunchScreenRepository.standard(application)}
+    internal var launchDismissed by mutableStateOf(false)
+        private set
+    private var launchRefreshStarted=false
+    private var launchEnd: Long?=null
+    internal fun dismissLaunch() {launchDismissed=true}
+    internal fun launchDeadline(duration: Int): Long = launchEnd ?: (android.os.SystemClock.elapsedRealtime()+duration).also {launchEnd=it}
+    internal fun refreshLaunchOnce() {
+        if(launchRefreshStarted) return
+        launchRefreshStarted=true
+        viewModelScope.launch(Dispatchers.IO) {launchRepository.refresh()}
+    }
     private val incomingLinkMutex=Mutex()
     internal var incomingTeamLink by mutableStateOf<IncomingTeamLink?>(null)
         private set
@@ -91,6 +104,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     internal fun resumeTeamLink() {incomingLinkVisible=true}
     internal fun receiveTeamLink(value: String) {
         val parsed=runCatching {IncomingTeamLink.parse(value)}.getOrElse {error="邀请或配对链接无效，请重新复制完整链接。";return}
+        incomingLinkVisible=true
         viewModelScope.launch {incomingLinkMutex.withLock {
             try {sharing.retainIncomingLink(parsed);incomingTeamLink=sharing.state().incomingLinks.firstOrNull();incomingLinkVisible=true}
             catch(_: Exception) {error="链接尚未保存，请保留原链接，处理已有待核对链接后重试。"}
@@ -103,6 +117,15 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         }}
     }
     private val settings = application.getSharedPreferences("baseballmaster-settings", 0)
+    internal var appAppearance by mutableStateOf(settings.getString("appAppearance","system")?.takeIf {it in setOf("system","light","dark")} ?: "system")
+        private set
+    internal var showPracticeGuidance by mutableStateOf(settings.getBoolean("showPracticeGuidance",true))
+        private set
+    internal var showRuleExamples by mutableStateOf(settings.getBoolean("showRuleExamples",true))
+        private set
+    internal fun setAppearance(value: String) {require(value in setOf("system","light","dark"));settings.edit().putString("appAppearance",value).apply();appAppearance=value}
+    internal fun setPracticeGuidance(value: Boolean) {settings.edit().putBoolean("showPracticeGuidance",value).apply();showPracticeGuidance=value}
+    internal fun setRuleExamples(value: Boolean) {settings.edit().putBoolean("showRuleExamples",value).apply();showRuleExamples=value}
     var currentTeamID by mutableStateOf(settings.getString("current_team_id", null))
         private set
 
@@ -443,8 +466,8 @@ private val Brand = Color(0xFF092A2A)
 internal val Accent = Color(0xFF217A57)
 
 @Composable
-internal fun BaseballTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+internal fun BaseballTheme(appearance: String = "system", content: @Composable () -> Unit) {
+    val dark = when(appearance) {"light"->false;"dark"->true;else->isSystemInDarkTheme()}
     val defaultTypography = Typography()
     MaterialTheme(
         typography = defaultTypography.copy(
@@ -557,7 +580,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                         0 -> HomeScreen(model, { createTeam = true }, { newGame = true })
                         1 -> RosterScreen(model) { createTeam = true }
                         2 -> StatisticsScreen(model)
-                        else -> ProfileScreen(model)
+                        else -> ProfileScreen(model) {tab=1}
                     }
                 }
             if (model.error != null && !model.recoveryRequired)
@@ -841,10 +864,11 @@ private fun TeamsScreen(teams: List<Team>, add: () -> Unit) {
 }
 
 @Composable
-private fun ProfileScreen(model: ScorekeeperViewModel) {
+private fun ProfileScreen(model: ScorekeeperViewModel, manageTeams: ()->Unit) {
     var showRules by rememberSaveable { mutableStateOf(false) }
-    if (showRules) RulesScreen { showRules = false }
-    Text("关于", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    var page by rememberSaveable {mutableStateOf<String?>(null)}
+    if (showRules) RulesScreen(showExamples=model.showRuleExamples) { showRules = false }
+    Text("我的", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
     CardBlock {
         Text("棒球比赛记录大师", fontWeight = FontWeight.Bold)
         Text("Android ${BuildConfig.VERSION_NAME}")
@@ -855,13 +879,18 @@ private fun ProfileScreen(model: ScorekeeperViewModel) {
         Text("棒球规则查询", fontWeight = FontWeight.Bold)
         Text("常用规则解释与完整规则 PDF", color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextButton(onClick = { showRules = true }, modifier = Modifier.testTag("open-rules")) { Text("查看规则") }
+        TextButton(onClick={model.practice()},modifier=Modifier.testTag("open-practice-inning")) {Text("练习一局")}
     }
     CardBlock {
-        Text("备份与恢复", fontWeight = FontWeight.Bold)
-        Text("可核验 iOS 备份、导入名单或受来源保护的比赛；完整可编辑互导仍未完成。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        DeviceBackupControls(model)
-        BackupInspection(model)
-        TeamArchiveControls()
+        Text("本机数据与设置",fontWeight=FontWeight.Bold)
+        TextButton(onClick={page="data"},modifier=Modifier.testTag("open-local-data")) {Text("本地数据与备份")}
+        TextButton(onClick={page="settings"},modifier=Modifier.testTag("open-app-settings")) {Text("App 设置")}
+        TextButton(onClick={page="about"},modifier=Modifier.testTag("open-app-about")) {Text("关于 BaseballMaster")}
+    }
+    when(page) {
+        "data"->LocalDataScreen(model,{page=null;manageTeams()}) {page=null}
+        "settings"->AppSettingsScreen(model) {page=null}
+        "about"->AppAboutScreen {page=null}
     }
 }
 
@@ -881,7 +910,7 @@ internal fun FormPage(
     dismissLabel: String = "取消",
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = MaterialTheme.colorScheme.background.luminance()<.5f
     Dialog(
         onDismissRequest = { if (!busy) dismiss() },
         properties =
@@ -1215,8 +1244,8 @@ private fun MiniCount(label: String, value: Int, maximum: Int, color: Color, tag
 
 @Composable
 internal fun Field(game: Game, modifier: Modifier) {
-    val field = if (isSystemInDarkTheme()) Color(0xFF245F49) else Color(0xFF2E765A)
-    val dirt = if (isSystemInDarkTheme()) Color(0xFFA78356) else Color(0xFFD7B785)
+    val field = if (MaterialTheme.colorScheme.background.luminance()<.5f) Color(0xFF245F49) else Color(0xFF2E765A)
+    val dirt = if (MaterialTheme.colorScheme.background.luminance()<.5f) Color(0xFFA78356) else Color(0xFFD7B785)
     BoxWithConstraints(
         modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(field.copy(alpha = .86f))
     ) {

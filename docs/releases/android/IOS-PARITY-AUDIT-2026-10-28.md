@@ -41,7 +41,7 @@
 | F11 比赛协作 | `SharedMatchViews`、`SharedMatches` | `SharedMatchDirectory` 读取／游标／交接控制基础已有；产品比赛列表／正式发布／PUT／完整内容编辑／离线更新和冲突核对尚缺，不开放产品交接 |
 | F12 安全／设备／恢复 | `TeamSecurityViews`、`TeamSecurity` | `TeamSecuritySession`、`TeamCredentialRotation`、`CredentialVault`；第八组已接配对、设备管理、管理恢复兑换产品流程及卡片分享；全库恢复人工核对、撤销后重接入和审计尚缺。界面未执行，AN07 用户明确不做 |
 | F13 直播／历史观看 | `LiveBroadcastViews`、`SharedMatchViews` | AN06 尚未完整迁移；复用现有服务与网页，不能只打开网页宣称完成发布和三种历史权限 |
-| F14 规则／设置／开屏 | `ProfileViews`、`ConfigurableLaunchScreen` | `RulesScreen`／`RulesForm` 已有同源离线资料，关于页已有；支持／隐私、系统入口和 3.1.1 开屏流程待 AN06 对照 |
+| F14 规则／设置／开屏 | `ProfileViews`、`ConfigurableLaunchScreen` | AN06 第二组已接同源开屏／配置／缓存、外观／辅助提示、本地数据、关于／隐私／支持入口；规则沿用现有离线资料。UI／系统效果未执行，AN07 用户明确不做，详见 AN06-LAUNCH |
 
 ## 仍未迁移的共享页面
 

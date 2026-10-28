@@ -77,7 +77,7 @@ private fun findRuleMatches(index: RuleIndex, query: String): List<RuleMatch> = 
 }
 
 @Composable
-internal fun RulesScreen(dismiss: () -> Unit) {
+internal fun RulesScreen(showExamples: Boolean = true, dismiss: () -> Unit) {
     val context = LocalContext.current
     val items = remember { readGlossary(context) }
     val categories = listOf("basics" to "基础", "offense" to "进攻", "defense" to "守备", "pitching" to "投手", "violations" to "违规", "scoring" to "记录")
@@ -106,7 +106,7 @@ internal fun RulesScreen(dismiss: () -> Unit) {
                     Text(item.abbreviation, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
                 }
                 Text(item.explanation, fontSize = 14.sp)
-                Text("例如：${item.example}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                if(showExamples) Text("例如：${item.example}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
         }
     }

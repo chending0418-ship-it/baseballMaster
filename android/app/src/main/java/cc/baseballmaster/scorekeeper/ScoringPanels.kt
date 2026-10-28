@@ -85,6 +85,12 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
         Choices("练习模式", GameMode.entries.associate { it.name to it.title }, game.rules.mode.name) {
             model.practice(game.rules.recordingMethod, GameMode.valueOf(it))
         }
+    if(game.practice && model.showPracticeGuidance) Text(
+        if(game.entries.isEmpty()) "先尝试记录一个坏球或好球。"
+        else if(game.batting.values.all {it.plateAppearances==0}) "接着点击“球打出去了”，按你看到的结果完成记录。"
+        else "继续尝试跑者变化、撤销和现场修正。",
+        modifier=Modifier.testTag("practice-mode-banner"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,
+    )
     if (game.requiresTiebreakPlacement || game.canConfirmExtraInning(System.currentTimeMillis()))
         CardBlock {
             Text(
