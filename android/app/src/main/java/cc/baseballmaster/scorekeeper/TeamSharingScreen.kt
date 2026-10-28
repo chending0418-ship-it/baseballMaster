@@ -92,6 +92,7 @@ internal object SharingClipboard {
     val ui=remember(api) {SharingUi(api)}; val scope=rememberCoroutineScope(); val context=LocalContext.current
     var editor by remember { mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.join) "join" else null) }; var player by remember {mutableStateOf<SharedRosterPlayer?>(null)}
     var securityPage by remember {mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.pair) "approve" else null)}
+    var lifecyclePage by remember {mutableStateOf<String?>(null)}
     var confirmation by remember {mutableStateOf<SharingConfirmation?>(null)}
     var invitationToShow by remember {mutableStateOf<FixedTeamInvitation?>(null)}; var shownCard by remember {mutableStateOf<SavedManagementCard?>(null)}
     var receiptBaseline by remember {mutableStateOf<String?>(null)}; var baselineLoaded by remember {mutableStateOf(false)}
@@ -143,6 +144,7 @@ internal object SharingClipboard {
             TextButton(enabled=ui.enabled && !ui.busy,onClick={securityPage="newDevice"}) {Text("接入这台新设备")}
             TextButton(enabled=ui.enabled && !ui.busy,onClick={securityPage="approve"}) {Text("授权我的新设备")}
             TextButton(enabled=ui.enabled && !ui.busy,onClick={securityPage="recover"}) {Text("恢复球队管理权")}
+            TextButton(enabled=ui.enabled && !ui.busy,onClick={lifecyclePage="restore"}) {Text("已解散的球队")}
             if(ui.state.recoveryWork.isNotEmpty()) TextButton(enabled=!ui.busy,onClick={securityPage="review"}) {Text("查看本机保留记录")}
             Text("已加入的球队",fontWeight=FontWeight.Bold)
             if(ui.enabled && ui.state.directory?.teams.isNullOrEmpty()) Text("尚未加入共享球队。")
@@ -167,6 +169,8 @@ internal object SharingClipboard {
                 }
                 if(profile!=null && visible<profile.players.size) TextButton(onClick={visible+=50}) {Text("显示更多（已显示 $visible／${profile.players.size}）")}
                 if(team.role==TeamRole.admin) {
+                    TextButton(enabled=!ui.busy,onClick={lifecyclePage="audit"}) {Text("球队操作记录")}
+                    TextButton(enabled=ui.canPrepare,onClick={lifecyclePage="dissolve"}) {Text("解散球队")}
                     ui.state.recoveryCards.singleOrNull {it.teamID==team.id}?.let {card ->
                         Text(if(card.confirmedSaved) "管理恢复卡已标记另存" else "请另存管理恢复卡，设备遗失后可找回管理权")
                         TextButton(enabled=!ui.busy,onClick={ui.call(scope) {
@@ -239,6 +243,7 @@ internal object SharingClipboard {
     securityPage?.let {page -> TeamSecurityScreen(api,page,ui.selectedID,incoming?.takeIf {it.kind==IncomingTeamLinkKind.pair}?.url.orEmpty()) {
         securityPage=null;if(incoming?.kind==IncomingTeamLinkKind.pair) dismiss() else ui.call(scope){ui.refresh()}
     } }
+    lifecyclePage?.let {page -> TeamLifecycleScreen(api,page,ui.selectedID) {lifecyclePage=null;ui.call(scope){ui.refresh()}} }
 }
 
 @Composable private fun SharingEditor(api: AndroidTeamSharing, ui: SharingUi, scope: CoroutineScope, kind: String, localTeams: List<Team>, player: SharedRosterPlayer?, initialLink: String = "", dismiss: ()->Unit) {

@@ -72,7 +72,8 @@ class TeamHttpTransport(baseURL: String, private val credentials: TeamCredential
     }
     override fun request(method: String, path: String, body: JsonObject?): JsonObject {
         val cursorPath = Regex("teams/[a-f0-9-]{36}/games\\?cursor=[0-9]{1,10}").matches(path)
-        require(method in setOf("GET", "POST", "PUT", "PATCH", "DELETE") && (Regex("[a-z0-9/-]+").matches(path) || method == "GET" && cursorPath) && !path.startsWith('/') && !path.contains("//"))
+        val auditPath = Regex("teams/[a-f0-9-]{36}/audit\\?from=[0-9]{1,16}&action=(?:[A-Za-z]|%3A){0,60}(?:&before=[0-9]{1,16})?").matches(path)
+        require(method in setOf("GET", "POST", "PUT", "PATCH", "DELETE") && (Regex("[a-z0-9/-]+").matches(path) || method == "GET" && (cursorPath || auditPath)) && !path.startsWith('/') && !path.contains("//"))
         // Saving the device secret must succeed before opening any connection.
         val token = TeamSecrets.validate(credentials.token())
         try {

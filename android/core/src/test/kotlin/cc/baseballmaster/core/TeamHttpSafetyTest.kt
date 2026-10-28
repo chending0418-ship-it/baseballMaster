@@ -77,4 +77,20 @@ class TeamHttpSafetyTest {
             assertEquals("forbidden", denied.code); assertFalse(denied.toString().contains(secret)); assertNull(denied.cause)
         } finally { server.stop(0) }
     }
+    @Test fun auditQueryIsPreciselyScopedToReadOnlyEncodedFiltersBeforeOpeningAConnection() {
+        val requests=AtomicInteger();val credentials=AtomicInteger()
+        val server=server {exchange ->
+            requests.incrementAndGet();assertEquals("from=0&action=handoff%3Aforce",exchange.requestURI.rawQuery)
+            val bytes="{}".toByteArray();exchange.sendResponseHeaders(200,bytes.size.toLong());exchange.responseBody.use {it.write(bytes)}
+        }
+        try {
+            val client=TeamHttpTransport(endpoint(server),TeamCredentialProvider {credentials.incrementAndGet();TeamSecrets.random()},true)
+            val base="teams/${java.util.UUID.randomUUID()}/audit"
+            client.request("GET","$base?from=0&action=handoff%3Aforce",null)
+            for(path in listOf("$base?from=0&action=handoff:force","$base?from=0&action=handoff%253Aforce","$base?from=0&action=teamCreated&extra=1","$base?from=-1&action=","$base?from=0&action=%2F..%2F","$base?from=0&action=&before=1&before=2"))
+                assertThrows(IllegalArgumentException::class.java) {client.request("GET",path,null)}
+            assertThrows(IllegalArgumentException::class.java) {client.request("POST","$base?from=0&action=handoff%3Aforce",null)}
+            assertEquals(1,requests.get());assertEquals(1,credentials.get())
+        } finally {server.stop(0)}
+    }
 }

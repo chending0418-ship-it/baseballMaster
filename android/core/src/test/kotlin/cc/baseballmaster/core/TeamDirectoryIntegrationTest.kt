@@ -80,6 +80,87 @@ class TeamDirectoryIntegrationTest {
         }
     }
 
+    @Test(timeout = 30000) fun dissolutionRetriesItsTerminalReceiptAndRestorationNeverRevivesOldAuthorizations() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();var lose=true
+            val owner=session(TeamTransport {method,path,body ->
+                val response=actual.request(method,path,body)
+                if(path.endsWith("/dissolve") && lose) {lose=false;throw IOException("injected lost dissolution receipt")};response
+            },store)
+            val team=create(owner);val member=session(server.transport());join(owner,team,member,TeamRole.member)
+            owner.prepareFixedInvite(team.id);owner.sendPending();val oldInvite=store.state.fixedInvitations.getValue(team.id)
+            val document=owner.match(team.id,publishFixture(server,actual,team).id)
+            val profile=owner.roster(team.id)
+            assertThrows(IllegalArgumentException::class.java) {owner.prepareTeamDissolution(profile,"错误队名",true)}
+            assertNull(store.state.pending)
+            val id=owner.prepareTeamDissolution(profile,profile.name,true)
+            assertThrows(IOException::class.java) {owner.sendPending()};assertEquals(id,store.state.pending!!.id)
+            owner.sendPending();assertTrue(owner.refresh().teams.isEmpty())
+            assertTrue(store.state.profiles.isEmpty());assertTrue(store.state.matches.isEmpty());assertTrue(store.state.fixedInvitations.isEmpty());assertTrue(store.state.recoveryCards.isEmpty())
+            assertTrue(member.refresh().teams.isEmpty());assertTrue(member.dissolvedTeams().isEmpty())
+            val deleted=owner.dissolvedTeams().single();assertEquals(team.id,deleted.id)
+            assertThrows(IllegalArgumentException::class.java) {owner.prepareTeamRestoration(deleted,false)}
+            owner.prepareTeamRestoration(deleted,true);owner.sendPending();assertEquals(TeamRole.admin,owner.refresh().teams.single().role)
+            assertEquals(1,owner.members(team.id).size);assertTrue(member.refresh().teams.isEmpty())
+            assertEquals(410,assertThrows(TeamServiceFault::class.java) {owner.invitationPreview(oldInvite.url)}.status)
+            val restored=owner.match(team.id,document.id)
+            assertEquals(document.payload,restored.payload);assertTrue(restored.writerEpoch>document.writerEpoch)
+            assertTrue(owner.dissolvedTeams().isEmpty());assertFalse(owner.recoveryStatus(team.id).hasCode ?: true)
+        }
+    }
+
+    @Test(timeout = 30000) fun restoringAfterALostReceiptKeepsOneNewMembershipAndRequiresANewRecoveryCard() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();var lose=true
+            val owner=session(TeamTransport {method,path,body ->
+                val response=actual.request(method,path,body)
+                if(path.endsWith("/restore") && lose) {lose=false;throw IOException("injected lost restoration receipt")};response
+            },store)
+            val team=create(owner);val profile=owner.roster(team.id)
+            owner.prepareTeamDissolution(profile,profile.name,true);owner.sendPending();owner.refresh()
+            val id=owner.prepareTeamRestoration(owner.dissolvedTeams().single(),true)
+            assertThrows(IOException::class.java) {owner.sendPending()};assertEquals(id,store.state.pending!!.id)
+            owner.sendPending();owner.refresh();assertEquals(1,owner.members(team.id).size)
+            val status=owner.recoveryStatus(team.id);assertEquals(false,status.hasCode)
+            owner.prepareRecoveryRotation(status,true);owner.sendPending();owner.refresh()
+            assertEquals(1,store.state.recoveryCards.size)
+            assertEquals(1,owner.audit(team.id,action="teamRestored").events.size)
+        }
+    }
+
+    @Test(timeout = 30000) fun nonAdminCannotDissolveAndExpiredRestorationCannotResurrectTheTeam() {
+        Service().use {server ->
+            val owner=session(server.transport());val team=create(owner);val member=session(server.transport());join(owner,team,member,TeamRole.member)
+            val readable=member.roster(team.id)
+            assertThrows(IllegalArgumentException::class.java) {member.prepareTeamDissolution(readable,readable.name,true)}
+            assertThrows(IllegalStateException::class.java) {member.audit(team.id)}
+            val profile=owner.roster(team.id);owner.prepareTeamDissolution(profile,profile.name,true);owner.sendPending();owner.refresh()
+            val stale=owner.dissolvedTeams().single();server.change("advance",(31L*86_400_000).toString())
+            assertTrue(owner.dissolvedTeams().isEmpty())
+            owner.prepareTeamRestoration(stale,true)
+            assertEquals(404,assertThrows(TeamServiceFault::class.java) {owner.sendPending()}.status)
+            assertTrue(owner.refresh().teams.isEmpty())
+        }
+    }
+
+    @Test(timeout = 30000) fun administratorAuditHasStablePaginationActionFiltersAndNoInvitationSecrets() {
+        Service().use {server ->
+            val owner=session(server.transport());val team=create(owner)
+            repeat(55) {owner.prepareFixedInvite(team.id,true);owner.sendPending()}
+            val first=owner.audit(team.id);assertEquals(50,first.events.size);assertTrue(first.hasMore)
+            val second=owner.audit(team.id,before=first.before)
+            assertFalse(second.hasMore);assertTrue(second.events.all {it.id<first.before})
+            assertEquals((first.events+second.events).size,(first.events+second.events).map {it.id}.distinct().size)
+            val filtered=owner.audit(team.id,action="teamInvitationRotated")
+            assertEquals(50,filtered.events.size);assertTrue(filtered.events.all {it.action=="teamInvitationRotated"})
+            val tail=owner.audit(team.id,action="teamInvitationRotated",before=filtered.before);assertEquals(5,tail.events.size)
+            assertTrue(owner.audit(team.id,action="handoff:force").events.isEmpty())
+            assertThrows(IllegalArgumentException::class.java) {owner.audit(team.id,action="teamCreated&from=0")}
+            val secret=owner.snapshot().fixedInvitations.getValue(team.id).token
+            assertFalse(GameJson.encodeToString(TeamAuditPage.serializer(),first).contains(secret))
+        }
+    }
+
     @Test(timeout = 30000) fun lostRecoveryAcknowledgementAndFailedLocalCommitKeepTheGateAndOriginalRequest() {
         Service().use {server ->
             val actual=server.transport();val store=Memory();var lose=true;var acknowledgements=0

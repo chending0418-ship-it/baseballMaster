@@ -3,7 +3,7 @@ package cc.baseballmaster.core
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
-@Serializable enum class TeamSecurityAction { pairCreate, pairApprove, pairAccept, pairCancel, deviceRemove, recoveryRotate, recoveryRedeem }
+@Serializable enum class TeamSecurityAction { pairCreate, pairApprove, pairAccept, pairCancel, deviceRemove, recoveryRotate, recoveryRedeem, teamDissolve, teamRestore }
 @Serializable data class DevicePairing(
     val id: String, val status: String, val expiresAt: Long, val phrase: String,
     val targetLabel: String? = null, val teamID: String? = null, val teamName: String? = null,
@@ -48,12 +48,18 @@ internal fun PendingDirectoryRequest.securityPath(): String = when(requireNotNul
     TeamSecurityAction.deviceRemove -> "teams/${appleUUID(requireNotNull(teamID))}/devices/${appleUUID(requireNotNull(targetID))}"
     TeamSecurityAction.recoveryRotate -> "teams/${appleUUID(requireNotNull(teamID))}/recovery/rotate"
     TeamSecurityAction.recoveryRedeem -> "recovery/redeem"
+    TeamSecurityAction.teamDissolve -> "teams/${appleUUID(requireNotNull(teamID))}/dissolve"
+    TeamSecurityAction.teamRestore -> "teams/${appleUUID(requireNotNull(targetID))}/restore"
 }
 internal fun PendingDirectoryRequest.validateSecurityReply(response: JsonObject) {
     when(requireNotNull(securityAction)) {
         TeamSecurityAction.pairCreate,TeamSecurityAction.pairApprove,TeamSecurityAction.pairAccept -> TeamDirectoryJson.format.decodeFromJsonElement<DevicePairing>(response).also { if(targetID!=null) require(it.id.equals(targetID,true)) }
         TeamSecurityAction.pairCancel -> require(response["cancelled"]?.jsonPrimitive?.boolean == true)
         TeamSecurityAction.deviceRemove -> require(response["removed"]?.jsonPrimitive?.boolean == true && response["deviceID"]?.jsonPrimitive?.content.equals(targetID,true) && response["teamID"]?.jsonPrimitive?.content.equals(teamID,true))
+        TeamSecurityAction.teamDissolve,TeamSecurityAction.teamRestore -> {
+            require(response["teamID"]?.jsonPrimitive?.content.equals(teamID ?: targetID,true))
+            require(response[if(securityAction==TeamSecurityAction.teamDissolve) "dissolved" else "restored"]?.jsonPrimitive?.boolean==true)
+        }
         TeamSecurityAction.recoveryRotate,TeamSecurityAction.recoveryRedeem -> TeamDirectoryJson.format.decodeFromJsonElement<ManagementRecoveryStatus>(response).also {
             require(it.version>0 && it.teamID.equals(teamID ?: body.getValue("teamID").jsonPrimitive.content,true))
             if(securityAction==TeamSecurityAction.recoveryRedeem) { require(response["recovered"]?.jsonPrimitive?.boolean==true && response["role"]?.jsonPrimitive?.content=="admin"); appleUUID(response.getValue("memberID").jsonPrimitive.content) }
@@ -140,6 +146,8 @@ internal fun TeamDirectoryState.applyingSecurity(pending: PendingDirectoryReques
         TeamSecurityAction.pairAccept -> copy(pairing=pairing?.copy(request=TeamDirectoryJson.format.decodeFromJsonElement(response)))
         TeamSecurityAction.pairCancel -> copy(pairing=pairing?.takeUnless { it.request.id.equals(pending.targetID,true) },outgoingPairing=outgoingPairing?.takeUnless { it.id.equals(pending.targetID,true) })
         TeamSecurityAction.deviceRemove -> if(pending.targetID==deviceID) withoutTeam(requireNotNull(pending.teamID)) else this
+        TeamSecurityAction.teamDissolve -> withoutTeam(requireNotNull(pending.teamID))
+        TeamSecurityAction.teamRestore -> withoutTeam(requireNotNull(pending.targetID))
         TeamSecurityAction.recoveryRotate,TeamSecurityAction.recoveryRedeem -> {
             val status=TeamDirectoryJson.format.decodeFromJsonElement<ManagementRecoveryStatus>(response)
             val cleared=if(pending.securityAction==TeamSecurityAction.recoveryRedeem) withoutTeam(status.teamID).copy(pairing=null,outgoingPairing=null) else this

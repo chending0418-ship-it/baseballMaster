@@ -37,9 +37,9 @@
 | F07 历史／统计 | `Statistics`、`StatisticsViews`、`ResultsViews` | `StatisticsScreen`、core 统计／来源只读投影；年度已有样本，共享正式副本去重及旧个人记录尚未完整接通 |
 | F08 PDF／海报／文件 | `ReportPDFRenderer`、`PlayByPlayPDFReport`、`StatisticsPDFReports`、`GamePoster` | `ReportExport`、`GamePoster`；阶段实现已有，长名单／实际分享面板及来源历史全面验收未完成 |
 | F09 互导／备份／旧版 | `LocalBackup`、`BackupViews`、`UpgradeProtection`、`HistoricalImportView` | `AppleBackupLibrary`、`AppleImportStorage`、core `AppleSourceBackup`／`AppleGameContinuation`；受限续记、只读旧版、原文保留已接，完整可编辑双向互导和 `.bmteam` 正式映射未完成，真实 v5 缺失 |
-| F10 球队协作 | `TeamCollaborationViews`、`TeamSharingStore` | `TeamSharingScreen`、`TeamDirectorySession`；建队／加入／名单／成员／固定邀请／退出已有；绑定管理、解散和恢复队伍尚缺 |
+| F10 球队协作 | `TeamCollaborationViews`、`TeamSharingStore` | `TeamSharingScreen`、`TeamDirectorySession`；建队／加入／名单／成员／固定邀请／退出已有，第十组已接解散／恢复；完整绑定管理及共享建赛仍缺 |
 | F11 比赛协作 | `SharedMatchViews`、`SharedMatches` | `SharedMatchDirectory` 读取／游标／交接控制基础已有；产品比赛列表／正式发布／PUT／完整内容编辑／离线更新和冲突核对尚缺，不开放产品交接 |
-| F12 安全／设备／恢复 | `TeamSecurityViews`、`TeamSecurity` | `TeamSecuritySession`、`TeamCredentialRotation`、`CredentialVault`；第八组已接配对、设备管理、管理恢复兑换产品流程及卡片分享；全库恢复人工核对、撤销后重接入和审计尚缺。界面未执行，AN07 用户明确不做 |
+| F12 安全／设备／恢复 | `TeamSecurityViews`、`TeamSecurity` | `TeamSecuritySession`、`TeamCredentialRotation`、`CredentialVault`；第八组已接配对、设备管理、管理恢复兑换和卡片分享，第九组补服务恢复核对，第十组补审计；撤销 Bearer 后明确重接入仍缺。界面未执行，AN07 用户明确不做 |
 | F13 直播／历史观看 | `LiveBroadcastViews`、`SharedMatchViews` | AN06 尚未完整迁移；复用现有服务与网页，不能只打开网页宣称完成发布和三种历史权限 |
 | F14 规则／设置／开屏 | `ProfileViews`、`ConfigurableLaunchScreen` | AN06 第二组已接同源开屏／配置／缓存、外观／辅助提示、本地数据、关于／隐私／支持入口；规则沿用现有离线资料。UI／系统效果未执行，AN07 用户明确不做，详见 AN06-LAUNCH |
 
@@ -51,7 +51,7 @@
 - `NewDevicePairingView`、`ApproveDevicePairingView`、`TeamDevicesView`：第八组已对应 `TeamSecurityScreen` 的 newDevice／approve／devices，双端确认、四词短语和设备移除已接；界面未执行。
 - `RecoverTeamManagementView`：第八组已对应 `TeamSecurityScreen` 的 recover，预览、失效范围确认、唯一新卡保存和续取已接；界面未执行。
 - `ServiceRecoveryReviewView`：第九组已接明确人工核对，先保留旧工作、读取当前完整资料、核对授权和服务确认，成功持久化后才解除恢复阻断；旧请求不会发送。普通访问代次变化的保护不能借此绕过。
-- `DissolvedTeamsView`、`DissolveTeamView`、`TeamAuditView`：仍需按现行角色、时限和审计分页实现。
+- `DissolvedTeamsView`、`DissolveTeamView`、`TeamAuditView`：第十组已对应 TeamLifecycleScreen 的 restore／dissolve／audit，角色、时限、终结回执及审计分页按原服务实现，UI 未执行。
 - `SharedMatchesListView`、`PublishSharedMatchView`、`SharedMatchDetailView`、`PreservedMatchDraftsView`、`SharedConflictReviewView`、`SharedConflictDetailView`、`HistoricalImportView`、`SharedPlayerLinksView`：读取 API 基础不足以开放编辑／交接，先解决完整内容和持久恢复。
 
 优先顺序仍是完整互导和历史纠错 → 协作内容与同步 → 直播／系统入口 → 全量回归；不把 AN05 的阶段增量当作 AN04 已通过。全局规则或协议说明矛盾记入计划第 14 节，等两端上线后统一改。

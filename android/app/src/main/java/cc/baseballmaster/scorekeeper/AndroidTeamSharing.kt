@@ -13,6 +13,10 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     suspend fun retainIncomingLink(link: IncomingTeamLink) = withContext(Dispatchers.IO) {session.retainIncomingLink(link)}
     suspend fun consumeIncomingLink(id: String) = withContext(Dispatchers.IO) {session.consumeIncomingLink(id)}
     suspend fun reconcileAfterRecovery(confirmed: Boolean) = withContext(Dispatchers.IO) {session.reconcileAfterRecovery(confirmed)}
+    suspend fun dissolvedTeams() = withContext(Dispatchers.IO) {session.dissolvedTeams()}
+    suspend fun prepareTeamDissolution(profile: SharedTeamProfile, name: String, confirmed: Boolean) = withContext(Dispatchers.IO) {session.prepareTeamDissolution(profile,name,confirmed)}
+    suspend fun prepareTeamRestoration(team: DissolvedTeam, confirmed: Boolean) = withContext(Dispatchers.IO) {session.prepareTeamRestoration(team,confirmed)}
+    suspend fun audit(teamID: String, from: Long, action: String, before: Long?) = withContext(Dispatchers.IO) {session.audit(teamID,from,action,before)}
     suspend fun refresh() = withContext(Dispatchers.IO) { session.refresh() }
     suspend fun prepareCreate(name: String, nickname: String) = withContext(Dispatchers.IO) { session.prepareCreate(name,nickname) }
     suspend fun previewInvitation(input: String) = withContext(Dispatchers.IO) { session.invitationPreview(input) }
