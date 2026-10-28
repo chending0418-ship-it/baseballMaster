@@ -24,6 +24,7 @@ import kotlinx.serialization.json.*
 @Serializable data class SavedManagementCard(val teamID: String, val teamName: String, val token: String, val version: Long, val confirmedSaved: Boolean = false) {
     init { appleUUID(teamID); TeamSecrets.validate(token); require(version > 0) }
     val code: String get()="BMREC1.${appleUUID(teamID)}.$token"
+    val text: String get()="BaseballMaster 球队管理恢复卡\n球队：$teamName\n版本：$version\n\n$code\n\n请离线妥善保存，勿发到球队群。持此卡可恢复管理权，原设备、邀请与观看授权将失效，比赛保留。更换恢复码后旧卡失效。"
     override fun toString()="SavedManagementCard(teamID=$teamID, version=$version)"
 }
 data class ManagementRecoveryInput(val teamID: String, val token: String) {

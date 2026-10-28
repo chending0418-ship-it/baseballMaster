@@ -39,7 +39,7 @@
 | F09 互导／备份／旧版 | `LocalBackup`、`BackupViews`、`UpgradeProtection`、`HistoricalImportView` | `AppleBackupLibrary`、`AppleImportStorage`、core `AppleSourceBackup`／`AppleGameContinuation`；受限续记、只读旧版、原文保留已接，完整可编辑双向互导和 `.bmteam` 正式映射未完成，真实 v5 缺失 |
 | F10 球队协作 | `TeamCollaborationViews`、`TeamSharingStore` | `TeamSharingScreen`、`TeamDirectorySession`；建队／加入／名单／成员／固定邀请／退出已有；绑定管理、解散和恢复队伍尚缺 |
 | F11 比赛协作 | `SharedMatchViews`、`SharedMatches` | `SharedMatchDirectory` 读取／游标／交接控制基础已有；产品比赛列表／正式发布／PUT／完整内容编辑／离线更新和冲突核对尚缺，不开放产品交接 |
-| F12 安全／设备／恢复 | `TeamSecurityViews`、`TeamSecurity` | `TeamSecuritySession`、`TeamCredentialRotation`、`CredentialVault`；协议基础和卡片查看／轮换已有；配对、设备管理和管理恢复兑换产品流程、全库恢复人工核对、撤销后重接入、审计尚缺 |
+| F12 安全／设备／恢复 | `TeamSecurityViews`、`TeamSecurity` | `TeamSecuritySession`、`TeamCredentialRotation`、`CredentialVault`；第八组已接配对、设备管理、管理恢复兑换产品流程及卡片分享；全库恢复人工核对、撤销后重接入和审计尚缺。界面未执行，AN07 用户明确不做 |
 | F13 直播／历史观看 | `LiveBroadcastViews`、`SharedMatchViews` | AN06 尚未完整迁移；复用现有服务与网页，不能只打开网页宣称完成发布和三种历史权限 |
 | F14 规则／设置／开屏 | `ProfileViews`、`ConfigurableLaunchScreen` | `RulesScreen`／`RulesForm` 已有同源离线资料，关于页已有；支持／隐私、系统入口和 3.1.1 开屏流程待 AN06 对照 |
 
@@ -48,8 +48,8 @@
 继续开发先读下列具体 View 和背后的 Store，再补 Android。接口测试通过不替代产品流程：
 
 - `SharedTeamDetailView`：共享新建比赛、共享比赛列表、冲突草稿、完整绑定。不能将 `source=shared` 改成 local 绕过现有仓库保护。
-- `NewDevicePairingView`、`ApproveDevicePairingView`、`TeamDevicesView`：双端确认、四词短语、设备移除。已有安全协议可复用，页面未接。
-- `RecoverTeamManagementView`：恢复预览、明确失效范围、唯一新卡保存、响应丢失续取。已有协议可复用，页面未接。
+- `NewDevicePairingView`、`ApproveDevicePairingView`、`TeamDevicesView`：第八组已对应 `TeamSecurityScreen` 的 newDevice／approve／devices，双端确认、四词短语和设备移除已接；界面未执行。
+- `RecoverTeamManagementView`：第八组已对应 `TeamSecurityScreen` 的 recover，预览、失效范围确认、唯一新卡保存和续取已接；界面未执行。
 - `ServiceRecoveryReviewView`：恢复代次变更后的明确人工核对；当前阻断是保护，不得直接清 flag 后发送旧请求。
 - `DissolvedTeamsView`、`DissolveTeamView`、`TeamAuditView`：仍需按现行角色、时限和审计分页实现。
 - `SharedMatchesListView`、`PublishSharedMatchView`、`SharedMatchDetailView`、`PreservedMatchDraftsView`、`SharedConflictReviewView`、`SharedConflictDetailView`、`HistoricalImportView`、`SharedPlayerLinksView`：读取 API 基础不足以开放编辑／交接，先解决完整内容和持久恢复。

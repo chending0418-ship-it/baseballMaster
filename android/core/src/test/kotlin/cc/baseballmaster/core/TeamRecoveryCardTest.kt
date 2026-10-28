@@ -9,6 +9,7 @@ class TeamRecoveryCardTest {
         val card=SavedManagementCard(UUID.randomUUID().toString(),"测试球队",TeamSecrets.random(),1)
         val parsed=ManagementRecoveryInput.parse("球队管理恢复卡\n球队：测试球队\n${card.code}\n请离线保存")
         assertEquals(card.teamID,parsed.teamID); assertEquals(card.token,parsed.token)
+        assertEquals(parsed,ManagementRecoveryInput.parse(card.text))
         assertFalse(parsed.toString().contains(card.token)); assertFalse(card.toString().contains(card.token))
     }
     @Test fun ambiguousTruncatedAndNoncanonicalRecoveryInputsAreRejected() {

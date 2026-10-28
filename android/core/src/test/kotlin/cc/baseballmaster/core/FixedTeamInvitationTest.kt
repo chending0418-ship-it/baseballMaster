@@ -21,4 +21,12 @@ class FixedTeamInvitationTest {
             FixedTeamInvitation(UUID.randomUUID().toString(),TeamSecrets.random(),TeamInvitation(UUID.randomUUID().toString(),8640000000000000L,role))
         }
     }
+    @Test fun devicePairingQrKeepsTheExactFragmentAndRejectsOtherOriginsAndQueries() {
+        val token=TeamSecrets.random();val link="https://baseballmaster.cc/pair#$token"
+        val qr=teamServiceQr(link)
+        val decoded=MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(qr.width,qr.height,qr.pixels))))
+        assertEquals(link,decoded.text);assertEquals(token,TeamServiceLink.pairing(decoded.text))
+        for(value in listOf("https://example.com/pair#$token","https://baseballmaster.cc/pair?token=$token#$token","https://baseballmaster.cc/pair#invalid"))
+            assertThrows(Exception::class.java) {teamServiceQr(value)}
+    }
 }
