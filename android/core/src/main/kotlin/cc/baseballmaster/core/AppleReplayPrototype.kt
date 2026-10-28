@@ -1,5 +1,7 @@
 package cc.baseballmaster.core
 
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.Base64
 import java.util.UUID
 import kotlinx.serialization.json.*
@@ -15,7 +17,11 @@ internal object AppleReplayPrototype {
     private fun JsonObject.bool(key: String, fallback: Boolean = false) = this[key]?.jsonPrimitive?.booleanOrNull ?: fallback
     private fun JsonObject.array(key: String) = this[key]?.jsonArray ?: error("缺少 $key")
     private fun id(s: String) = appleUUID(s)
-    private fun date(value: JsonElement?) = value?.jsonPrimitive?.doubleOrNull?.let { require(it.isFinite()); ((it + 978307200.0) * 1000.0).toLong() }
+    // Decimal wire dates must not round an Android millisecond down when converting
+    // from seconds since 2001. Keep sub-millisecond source data opaque; views use floor.
+    private fun date(value: JsonElement?) = value?.takeUnless { it == JsonNull }?.jsonPrimitive?.content?.let {
+        BigDecimal(it).add(BigDecimal("978307200")).movePointRight(3).setScale(0, RoundingMode.FLOOR).longValueExact()
+    }
     private fun ids(a: JsonArray) = a.map { id(it.jsonPrimitive.content) }
     private fun team(o: JsonObject, opponent: Boolean): Team {
         val players = o.array("players").map { raw ->

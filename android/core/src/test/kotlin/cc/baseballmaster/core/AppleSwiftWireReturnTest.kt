@@ -23,6 +23,10 @@ class AppleSwiftWireReturnTest {
             val hash = java.security.MessageDigest.getInstance("SHA-256").digest(originalBytes).joinToString("") { "%02x".format(it) }
             assertEquals("Source changed after Swift check: ${input.name}", receipt.getValue("sourceSha256").jsonPrimitive.content, hash)
             val before = AppleBackupEnvelope.inspect(originalBytes)
+            val consumedPayload = File(directory, "${index.toString().padStart(3, '0')}-${input.nameWithoutExtension}.snapshot.json").readBytes()
+            val envelope = AppleWireJson.parse(originalBytes).jsonObject
+            assertArrayEquals("Swift must consume the current source payload: ${input.name}",
+                Base64.getDecoder().decode(envelope.getValue("payload").jsonPrimitive.content), consumedPayload)
             val after = AppleBackupEnvelope.inspect(output.readBytes())
             assertEquals(input.name, before.version, after.version)
             assertEquals(input.name, before.teamCount, after.teamCount)

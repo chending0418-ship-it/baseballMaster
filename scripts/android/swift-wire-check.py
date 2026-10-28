@@ -65,7 +65,10 @@ assert inputs, 'No backup inputs; no check was performed'
 results = []
 for index, input_path in enumerate(inputs):
     input_path = input_path.resolve()
-    envelope = json.loads(input_path.read_bytes())
+    # Hash exactly the bytes passed to Swift, even if a producer regenerates the
+    # path during this run. The return-leg check will reject a changed input.
+    source_bytes = input_path.read_bytes()
+    envelope = json.loads(source_bytes)
     payload = base64.b64decode(envelope['payload'], validate=True)
     assert hashlib.sha256(payload).hexdigest() == envelope['checksum'], input_path
     name = f'{index:03}-{input_path.stem}'
@@ -74,7 +77,7 @@ for index, input_path in enumerate(inputs):
     raw_input.write_bytes(payload)
     run = subprocess.run([str(binary), str(raw_input), str(raw_output)], capture_output=True, text=True)
     result = {'input': str(input_path), 'passed': run.returncode == 0, 'stdout': run.stdout, 'stderr': run.stderr,
-              'sourceSha256': hashlib.sha256(input_path.read_bytes()).hexdigest()}
+              'sourceSha256': hashlib.sha256(source_bytes).hexdigest()}
     if run.returncode == 0:
         encoded = raw_output.read_bytes()
         outer = dict(envelope, payload=base64.b64encode(encoded).decode(), checksum=hashlib.sha256(encoded).hexdigest())

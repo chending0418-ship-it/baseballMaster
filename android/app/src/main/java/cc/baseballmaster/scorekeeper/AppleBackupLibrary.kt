@@ -52,7 +52,7 @@ internal fun AppleBackupLibrary(model: ScorekeeperViewModel) {
     TextButton(onClick = { showing = true }, modifier = Modifier.testTag("open-ios-sources")) { Text("已导入的 iOS 来源备份") }
     if (showing) FormPage("iOS 来源备份", busy || selected != null, true, "", "", { showing = false }, {}) {
         Text("原始来源与比赛在同一事务中保留；不恢复任何共享权限。含来源的 Android 本机备份也会保留这些原文件。")
-        Text("旧格式和终场比赛目前只读；只有符合条件的格式 7 进行中比赛可续记非终结投球。其他操作明确拒绝，完整可编辑互导仍在开发。")
+        Text("旧格式和终场比赛目前只读；只有符合条件的格式 7 进行中比赛可续记投球，以及不挤分的保送、非第三出局的三振。其他操作明确拒绝，完整可编辑互导仍在开发。")
         if (sources.isEmpty() && !busy) Text("尚未导入 iOS 比赛")
         sources.forEach { source -> CardBlock {
             Text("${source.name} · ${source.gameCount} 场比赛")

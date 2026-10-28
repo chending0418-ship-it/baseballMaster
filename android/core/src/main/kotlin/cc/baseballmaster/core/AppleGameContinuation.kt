@@ -11,8 +11,8 @@ import kotlinx.serialization.json.*
  * Only local, ongoing standard games with supported pitch/single/no-out error journals are editable.
  * Supported correction journals must share the original checkpoint; audit/review flags remain intact.
  * Existing events/logs/appearances/checkpoint stay opaque and immutable AFTER replay verification;
- * newly appended nonterminal pitches are genuinely replayed and encoded, not a copy-only import.
- * Substitutions, terminal pitches, legacy histories and unknown selected-game fields
+ * newly appended supported pitches are genuinely replayed and encoded, not a copy-only import.
+ * Substitutions, scoring/half-changing terminal pitches, legacy histories and unknown selected-game fields
  * are rejected. Unedited snapshot records outside the selected game are preserved.
  */
 internal class AppleGameContinuation private constructor(
@@ -27,6 +27,101 @@ internal class AppleGameContinuation private constructor(
 
     /** Detached preview: a caller cannot mutate the continuation through this Game. */
     fun preview(): Game = GameJson.decodeFromString(GameJson.encodeToString(game))
+
+    /** All supported standard pitches, including a two-event walk/strikeout without scoring or a half change. */
+    fun appendPitch(action: PitchAction, operationID: String, atMillis: Long): AppleGameContinuation {
+        val terminal = action == PitchAction.ball && game.balls == 3 ||
+            action in setOf(PitchAction.calledStrike, PitchAction.swingingStrike) && game.strikes == 2
+        return if (terminal) appendTerminalPitch(action, operationID, atMillis) else appendNonterminalPitch(action, operationID, atMillis)
+    }
+
+    private fun appendTerminalPitch(action: PitchAction, operationID: String, atMillis: Long): AppleGameContinuation {
+        require(appended.size < 10_000) { "续记操作过多" }
+        require(game.rules.mode == GameMode.standard && game.rules.initialBalls == 0 && game.rules.initialStrikes == 0) { "此终结投球规则尚未支持转换" }
+        val id = appleUUID(operationID)
+        val state = stored.objectValue("state"); val journal = state.objectValue("historyJournal")
+        val components = listOf("event0", "log0", "event1", "log1", "nextAppearance").associateWith { stableID(id, it) }
+        val identities = listOf(id) + components.values
+        val occupied = sourceIDs(inspection.snapshot) + sourceIDs(stored)
+        require(identities.distinct().size == identities.size && identities.none { it in occupied }) { "续记编号重复，原资料未修改" }
+        val auditDates = state.optional("correctionRevisions")?.jsonArray.orEmpty().flatMap { raw ->
+            val revision = raw.jsonObject
+            listOf(revision.getValue("date")) + revision.objectValue("previousJournal").arrayValue("operations").flatMap { op -> listOfNotNull(op.jsonObject.optional("timestamp"), op.jsonObject.optional("correctedAt")) }
+        }
+        val dates = auditDates + listOf(stored.getValue("updatedAt"), state.getValue("clockRunningSince")) +
+            (journal.arrayValue("operations") + state.arrayValue("scoringEvents") + state.arrayValue("playLog")).flatMap { row -> listOfNotNull(row.jsonObject.optional("timestamp"), row.jsonObject.optional("correctedAt"), row.jsonObject.optional("reviewedAt")) }
+        require(atMillis > 0 && BigDecimal.valueOf(atMillis) >= dates.maxOf { BigDecimal(it.jsonPrimitive.content) }.add(BigDecimal("978307200")).movePointRight(3)) { "续记时间早于原比赛" }
+        verifyCurrentAppearance(state, game)
+        require((state.optional("plateAppearancePitchCount")?.jsonPrimitive?.int ?: 0) == game.appearancePitches) { "打席投球数不一致" }
+        val next = MatchEngine.apply(game, Command("pitch", pitch = action, at = atMillis), id)
+        val allowed = setOf("balls", "strikes", "appearancePitches", "totalPitches", "revision", "entries", "journal", "cursor", "updatedAt", "pitching", "batting", "homeBatterIndex", "awayBatterIndex", "outs", "bases", "runnerPitcherIDs", "unearnedRunnerIDs")
+        fun fixed(value: Game) = GameJson.encodeToJsonElement(value).jsonObject.filterKeys { it !in allowed }
+        require(fixed(game) == fixed(next) && next.inning == game.inning && next.isTop == game.isTop && !next.isFinal && next.pendingDecision == null && !next.halfEndedAwaitingDecision) { "此投球会得分、换边或进入确认，尚未支持无损转换，原资料未修改" }
+        val walk = action == PitchAction.ball
+        require(walk || game.outs < 2) { "第三出局的换边事件尚未支持转换" }
+        require(walk || state.optional("pitchingOutsAccountingVersion")?.jsonPrimitive?.int == 2) { "旧投手出局数版本暂不能写入三振" }
+        require(next.batterIndex == (game.batterIndex + 1) % game.battingOrder.size && next.appearancePitches == 0) { "终结投球没有产生预期的新打席" }
+        val timestamp = JsonPrimitive(BigDecimal.valueOf(atMillis).movePointLeft(3).subtract(BigDecimal("978307200")))
+        val intermediate = state.with("balls", JsonPrimitive(if (walk) 4 else game.balls)).with("strikes", JsonPrimitive(if (walk) game.strikes else 3))
+        fun stats(key: String, values: Map<String, JsonObject>): JsonArray {
+            val result = state.arrayValue(key).toMutableList(); val found = mutableSetOf<String>()
+            for (i in result.indices.step(2)) {
+                val player = uuid(result[i]); found += player
+                result[i + 1] = JsonObject(result[i + 1].jsonObject + values.getValue(player))
+            }
+            values.toSortedMap().filterKeys { it !in found }.forEach { (player, line) -> result += JsonPrimitive(player.uppercase()); result += line }
+            return JsonArray(result)
+        }
+        var updatedState = state.with("balls", JsonPrimitive(next.balls)).with("strikes", JsonPrimitive(next.strikes)).with("outs", JsonPrimitive(next.outs))
+            .with("homeBatterIndex", JsonPrimitive(next.homeBatterIndex)).with("awayBatterIndex", JsonPrimitive(next.awayBatterIndex))
+            .with("plateAppearancePitchCount", JsonPrimitive(0))
+            .with("batting", stats("batting", next.batting.mapValues { GameJson.encodeToJsonElement(it.value).jsonObject }))
+            .with("pitching", stats("pitching", next.pitching.mapValues { GameJson.encodeToJsonElement(it.value).jsonObject }))
+        val decisions = if (walk) MatchEngine.forced(game) else emptyList()
+        require(decisions.none { it.destination == 4 }) { "挤分保送的得分事件尚未支持转换，原资料未修改" }
+        if (walk) {
+            val sourcePlayers = (state.objectValue("homeTeam").arrayValue("players") + state.objectValue("awayTeam").arrayValue("players")).associate { it.jsonObject.id("id") to it.jsonObject }.toMutableMap()
+            // Existing base runners are historical Player snapshots; do not replace their names.
+            state.arrayValue("baseRunners").chunked(2).forEach { sourcePlayers[it[1].jsonObject.id("id")] = it[1].jsonObject }
+            updatedState = updatedState.with("baseRunners", buildJsonArray { next.bases.forEachIndexed { base, player -> if (player != null) { add(base + 1); add(sourcePlayers.getValue(player)) } } })
+                .with("runnerPitcherIDs", buildJsonArray { next.runnerPitcherIDs.toSortedMap().forEach { (runner, pitcher) -> add(runner.uppercase()); add(pitcher.uppercase()) } })
+                .with("unearnedRunnerIDs", JsonArray(next.unearnedRunnerIDs.sorted().map { JsonPrimitive(it.uppercase()) }))
+        }
+        val oldAppearance = state.id("currentPlateAppearanceID"); val nextAppearance = components.getValue("nextAppearance")
+        val appearances = state.arrayValue("plateAppearances").map { raw -> if (raw.jsonObject.id("id") == oldAppearance) raw.jsonObject.with("completed", JsonPrimitive(true)).with("interrupted", JsonPrimitive(false)) else raw } + buildJsonObject {
+            put("id", nextAppearance.uppercase()); put("inning", next.inning); put("isTop", next.isTop); put("batterIDs", JsonArray(listOf(JsonPrimitive(next.batter.id.uppercase())))); put("completed", false); put("interrupted", false)
+        }
+        updatedState = updatedState.with("plateAppearances", JsonArray(appearances)).with("currentPlateAppearanceID", JsonPrimitive(nextAppearance.uppercase()))
+        val pitchTitle = "${game.batter.name}：${if (walk) action.title else if (action == PitchAction.calledStrike) "好球 - 看" else "好球 - 挥空"}（${if (walk) 4 else game.balls}坏 ${if (walk) game.strikes else 3}好）"
+        val terminalTitle = if (walk) "${game.batter.name} 四坏球保送上一垒" else "${game.batter.name} ${if (action == PitchAction.swingingStrike) "挥棒" else "看着"}三振出局（K）"
+        fun log(index: Int, title: String) = buildJsonObject { put("id", components.getValue("log$index").uppercase()); put("inning", game.inning); put("isTop", game.isTop); put("timestamp", timestamp); put("text", title); put("isIncomplete", false) }
+        fun event(index: Int, title: String, category: String, notation: String, before: JsonObject, after: JsonObject) = buildJsonObject {
+            put("id", components.getValue("event$index").uppercase()); put("logEntryID", components.getValue("log$index").uppercase()); put("inning", game.inning); put("isTop", game.isTop); put("timestamp", timestamp)
+            put("category", category); put("title", title); put("notation", notation); put("needsReview", false)
+            put("primaryPlayerID", (if (index == 0) game.pitcher.id else game.batter.id).uppercase()); put("secondaryPlayerID", (if (index == 0) game.batter.id else game.pitcher.id).uppercase())
+            put("plateAppearanceBatterID", game.batter.id.uppercase()); put("plateAppearanceID", oldAppearance.uppercase())
+            put("runnerMovements", buildJsonArray { if (index == 1) decisions.forEach { move -> add(buildJsonObject {
+                put("playerID", move.playerID.uppercase()); put("origin", if (move.origin == 0) "打者" else listOf("", "一垒跑者", "二垒跑者", "三垒跑者")[move.origin]); put("destination", if (move.destination == 0) "停留" else listOf("", "到一垒", "到二垒", "到三垒")[move.destination])
+            }) } })
+            if (index == 1 && walk) put("effectiveScorerIDs", JsonArray(emptyList()))
+            put("beforeSituation", situation(before)); put("afterSituation", situation(after))
+        }
+        val logs = listOf(log(0, pitchTitle), log(1, terminalTitle))
+        val events = listOf(event(0, pitchTitle, "pitch", if (walk) "B" else if (action == PitchAction.calledStrike) "C" else "S", state, intermediate),
+            event(1, terminalTitle, if (walk) "battedBall" else "out", if (walk) "BB" else if (action == PitchAction.calledStrike) "ꓘ" else "K", intermediate, updatedState))
+        val operation = buildJsonObject {
+            put("id", id.uppercase()); put("command", buildJsonObject { put("pitch", buildJsonObject { put("_0", action.title) }) }); put("context", context(state)); put("timestamp", timestamp); put("title", terminalTitle)
+            put("eventIDs", JsonArray(events.map { it.getValue("id") })); put("logIDs", JsonArray(logs.map { it.getValue("id") })); put("nextAppearanceID", nextAppearance.uppercase())
+            put("inserted", false); put("edited", false); put("acceptsNewContext", false); put("errors", JsonArray(emptyList()))
+        }
+        updatedState = updatedState.with("playLog", JsonArray(state.arrayValue("playLog") + logs)).with("scoringEvents", JsonArray(state.arrayValue("scoringEvents") + events))
+            .with("historyJournal", journal.with("operations", JsonArray(journal.arrayValue("operations") + operation)))
+        val updated = stored.with("state", updatedState).with("revision", JsonPrimitive(next.revision)).with("updatedAt", timestamp)
+        AppleStoredGameValidation.validate(updated)
+        val verified = AppleReplayPrototype.replay(updated)
+        require(verified.journal.last().command.at == atMillis && coreState(verified) == coreState(next)) { "终结投球导出重放不一致" }
+        return AppleGameContinuation(original, inspection, gameID, updated, next, appended + Append(id, action, atMillis))
+    }
 
     fun appendNonterminalPitch(action: PitchAction, operationID: String, atMillis: Long): AppleGameContinuation {
         require(appended.size < 10_000) { "导入比赛续记操作过多" }
@@ -176,7 +271,7 @@ internal class AppleGameContinuation private constructor(
                 val row = raw.jsonObject; row.only(setOf("id", "action", "atMillis"))
                 val at = row.getValue("atMillis").jsonPrimitive
                 require(!at.isString && at.longOrNull != null) { "续记时间无效" }
-                continuation = continuation.appendNonterminalPitch(PitchAction.valueOf(row.string("action")), row.string("id"), at.long)
+                continuation = continuation.appendPitch(PitchAction.valueOf(row.string("action")), row.string("id"), at.long)
             }
             return continuation
         }
@@ -375,7 +470,7 @@ internal class AppleGameContinuation private constructor(
         }
         private fun situation(state: JsonObject) = buildJsonObject {
             for (key in listOf("inning", "isTop", "balls", "strikes", "outs", "homeRunsByInning", "awayRunsByInning", "homeBatterIndex", "awayBatterIndex", "activeHomePitcherID", "activeAwayPitcherID", "runnerPitcherIDs", "unearnedRunnerIDs", "extraFoulUsed")) state.optional(key)?.let { put(key, it) }
-            put("baseRunners", buildJsonArray { state.arrayValue("baseRunners").chunked(2).forEach { (base, player) -> add(buildJsonObject { put("base", base); put("playerID", player.jsonObject.getValue("id")) }) } })
+            put("baseRunners", buildJsonArray { state.arrayValue("baseRunners").chunked(2).sortedBy { it[0].jsonPrimitive.int }.forEach { (base, player) -> add(buildJsonObject { put("base", base); put("playerID", player.jsonObject.getValue("id")) }) } })
             // iOS emits lineup snapshots only when recordsLineupSnapshots is enabled.
             if (state.optional("recordsLineupSnapshots")?.jsonPrimitive?.boolean == true) for (key in listOf("homeBattingOrderIDs", "awayBattingOrderIDs")) put(key, state.getValue(key))
         }

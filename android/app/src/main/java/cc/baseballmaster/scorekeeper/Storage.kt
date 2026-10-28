@@ -557,7 +557,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         val marker = decode(current).appleSourceID
         require((imported == null && marker == null) || imported != null && marker == imported.backupID) { "比赛来源映射缺失或不一致，已停止写入" }
         val next = if (imported == null) reduce(MatchEngine.upgradeLegacy(decode(current))) else {
-            require(applePitch != null) { "这场 iOS 导入比赛目前仅支持非终结投球续记；此操作尚不能无损转换，原记录未修改" }
+            require(applePitch != null) { "这场 iOS 导入比赛目前仅支持受限投球续记；此操作尚不能无损转换，原记录未修改" }
             val source = db.dao().appleBackup(imported.backupID) ?: error("比赛来源缺失，原资料未修改")
             val backup = verifyAppleSource(source)
             val priorGame = backup.games(source.id).single { it.id == gameID }

@@ -102,6 +102,60 @@ class AppleImportTransactionTest {
         } finally { db.close() }
     }
 
+    @Test fun terminalPitchesCommitOneOperationWithTwoEventsAndSurviveRestoreAndRetry() = runBlocking {
+        for (action in listOf(PitchAction.ball, PitchAction.calledStrike, PitchAction.swingingStrike)) {
+            val db = database(); val restored = database()
+            try {
+                val repo = GameRepository(db); val bytes = source(); val receipt = repo.importAppleBackup(bytes)
+                var game = GameRepository.decode(db.dao().allGames().single())
+                val preparation = if (action == PitchAction.ball) 3 - game.balls else 2 - game.strikes
+                repeat(preparation) { n ->
+                    game = repo.command(game.id, Command("pitch", pitch = if (action == PitchAction.ball) PitchAction.ball else PitchAction.calledStrike, at = 1_800_000_000_002 + n * 1000L), game.revision)
+                }
+                val before = repo.exportAppleBackup(receipt.id)
+                val id = UUID.randomUUID().toString()
+                val command = Command("pitch", pitch = action, at = 1_800_000_010_009)
+                val previousRevision = game.revision
+                val next = repo.command(game.id, command, previousRevision, id)
+                assertEquals(previousRevision + 1, next.revision)
+                assertEquals(preparation + 1, db.dao().allOperations().size)
+                val current = repo.exportAppleBackup(receipt.id)
+                val state = AppleBackupEnvelope.inspect(current).snapshot.getValue("games").jsonArray.single().jsonObject.getValue("state").jsonObject
+                val oldState = AppleBackupEnvelope.inspect(before).snapshot.getValue("games").jsonArray.single().jsonObject.getValue("state").jsonObject
+                assertEquals(oldState.getValue("scoringEvents").jsonArray.size + 2, state.getValue("scoringEvents").jsonArray.size)
+                assertEquals(oldState.getValue("playLog").jsonArray.toList(), state.getValue("playLog").jsonArray.dropLast(2))
+                assertEquals(oldState["correctionRevisions"], state["correctionRevisions"])
+                assertEquals(if (action == PitchAction.ball) 0 else 1, next.outs)
+                assertArrayEquals(bytes, repo.exportAppleBackup(receipt.id, original = true))
+                val other = GameRepository(restored)
+                other.restoreDeviceBackup(repo.exportDeviceBackup(next.ourTeamID))
+                assertEquals(next, other.command(game.id, command, previousRevision, id))
+                assertArrayEquals(current, other.exportAppleBackup(receipt.id))
+                assertEquals(preparation + 1, restored.dao().allOperations().size)
+                artifact("source-after-${action.name}-terminal.bmbackup", current)
+                artifact("source-after-${action.name}-terminal-restore.bmbackup", other.exportAppleBackup(receipt.id))
+            } finally { db.close(); restored.close() }
+        }
+    }
+
+    @Test fun failedTerminalPitchRollsBackBothEventsAndCanRetryWithTheSameID() = runBlocking {
+        val db = database()
+        try {
+            val repo = GameRepository(db); val receipt = repo.importAppleBackup(source())
+            var game = GameRepository.decode(db.dao().allGames().single())
+            repeat(3 - game.balls) { n -> game = repo.command(game.id, Command("pitch", pitch = PitchAction.ball, at = 1_800_000_000_000 + n * 1000L), game.revision) }
+            assertEquals(3, game.balls)
+            val raw = repo.exportAppleBackup(receipt.id); val row = db.dao().game(game.id); val ledger = db.dao().allOperations()
+            val id = UUID.randomUUID().toString(); val command = Command("pitch", pitch = PitchAction.ball, at = 1_800_000_010_009)
+            val failing = GameRepository(db) { throw SQLiteFullException("injected terminal full") }
+            try { failing.command(game.id, command, game.revision, id); fail("Expected rollback") } catch (_: SQLiteFullException) { }
+            assertEquals(row, db.dao().game(game.id)); assertEquals(ledger, db.dao().allOperations())
+            assertArrayEquals(raw, repo.exportAppleBackup(receipt.id))
+            val next = repo.command(game.id, command, game.revision, id)
+            assertEquals(game.revision + 1, next.revision); assertEquals(ledger.size + 1, db.dao().allOperations().size)
+        } finally { db.close() }
+    }
+
     @Test fun conflictingTeamAndUnsupportedFileCannotPartiallyImport() = runBlocking {
         val db = database()
         try {
