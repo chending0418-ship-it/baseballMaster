@@ -5,7 +5,8 @@ import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { fixture } from '../../collaboration/test/match-fixture.mjs';
 
-const app = createCollaborationServer({ database: ':memory:', requestsPerMinute: 10000 });
+let fixtureNow = Date.now();
+const app = createCollaborationServer({ database: ':memory:', now: () => fixtureNow, requestsPerMinute: 10000 });
 app.server.listen(0, '127.0.0.1', () => process.stdout.write(JSON.stringify({ port: app.server.address().port }) + '\n'));
 const input = createInterface({ input: process.stdin });
 input.on('line', line => {
@@ -24,6 +25,10 @@ input.on('line', line => {
     app.store.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(command.teamID);
   } else if (command.kind === 'compact') {
     app.store.games.compactChanges(command.teamID);
+  } else if (command.kind === 'advance') {
+    const milliseconds = Number(command.teamID);
+    if (!Number.isSafeInteger(milliseconds) || milliseconds < 0 || milliseconds > 8640000000) throw new Error('Invalid fixture time');
+    fixtureNow += milliseconds;
   } else throw new Error('Unknown isolated fixture command');
   process.stdout.write('{"updated":true}\n');
 });

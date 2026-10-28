@@ -57,6 +57,147 @@ class TeamDirectoryIntegrationTest {
         val body=JsonObject(server.matchFixture() + ("operationID" to JsonPrimitive(UUID.randomUUID().toString())))
         return SharedMatchDocument(transport.request("POST","teams/${team.id}/games",body))
     }
+    private fun pair(owner: TeamDirectorySession, team: RemoteTeam, target: TeamDirectorySession): DevicePairing {
+        target.refresh(); target.preparePairing("新的安卓设备"); target.sendPending()
+        val saved=target.snapshot().pairing!!; val preview=owner.previewPairing(team.id,saved.token)
+        owner.preparePairApproval(preview,saved.token,true); owner.sendPending()
+        val offered=target.pairing(saved.request.id); target.preparePairAcceptance(offered,true); target.sendPending(); target.refresh()
+        return target.snapshot().pairing!!.request
+    }
+
+    @Test(timeout = 30000) fun pairingSharesOnlyTheSelectedMembershipAndNeverTransfersWriterAuthority() {
+        Service().use { server ->
+            val transport=server.transport(); val owner=session(transport); val team=create(owner); val game=publishFixture(server,transport,team)
+            val target=session(server.transport()); val accepted=pair(owner,team,target)
+            assertEquals("accepted",accepted.status); assertEquals(team.memberID,target.snapshot().directory!!.teams.single().memberID)
+            assertNotEquals(owner.snapshot().deviceID,target.snapshot().deviceID); assertEquals(2,owner.teamDevices(team.id).size)
+            assertFalse(target.match(team.id,game.id).canWrite); assertEquals(owner.snapshot().deviceID,target.match(team.id,game.id).writerDeviceID)
+            assertTrue(target.snapshot().recoveryCards.isEmpty())
+        }
+    }
+
+    @Test(timeout = 30000) fun lostPairAcceptanceResponseRetriesTheSavedRequestWithoutAddingAnotherDevice() {
+        Service().use { server ->
+            val owner=session(server.transport()); val team=create(owner); val transport=server.transport(); val store=Memory(); var drop=true
+            val target=session(TeamTransport { method,path,body ->
+                val response=transport.request(method,path,body)
+                if(path.startsWith("pairings/") && path.endsWith("/accept") && drop) {drop=false;throw IOException("injected pairing accept loss")}; response
+            },store)
+            target.refresh(); target.preparePairing("新设备"); target.sendPending(); val saved=store.state.pairing!!
+            val preview=owner.previewPairing(team.id,saved.token)
+            assertThrows(IllegalArgumentException::class.java) { owner.preparePairApproval(preview,saved.token,false) }
+            owner.preparePairApproval(preview,saved.token,true); owner.sendPending()
+            val offered=target.pairing(saved.request.id); val id=target.preparePairAcceptance(offered,true)
+            assertThrows(IOException::class.java) { target.sendPending() }; assertEquals(id,store.state.pending!!.id)
+            target.sendPending(); assertEquals("accepted",store.state.pairing!!.request.status); assertEquals(2,owner.teamDevices(team.id).size)
+        }
+    }
+
+    @Test(timeout = 30000) fun cancellingPairingMakesItsSecretUnusableWithoutGrantingMembership() {
+        Service().use { server ->
+            val owner=session(server.transport()); val team=create(owner); val target=session(server.transport()); target.refresh()
+            target.preparePairing("取消测试"); target.sendPending(); val saved=target.snapshot().pairing!!
+            target.preparePairCancellation(saved.request.id); target.sendPending()
+            assertNull(target.snapshot().pairing); assertTrue(target.refresh().teams.isEmpty())
+            assertEquals(410,assertThrows(TeamServiceFault::class.java) { owner.previewPairing(team.id,saved.token) }.status)
+        }
+    }
+
+    @Test(timeout = 30000) fun lastAdminDeviceIsProtectedAndPairedDeviceSurvivesRemovingTheOriginal() {
+        Service().use { server ->
+            val owner=session(server.transport()); val team=create(owner); val original=owner.teamDevices(team.id).single()
+            val failed=owner.prepareDeviceRemoval(team.id,original,true)
+            assertEquals("last_admin_device",assertThrows(TeamServiceFault::class.java) { owner.sendPending() }.code); owner.keepRejectedAsDraft(failed)
+            val target=session(server.transport()); pair(owner,team,target)
+            owner.prepareDeviceRemoval(team.id,original,true); owner.sendPending(); assertTrue(owner.refresh().teams.isEmpty())
+            assertEquals(team.memberID,target.refresh().teams.single().memberID); assertEquals(1,target.teamDevices(team.id).size)
+            assertFalse(target.recoveryStatus(team.id).hasCode!!)
+        }
+    }
+
+    @Test(timeout = 30000) fun managementRecoveryRevokesOldAccessRotatesTheCardAndKeepsGamePayload() {
+        Service().use { server ->
+            val transport=server.transport(); val owner=session(transport); val team=create(owner); val game=publishFixture(server,transport,team)
+            val original=owner.match(team.id,game.id); val card=owner.snapshot().recoveryCards.single(); val input=ManagementRecoveryInput.parse(card.code)
+            val target=session(server.transport()); target.refresh(); val preview=target.previewManagementRecovery(input)
+            assertTrue(target.refresh().teams.isEmpty())
+            assertThrows(IllegalArgumentException::class.java) { target.prepareManagementRecovery(input,preview,"新管理员",false) }
+            target.prepareManagementRecovery(input,preview,"新管理员",true); val newToken=target.snapshot().pending!!.body.getValue("newToken").jsonPrimitive.content
+            target.sendPending(); target.refresh(); val next=target.snapshot().recoveryCards.single()
+            assertEquals(2,next.version); assertEquals(newToken,next.token); assertNotEquals(card.token,next.token)
+            assertTrue(owner.refresh().teams.isEmpty()); assertTrue(owner.snapshot().matches.isEmpty()); assertTrue(owner.snapshot().recoveryCards.isEmpty())
+            val official=target.match(team.id,game.id); assertEquals(original.payload,official.payload); assertFalse(official.canWrite); assertTrue(official.writerEpoch>original.writerEpoch)
+            assertEquals(404,assertThrows(TeamServiceFault::class.java) { target.previewManagementRecovery(input) }.status)
+            target.confirmRecoveryCardSaved(team.id,next.version); assertTrue(target.snapshot().recoveryCards.single().confirmedSaved)
+        }
+    }
+
+    @Test(timeout = 30000) fun lostManagementRecoveryResponseRecoversTheOnlyNewCardFromTheSameRequest() {
+        Service().use { server ->
+            val owner=session(server.transport()); create(owner); val input=ManagementRecoveryInput.parse(owner.snapshot().recoveryCards.single().code)
+            val transport=server.transport(); val store=Memory(); var drop=true
+            val target=session(TeamTransport { method,path,body ->
+                val response=transport.request(method,path,body)
+                if(path=="recovery/redeem" && drop) {drop=false;throw IOException("injected management recovery loss")}; response
+            },store)
+            target.refresh(); val preview=target.previewManagementRecovery(input); val id=target.prepareManagementRecovery(input,preview,"新管理员",true)
+            val token=store.state.pending!!.body.getValue("newToken").jsonPrimitive.content
+            assertThrows(IOException::class.java) { target.sendPending() }; assertEquals(id,store.state.pending!!.id)
+            target.sendPending(); target.refresh(); assertEquals(token,store.state.recoveryCards.single().token); assertEquals(2,store.state.recoveryCards.single().version)
+        }
+    }
+
+    @Test(timeout = 30000) fun rotatingRecoveryCardInvalidatesTheOldOneAndMigratesEarlierCreationReceipts() {
+        Service().use { server ->
+            val store=Memory(); val owner=session(server.transport(),store); val team=create(owner); val original=store.state.recoveryCards.single()
+            store.state=store.state.copy(recoveryCards=emptyList()); owner.refresh(); assertEquals(original,store.state.recoveryCards.single())
+            val status=owner.recoveryStatus(team.id)
+            assertThrows(IllegalArgumentException::class.java) { owner.prepareRecoveryRotation(status,false) }
+            owner.prepareRecoveryRotation(status,true); owner.sendPending(); owner.refresh()
+            val current=store.state.recoveryCards.single(); assertEquals(2,current.version); assertNotEquals(original.token,current.token)
+            assertEquals(404,assertThrows(TeamServiceFault::class.java) { owner.previewManagementRecovery(ManagementRecoveryInput.parse(original.code)) }.status)
+        }
+    }
+
+    @Test(timeout = 30000) fun expiredPairAcceptanceCanOnlyBeArchivedAfterExplicitConfirmation() {
+        Service().use { server ->
+            val owner=session(server.transport()); val team=create(owner); val target=session(server.transport()); target.refresh()
+            target.preparePairing("过期测试"); target.sendPending(); val saved=target.snapshot().pairing!!
+            owner.preparePairApproval(owner.previewPairing(team.id,saved.token),saved.token,true); owner.sendPending()
+            val id=target.preparePairAcceptance(target.pairing(saved.request.id),true); val pending=target.snapshot().pending
+            server.change("advance","600001")
+            assertEquals(410,assertThrows(TeamServiceFault::class.java) { target.sendPending() }.status)
+            assertThrows(IllegalArgumentException::class.java) { target.quarantineRejectedSecurity(id,false) }
+            target.quarantineRejectedSecurity(id,true)
+            assertEquals(pending,target.snapshot().reviewedRequests.single().request)
+            target.preparePairing("新的配对"); target.sendPending(); assertNotEquals(saved.request.id,target.snapshot().pairing!!.request.id)
+        }
+    }
+
+    @Test(timeout = 30000) fun lostSelfDeviceRemovalReceiptDoesNotRegrantAccessOnRetry() {
+        Service().use { server ->
+            val transport=server.transport(); val store=Memory(); var drop=true
+            val owner=session(TeamTransport { method,path,body ->
+                val response=transport.request(method,path,body)
+                if(method=="DELETE" && path.contains("/devices/") && drop) {drop=false;throw IOException("injected self-removal loss")}; response
+            },store)
+            val team=create(owner); val target=session(server.transport()); pair(owner,team,target)
+            val device=owner.teamDevices(team.id).single { it.isCurrent==1 }
+            val id=owner.prepareDeviceRemoval(team.id,device,true)
+            assertThrows(IOException::class.java) { owner.sendPending() }; assertEquals(id,store.state.pending!!.id)
+            assertTrue(owner.refresh().teams.isEmpty()); owner.sendPending(); assertTrue(owner.refresh().teams.isEmpty())
+            assertNull(store.state.pending); assertEquals(team.memberID,target.refresh().teams.single().memberID)
+        }
+    }
+
+    @Test(timeout = 30000) fun removingThePairedDeviceClearsItsAcceptedPairingCacheAndKeepsTheOriginalDeviceActive() {
+        Service().use { server ->
+            val owner=session(server.transport()); val team=create(owner); val target=session(server.transport()); pair(owner,team,target)
+            val self=target.teamDevices(team.id).single { it.isCurrent==1 }
+            target.prepareDeviceRemoval(team.id,self,true); target.sendPending(); assertTrue(target.refresh().teams.isEmpty())
+            assertNull(target.snapshot().pairing); assertEquals(team.memberID,owner.refresh().teams.single().memberID)
+        }
+    }
 
     @Test(timeout = 30000) fun credentialRotationKeepsDeviceAndTeamIdentityButRetiresTheOldBearer() {
         Service().use { server ->

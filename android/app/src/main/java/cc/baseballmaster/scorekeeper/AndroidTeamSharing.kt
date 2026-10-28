@@ -31,4 +31,18 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     suspend fun participants(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.matchParticipants(teamID,gameID) }
     suspend fun prepareHandoff(expected: SharedMatchDocument, kind: MatchControl, targetDeviceID: String? = null, confirmRisk: Boolean = false) = withContext(Dispatchers.IO) { session.prepareMatchControl(expected,kind,targetDeviceID,confirmRisk) }
     suspend fun sendHandoff(gameID: String) = withContext(Dispatchers.IO) { session.sendMatchControl(gameID) }
+    suspend fun devices(teamID: String) = withContext(Dispatchers.IO) { session.teamDevices(teamID) }
+    suspend fun pairing(pairingID: String) = withContext(Dispatchers.IO) { session.pairing(pairingID) }
+    suspend fun previewPairing(teamID: String, token: String) = withContext(Dispatchers.IO) { session.previewPairing(teamID,token) }
+    suspend fun preparePairing(label: String) = withContext(Dispatchers.IO) { session.preparePairing(label) }
+    suspend fun preparePairApproval(preview: DevicePairing, token: String, confirmed: Boolean) = withContext(Dispatchers.IO) { session.preparePairApproval(preview,token,confirmed) }
+    suspend fun preparePairAcceptance(offer: DevicePairing, confirmed: Boolean) = withContext(Dispatchers.IO) { session.preparePairAcceptance(offer,confirmed) }
+    suspend fun preparePairCancellation(pairingID: String, teamID: String? = null) = withContext(Dispatchers.IO) { session.preparePairCancellation(pairingID,teamID) }
+    suspend fun prepareDeviceRemoval(teamID: String, device: PairedTeamDevice, confirmed: Boolean) = withContext(Dispatchers.IO) { session.prepareDeviceRemoval(teamID,device,confirmed) }
+    suspend fun recoveryStatus(teamID: String) = withContext(Dispatchers.IO) { session.recoveryStatus(teamID) }
+    suspend fun previewRecovery(input: ManagementRecoveryInput) = withContext(Dispatchers.IO) { session.previewManagementRecovery(input) }
+    suspend fun prepareRecoveryRotation(status: ManagementRecoveryStatus, confirmed: Boolean) = withContext(Dispatchers.IO) { session.prepareRecoveryRotation(status,confirmed) }
+    suspend fun prepareManagementRecovery(input: ManagementRecoveryInput, preview: ManagementRecoveryStatus, nickname: String, confirmed: Boolean) = withContext(Dispatchers.IO) { session.prepareManagementRecovery(input,preview,nickname,confirmed) }
+    suspend fun confirmRecoveryCardSaved(teamID: String, version: Long) = withContext(Dispatchers.IO) { session.confirmRecoveryCardSaved(teamID,version) }
+    suspend fun quarantineRejectedSecurity(operationID: String, confirmed: Boolean) = withContext(Dispatchers.IO) { session.quarantineRejectedSecurity(operationID,confirmed) }
 }

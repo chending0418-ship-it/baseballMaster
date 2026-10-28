@@ -4,11 +4,12 @@ import java.util.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
-@Serializable enum class DirectoryRequestKind { create, join, invite, leave, roster, member, revoke }
+@Serializable enum class DirectoryRequestKind { create, join, invite, leave, roster, member, revoke, security }
 @Serializable data class PendingDirectoryRequest(
     val kind: DirectoryRequestKind, val body: JsonObject, val recoveryEpoch: String,
     val teamID: String? = null, val accessEpoch: Long? = null,
     val targetID: String? = null, val localTeamID: String? = null,
+    val securityAction: TeamSecurityAction? = null,
 ) {
     init { appleUUID(body.getValue("operationID").jsonPrimitive.content); appleUUID(recoveryEpoch); teamID?.let(::appleUUID); targetID?.let(::appleUUID); localTeamID?.let(::appleUUID) }
     val id: String get() = body.getValue("operationID").jsonPrimitive.content
@@ -20,10 +21,12 @@ import kotlinx.serialization.json.*
         DirectoryRequestKind.roster -> "teams/${appleUUID(requireNotNull(teamID))}/roster"
         DirectoryRequestKind.member -> "teams/${appleUUID(requireNotNull(teamID))}/members/${appleUUID(requireNotNull(targetID))}"
         DirectoryRequestKind.revoke -> "teams/${appleUUID(requireNotNull(teamID))}/invitations/${appleUUID(requireNotNull(targetID))}"
+        DirectoryRequestKind.security -> securityPath()
     }
     val method: String get() = when (kind) {
         DirectoryRequestKind.roster, DirectoryRequestKind.member -> "PATCH"
         DirectoryRequestKind.revoke -> "DELETE"
+        DirectoryRequestKind.security -> if(securityAction==TeamSecurityAction.deviceRemove) "DELETE" else "POST"
         else -> "POST"
     }
     override fun toString() = "PendingDirectoryRequest(kind=$kind, id=$id)"
@@ -48,6 +51,8 @@ import kotlinx.serialization.json.*
     val matchCursors: Map<String, Long> = emptyMap(),
     val matchPending: Map<String, PendingMatchControl> = emptyMap(),
     val matchReceipts: Map<String, CompletedMatchControl> = emptyMap(),
+    val pairing: SavedDevicePairing? = null, val outgoingPairing: DevicePairing? = null,
+    val recoveryCards: List<SavedManagementCard> = emptyList(),
 ) {
     override fun toString() = "TeamDirectoryState(pending=${pending?.kind}, requiresRecoveryReview=$requiresRecoveryReview)"
 }
@@ -70,7 +75,7 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
             state = state.copy(deviceID = id); storage.save(state)
         }
         val remote = try { client.teams() } catch (fault: TeamServiceFault) {
-            if (fault.status == 401) storage.save(state.copy(directory = null, profiles = emptyMap(), bindings = emptyList(), retainedSecrets = emptyList(), lastCompletion = null,matches=emptyMap(),matchCursors=emptyMap(),matchReceipts=emptyMap()))
+            if (fault.status == 401) storage.save(state.copy(directory = null, profiles = emptyMap(), bindings = emptyList(), retainedSecrets = emptyList(), lastCompletion = null,matches=emptyMap(),matchCursors=emptyMap(),matchReceipts=emptyMap(),recoveryCards=emptyList(),pairing=null,outgoingPairing=null))
             throw fault
         }
         storage.save(applyDirectory(state,remote))
@@ -94,7 +99,14 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
                 else -> true
             }
         }
+        val legacyCards=state.retainedSecrets.filter { it.request.kind==DirectoryRequestKind.create }.mapNotNull { completion -> runCatching {
+            SavedManagementCard(completion.response.getValue("teamID").jsonPrimitive.content,completion.request.body.getValue("name").jsonPrimitive.content,
+                completion.request.body.getValue("recoveryToken").jsonPrimitive.content,completion.response.getValue("recoveryVersion").jsonPrimitive.long)
+        }.getOrNull() }
+        val cards=(state.recoveryCards + legacyCards).groupBy { appleUUID(it.teamID) }.values.map { group -> group.maxBy { it.version } }
         return state.copy(directory = remote, requiresRecoveryReview = state.requiresRecoveryReview || changed,
+            pairing=state.pairing?.takeUnless { changed || it.request.status=="accepted" && it.request.teamID?.let { id -> accessible(id)==null }==true },outgoingPairing=state.outgoingPairing?.takeIf { pair -> !changed && pair.teamID?.let { accessible(it) != null } == true },
+            recoveryCards=cards.filter { card -> !changed && remote.teams.any { it.id.equals(card.teamID,true) && it.role==TeamRole.admin && (it.recoveryVersion==null || it.recoveryVersion==card.version) } },
             profiles = state.profiles.filter { (id, cache) -> accessible(id)?.let { member -> cache.memberID.equals(member.memberID,true) && cache.accessEpoch == member.accessEpoch && cache.recoveryEpoch == remote.recoveryEpoch } == true },
             bindings = state.bindings.filter { accessible(it.cloudTeamID) != null },
             retainedSecrets = state.retainedSecrets.filter(::usableSecret),
@@ -193,7 +205,7 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         requireAdmin(requireNotNull(storage.load().directory),teamID)
     }
 
-    private fun prepare(kind: DirectoryRequestKind, teamID: String?, targetID: String? = null, localTeamID: String? = null, fields: JsonObjectBuilder.() -> Unit): String = synchronized(storage.monitor) {
+    internal fun prepare(kind: DirectoryRequestKind, teamID: String?, targetID: String? = null, localTeamID: String? = null, securityAction: TeamSecurityAction? = null, fields: JsonObjectBuilder.() -> Unit): String = synchronized(storage.monitor) {
         val state = storage.load()
         check(state.pending == null) { "上一笔操作结果尚未确认，请先续取；不能换内容重试" }
         check(!state.requiresRecoveryReview && state.deviceID != null && state.directory != null) { "请先刷新并核对球队资料" }
@@ -202,7 +214,7 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         if (kind == DirectoryRequestKind.invite) require(team?.role == TeamRole.admin) { "当前角色不能邀请成员" }
         val id = UUID.randomUUID().toString()
         val body = buildJsonObject { put("operationID", id); fields() }
-        storage.save(state.copy(pending = PendingDirectoryRequest(kind, body, directory.recoveryEpoch, teamID, team?.accessEpoch,targetID,localTeamID), lastFailure=null))
+        storage.save(state.copy(pending = PendingDirectoryRequest(kind, body, directory.recoveryEpoch, teamID, team?.accessEpoch,targetID,localTeamID,securityAction), lastFailure=null))
         id
     }
 
@@ -228,7 +240,13 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
             if (previous == null || detail.team.revision >= previous.profile.revision) profiles = profiles + (id to CachedTeamRoster(detail.team,detail.memberID,pending.accessEpoch,pending.recoveryEpoch))
         }
         val bindings = if (pending.localTeamID != null && pending.kind == DirectoryRequestKind.create) state.bindings + SharedTeamBinding(pending.localTeamID,appleUUID(response.getValue("teamID").jsonPrimitive.content)) else state.bindings
-        storage.save(state.copy(pending = null, lastCompletion = completed, retainedSecrets = secrets, profiles=profiles,bindings=bindings,lastFailure=null))
+        var next=state.copy(pending = null, lastCompletion = completed, retainedSecrets = secrets, profiles=profiles,bindings=bindings,lastFailure=null)
+        if(pending.kind==DirectoryRequestKind.create) {
+            val token=pending.body["recoveryToken"]?.jsonPrimitive?.content; val version=response["recoveryVersion"]?.jsonPrimitive?.longOrNull
+            if(token!=null && version!=null && version>0) next=next.copy(recoveryCards=next.recoveryCards + SavedManagementCard(appleUUID(response.getValue("teamID").jsonPrimitive.content),pending.body.getValue("name").jsonPrimitive.content.trim(),token,version))
+        }
+        if(pending.kind==DirectoryRequestKind.security) next=next.applyingSecurity(pending,response)
+        storage.save(next)
         completed
     }
 
@@ -239,7 +257,7 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
     fun keepRejectedAsDraft(operationID: String) = synchronized(storage.monitor) {
         val state = storage.load(); val pending = requireNotNull(state.pending); val failure = requireNotNull(state.lastFailure)
         require(pending.id == operationID && failure.operationID == operationID && failure.status == 409 &&
-            failure.code in setOf("roster_conflict","revision_conflict","identity_conflict","admin_limit","last_admin","capacity")) { "这笔操作结果尚未明确，不能更换编号" }
+            failure.code in setOf("roster_conflict","revision_conflict","identity_conflict","admin_limit","last_admin","last_admin_device","capacity")) { "这笔操作结果尚未明确，不能更换编号" }
         storage.save(state.copy(pending=null,lastFailure=null,reviewedRequests=state.reviewedRequests + ReviewedDirectoryRequest(pending,failure)))
     }
 

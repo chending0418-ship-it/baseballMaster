@@ -134,6 +134,7 @@ class TeamDirectoryClient(internal val transport: TeamTransport) {
             DirectoryRequestKind.roster -> TeamDirectoryJson.format.decodeFromJsonElement<SharedTeamDetail>(response).also { require(it.team.id.equals(pending.teamID,true)) }
             DirectoryRequestKind.member -> require(appleUUID(response.getValue("memberID").jsonPrimitive.content).equals(pending.targetID,true))
             DirectoryRequestKind.revoke -> require(response["revoked"]?.jsonPrimitive?.boolean == true)
+            DirectoryRequestKind.security -> pending.validateSecurityReply(response)
         }
         return response
     }

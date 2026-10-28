@@ -115,4 +115,20 @@ class TeamDirectoryFileTest {
             assertEquals(value,store.load()); assertFalse(File(dir,"directory-v1.sealed").readText().contains("keep-original-audit"))
         } finally { dir.deleteRecursively() }
     }
+
+    @Test fun recoveryCandidateAndSavedCardSurviveEncryptedReopenWithoutPlaintextSecrets() {
+        val dir=folder()
+        try {
+            val epoch=java.util.UUID.randomUUID().toString(); val team=java.util.UUID.randomUUID().toString(); val id=java.util.UUID.randomUUID().toString()
+            val token=TeamSecrets.random(); val candidate=TeamSecrets.random()
+            val pending=PendingDirectoryRequest(DirectoryRequestKind.security,buildJsonObject {
+                put("operationID",id); put("teamID",team); put("token",token); put("newToken",candidate); put("confirmReset",true)
+            },epoch,securityAction=TeamSecurityAction.recoveryRedeem)
+            val value=TeamDirectoryState(pending=pending,recoveryCards=listOf(SavedManagementCard(team,"原管理员",token,1)))
+            TeamDirectoryFile(dir,{key.copyOf()}).save(value)
+            assertEquals(value,TeamDirectoryFile(dir,{key.copyOf()}).load())
+            val bytes=File(dir,"directory-v1.sealed").readBytes().toString(Charsets.UTF_8)
+            assertFalse(bytes.contains(token)); assertFalse(bytes.contains(candidate))
+        } finally { dir.deleteRecursively() }
+    }
 }
