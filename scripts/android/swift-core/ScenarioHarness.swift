@@ -25,7 +25,7 @@ private struct ScenarioStep: Decodable {
         default: return false
         }
     }
-    private static func canonical(_ store: GameStore) throws -> [String:Any] {
+    static func canonical(_ store: GameStore) throws -> [String:Any] {
         var result=try OriginalCanonical(store).canonical()
         result["clockRunning"]=store.game.clockRunningSince != nil
         result["statisticsIncomplete"]=store.game.statisticsIncomplete == true
@@ -42,19 +42,7 @@ private struct ScenarioStep: Decodable {
     static func run(input: URL,output: URL) throws {
         let scenario=try JSONDecoder().decode(ScenarioInput.self,from:Data(contentsOf:input))
         let initial=scenario.stored
-        guard initial.sharedTeamID==nil,initial.sharedGameID==nil,initial.isSpectator != true else {
-            throw LocalDataError.invalid("Reference scenarios must be local games")
-        }
-        let store=GameStore(persistenceURL:nil)
-        // Bootstrap only. Actions below use the real transaction/capture path;
-        // persistence remains the explicitly declared Linux in-memory adapter.
-        store.isHistoryReplay=true;store.activeGameID=nil
-        let home=initial.state.homeTeam,away=initial.state.awayTeam
-        let own=initial.isHome ? home : away,opponent=initial.isHome ? away : home
-        store.teams=[own];store.opponentTeams=[opponent];store.currentTeam=own
-        store.archivedTeams=[];store.playerGameRecords=[]
-        store.game=initial.state;store.games=[initial];store.activeGameID=initial.id
-        store.isHistoryReplay=false
+        let store=try localStore(initial)
         let replayView=GameStore(persistenceURL:nil);replayView.isHistoryReplay=true
         var results:[[String:Any]]=[]
         for (index,step) in scenario.steps.enumerated() {
@@ -91,5 +79,21 @@ private struct ScenarioStep: Decodable {
         }
         let report:[String:Any]=["scenario":scenario.scenario,"passed":results.allSatisfy {$0["scoreMatches"] as? Bool == true},"steps":results]
         try JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]).write(to:output,options:.atomic)
+    }
+    static func localStore(_ initial: StoredGame) throws -> GameStore {
+        guard initial.sharedTeamID==nil,initial.sharedGameID==nil,initial.isSpectator != true else {
+            throw LocalDataError.invalid("Reference scenarios must be local games")
+        }
+        let store=GameStore(persistenceURL:nil)
+        // Bootstrap only. Actions below use the real transaction/capture path;
+        // persistence remains the explicitly declared Linux in-memory adapter.
+        store.isHistoryReplay=true;store.activeGameID=nil
+        let home=initial.state.homeTeam,away=initial.state.awayTeam
+        let own=initial.isHome ? home : away,opponent=initial.isHome ? away : home
+        store.teams=[own];store.opponentTeams=[opponent];store.currentTeam=own
+        store.archivedTeams=[];store.playerGameRecords=[]
+        store.game=initial.state;store.games=[initial];store.activeGameID=initial.id
+        store.isHistoryReplay=false
+        return store
     }
 }

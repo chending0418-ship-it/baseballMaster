@@ -17,6 +17,7 @@ tasks.test {
     exclude("**/TeamDirectoryIntegrationTest.class")
     exclude("**/StandaloneLiveIntegrationTest.class")
     exclude("**/AppleCommandStateReturnTest.class")
+    exclude("**/AppleSwiftSessionTest.class")
 }
 tasks.register<Test>("liveServiceTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
@@ -50,4 +51,12 @@ tasks.register<Test>("swiftCommandStateTest") {
     include("**/AppleCommandStateReturnTest.class")
     inputs.dir(providers.gradleProperty("swiftCommandDirectory"))
     systemProperty("swift.command.directory", providers.gradleProperty("swiftCommandDirectory").orElse("").get())
+}
+tasks.register<Test>("swiftSessionTest") {
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    include("**/AppleSwiftSessionTest.class")
+    inputs.file(providers.gradleProperty("swiftCoreBinary"))
+    systemProperty("swift.core.binary", providers.gradleProperty("swiftCoreBinary").orElse("").get())
+    systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
 }

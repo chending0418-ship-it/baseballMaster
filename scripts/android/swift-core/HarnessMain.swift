@@ -9,6 +9,7 @@ import Foundation
     @MainActor static func run() throws {
         precondition(SHA256.hash(data:Data("abc".utf8)).map {String(format:"%02x",$0)}.joined()=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
         let args=CommandLine.arguments
+        if args.count==2 && args[1]=="--session" {try InteractiveHarness.run();return}
         if args.count==4 && args[1]=="--scenario" {
             try ScenarioHarness.run(input:URL(fileURLWithPath:args[2]),output:URL(fileURLWithPath:args[3]));return
         }

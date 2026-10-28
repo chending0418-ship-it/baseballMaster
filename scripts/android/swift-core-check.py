@@ -19,8 +19,9 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--output', required=True, type=Path)
 p.add_argument('--input-directory', type=Path)
 p.add_argument('--scenario-directory', type=Path)
+p.add_argument('--compile-only', action='store_true')
 a = p.parse_args()
-assert bool(a.input_directory) != bool(a.scenario_directory), 'Choose backups or command scenarios'
+assert (not a.input_directory and not a.scenario_directory) if a.compile_only else bool(a.input_directory) != bool(a.scenario_directory), 'Choose compile-only, backups or command scenarios'
 out = a.output.resolve()
 out.mkdir(parents=True, exist_ok=False)
 cache = out / 'sources'
@@ -73,7 +74,7 @@ canonical.write_text('import Foundation\n@MainActor final class OriginalCanonica
 metadata[-1]['wrapper'] = 'OriginalCanonical: store property and initializer only'
 metadata[-1]['extractedSha256'] = hashlib.sha256(canonical.read_bytes()).hexdigest()
 sources.append(canonical)
-for name in ('LinuxAdapters.swift', 'HarnessMain.swift', 'ScenarioHarness.swift'):
+for name in ('LinuxAdapters.swift', 'HarnessMain.swift', 'ScenarioHarness.swift', 'InteractiveHarness.swift'):
     source = ROOT / 'scripts/android/swift-core' / name
     target = cache / name
     target.write_bytes(source.read_bytes())
@@ -91,6 +92,10 @@ binary = out / 'swift-core'
 command = [compiler, '-swift-version', '5', '-parse-as-library', '-I', str(cache), *map(str, sources), '-o', str(binary)]
 with (out / 'compile.log').open('w') as log:
     subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT)
+if a.compile_only:
+    (out / 'binary.json').write_text(json.dumps(dict(binary=str(binary), sha256=hashlib.sha256(binary.read_bytes()).hexdigest()), indent=2))
+    print(json.dumps(dict(compiled=True, binary=str(binary), testsRun=False)))
+    raise SystemExit(0)
 if a.scenario_directory:
     inputs = sorted(a.scenario_directory.resolve().glob('*.scenario.json'))
     assert inputs, 'No scenarios; no check ran'
