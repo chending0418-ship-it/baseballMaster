@@ -221,6 +221,14 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         rememberCurrentTeam(selected)
     }
 
+    internal suspend fun appleBackupSummaries(): List<AppleBackupSummary> = withContext(Dispatchers.IO) { repository.appleBackupSummaries() }
+    internal suspend fun appleBackupBytes(id: String, original: Boolean): ByteArray = withContext(Dispatchers.IO) { repository.exportAppleBackup(id, original) }
+    internal fun importAppleBackup(bytes: ByteArray, done: (AppleImportReceipt) -> Unit) = commit {
+        val receipt = withContext(Dispatchers.IO) { repository.importAppleBackup(bytes) }
+        if (currentTeamID == null) rememberCurrentTeam(receipt.currentTeamID)
+        done(receipt)
+    }
+
     fun importRosters(rosters: List<Team>, done: () -> Unit) = commit {
         repository.importRosters(rosters)
         done()

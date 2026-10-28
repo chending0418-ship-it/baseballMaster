@@ -433,6 +433,9 @@ data class Game(
     var clockHasStarted: Boolean = false,
     var openingPitchRecorded: Boolean = false,
     var practice: Boolean = false,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var appleSourceID: String? = null,
     var isScheduled: Boolean = false,
     var startedAt: Long? = null,
     var ourTeamID: String? = null,
@@ -570,6 +573,7 @@ data class Game(
         clockElapsedMs + (clockRunningSince?.let { (at - it).coerceAtLeast(0) } ?: 0)
 
     fun validate() {
+        require(appleSourceID == null || Regex("[a-f0-9]{64}").matches(appleSourceID!!)) { "iOS 来源编号无效" }
         require(home.players.isNotEmpty() && away.players.isNotEmpty() && home.id != away.id)
         require(
             home.players.map { it.id }.distinct().size == home.players.size &&

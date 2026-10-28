@@ -45,3 +45,5 @@ python3 scripts/android/validate-history.py --serial emulator-5554 \
 当前交付和待办见 [AN03 开发记录](../docs/releases/android/AN03.md)。
 
 AN04 另有不运行界面的 Swift 原始数据模型互读链路，生成合成文件并显式执行 `:core:swiftWireTest`，复现命令、实际结果及未完成边界见 [Swift 数据模型互读记录](../docs/releases/android/AN04-WIRE-2026-10-28.md)。研究编码器尚未接入正式互导，不将 Codable 可解码等同于 iOS 记分历史重放通过。界面测试按用户最新要求留待统一进行。
+
+AN04 已增加应用内来源保护导入及原文／续记文件保存，Room 3→4 新增来源文件、来源映射和原始操作保留索引；含来源的 Android 本机备份使用格式 2，无来源时维持格式 1 的字段形状。旧格式和终场比赛当前只读，符合条件的格式 7 本机进行中比赛可追加非终结投球，其余编辑拒绝。保护标记仅在 Android 内部，不改变 iOS 或服务协议。完整支持边界、Robolectric Native SQLite 回归及未验证项见 [AN04 来源导入](../docs/releases/android/AN04-IMPORT-2026-10-28.md)。

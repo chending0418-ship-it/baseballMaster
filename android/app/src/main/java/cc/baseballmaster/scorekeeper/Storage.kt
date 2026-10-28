@@ -6,8 +6,10 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import cc.baseballmaster.core.*
 import java.util.UUID
+import java.util.Base64
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.encodeToJsonElement
 
 @Entity(tableName = "teams")
 data class TeamEntity(
@@ -67,6 +69,18 @@ data class CorrectionDraftEntity(
 
 @Dao
 interface LocalDao {
+    @Query("SELECT * FROM apple_original_operations WHERE id = :id") suspend fun appleOriginalOperation(id: String): AppleOriginalOperationEntity?
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAppleOriginalOperation(row: AppleOriginalOperationEntity)
+
+    @Query("SELECT * FROM apple_backups") suspend fun allAppleBackups(): List<AppleBackupEntity>
+    @Query("SELECT id, name, gameCount FROM apple_backups ORDER BY name") suspend fun appleBackupSummaries(): List<AppleBackupSummary>
+    @Query("SELECT * FROM apple_backups WHERE id = :id") suspend fun appleBackup(id: String): AppleBackupEntity?
+    @Query("SELECT * FROM apple_game_sources") suspend fun allAppleGameSources(): List<AppleGameSourceEntity>
+    @Query("SELECT * FROM apple_game_sources WHERE gameID = :id") suspend fun appleGameSource(id: String): AppleGameSourceEntity?
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAppleBackup(source: AppleBackupEntity)
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAppleGameSource(source: AppleGameSourceEntity)
+    @Update suspend fun updateAppleBackup(source: AppleBackupEntity)
+
     @Query("SELECT * FROM teams ORDER BY name") fun teams(): Flow<List<TeamEntity>>
 
     @Query("SELECT * FROM teams") suspend fun allTeams(): List<TeamEntity>
@@ -120,8 +134,11 @@ interface LocalDao {
             GameEntity::class,
             OperationEntity::class,
             CorrectionDraftEntity::class,
+            AppleBackupEntity::class,
+            AppleGameSourceEntity::class,
+            AppleOriginalOperationEntity::class,
         ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class LocalDatabase : RoomDatabase() {
@@ -130,8 +147,18 @@ abstract class LocalDatabase : RoomDatabase() {
     companion object {
         fun open(context: Context, name: String = "baseballmaster.db") =
             Room.databaseBuilder(context, LocalDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS apple_backups (id TEXT NOT NULL, name TEXT NOT NULL, gameCount INTEGER NOT NULL, original BLOB NOT NULL, current BLOB NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS apple_game_sources (gameID TEXT NOT NULL, backupID TEXT NOT NULL, PRIMARY KEY(gameID), FOREIGN KEY(gameID) REFERENCES games(id) ON UPDATE NO ACTION ON DELETE RESTRICT, FOREIGN KEY(backupID) REFERENCES apple_backups(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_apple_game_sources_backupID ON apple_game_sources (backupID)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS apple_original_operations (id TEXT NOT NULL, gameID TEXT NOT NULL, PRIMARY KEY(id), FOREIGN KEY(gameID) REFERENCES games(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_apple_original_operations_gameID ON apple_original_operations (gameID)")
+            }
+        }
 
         val MIGRATION_2_3 =
             object : Migration(2, 3) {
@@ -157,24 +184,81 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
     val teams
         get() = db.dao().teams()
 
+    suspend fun importAppleBackup(input: ByteArray): AppleImportReceipt {
+        val plan = AppleSourceBackup.prepare(input)
+        val bytes = plan.export()
+        val games = plan.games()
+        val teams = plan.teams()
+        return db.withTransaction {
+            val existing = db.dao().appleBackup(plan.digest)
+            if (existing != null) {
+                require(existing.original.contentEquals(bytes)) { "同编号备份内容冲突，原资料未修改" }
+                verifyAppleSource(existing).games(existing.id).forEach { expected ->
+                    require(db.dao().appleGameSource(expected.id)?.backupID == existing.id) { "来源映射缺失，未覆盖现有资料" }
+                    val saved = db.dao().game(expected.id) ?: error("来源比赛缺失，未覆盖现有资料")
+                    require(GameJson.encodeToJsonElement(expected) == GameJson.parseToJsonElement(saved.payload)) { "来源与比赛不一致，未覆盖现有资料" }
+                }
+                return@withTransaction AppleImportReceipt(existing.id, existing.gameCount, true, plan.currentTeamID)
+            }
+            val savedGames = db.dao().allGames()
+            val oldGameIDs = savedGames.map { it.id.lowercase(java.util.Locale.ROOT) }.toSet()
+            require(games.none { it.id in oldGameIDs }) { "本机已存在同编号比赛，整批未导入" }
+            val oldOperations = (savedGames.flatMap { originalRecords(decode(it)) }.map { it.id } + db.dao().allOperations().map { it.id }).map { it.lowercase(java.util.Locale.ROOT) }.toSet()
+            require(games.flatMap { originalRecords(it) }.none { it.id.lowercase(java.util.Locale.ROOT) in oldOperations }) { "本机已存在同编号比赛操作，整批未导入" }
+            insertRosters(teams, allowIdentical = true)
+            db.dao().insertAppleBackup(AppleBackupEntity(plan.digest, plan.name, games.size, bytes, bytes))
+            games.forEach { game ->
+                db.dao().insertGame(GameEntity(game.id, GameJson.encodeToString(game), game.revision, game.updatedAt, 4))
+                db.dao().insertAppleGameSource(AppleGameSourceEntity(game.id, plan.digest))
+                originalRecords(game).map { it.id.lowercase(java.util.Locale.ROOT) }.distinct().forEach { db.dao().insertAppleOriginalOperation(AppleOriginalOperationEntity(it, game.id)) }
+            }
+            beforeCommit()
+            AppleImportReceipt(plan.digest, games.size, false, plan.currentTeamID)
+        }
+    }
+
+    suspend fun appleBackupSummaries(): List<AppleBackupSummary> = db.dao().appleBackupSummaries()
+    suspend fun exportAppleBackup(id: String, original: Boolean = false): ByteArray = db.withTransaction {
+        val source = db.dao().appleBackup(id) ?: error("来源备份不存在")
+        if (original) {
+            val plan = AppleSourceBackup.prepare(source.original)
+            require(plan.digest == source.id) { "原始来源校验失败" }
+            plan.export()
+        } else verifyAppleSource(source).export()
+    }
+
+    private fun originalRecords(game: Game): List<RecordedCommand> = game.journal + game.historyRevisions.flatMap { it.previousRecords }
+
+    private fun verifyAppleSource(source: AppleBackupEntity): AppleSourceBackup {
+        val original = AppleSourceBackup.prepare(source.original)
+        require(original.digest == source.id && original.name == source.name && original.games().size == source.gameCount) { "原始来源或摘要校验失败，已停止写入" }
+        return AppleSourceBackup.validateLineage(source.original, source.current)
+    }
+
     /** Import explicitly selected rosters only. Conflicting IDs abort the entire transaction. */
     suspend fun importRosters(rosters: List<Team>) = db.withTransaction {
+        insertRosters(rosters)
+        beforeCommit()
+    }
+
+    private suspend fun insertRosters(rosters: List<Team>, allowIdentical: Boolean = false) {
         require(rosters.isNotEmpty()) { "备份中没有球队名单" }
         require(rosters.map { it.id }.distinct().size == rosters.size) { "球队编号冲突" }
         val playerIDs = rosters.flatMap { it.players }.map { it.id }
         require(playerIDs.distinct().size == playerIDs.size) { "球员编号冲突" }
         val stored = db.dao().allTeams()
-        val existingTeamIDs = stored.map { it.id.lowercase(java.util.Locale.ROOT) }.toSet()
+        val existing = stored.associateBy { it.id.lowercase(java.util.Locale.ROOT) }
+        val newTeams = mutableListOf<Team>()
         for (team in rosters) {
-            require(team.id.lowercase(java.util.Locale.ROOT) !in existingTeamIDs) { "本机已存在同编号球队，未导入任何名单" }
             require(team.source == "local" && team.name.isNotBlank())
             team.players.forEach(Roster::validate)
+            val old = existing[team.id.lowercase(java.util.Locale.ROOT)]
+            if (old == null) newTeams += team
+            else require(allowIdentical && old.id == team.id && old.name == team.name && old.isOpponent == team.isOpponent && GameJson.parseToJsonElement(old.payload) == GameJson.encodeToJsonElement(team)) { "同编号球队或名单存在差异，整批未导入且没有覆盖原资料" }
         }
-        // IDs may collide with players in another team even if team IDs differ.
-        val existing = stored.flatMap { GameJson.decodeFromString<Team>(it.payload).players }.map { it.id.lowercase(java.util.Locale.ROOT) }.toSet()
-        require(playerIDs.none { it.lowercase(java.util.Locale.ROOT) in existing }) { "本机已存在同编号球员，未导入任何名单" }
-        for (team in rosters) db.dao().insertTeam(TeamEntity(team.id, team.name, GameJson.encodeToString(team), team.isOpponent))
-        beforeCommit()
+        val existingPlayers = stored.flatMap { GameJson.decodeFromString<Team>(it.payload).players }.map { it.id.lowercase(java.util.Locale.ROOT) }.toSet()
+        require(newTeams.flatMap { it.players }.none { it.id.lowercase(java.util.Locale.ROOT) in existingPlayers }) { "本机已存在同编号球员，未导入任何名单" }
+        for (team in newTeams) db.dao().insertTeam(TeamEntity(team.id, team.name, GameJson.encodeToString(team), team.isOpponent))
     }
 
     /** Export a consistent database snapshot including the operation ledger and correction drafts. */
@@ -185,6 +269,8 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             games = db.dao().allGames().map { DeviceGame(it.id, it.payload, it.revision, it.updatedAt, it.payloadVersion) },
             operations = db.dao().allOperations().map { DeviceOperation(it.id, it.gameID, it.action, it.baseRevision, it.createdAt) },
             drafts = db.dao().allCorrectionDrafts().map { DeviceDraft(it.gameID, it.payload, it.updatedAt) },
+            appleBackups = db.dao().allAppleBackups().map { DeviceAppleBackup(it.id, it.name, it.gameCount, Base64.getEncoder().encodeToString(it.original), Base64.getEncoder().encodeToString(it.current)) },
+            appleSources = db.dao().allAppleGameSources().map { DeviceAppleSource(it.gameID, it.backupID) },
         ))
     }
 
@@ -192,11 +278,18 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
     suspend fun restoreDeviceBackup(bytes: ByteArray): String? {
         val snapshot = AndroidDeviceBackup.decode(bytes)
         return db.withTransaction {
-            require(db.dao().allTeams().isEmpty() && db.dao().allGames().isEmpty() && db.dao().allOperations().isEmpty() && db.dao().allCorrectionDrafts().isEmpty()) { "本机已有资料，未覆盖任何数据" }
+            require(db.dao().allTeams().isEmpty() && db.dao().allGames().isEmpty() && db.dao().allOperations().isEmpty() && db.dao().allCorrectionDrafts().isEmpty() && db.dao().allAppleBackups().isEmpty() && db.dao().allAppleGameSources().isEmpty()) { "本机已有资料，未覆盖任何数据" }
             snapshot.teams.forEach { db.dao().insertTeam(TeamEntity(it.id, it.name, it.payload, it.isOpponent)) }
             snapshot.games.forEach { db.dao().insertGame(GameEntity(it.id, it.payload, it.revision, it.updatedAt, it.payloadVersion)) }
             snapshot.operations.forEach { db.dao().insertOperation(OperationEntity(it.id, it.gameID, it.action, it.baseRevision, it.createdAt)) }
             snapshot.drafts.forEach { db.dao().insertCorrectionDraft(CorrectionDraftEntity(it.gameID, it.payload, it.updatedAt)) }
+            snapshot.appleBackups.forEach { db.dao().insertAppleBackup(AppleBackupEntity(it.id, it.name, it.gameCount, Base64.getDecoder().decode(it.original), Base64.getDecoder().decode(it.current))) }
+            snapshot.appleSources.forEach { db.dao().insertAppleGameSource(AppleGameSourceEntity(it.gameID, it.backupID)) }
+            snapshot.appleBackups.forEach { source ->
+                AppleSourceBackup.prepare(Base64.getDecoder().decode(source.original)).games(source.id).forEach { game ->
+                    originalRecords(game).map { it.id.lowercase(java.util.Locale.ROOT) }.distinct().forEach { db.dao().insertAppleOriginalOperation(AppleOriginalOperationEntity(it, game.id)) }
+                }
+            }
             beforeCommit()
             snapshot.currentTeamID
         }
@@ -264,6 +357,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
     }
 
     suspend fun createPreparedGame(prepared: Game): Game = db.withTransaction {
+        require(prepared.appleSourceID == null) { "带来源标记的比赛必须通过来源导入事务保存" }
         val g = GameJson.decodeFromString<Game>(GameJson.encodeToString(prepared))
         g.validate()
         require(
@@ -297,6 +391,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
     }
 
     suspend fun updateRoster(team: Team) = db.withTransaction {
+        require(db.dao().allAppleBackups().none { source -> AppleSourceBackup.prepare(source.current).teams().any { it.id == team.id } }) { "iOS 导入球队的名单编辑尚未支持，原始备份及名单未修改" }
         val original = db.dao().team(team.id) ?: error("球队不存在")
         val prior = GameJson.decodeFromString<Team>(original.payload)
         require(prior.source == "local") { "共享球队请通过授权同步入口管理" }
@@ -351,7 +446,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         baseRevision: Long,
         operationID: String = UUID.randomUUID().toString(),
     ): Game =
-        mutate(gameID, baseRevision, operationID, action.name) {
+        mutate(gameID, baseRevision, operationID, action.name, applePitch = action) {
             MatchEngine.apply(it, Command("pitch", pitch = action), operationID)
         }
 
@@ -361,7 +456,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         baseRevision: Long,
         operationID: String = UUID.randomUUID().toString(),
     ): Game =
-        mutate(gameID, baseRevision, operationID, GameJson.encodeToString(command)) {
+        mutate(gameID, baseRevision, operationID, GameJson.encodeToString(command), applePitch = if (command.kind == "pitch" && command == Command("pitch", pitch = command.pitch, at = command.at)) command.pitch else null, atMillis = command.at.takeIf { it > 0 }) {
             MatchEngine.apply(it, command, operationID)
         }
 
@@ -403,7 +498,9 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         }
 
     suspend fun saveCorrectionDraft(draft: CorrectionDraft) = db.withTransaction {
+        require(db.dao().appleGameSource(draft.gameID) == null) { "iOS 导入比赛的纠错转换尚未支持，草稿未覆盖原记录" }
         val current = db.dao().game(draft.gameID) ?: error("比赛不存在，草稿未覆盖原资料")
+        require(decode(current).appleSourceID == null) { "比赛具有 iOS 来源标记，不能直接写入本机纠错草稿" }
         require(draft.baseRevision <= current.revision)
         db.dao()
             .saveCorrectionDraft(
@@ -437,6 +534,8 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         operationID: String,
         signature: String,
         clearDraft: Boolean = false,
+        applePitch: PitchAction? = null,
+        atMillis: Long? = null,
         reduce: (Game) -> Game,
     ): Game = db.withTransaction {
         require(operationID.isNotBlank())
@@ -452,8 +551,21 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             }
             return@withTransaction decode(current)
         }
+        require(db.dao().appleOriginalOperation(operationID.lowercase(java.util.Locale.ROOT)) == null) { "操作编号与已导入的原始历史重复，未写入" }
         check(current.revision == baseRevision) { "比赛已更新，请核对后重试" }
-        val next = reduce(MatchEngine.upgradeLegacy(decode(current)))
+        val imported = db.dao().appleGameSource(gameID)
+        val marker = decode(current).appleSourceID
+        require((imported == null && marker == null) || imported != null && marker == imported.backupID) { "比赛来源映射缺失或不一致，已停止写入" }
+        val next = if (imported == null) reduce(MatchEngine.upgradeLegacy(decode(current))) else {
+            require(applePitch != null) { "这场 iOS 导入比赛目前仅支持非终结投球续记；此操作尚不能无损转换，原记录未修改" }
+            val source = db.dao().appleBackup(imported.backupID) ?: error("比赛来源缺失，原资料未修改")
+            val backup = verifyAppleSource(source)
+            val priorGame = backup.games(source.id).single { it.id == gameID }
+            require(GameJson.encodeToJsonElement(priorGame) == GameJson.parseToJsonElement(current.payload)) { "比赛与来源备份不一致，已停止写入" }
+            val updated = backup.appendPitch(gameID, applePitch, operationID, atMillis ?: System.currentTimeMillis())
+            db.dao().updateAppleBackup(source.copy(current = updated.export()))
+            updated.games(source.id).single { it.id == gameID }
+        }
         check(next.revision == current.revision + 1) { "记录版本无效，原资料未修改" }
         db.dao()
             .insertOperation(

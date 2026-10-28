@@ -139,6 +139,7 @@ internal object AppleExportPrototype {
         }
     }
     fun encode(g: Game): ByteArray {
+        require(g.appleSourceID == null) { "iOS 导入比赛必须导出原始来源链路，不能由原生编码器改写" }
         require(!g.practice && !g.isScheduled && !g.incompletePrefix && g.dateRevisions.isEmpty()) { "研究编码不支持预告、日期更正、练习或不完整历史前缀" }
         require(g.pendingDecision == null && !g.halfEndedAwaitingDecision && g.historySourceID == null && (!g.isFinal || g.endReason in endReasons)) { "研究编码不支持待确认或历史关联" }
         require(g.cursor == g.journal.size && g.entries.size == g.cursor && g.ourTeamID in listOf(g.home.id, g.away.id) && g.createdAt > 0)

@@ -24,6 +24,7 @@ android {
         }
     }
     buildFeatures { compose = true; buildConfig = true }
+    testOptions { unitTests.isIncludeAndroidResources = true }
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../test-fixtures/android-parity/backup"))
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../test-fixtures/android-parity/team-archive"))
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../BaseballMaster/Assets.xcassets/AppIcon.appiconset"))
@@ -47,6 +48,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
@@ -55,5 +57,10 @@ dependencies {
 
 // Pure file-store verification does not need an emulator or Android runtime.
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    maxHeapSize = "2g"
+    systemProperty("apple.source.output", rootProject.file("../output/validation/android/an04-source-roundtrip/kotlin").absolutePath)
+    outputs.dir(rootProject.file("../output/validation/android/an04-source-roundtrip/kotlin"))
+    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+    systemProperty("maven.repo.local", rootProject.file("../output/cache/android/robolectric").absolutePath)
     systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
 }

@@ -30,7 +30,7 @@ internal fun DeviceBackupControls(model: ScorekeeperViewModel) {
             try {
                 val bytes = model.deviceBackupBytes()
                 withContext(Dispatchers.IO) { (context.contentResolver.openOutputStream(uri) ?: error("无法写入文件")).use { it.write(bytes) } }
-                message = "本机备份已保存，包含球队、比赛、操作记录和纠错草稿。"
+                message = "本机备份已保存，包含球队、比赛、操作记录、纠错草稿及已导入 iOS 比赛的原始来源和续记；只读 .bmteam 档案仍须另存。"
             } catch (e: Exception) { message = "保存失败：${e.message ?: "请检查存储空间"}" } finally { busy = false }
         }
     }
@@ -54,7 +54,7 @@ internal fun DeviceBackupControls(model: ScorekeeperViewModel) {
         TextButton(onClick = { open.launch(arrayOf("application/octet-stream", "*/*")) }, enabled = !busy, modifier = Modifier.testTag("device-backup-restore")) { Text("恢复本机") }
     }
     Text("本机备份用于 Android 设备恢复；iOS 格式互导仍在开发。")
-    if (pending != null) AlertDialog(onDismissRequest = { pending = null }, title = { Text("恢复 Android 本机备份？") }, text = { Text("将恢复备份中的球队、比赛、操作记录与纠错草稿。为保护原有资料，只有当前本机没有资料时才能恢复。") },
+    if (pending != null) AlertDialog(onDismissRequest = { pending = null }, title = { Text("恢复 Android 本机备份？") }, text = { Text("将恢复备份中的球队、比赛、操作记录、纠错草稿与 iOS 来源备份。为保护原有资料，只有当前本机没有资料时才能恢复。") },
         confirmButton = { TextButton(onClick = {
             val bytes = pending ?: return@TextButton
             pending = null; busy = true
