@@ -20,6 +20,13 @@ fun FixedTeamInvitation.qr(size: Int = 256): TeamInvitationQr = teamServiceQr(ur
 fun teamServiceQr(url: String, size: Int = 256): TeamInvitationQr {
     require(url.startsWith("https://baseballmaster.cc/join#") || url.startsWith("https://baseballmaster.cc/pair#"))
     if(url.startsWith("https://baseballmaster.cc/join#")) TeamServiceLink.invitation(url) else TeamServiceLink.pairing(url)
+    return serviceQr(url,size)
+}
+fun liveViewQr(url: String,size: Int=256): TeamInvitationQr {
+    require(Regex("https://baseballmaster\\.cc/livestreaming/novideo/[A-F0-9]{24}").matches(url))
+    return serviceQr(url,size)
+}
+private fun serviceQr(url: String,size: Int): TeamInvitationQr {
     require(size in 128..1024)
     val matrix=MultiFormatWriter().encode(url,BarcodeFormat.QR_CODE,size,size,mapOf(EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M))
     return TeamInvitationQr(matrix.width,matrix.height,IntArray(matrix.width*matrix.height) { index -> if(matrix[index%matrix.width,index/matrix.width]) 0xff000000.toInt() else 0xffffffff.toInt() })

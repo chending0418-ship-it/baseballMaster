@@ -38,7 +38,8 @@
 | `ac8b94e` | 服务恢复后明确核对、旧操作／本人比赛加密保留、当前完整文件读取及丢确认保护 | [恢复核对](AN05-RECOVERY-REVIEW-2026-10-28.md) |
 | `22f6550` | iOS 同源开屏与公共配置、缓存保护、设置／关于／隐私／支持、本地数据入口 | [开屏与系统页](AN06-LAUNCH-2026-10-28.md) |
 | `98dc63b` | 原始 GameStore／纠错预览执行、严格身份／状态对照及 Kotlin 返回腿；不是 iOS App 运行 | [执行对照](AN04-SWIFT-CORE-2026-10-28.md) |
-| AN05 第十一组（含本行的提交） | 401 明确重新接入、候选凭证持久续接、旧工作隔离和稳定加密密钥 | [失效授权](AN05-RECONNECT-2026-10-28.md) |
+| AN06 第三组（含本行的提交） | 独立直播、公共字段、独立加密凭证、丢响应和备份恢复保护 | [独立文字直播](AN06-STANDALONE-LIVE-2026-10-28.md) |
+| `af267db` | 401 明确重新接入、候选凭证持久续接、旧工作隔离和稳定加密密钥 | [失效授权](AN05-RECONNECT-2026-10-28.md) |
 | `e4c847c` | 解散／30 天恢复球队、终结回执续取、管理员审计及精确查询限制 | [生命周期与审计](AN05-LIFECYCLE-2026-10-28.md) |
 
 接手先检查，不覆盖未提交工作：
@@ -95,7 +96,7 @@ F12 已实现两阶段凭证轮换、90 天维护、旧密文兼容与 SharedPre
 
 AN06：第一组已接应用内 HTTPS／自定义 scheme 邀请和配对，链接加密保留、重启明确继续核对；没有自动加入／授权。HTTPS 域名关联、真实浏览器和安装后继续链路未验证，正式 assetlinks 依赖 AN08 包名／证书及真实网站工作区。继续共享与独立直播、历史观看三种权限、开屏／关于／隐私；使用既有入口／协议，不能传邀请秘密到 query／下载 URL。
 
-第二组已接开屏和“我的”系统页面，备份入口现为“我的 → 本地数据与备份”。应用启动会后台读取公共开屏配置，不含球队 Bearer；不发球队协作请求或自动上传本机比赛。正式 UI 不运行，AN06 还缺直播／历史权限，不能勾选整体完成。
+第二组已接开屏和“我的”系统页面，备份入口现为“我的 → 本地数据与备份”。应用启动会后台读取公共开屏配置，不含球队 Bearer；不发球队协作请求或自动上传本机比赛。正式 UI 不运行，第三组已接独立文字直播及本机原服务开发验证，仍缺共享直播／历史权限，不能勾选整体完成。
 
 AN07：用户最新明确本轮不做。保留 48 条用例及所有未测项，不把 planned 当 passed；必要的开发回归仍做。iOS／Android 真双端权限和交接不能用两个 Kotlin 测试客户端替代。
 
@@ -117,11 +118,13 @@ AN05 生命周期／审计最新为 **252 项（145 core＋52 原服务＋55 app
 
 最新 AN05 失效授权组为 **259 项（145 core＋56 原服务＋58 app）**，App／AndroidTest 构建及 lint 通过，lint 18 警告；仅开发回归，见 [第十一组](AN05-RECONNECT-2026-10-28.md)。
 
+AN06 独立直播组最新为 **273 项（148 core＋56 协作服务＋8 直播服务＋61 app）**，App／AndroidTest 构建、lint 通过，lint 18 警告，详见 [第三组](AN06-STANDALONE-LIVE-2026-10-28.md)。
+
 若同一工作区仍在，工具变量位于 `output/cache/android/tooling/env.sh`，先读取路径并 source（其中只是本机 JDK／SDK 和代理设置，不是用户凭证）。新环境此文件不会随 Git 存在，须配置免费官方 JDK／Android SDK 的 JAVA_HOME、ANDROID_HOME；不要将某台机器的绝对路径写回源码。遵循云端网络代理和 CA，不关闭 TLS 验证、不打印环境秘密。
 
 ```sh
 # 在仓库根目录；先按实际环境配置 JAVA_HOME / ANDROID_HOME。
-bash scripts/android/gradle.sh :core:test :core:teamServiceTest :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
+bash scripts/android/gradle.sh :core:test :core:teamServiceTest :core:liveServiceTest :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
 ```
 
 `:core:teamServiceTest` 需 Node 24，只运行 `scripts/android/an05-local-service.mjs` 启动的 127.0.0.1 动态端口和内存 SQLite；不读生产配置。普通 core 测试不要求 Node。不要启动 `collaboration/npm start`，它会选择持久数据库默认路径；也不要运行任何 deploy／verify-production 脚本。默认共享入口指向既有 HTTPS，**当前明确打开共享页就会连接**，UI 自动化不得直接打开；应给 TeamSharingScreen 注入独立测试 API／存储和 fake transport，详见第六／七组。

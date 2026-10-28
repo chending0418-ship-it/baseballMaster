@@ -207,6 +207,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                     }
                     TextButton({ panel = "clock" }) { Text("比赛计时") }
                     if (!game.practice) {
+                        TextButton({panel="live"},Modifier.testTag("live-broadcast")) {Text("文字直播")}
                         TextButton({ panel = "poster" }, Modifier.testTag("game-poster")) { Text("比赛宣传海报") }
                         ReportShareButton("导出比赛报告 PDF", "export-game-pdf") { context ->
                             ReportExport.game(context, game, false)
@@ -234,6 +235,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                         Text("首球前互换先攻／后攻")
                     }
                 }
+            "live" -> StandaloneLiveScreen(game,model.live,close)
             "time" -> MatchTimeEditor(snapshot, model.busy, close, save)
             "rules" -> {
                 var rules by remember { mutableStateOf<Rules?>(snapshot.rules) }

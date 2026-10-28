@@ -40,7 +40,7 @@
 | F10 球队协作 | `TeamCollaborationViews`、`TeamSharingStore` | `TeamSharingScreen`、`TeamDirectorySession`；建队／加入／名单／成员／固定邀请／退出已有，第十组已接解散／恢复；完整绑定管理及共享建赛仍缺 |
 | F11 比赛协作 | `SharedMatchViews`、`SharedMatches` | `SharedMatchDirectory` 读取／游标／交接控制基础已有；产品比赛列表／正式发布／PUT／完整内容编辑／离线更新和冲突核对尚缺，不开放产品交接 |
 | F12 安全／设备／恢复 | `TeamSecurityViews`、`TeamSecurity` | `TeamSecuritySession`、`TeamCredentialRotation`、`CredentialVault`；第八组已接配对、设备管理、管理恢复兑换和卡片分享，第九组补服务恢复核对，第十组补审计；撤销 Bearer 后明确重接入仍缺。界面未执行，AN07 用户明确不做 |
-| F13 直播／历史观看 | `LiveBroadcastViews`、`SharedMatchViews` | AN06 尚未完整迁移；复用现有服务与网页，不能只打开网页宣称完成发布和三种历史权限 |
+| F13 直播／历史观看 | `LiveBroadcastViews`、`SharedMatchViews` | AN06 第三组已接独立直播／公共字段／加密发布凭证／重试和恢复保护，273 项开发回归通过；共享直播和历史观看三种权限仍缺，界面未执行，见 AN06-STANDALONE-LIVE。复用现有服务与网页 |
 | F14 规则／设置／开屏 | `ProfileViews`、`ConfigurableLaunchScreen` | AN06 第二组已接同源开屏／配置／缓存、外观／辅助提示、本地数据、关于／隐私／支持入口；规则沿用现有离线资料。UI／系统效果未执行，AN07 用户明确不做，详见 AN06-LAUNCH |
 
 ## 仍未迁移的共享页面

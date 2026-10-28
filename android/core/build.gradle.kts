@@ -15,6 +15,15 @@ tasks.test {
     outputs.dir(rootProject.file("../output/validation/android/an04-wire-exchange/kotlin"))
     exclude("**/AppleSwiftWireReturnTest.class")
     exclude("**/TeamDirectoryIntegrationTest.class")
+    exclude("**/StandaloneLiveIntegrationTest.class")
+}
+tasks.register<Test>("liveServiceTest") {
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    include("**/StandaloneLiveIntegrationTest.class")
+    systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
+    inputs.files(rootProject.file("../scripts/android/an06-local-live.mjs"))
+    inputs.files(fileTree(rootProject.file("../live")) { include("*.mjs") })
 }
 // Node 24 is only needed for this explicit, isolated existing-service integration.
 tasks.register<Test>("teamServiceTest") {

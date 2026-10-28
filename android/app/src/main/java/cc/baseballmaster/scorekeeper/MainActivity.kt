@@ -73,6 +73,8 @@ class MainActivity : ComponentActivity() {
         setContent { BaseballTheme(screenModel.appAppearance) { PortraitViewport("portrait-app") { AndroidLaunchContainer(screenModel) {ScorekeeperApp(screenModel)} } } }
     }
     override fun onNewIntent(intent: Intent) {super.onNewIntent(intent);setIntent(intent);receiveServiceIntent(intent)}
+    override fun onStart() {super.onStart();screenModel.live.setForeground(true)}
+    override fun onStop() {screenModel.live.setForeground(false);super.onStop()}
     private fun receiveServiceIntent(source: Intent) {
         val value=source.dataString;source.data=null
         if(source.action==Intent.ACTION_VIEW && value!=null) screenModel.receiveTeamLink(value)
@@ -83,6 +85,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     AndroidViewModel(application) {
     private val database = LocalDatabase.open(application)
     private val repository = GameRepository(database)
+    internal val live by lazy {AndroidLive(application,repository,viewModelScope) {recoveryRequired || loading}}
     internal val sharing by lazy { AndroidTeamSharing(repository,androidTeamDirectory(application,"https://baseballmaster.cc/api/v3")) }
     internal val launchRepository by lazy {AndroidLaunchScreenRepository.standard(application)}
     internal var launchDismissed by mutableStateOf(false)
@@ -217,6 +220,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
                 .catch {
                     recoveryRequired = true
                     loading = false
+                    live.requestSync()
                     error = "本机资料暂时无法读取，原始数据已保留。请保留此设备上的资料并联系支持。"
                 }
                 .collect { (newTeams, newGames) ->
@@ -231,6 +235,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
                             ?: next
                     }
                     loading = false
+                    live.requestSync()
                 }
         }
         // Credential creation is isolated from scoring and never contacts a service.
@@ -274,8 +279,10 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     internal suspend fun deviceBackupBytes(): ByteArray = withContext(Dispatchers.IO) { repository.exportDeviceBackup(currentTeamID) }
 
     internal suspend fun restoreDeviceBackup(bytes: ByteArray) {
+        live.prepareForRestore()
         val selected = withContext(Dispatchers.IO) { repository.restoreDeviceBackup(bytes) }
         rememberCurrentTeam(selected)
+        live.requestSync()
     }
 
     internal suspend fun appleBackupSummaries(): List<AppleBackupSummary> = withContext(Dispatchers.IO) { repository.appleBackupSummaries() }
@@ -310,6 +317,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private fun accept(game: Game) {
         if (game.practice) practiceGame = game
         else games = listOf(game) + games.filter { it.id != game.id }
+        if(!game.practice) live.requestSync()
     }
 
     fun pitch(action: PitchAction) {
