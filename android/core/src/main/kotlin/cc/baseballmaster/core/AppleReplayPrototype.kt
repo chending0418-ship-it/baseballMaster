@@ -92,6 +92,10 @@ internal object AppleReplayPrototype {
                 require(observation == null && fields.isEmpty())
                 Command(kind, at = at)
             }
+            "pitcher", "batter" -> Command(kind, playerID = id(fields.text("_0")), at = at)
+            "pinchRunner" -> Command(kind, position = fields.int("_0"), playerID = id(fields.text("_1")), at = at)
+            "fielder" -> Command(kind, playerID = id(fields.text("_0")), replacementID = id(fields.text("_1")), at = at)
+            "position" -> Command(kind, playerID = id(fields.text("_0")), position = fields.int("_1"), at = at)
             "reopen" -> Command("reopen", flag = fields["_0"]?.jsonPrimitive?.booleanOrNull ?: false, at = at)
             "finish" -> {
                 val reasons = mapOf("规定局数完成" to "regulation", "再见分结束" to "walkOff", "时间限制结束" to "timeLimit", "提前结束规则" to "mercyRule", "弃权结束" to "forfeit", "天气或场地原因" to "weather", "比赛中断" to "suspended", "记录员结束记录" to "scorerDecision")
@@ -208,6 +212,20 @@ internal object AppleReplayPrototype {
         require(game.homeBatterIndex == state.int("homeBatterIndex") && game.awayBatterIndex == state.int("awayBatterIndex")) { "重放棒次不一致" }
         state["activeHomePitcherID"]?.jsonPrimitive?.content?.let { require(game.homePitcherID == id(it)) { "主队投手不一致" } }
         state["activeAwayPitcherID"]?.jsonPrimitive?.content?.let { require(game.awayPitcherID == id(it)) { "客队投手不一致" } }
+        for ((side, roster) in listOf("home" to state.getValue("homeTeam").jsonObject, "away" to state.getValue("awayTeam").jsonObject)) {
+            val fielders = state["${side}FieldingPlayerIDs"]?.jsonArray?.let(::ids)
+            if (fielders != null) {
+                val byID = roster.array("players").associate { id(it.jsonObject.text("id")) to it.jsonObject.int("primaryPosition") }
+                val expected = fielders.associateBy { byID.getValue(it) }
+                require(expected.size == fielders.size && expected == (if (side == "home") game.homePositions else game.awayPositions)) { "重放守位不一致" }
+            }
+            state["${side}ExitedPlayerIDs"]?.jsonArray?.let { raw ->
+                val teamIDs = roster.array("players").map { id(it.jsonObject.text("id")) }.toSet()
+                require(game.exitedPlayers.intersect(teamIDs) == ids(raw).toSet()) { "已退场球员不一致" }
+            }
+        }
+        state["walkResponsiblePitcherID"]?.jsonPrimitive?.content?.let { require(game.walkResponsiblePitcherID == id(it)) { "保送责任投手不一致" } }
+        state["strikeoutResponsibleBatterID"]?.jsonPrimitive?.content?.let { require(game.strikeoutResponsibleBatterID == id(it)) { "三振责任打者不一致" } }
         state["runnerPitcherIDs"]?.jsonArray?.let { raw ->
             require(raw.size % 2 == 0)
             val owners = raw.chunked(2).associate { id(it[0].jsonPrimitive.content) to id(it[1].jsonPrimitive.content) }

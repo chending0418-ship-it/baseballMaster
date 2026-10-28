@@ -10,6 +10,7 @@ data class ProjectedAppearance(
     val complete: Boolean,
     val interrupted: Boolean,
     val events: List<PitchEntry>,
+    val batterIDs: List<String> = listOf(batterID),
 )
 
 object AppearanceProjection {
@@ -32,7 +33,7 @@ object AppearanceProjection {
             }
             var next = current!!
             val command = commands[event.id]?.command
-            if (event.kind == "batter" && command?.playerID != null) next = next.copy(batterID = command.playerID)
+            if (event.kind == "batter" && command?.playerID != null) next = next.copy(batterID = command.playerID, batterIDs = (next.batterIDs + command.playerID).distinct())
             next = next.copy(events = next.events + event)
             val after = event.after
             if (before != null && after != null) {

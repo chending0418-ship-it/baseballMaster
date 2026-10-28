@@ -43,3 +43,5 @@ python3 scripts/android/validate-history.py --serial emulator-5554 \
 纠错在独立草稿中预览，不直接写正式记录；保存时比赛、操作 ID、审计记录与草稿删除在同一事务中完成。练习草稿只保留在当前进程。
 
 当前交付和待办见 [AN03 开发记录](../docs/releases/android/AN03.md)。
+
+AN04 另有不运行界面的 Swift 原始数据模型互读链路，生成合成文件并显式执行 `:core:swiftWireTest`，复现命令、实际结果及未完成边界见 [Swift 数据模型互读记录](../docs/releases/android/AN04-WIRE-2026-10-28.md)。研究编码器尚未接入正式互导，不将 Codable 可解码等同于 iOS 记分历史重放通过。界面测试按用户最新要求留待统一进行。

@@ -6,6 +6,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppleExportPrototypeTest {
+    /** Historical decoder fixtures stay immutable. Compare every previous wire field while
+     * separately checking the new pitch-count and deterministic appearance identity fields. */
+    private fun assertPreviousWireFieldsUnchanged(oldBytes: ByteArray, bytes: ByteArray, pitches: Int) {
+        val old = AppleBackupEnvelope.inspect(oldBytes).snapshot
+        val actual = AppleBackupEnvelope.inspect(bytes).snapshot
+        val game = actual.getValue("games").jsonArray.single().jsonObject
+        val state = game.getValue("state").jsonObject
+        assertEquals(pitches, state.getValue("plateAppearancePitchCount").jsonPrimitive.int)
+        val history = state.getValue("historyJournal").jsonObject
+        val checkpoint = AppleWireJson.parse(java.util.Base64.getDecoder().decode(history.getValue("checkpoint").jsonPrimitive.content)).jsonObject
+        val oldHistory = old.getValue("games").jsonArray.single().jsonObject.getValue("state").jsonObject.getValue("historyJournal").jsonObject
+        val oldCheckpoint = AppleWireJson.parse(java.util.Base64.getDecoder().decode(oldHistory.getValue("checkpoint").jsonPrimitive.content)).jsonObject
+        assertEquals(oldCheckpoint, JsonObject(checkpoint - "plateAppearances" - "currentPlateAppearanceID" - "plateAppearancePitchCount"))
+        val appearanceIDs = state.getValue("plateAppearances").jsonArray.map { it.jsonObject.getValue("id") }.toSet()
+        assertTrue(checkpoint.getValue("currentPlateAppearanceID") in appearanceIDs)
+        val operations = history.getValue("operations").jsonArray.map { raw ->
+            assertTrue(raw.jsonObject.getValue("nextAppearanceID") in appearanceIDs)
+            JsonObject(raw.jsonObject - "nextAppearanceID")
+        }
+        val normalizedHistory = JsonObject(history + mapOf("checkpoint" to oldHistory.getValue("checkpoint"), "operations" to JsonArray(operations)))
+        val normalizedState = JsonObject(state - "plateAppearancePitchCount" + ("historyJournal" to normalizedHistory))
+        val normalizedGame = JsonObject(game + ("state" to normalizedState))
+        assertEquals(old, JsonObject(actual + ("games" to JsonArray(listOf(normalizedGame)))))
+    }
+
     @Test fun exportsIOSRunnerDetailReplayForReturnToIOS() {
         val root = File(System.getProperty("parity.fixtures"), "backup")
         val catalog = GameJson.parseToJsonElement(File(root, "ios-journal-catalog.json").readText()).jsonArray
@@ -13,7 +38,7 @@ class AppleExportPrototypeTest {
         val game = AppleReplayPrototype.replay(source.getValue("storedGame").jsonObject)
         val bytes = AppleExportPrototype.encode(game)
         val fixture = File(root, "ios-android-runner-detail-prototype.bmbackup")
-        assertArrayEquals(fixture.readBytes(), bytes)
+        assertPreviousWireFieldsUnchanged(fixture.readBytes(), bytes, game.appearancePitches)
     }
     @Test fun producesComplexSyntheticGameForIOSVerification() {
         fun team(prefix: String, name: String, opponent: Boolean): Team = Team("$prefix-0000-0000-0000-000000000000", name,
@@ -32,7 +57,7 @@ class AppleExportPrototypeTest {
         val inspected = AppleBackupEnvelope.inspect(bytes)
         assertEquals(1, inspected.gameCount)
         val fixture = File(System.getProperty("parity.fixtures"), "backup/android-complex-prototype-v7.bmbackup")
-        assertArrayEquals(fixture.readBytes(), bytes)
+        assertPreviousWireFieldsUnchanged(fixture.readBytes(), bytes, game.appearancePitches)
     }
     @Test fun producesDeterministicSyntheticGameForIOSVerification() {
         fun team(prefix: String, name: String, opponent: Boolean): Team {
@@ -53,6 +78,6 @@ class AppleExportPrototypeTest {
         assertEquals(1, inspected.gameCount)
         assertEquals(1, inspected.teamCount)
         val fixture = File(System.getProperty("parity.fixtures"), "backup/android-game-prototype-v7.bmbackup")
-        assertArrayEquals(fixture.readBytes(), bytes)
+        assertPreviousWireFieldsUnchanged(fixture.readBytes(), bytes, game.appearancePitches)
     }
 }

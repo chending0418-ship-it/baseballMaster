@@ -21,10 +21,10 @@ internal object AppleExportPrototype {
         put("jerseyNumbers", buildJsonArray { p.jerseyNumbers.forEach { add(it) } })
         put("primaryPosition", p.position.also { require(it in 1..10) })
     }
-    private fun team(t: Team) = buildJsonObject {
+    private fun team(t: Team, positions: Map<Int, String>? = null) = buildJsonObject {
         require(t.source == "local" && !t.archived && t.players.none { it.archived })
         put("id", uid(t.id)); put("name", t.name); put("shortName", t.shortName); put("city", t.city)
-        put("players", buildJsonArray { t.players.forEach { add(player(it)) } })
+        put("players", buildJsonArray { t.players.forEach { p -> add(player(p.copy(position = positions?.entries?.firstOrNull { it.value == p.id }?.key ?: p.position))) } })
     }
     private fun rules(r: Rules) = buildJsonObject {
         put("scheduledInnings", r.innings); put("fieldersCount", r.fielders); put("mode", r.mode.name)
@@ -52,7 +52,7 @@ internal object AppleExportPrototype {
         put("extraFoulUsed", g.extraFoulUsed)
     }
     private fun state(g: Game, logs: JsonArray = JsonArray(emptyList()), events: JsonArray = JsonArray(emptyList()), appearances: JsonArray? = null, currentID: String? = null, history: JsonObject? = null): JsonObject = buildJsonObject {
-        put("homeTeam", team(g.home)); put("awayTeam", team(g.away)); put("scheduledInnings", g.rules.innings); put("rulesSnapshot", rules(g.rules))
+        put("homeTeam", team(g.home, g.homePositions)); put("awayTeam", team(g.away, g.awayPositions)); put("scheduledInnings", g.rules.innings); put("rulesSnapshot", rules(g.rules))
         put("inning", g.inning); put("isTop", g.isTop); put("balls", g.balls); put("strikes", g.strikes); put("outs", g.outs)
         put("homeRunsByInning", json.encodeToJsonElement(g.homeRunsByInning)); put("awayRunsByInning", json.encodeToJsonElement(g.awayRunsByInning))
         put("homeHits", g.homeHits); put("awayHits", g.awayHits); put("homeErrors", g.homeErrors); put("awayErrors", g.awayErrors)
@@ -62,14 +62,14 @@ internal object AppleExportPrototype {
         put("batting", buildJsonArray { g.batting.toSortedMap().forEach { (id, line) -> add(uid(id)); add(json.encodeToJsonElement(line)) } })
         put("pitching", buildJsonArray { g.pitching.toSortedMap().forEach { (id, line) -> add(uid(id)); add(json.encodeToJsonElement(line)) } })
         put("fielding", buildJsonArray { g.fielding.toSortedMap().forEach { (id, line) -> add(uid(id)); add(json.encodeToJsonElement(line)) } })
-        put("playLog", logs); put("isFinal", g.isFinal); idField("activeHomePitcherID", g.homePitcherID); idField("activeAwayPitcherID", g.awayPitcherID)
+        put("playLog", logs); put("plateAppearancePitchCount", g.appearancePitches); put("isFinal", g.isFinal); idField("activeHomePitcherID", g.homePitcherID); idField("activeAwayPitcherID", g.awayPitcherID)
         put("homeBattingOrderIDs", idArray(g.homeOrder ?: error("缺少主队打序"))); put("awayBattingOrderIDs", idArray(g.awayOrder ?: error("缺少客队打序")))
         put("homeFieldingPlayerIDs", idArray(positions(g, true).toSortedMap().values)); put("awayFieldingPlayerIDs", idArray(positions(g, false).toSortedMap().values))
         idField("homeDesignatedHitterID", g.homeDesignatedHitterID); idField("awayDesignatedHitterID", g.awayDesignatedHitterID)
         put("homeExitedPlayerIDs", idArray(g.exitedPlayers.filter { id -> g.home.players.any { it.id == id } })); put("awayExitedPlayerIDs", idArray(g.exitedPlayers.filter { id -> g.away.players.any { it.id == id } }))
         put("scoringEvents", events); put("runnerPitcherIDs", pairUUIDMap(g.runnerPitcherIDs)); put("unearnedRunnerIDs", idArray(g.unearnedRunnerIDs)); put("automaticRunnerIDs", idArray(g.automaticRunnerIDs))
         put("clockElapsedSeconds", g.clockElapsedMs / 1000.0); dateField("clockRunningSince", g.clockRunningSince); put("clockDisplayMode", g.clockDisplayMode)
-        dateField("endedAt", g.endedAt); if (g.isFinal) put("canResumePrecisely", true); g.endReason?.let { put("endReason", endReasons[it] ?: error("结束原因不受支持")) }; put("extraFoulUsed", g.extraFoulUsed); put("pitchingOutsAccountingVersion", 2)
+        dateField("endedAt", g.endedAt); if (g.isFinal) put("canResumePrecisely", true); g.endReason?.let { put("endReason", endReasons[it] ?: error("结束原因不受支持")) }; put("extraFoulUsed", g.extraFoulUsed); put("pitchingOutsAccountingVersion", 2); idField("walkResponsiblePitcherID", g.walkResponsiblePitcherID); idField("strikeoutResponsibleBatterID", g.strikeoutResponsibleBatterID)
         if (g.statisticsIncomplete) put("statisticsIncomplete", true)
         appearances?.let { put("plateAppearances", it) }; currentID?.let { put("currentPlateAppearanceID", it) }; history?.let { put("historyJournal", it) }
     }
@@ -82,7 +82,7 @@ internal object AppleExportPrototype {
         put("inning", g.inning); put("isTop", g.isTop); put("batterIndex", g.batterIndex)
         put("homeOrder", idArray(g.homeOrder ?: error("缺少主队打序"))); put("awayOrder", idArray(g.awayOrder ?: error("缺少客队打序")))
         put("homeFielders", idArray(positions(g, true).toSortedMap().values)); put("awayFielders", idArray(positions(g, false).toSortedMap().values))
-        put("positions", buildJsonArray { (g.home.players + g.away.players).sortedBy { it.id }.forEach { p -> add(uid(p.id)); add(p.position) } })
+        put("positions", buildJsonArray { (g.home.players + g.away.players).sortedBy { it.id }.forEach { p -> add(uid(p.id)); add((if (g.home.players.any { it.id == p.id }) g.homePositions else g.awayPositions)?.entries?.firstOrNull { it.value == p.id }?.key ?: p.position) } })
         put("runners", buildJsonArray { g.bases.forEachIndexed { i, id -> if (id != null) { add(i + 1); add(uid(id)) } } })
     }
     private fun runnerDecision(d: Decision, players: Map<String, Player>) = buildJsonObject {
@@ -129,17 +129,21 @@ internal object AppleExportPrototype {
             "play" -> buildJsonObject { put("play", buildJsonObject { put("_0", c.outcome?.title ?: error("缺少结果")); defensivePlay(event, c)?.let { put("_1", it) }; put("_2", buildJsonArray { event.decisions.forEach { add(runnerDecision(it, people)) } }); c.timingRunCounts?.let { put("_3", it) } }) }
             "runner" -> buildJsonObject { put("runner", buildJsonObject { put("_0", runnerNames[c.runnerKind] ?: error("跑垒事件不受支持")); put("_1", buildJsonArray { event.decisions.forEach { add(runnerDecision(it, people)) } }); c.timingRunCounts?.let { put("_2", it) } }) }
             "hitByPitch", "intentionalWalk", "foulBunt", "endHalf", "skipTB" -> buildJsonObject { put(c.kind, buildJsonObject {}) }
+            "pitcher", "batter" -> buildJsonObject { put(c.kind, buildJsonObject { put("_0", uid(c.playerID ?: error("缺少换人球员"))) }) }
+            "pinchRunner" -> buildJsonObject { put(c.kind, buildJsonObject { put("_0", c.position ?: error("缺少代跑垒位")); put("_1", uid(c.playerID ?: error("缺少代跑球员"))) }) }
+            "fielder" -> buildJsonObject { put(c.kind, buildJsonObject { put("_0", uid(c.playerID ?: error("缺少原守备球员"))); put("_1", uid(c.replacementID ?: error("缺少新守备球员"))) }) }
+            "position" -> buildJsonObject { put(c.kind, buildJsonObject { put("_0", uid(c.playerID ?: error("缺少守备球员"))); put("_1", c.position ?: error("缺少守位")) }) }
             "reopen" -> buildJsonObject { put("reopen", buildJsonObject { put("_0", c.flag) }) }
             "finish", "suspend" -> buildJsonObject { put("finish", buildJsonObject { put("_0", endReasons[c.text] ?: error("结束原因不受支持")); put("_1", date(c.at)) }) }
             else -> error("研究编码暂不支持操作 ${c.kind}")
         }
     }
     fun encode(g: Game): ByteArray {
-        require(!g.practice && !g.isScheduled && !g.incompletePrefix && g.historyRevisions.isEmpty() && g.correctionRevisions.isEmpty() && g.dateRevisions.isEmpty()) { "研究编码不支持结束、预告、历史更正或练习" }
+        require(!g.practice && !g.isScheduled && !g.incompletePrefix && g.dateRevisions.isEmpty()) { "研究编码不支持预告、日期更正、练习或不完整历史前缀" }
         require(g.pendingDecision == null && !g.halfEndedAwaitingDecision && g.historySourceID == null && (!g.isFinal || g.endReason in endReasons)) { "研究编码不支持待确认或历史关联" }
         require(g.cursor == g.journal.size && g.entries.size == g.cursor && g.ourTeamID in listOf(g.home.id, g.away.id) && g.createdAt > 0)
         require(g.journal.map { it.id }.distinct().size == g.journal.size && g.journal.all { it.command.at > 0 })
-        require(g.journal.all { !it.inserted && !it.edited && !it.acceptContext && it.additionalErrors.isEmpty() && it.statisticsRuling == null })
+        require(g.historyRevisions.size == g.correctionRevisions.size) { "更正审计不完整" }
         val cp = GameJson.decodeFromString<Game>(g.checkpoint ?: error("缺少原始检查点"))
         require(cp.entries.isEmpty() && cp.journal.isEmpty())
         val states = (0..g.cursor).map { index -> History.run(g, g.journal, index, strict = false).also { require(it.canSave) }.game!! }
@@ -149,28 +153,59 @@ internal object AppleExportPrototype {
         val groupID = groups.associate { it.id to generated("${g.id}/appearance/${it.id}") }
         val eventGroup = groups.flatMap { appearance -> appearance.events.map { it.id to groupID.getValue(appearance.id) } }.toMap()
         val appearances = buildJsonArray { groups.forEach { a -> add(buildJsonObject {
-            put("id", groupID.getValue(a.id)); put("inning", a.inning); put("isTop", a.isTop); put("batterIDs", idArray(listOf(a.batterID))); put("completed", a.complete); put("interrupted", a.interrupted)
+            put("id", groupID.getValue(a.id)); put("inning", a.inning); put("isTop", a.isTop); put("batterIDs", idArray(a.batterIDs)); put("completed", a.complete); put("interrupted", a.interrupted)
         }) } }
         val logs = buildJsonArray { g.entries.forEach { e -> add(buildJsonObject {
-            put("id", generated("${g.id}/log/${e.id}")); put("inning", e.inning); put("isTop", e.isTop); put("text", e.text); put("timestamp", date(e.at)); put("isIncomplete", e.incomplete); e.reviewNote?.let { put("reviewNote", it) }
+            put("id", generated("${g.id}/log/${e.id}")); put("inning", e.inning); put("isTop", e.isTop); put("text", e.text); put("timestamp", date(e.at)); put("isIncomplete", e.incomplete)
         }) } }
         val events = buildJsonArray { g.entries.forEachIndexed { i, e ->
-            require(e.id == g.journal[i].id && e.kind in listOf("pitch", "play", "runner", "hitByPitch", "intentionalWalk", "foulBunt", "endHalf", "skipTB", "finish", "suspend", "reopen") && !e.incomplete)
+            require(e.id == g.journal[i].id && e.kind in listOf("pitch", "play", "runner", "hitByPitch", "intentionalWalk", "foulBunt", "endHalf", "skipTB", "finish", "suspend", "reopen", "pitcher", "batter", "pinchRunner", "fielder", "position"))
             add(buildJsonObject {
                 put("id", uid(e.id)); put("logEntryID", generated("${g.id}/log/${e.id}")); put("inning", e.inning); put("isTop", e.isTop); put("timestamp", date(e.at))
-                put("category", when (e.kind) { "pitch" -> "pitch"; "play" -> "battedBall"; "runner" -> "runner"; "hitByPitch", "intentionalWalk", "foulBunt" -> "pitch"; else -> "game" }); put("title", e.text); put("notation", e.notation)
+                put("category", when (e.kind) { "pitch" -> "pitch"; "play" -> "battedBall"; "runner" -> "runner"; "hitByPitch", "intentionalWalk", "foulBunt" -> "pitch"; "pitcher", "batter", "pinchRunner", "fielder", "position" -> "substitution"; else -> "game" }); put("title", e.text); put("notation", e.notation)
                 idField("primaryPlayerID", if (e.kind == "pitch") e.pitcherID else e.batterID); idField("secondaryPlayerID", if (e.kind == "pitch") e.batterID else e.pitcherID)
                 idField("plateAppearanceBatterID", e.batterID); put("plateAppearanceID", eventGroup.getValue(e.id))
-                put("runnerMovements", buildJsonArray { e.decisions.forEach { add(movement(it)) } }); put("needsReview", e.incomplete)
+                put("runnerMovements", buildJsonArray { e.decisions.forEach { add(movement(it)) } }); put("needsReview", e.incomplete); e.reviewNote?.let { put("reviewNote", it) }; dateField("reviewedAt", e.reviewedAt)
                 e.outcome?.let { put("resolvedOutcome", it.title) }; observation(e)?.let { put("battedBall", it) }; put("beforeSituation", snapshot(states[i])); put("afterSituation", snapshot(states[i + 1]))
             })
         } }
         val operations = buildJsonArray { g.journal.forEachIndexed { i, op -> add(buildJsonObject {
             put("id", uid(op.id)); put("command", historyCommand(op, g.entries[i], states[i])); put("context", context(states[i])); put("timestamp", date(op.command.at)); put("title", g.entries[i].text)
             put("eventIDs", idArray(listOf(op.id))); put("logIDs", buildJsonArray { add(generated("${g.id}/log/${op.id}")) })
-            put("inserted", false); put("edited", false); put("acceptsNewContext", false); put("errors", JsonArray(emptyList())); observation(g.entries[i])?.let { put("battedBall", it) }
+            val groupIndex = groups.indexOfFirst { a -> a.events.any { it.id == op.id } }
+            val appearance = groups[groupIndex]
+            val next = if ((appearance.complete || appearance.interrupted) && appearance.events.last().id == op.id) groups.getOrNull(groupIndex + 1) else appearance
+            next?.let { put("nextAppearanceID", groupID.getValue(it.id)) }
+            put("inserted", op.inserted); put("edited", op.edited); put("acceptsNewContext", op.acceptContext)
+            put("errors", buildJsonArray { op.additionalErrors.forEachIndexed { n, credit -> add(buildJsonObject {
+                put("id", generated("${g.id}/error/${op.id}/$n")); put("playerID", uid(credit.playerID)); put("count", credit.count); put("note", credit.note)
+            }) } })
+            op.statisticsRuling?.let { ruling -> put("statisticsRuling", buildJsonObject {
+                put("runsBattedIn", ruling.runsBattedIn)
+                put("earnedRuns", buildJsonArray { ruling.earnedRuns.toSortedMap().forEach { (id, runs) -> add(uid(id)); add(runs) } })
+                put("unearnedRunnerIDs", idArray(ruling.unearnedRunnerIDs))
+            }) }
+            dateField("correctedAt", g.entries[i].reviewedAt)
+            observation(g.entries[i])?.let { put("battedBall", it) }
         }) } }
-        val history = buildJsonObject { put("version", 1); put("checkpoint", Base64.getEncoder().encodeToString(json.encodeToString(JsonObject.serializer(), state(cp)).toByteArray())); put("operations", operations); put("legacyPrefix", false) }
+        val initialAppearance = groups.first()
+        val initialID = groupID.getValue(initialAppearance.id)
+        val checkpointAppearances = buildJsonArray { add(buildJsonObject {
+            put("id", initialID); put("inning", cp.inning); put("isTop", cp.isTop); put("batterIDs", idArray(listOf(cp.batter.id))); put("completed", false); put("interrupted", false)
+        }) }
+        val history = buildJsonObject { put("version", 1); put("checkpoint", Base64.getEncoder().encodeToString(json.encodeToString(JsonObject.serializer(), state(cp, appearances = checkpointAppearances, currentID = initialID)).toByteArray())); put("operations", operations); put("legacyPrefix", false) }
+        val revisions = buildJsonArray { g.historyRevisions.forEach { revision ->
+            val priorInput = g.copy(checkpoint = revision.previousCheckpoint, historyRevisions = emptyList(), correctionRevisions = emptyList(), correctionBoundary = 0)
+            val preview = History.run(priorInput, revision.previousRecords, revision.previousRecords.size, strict = true)
+            require(preview.canSave) { preview.conflict ?: "更正前历史不能重放" }
+            val previous = requireNotNull(preview.game)
+            val previousBackup = AppleBackupEnvelope.inspect(encode(previous))
+            val previousJournal = previousBackup.snapshot.getValue("games").jsonArray.single().jsonObject.getValue("state").jsonObject.getValue("historyJournal")
+            add(buildJsonObject {
+                put("id", uid(revision.id)); put("date", date(revision.at)); put("reason", revision.reason); put("previousJournal", previousJournal)
+                put("appliedOperationIDs", idArray(revision.appliedOperationIDs)); put("summary", json.encodeToJsonElement(revision.summary))
+            })
+        } }
         val home = g.home.id == g.ourTeamID
         fun lineup(team: Team, ownHome: Boolean) = buildJsonArray {
             val order = if (ownHome) cp.homeOrder else cp.awayOrder
@@ -183,11 +218,14 @@ internal object AppleExportPrototype {
             put("seasonID", (Performances.year(g) ?: error("缺少年度")).toString()); idField("ourTeamID", g.ourTeamID); put("opponentTeamID", uid(if (home) g.away.id else g.home.id))
             put("isHome", home); put("isSpectator", false); put("rules", rules(g.rules)); put("lineup", lineup(if (home) cp.home else cp.away, home)); put("secondaryLineup", lineup(if (home) cp.away else cp.home, !home))
             put("status", if (g.isScheduled) 2 else if (g.isFinal) 1 else 0); put("revision", g.revision); put("openingPitchRecorded", g.openingPitchRecorded)
-            put("state", state(g, logs, events, appearances, groups.lastOrNull()?.let { groupID.getValue(it.id) }, history))
+            put("state", JsonObject(state(g, logs, events, appearances, groups.lastOrNull()?.let { groupID.getValue(it.id) }, history) +
+                if (revisions.isEmpty()) emptyMap() else mapOf("correctionRevisions" to revisions)))
         }
         val roster = AppleBackupEnvelope.inspect(AppleRosterBackup.encode(listOf(g.home, g.away), emptyList(), g.ourTeamID, g.createdAt)).snapshot
         val payload = json.encodeToString(JsonObject.serializer(), JsonObject(roster + ("games" to JsonArray(listOf(game))))).toByteArray()
         val hash = MessageDigest.getInstance("SHA-256").digest(payload).joinToString("") { "%02x".format(it) }
-        return json.encodeToString(JsonObject.serializer(), buildJsonObject { put("format", "BaseballMaster Backup"); put("version", 7); put("createdAt", date(g.createdAt)); put("payload", Base64.getEncoder().encodeToString(payload)); put("checksum", hash) }).toByteArray()
+        val result = json.encodeToString(JsonObject.serializer(), buildJsonObject { put("format", "BaseballMaster Backup"); put("version", 7); put("createdAt", date(g.createdAt)); put("payload", Base64.getEncoder().encodeToString(payload)); put("checksum", hash) }).toByteArray()
+        AppleBackupEnvelope.inspect(result)
+        return result
     }
 }
