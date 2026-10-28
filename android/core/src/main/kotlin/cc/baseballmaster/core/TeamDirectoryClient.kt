@@ -105,6 +105,8 @@ class TeamHttpTransport(baseURL: String, private val credentials: TeamCredential
 object TeamDirectoryJson { val format = Json { ignoreUnknownKeys = true; encodeDefaults = true } }
 
 class TeamDirectoryClient(private val transport: TeamTransport) {
+    @Serializable private data class Members(val members: List<SharedTeamMember>)
+    @Serializable private data class Invitations(val invitations: List<TeamInvitation>)
     fun enroll(label: String): String {
         require(label.isNotBlank() && label.length <= 80 && label.none { it.code < 32 || it.code == 127 })
         val response = transport.request("POST", "devices", buildJsonObject { put("label", label) })
@@ -114,12 +116,23 @@ class TeamDirectoryClient(private val transport: TeamTransport) {
     fun teams(): TeamDirectory = TeamDirectoryJson.format.decodeFromJsonElement(transport.request("GET", "teams", null))
     fun preview(token: String): TeamInvitationPreview = TeamDirectoryJson.format.decodeFromJsonElement(
         transport.request("POST", "invitations/preview", buildJsonObject { put("token", TeamSecrets.validate(token)) }))
+    fun detail(teamID: String): SharedTeamDetail = TeamDirectoryJson.format.decodeFromJsonElement(
+        transport.request("GET", "teams/${appleUUID(teamID)}", null))
+    fun members(teamID: String): List<SharedTeamMember> = TeamDirectoryJson.format.decodeFromJsonElement<Members>(
+        transport.request("GET", "teams/${appleUUID(teamID)}/members", null)).members.also { rows ->
+        require(rows.map { appleUUID(it.id) }.distinct().size == rows.size)
+    }
+    fun invitations(teamID: String): List<TeamInvitation> = TeamDirectoryJson.format.decodeFromJsonElement<Invitations>(
+        transport.request("GET", "teams/${appleUUID(teamID)}/invitations", null)).invitations
     internal fun send(pending: PendingDirectoryRequest): JsonObject {
-        val response = transport.request("POST", pending.path, pending.body)
+        val response = transport.request(pending.method, pending.path, pending.body)
         when (pending.kind) {
             DirectoryRequestKind.create, DirectoryRequestKind.join -> TeamDirectoryJson.format.decodeFromJsonElement<TeamMembership>(response)
             DirectoryRequestKind.invite -> TeamDirectoryJson.format.decodeFromJsonElement<TeamInvitation>(response)
             DirectoryRequestKind.leave -> require(response["left"]?.jsonPrimitive?.boolean == true)
+            DirectoryRequestKind.roster -> TeamDirectoryJson.format.decodeFromJsonElement<SharedTeamDetail>(response).also { require(it.team.id.equals(pending.teamID,true)) }
+            DirectoryRequestKind.member -> require(appleUUID(response.getValue("memberID").jsonPrimitive.content).equals(pending.targetID,true))
+            DirectoryRequestKind.revoke -> require(response["revoked"]?.jsonPrimitive?.boolean == true)
         }
         return response
     }

@@ -14,6 +14,8 @@ input.on('line', line => {
     app.store.db.prepare("INSERT OR REPLACE INTO metadata VALUES('needsDeviceRecoveryReview','1')").run();
   } else if (command.kind === 'access') {
     app.store.db.prepare('UPDATE teams SET access_epoch=access_epoch+1 WHERE id=?').run(command.teamID);
+  } else if (command.kind === 'credential') {
+    app.store.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(command.teamID);
   } else throw new Error('Unknown isolated fixture command');
   process.stdout.write('{"updated":true}\n');
 });

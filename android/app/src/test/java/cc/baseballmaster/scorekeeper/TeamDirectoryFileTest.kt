@@ -1,6 +1,7 @@
 package cc.baseballmaster.scorekeeper
 
 import cc.baseballmaster.core.*
+import androidx.room.Room
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -10,11 +11,15 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.SQLiteMode
+import kotlinx.coroutines.runBlocking
 
 /** AtomicFile/AES-GCM under Android JVM; no Activity/UI, no real Keystore claim. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31], manifest = Config.NONE)
+@SQLiteMode(SQLiteMode.Mode.NATIVE)
 class TeamDirectoryFileTest {
     private val key = ByteArray(32) { it.toByte() }
     private fun state(): TeamDirectoryState {
@@ -58,5 +63,37 @@ class TeamDirectoryFileTest {
             val corrupt = before.copyOf(); corrupt[corrupt.lastIndex] = (corrupt.last().toInt() xor 1).toByte(); file.writeBytes(corrupt)
             assertThrows(Exception::class.java) { store.load() }; assertArrayEquals(corrupt, file.readBytes())
         } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun sharedCacheBindingsAndReviewedDraftsSurviveAnEncryptedReopen() {
+        val dir = folder()
+        try {
+            val original = state(); val id = UUID.randomUUID().toString(); val member = UUID.randomUUID().toString()
+            val profile = SharedTeamProfile(id,"共享队",1,"共享","",listOf(SharedRosterPlayer.new("球员","English",listOf("0","00"))))
+            val pending = requireNotNull(original.pending); val directory = requireNotNull(original.directory)
+            val draft = ReviewedDirectoryRequest(pending,DirectoryFailure(pending.id,409,"roster_conflict"))
+            val saved = original.copy(directory=TeamDirectory(listOf(RemoteTeam(id,"共享队",1,TeamRole.admin,member,1,1)),directory.recoveryEpoch),
+                profiles=mapOf(id to CachedTeamRoster(profile,member,1,directory.recoveryEpoch)),bindings=listOf(SharedTeamBinding(UUID.randomUUID().toString(),id)),reviewedRequests=listOf(draft))
+            TeamDirectoryFile(dir,{key.copyOf()}).save(saved)
+            assertEquals(saved,TeamDirectoryFile(dir,{key.copyOf()}).load())
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun preparingLocalPublicationNeverChangesRoomOrAddsSharingSecretsToBusinessBackup() = runBlocking {
+        val dir = folder(); val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(),LocalDatabase::class.java).build()
+        try {
+            val repo = GameRepository(db); val team = repo.createTeam("本机队",(0..8).joinToString("\n") { "球员$it,${if (it==0) "00" else it}" })
+            val original = db.dao().allTeams()
+            val store = TeamDirectoryFile(dir,{key.copyOf()}); val epoch = UUID.randomUUID().toString()
+            store.save(TeamDirectoryState(deviceID=UUID.randomUUID().toString(),directory=TeamDirectory(emptyList(),epoch)))
+            val session = TeamDirectorySession(TeamDirectoryClient(TeamTransport { _,_,_ -> error("Preparing must never send a request") }),store,"安卓")
+            val sharing = AndroidTeamSharing(repo,session); val id = sharing.preparePublish(team.id,"管理员")
+            assertEquals(id,store.load().pending!!.id); assertEquals(original,db.dao().allTeams()); assertTrue(db.dao().allGames().isEmpty())
+            val backup = AppleWireJson.parse(repo.exportDeviceBackup(team.id)).jsonObject
+            val payload = AppleWireJson.parse(java.util.Base64.getDecoder().decode(backup.getValue("payload").jsonPrimitive.content)).toString()
+            val pending = store.load().pending!!
+            assertFalse(payload.contains(id)); assertFalse(payload.contains(pending.body.getValue("recoveryToken").jsonPrimitive.content))
+            assertEquals(original,db.dao().allTeams())
+        } finally { db.close(); dir.deleteRecursively() }
     }
 }
