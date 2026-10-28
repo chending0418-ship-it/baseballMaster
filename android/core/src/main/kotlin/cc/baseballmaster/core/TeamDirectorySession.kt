@@ -55,6 +55,7 @@ import kotlinx.serialization.json.*
     val pairing: SavedDevicePairing? = null, val outgoingPairing: DevicePairing? = null,
     val recoveryCards: List<SavedManagementCard> = emptyList(),
     val fixedInvitations: Map<String, FixedTeamInvitation> = emptyMap(),
+    val incomingLinks: List<IncomingTeamLink> = emptyList(),
 ) {
     override fun toString() = "TeamDirectoryState(pending=${pending?.kind}, requiresRecoveryReview=$requiresRecoveryReview)"
 }

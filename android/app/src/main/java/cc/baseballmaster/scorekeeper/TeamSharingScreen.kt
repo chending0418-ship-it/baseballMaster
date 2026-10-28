@@ -88,10 +88,10 @@ internal object SharingClipboard {
     }
 }
 
-@Composable internal fun TeamSharingScreen(api: AndroidTeamSharing, localTeams: List<Team>, dismiss: ()->Unit) {
+@Composable internal fun TeamSharingScreen(api: AndroidTeamSharing, localTeams: List<Team>, incoming: IncomingTeamLink? = null, dismiss: ()->Unit) {
     val ui=remember(api) {SharingUi(api)}; val scope=rememberCoroutineScope(); val context=LocalContext.current
-    var editor by remember { mutableStateOf<String?>(null) }; var player by remember {mutableStateOf<SharedRosterPlayer?>(null)}
-    var securityPage by remember {mutableStateOf<String?>(null)}
+    var editor by remember { mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.join) "join" else null) }; var player by remember {mutableStateOf<SharedRosterPlayer?>(null)}
+    var securityPage by remember {mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.pair) "approve" else null)}
     var confirmation by remember {mutableStateOf<SharingConfirmation?>(null)}
     var invitationToShow by remember {mutableStateOf<FixedTeamInvitation?>(null)}; var shownCard by remember {mutableStateOf<SavedManagementCard?>(null)}
     var receiptBaseline by remember {mutableStateOf<String?>(null)}; var baselineLoaded by remember {mutableStateOf(false)}
@@ -111,6 +111,7 @@ internal object SharingClipboard {
             }
             if(result.request.kind==DirectoryRequestKind.fixedInvite && lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) invitationToShow=ui.state.fixedInvitations[result.request.teamID]
             if(result.request.securityAction==TeamSecurityAction.recoveryRotate && lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) shownCard=ui.state.recoveryCards.singleOrNull {it.teamID==result.request.teamID}
+            if(result.request.kind==DirectoryRequestKind.join && incoming?.kind==IncomingTeamLinkKind.join) dismiss()
         }
     }
     FormPage(ui.team?.name ?: "球队共享",ui.busy,!ui.busy,"shared-refresh","刷新",{
@@ -230,19 +231,19 @@ internal object SharingClipboard {
         }},confirmButton={TextButton(enabled=!ui.busy && reveal,onClick={ui.call(scope){api.confirmRecoveryCardSaved(card.teamID,card.version);shownCard=null;ui.refresh()}}) {Text("我已保存恢复卡")}},
             dismissButton={TextButton(enabled=!ui.busy,onClick={shownCard=null;ui.call(scope){ui.refresh()}}) {Text("稍后保存，返回球队")}})
     }
-    editor?.let {kind -> SharingEditor(api,ui,scope,kind,localTeams,player) {editor=null} }
-    securityPage?.let {page -> TeamSecurityScreen(api,page,ui.selectedID) {
-        securityPage=null;ui.call(scope){ui.refresh()}
+    editor?.let {kind -> SharingEditor(api,ui,scope,kind,localTeams,player,if(kind=="join") incoming?.url.orEmpty() else "") {editor=null} }
+    securityPage?.let {page -> TeamSecurityScreen(api,page,ui.selectedID,incoming?.url.orEmpty()) {
+        securityPage=null;if(incoming?.kind==IncomingTeamLinkKind.pair) dismiss() else ui.call(scope){ui.refresh()}
     } }
 }
 
-@Composable private fun SharingEditor(api: AndroidTeamSharing, ui: SharingUi, scope: CoroutineScope, kind: String, localTeams: List<Team>, player: SharedRosterPlayer?, dismiss: ()->Unit) {
+@Composable private fun SharingEditor(api: AndroidTeamSharing, ui: SharingUi, scope: CoroutineScope, kind: String, localTeams: List<Team>, player: SharedRosterPlayer?, initialLink: String = "", dismiss: ()->Unit) {
     val profile=remember(kind,ui.selectedID,player?.id) {ui.roster}
     var localID by remember {mutableStateOf("")}; var name by remember {mutableStateOf(if(kind=="profile") profile?.name.orEmpty() else "")}
     var nickname by remember {mutableStateOf("")}; var shortName by remember {mutableStateOf(profile?.shortName.orEmpty())}; var city by remember {mutableStateOf(profile?.city.orEmpty())}
     var chinese by remember {mutableStateOf(player?.chineseName.orEmpty())}; var english by remember {mutableStateOf(player?.englishName.orEmpty())}
     var numbers by remember {mutableStateOf(player?.numbers?.joinToString("/").orEmpty())}; var archived by remember {mutableStateOf(player?.archived==true)}
-    var invitation by remember {mutableStateOf("")}; var preview by remember {mutableStateOf<TeamInvitationPreview?>(null)}; var previewInput by remember {mutableStateOf<String?>(null)}
+    var invitation by remember {mutableStateOf(initialLink)}; var preview by remember {mutableStateOf<TeamInvitationPreview?>(null)}; var previewInput by remember {mutableStateOf<String?>(null)}
     var sharingScope by remember {mutableStateOf<SharingConfirmation?>(null)}; var showRoster by remember {mutableStateOf(false)}
     val title=when(kind) {"create"->"新建共享球队";"join"->"通过邀请加入";"profile"->"球队资料";else->if(player==null) "新增球员" else "编辑球员"}
     val enabled=ui.canPrepare && when(kind) {"create"->nickname.isNotBlank() && (localID.isNotEmpty() || name.isNotBlank());"join"->nickname.isNotBlank() && preview!=null && previewInput==invitation;"profile"->name.isNotBlank() && shortName.isNotBlank();else->numbers.isNotBlank() && (chinese.isNotBlank() || english.isNotBlank())}

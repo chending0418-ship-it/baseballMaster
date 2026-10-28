@@ -140,4 +140,14 @@ class TeamDirectoryFileTest {
             assertFalse(File(dir,"directory-v1.sealed").readBytes().toString(Charsets.UTF_8).contains(saved.token))
         } finally {dir.deleteRecursively()}
     }
+    @Test fun openedInvitationAndPairingLinksResumeOnlyFromEncryptedDeviceStorage() {
+        val dir=folder()
+        try {
+            val links=IncomingTeamLinkKind.entries.map {IncomingTeamLink.parse("baseballmaster://${it.name}#${TeamSecrets.random()}")}
+            val value=TeamDirectoryState(incomingLinks=links);TeamDirectoryFile(dir,{key.copyOf()}).save(value)
+            assertEquals(value,TeamDirectoryFile(dir,{key.copyOf()}).load())
+            val bytes=File(dir,"directory-v1.sealed").readBytes().toString(Charsets.UTF_8)
+            links.forEach {assertFalse(bytes.contains(it.token))}
+        } finally {dir.deleteRecursively()}
+    }
 }

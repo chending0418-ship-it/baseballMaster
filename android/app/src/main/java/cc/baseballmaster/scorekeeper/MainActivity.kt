@@ -1,6 +1,7 @@
 package cc.baseballmaster.scorekeeper
 
 import android.app.Application
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -49,6 +50,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cc.baseballmaster.core.*
@@ -62,10 +64,17 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+    private val screenModel get() = ViewModelProvider(this)[ScorekeeperViewModel::class.java]
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { BaseballTheme { PortraitViewport("portrait-app") { ScorekeeperApp() } } }
+        receiveServiceIntent(intent)
+        setContent { BaseballTheme { PortraitViewport("portrait-app") { ScorekeeperApp(screenModel) } } }
+    }
+    override fun onNewIntent(intent: Intent) {super.onNewIntent(intent);setIntent(intent);receiveServiceIntent(intent)}
+    private fun receiveServiceIntent(source: Intent) {
+        val value=source.dataString;source.data=null
+        if(source.action==Intent.ACTION_VIEW && value!=null) screenModel.receiveTeamLink(value)
     }
 }
 
@@ -74,6 +83,25 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private val database = LocalDatabase.open(application)
     private val repository = GameRepository(database)
     internal val sharing by lazy { AndroidTeamSharing(repository,androidTeamDirectory(application,"https://baseballmaster.cc/api/v3")) }
+    private val incomingLinkMutex=Mutex()
+    internal var incomingTeamLink by mutableStateOf<IncomingTeamLink?>(null)
+        private set
+    internal var incomingLinkVisible by mutableStateOf(false)
+        private set
+    internal fun resumeTeamLink() {incomingLinkVisible=true}
+    internal fun receiveTeamLink(value: String) {
+        val parsed=runCatching {IncomingTeamLink.parse(value)}.getOrElse {error="邀请或配对链接无效，请重新复制完整链接。";return}
+        viewModelScope.launch {incomingLinkMutex.withLock {
+            try {sharing.retainIncomingLink(parsed);incomingTeamLink=sharing.state().incomingLinks.firstOrNull();incomingLinkVisible=true}
+            catch(_: Exception) {error="链接尚未保存，请保留原链接，处理已有待核对链接后重试。"}
+        }}
+    }
+    internal fun closeTeamLink(id: String) {
+        viewModelScope.launch {incomingLinkMutex.withLock {
+            try {sharing.consumeIncomingLink(id);incomingTeamLink=sharing.state().incomingLinks.firstOrNull();incomingLinkVisible=false}
+            catch(_: Exception) {error="链接状态尚未保存，原链接仍保留，请重试。"}
+        }}
+    }
     private val settings = application.getSharedPreferences("baseballmaster-settings", 0)
     var currentTeamID by mutableStateOf(settings.getString("current_team_id", null))
         private set
@@ -154,6 +182,10 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     }
 
     init {
+        viewModelScope.launch {incomingLinkMutex.withLock {
+            try {incomingTeamLink=sharing.state().incomingLinks.firstOrNull()}
+            catch(_: Exception) {error="共享链接暂时无法读取，本机比赛仍可使用；请保留原链接与本机资料。"}
+        }}
         viewModelScope.launch {
             combine(repository.teams, repository.games) { teams, games ->
                     teams.map { GameJson.decodeFromString<Team>(it.payload) } to
@@ -454,6 +486,11 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
     var createTeam by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var newGame by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val game = model.openedGame
+    model.incomingTeamLink?.let {link -> key(link.id) {
+        if(model.incomingLinkVisible) TeamSharingScreen(model.sharing,model.teams,incoming=link) {model.closeTeamLink(link.id)}
+        else AlertDialog(onDismissRequest={},title={Text("有链接待核对")},text={Text(if(link.kind==IncomingTeamLinkKind.join) "之前的球队邀请已保留。核对球队与角色后再加入。" else "之前的设备配对链接已保留。选择球队并核对两台设备的短语后再授权。")},
+            confirmButton={TextButton(onClick=model::resumeTeamLink) {Text("继续核对")}},dismissButton={TextButton(onClick={model.closeTeamLink(link.id)}) {Text("关闭此链接")}})
+    } }
     BackHandler(game != null) { model.open(null) }
     Scaffold(
         modifier = Modifier.semantics { testTagsAsResourceId = true },
