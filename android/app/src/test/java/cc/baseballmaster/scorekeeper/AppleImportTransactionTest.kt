@@ -30,6 +30,31 @@ class AppleImportTransactionTest {
     }
     private fun database() = Room.inMemoryDatabaseBuilder(context, LocalDatabase::class.java).build()
 
+    @Test fun nonemptySourceCheckpointImportsAndRestoresWithoutRewritingPrefixOrAllowingUnsupportedEdits() = runBlocking {
+        val original=File(System.getProperty("parity.fixtures"),"backup/ios-reference-v7.bmbackup").readBytes()
+        val outer=AppleWireJson.parse(original).jsonObject;val snapshot=AppleBackupEnvelope.inspect(original).snapshot
+        val stored=snapshot.getValue("games").jsonArray.single().jsonObject;val state=stored.getValue("state").jsonObject
+        val checkpoint=JsonObject(state-"historyJournal"-"correctionRevisions")
+        val journal=buildJsonObject {put("version",1);put("legacyPrefix",true);put("operations",JsonArray(emptyList()));put("checkpoint",Base64.getEncoder().encodeToString(checkpoint.toString().toByteArray()))}
+        val changed=JsonObject(stored+("state" to JsonObject(state+("historyJournal" to journal))))
+        val payload=JsonObject(snapshot+("games" to JsonArray(listOf(changed)))).toString().toByteArray()
+        val hash=MessageDigest.getInstance("SHA-256").digest(payload).joinToString("") {"%02x".format(it)}
+        val bytes=JsonObject(outer+mapOf("payload" to JsonPrimitive(Base64.getEncoder().encodeToString(payload)),"checksum" to JsonPrimitive(hash))).toString().toByteArray()
+        val db=database();val restored=database()
+        try {
+            val repo=GameRepository(db);val receipt=repo.importAppleBackup(bytes)
+            val game=GameRepository.decode(db.dao().allGames().single())
+            assertTrue(game.incompletePrefix);assertTrue(game.journal.isEmpty());assertEquals(1,game.awayHits)
+            assertArrayEquals(bytes,repo.exportAppleBackup(receipt.id));assertTrue(repo.importAppleBackup(bytes).alreadyPresent)
+            val saved=db.dao().allGames().single()
+            try {repo.command(game.id,Command("pitch",pitch=PitchAction.ball,at=1_800_000_000_000),game.revision);fail("Legacy prefix edits are not supported")} catch(_: IllegalArgumentException) {}
+            assertEquals(saved,db.dao().allGames().single());assertArrayEquals(bytes,repo.exportAppleBackup(receipt.id));assertTrue(db.dao().allOperations().isEmpty())
+            val other=GameRepository(restored);other.restoreDeviceBackup(repo.exportDeviceBackup(game.ourTeamID))
+            assertEquals(game,GameRepository.decode(restored.dao().allGames().single()))
+            assertArrayEquals(bytes,other.exportAppleBackup(receipt.id));assertArrayEquals(bytes,other.exportAppleBackup(receipt.id,original=true))
+        } finally {db.close();restored.close()}
+    }
+
     @Test fun importIsPersistentIdempotentAndKeepsOriginalAudit() = runBlocking {
         val db = database()
         try {

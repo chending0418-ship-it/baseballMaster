@@ -61,7 +61,8 @@ internal object AppleReplayPrototype {
     private fun participants(f: JsonObject): List<Participant>? = f.optional("participants")?.jsonArray?.map { raw ->
         val p = raw.jsonObject; Participant(p.int("position"), id(p.text("playerID")), p.text("name"), p.text("number"))
     }
-    private fun command(op: JsonObject): Command {
+    private val violationIDs=mapOf("投手犯规" to "balk","快速投球" to "quickPitch","违规投球" to "illegalPitch","球体处理违规" to "foreignSubstance","踏出打击区击球" to "batterOutOfBox","打者干扰" to "batterInterference","违规球棒" to "illegalBat","打击次序错误" to "battingOutOfTurn","捕手干扰打击" to "catcherInterference","本垒阻挡或冲撞" to "plateObstruction","阻挡跑垒" to "obstruction","假触杀" to "fakeTag","脱离装备触球" to "detachedEquipment","跑者干扰" to "runnerInterference","跑垒限制道干扰" to "runningLaneInterference","教练员干扰" to "coachInterference","超越前位跑者" to "passingRunner")
+    private fun command(op: JsonObject,eventOwners: Map<String,String>): Command {
         val sourceObservation = op.optional("battedBall")?.jsonObject
         val detailRows = sourceObservation?.optional("runnerDetails")?.jsonArray?.map { it.jsonObject } ?: emptyList()
         val details = detailRows.associateBy { id(it.text("playerID")) }
@@ -93,6 +94,17 @@ internal object AppleReplayPrototype {
                     observation = observation, fielding = defense, timingRunCounts = fields.optional("_3")?.jsonPrimitive?.booleanOrNull,
                     participantSnapshots = participantSnapshots, at = at)
             }
+            "illegalPitch" -> {
+                val play=fields.optional("_2")?.let {outcome ->
+                    val body=buildJsonObject {
+                        put("_0",outcome);fields.optional("_3")?.let {put("_1",it)}
+                        put("_2",fields.optional("_4") ?: JsonArray(emptyList()));fields.optional("_5")?.let {put("_3",it)}
+                    }
+                    command(JsonObject(op+("command" to buildJsonObject {put("play",body)})),eventOwners)
+                }
+                (play ?: Command("illegal")).copy(kind="illegal",pitch=fields.optional("_0")?.jsonPrimitive?.content?.let {title ->PitchAction.entries.single {it.title==title}},
+                    wasThrown=fields.bool("_1"),penaltyApplied=fields.bool("_6"),at=at)
+            }
             "runner" -> {
                 require(observation == null)
                 val names = mapOf("偷垒成功" to "stolenBase", "双重盗垒" to "doubleSteal", "延迟盗垒" to "delayedSteal", "守备转传时额外进垒" to "relayAdvance", "守备失误造成额外进垒" to "defensiveErrorAdvance", "跑垒出局" to "caughtStealing", "牵制出局" to "pickoff", "触杀出局" to "tagOut", "封杀出局" to "forceOut", "申诉出局" to "appealOut", "离垒过早" to "leftEarly", "漏踩垒位" to "missedBase", "跑出限制道" to "outOfBasePath", "超越前位跑者" to "passedRunner", "跑者妨碍守备" to "runnerInterference", "跑垒员被击球击中" to "runnerHitByBall", "教练员帮助跑者" to "coachAssistance", "球太偏，跑者进垒" to "wildPitch", "捕手漏球，跑者进垒" to "passedBall", "球漏过去，分不清原因" to "uncertainLooseBall", "投手犯规，跑者进垒" to "balk")
@@ -112,38 +124,81 @@ internal object AppleReplayPrototype {
                 val reason = reasons[fields.text("_0")] ?: error("结束原因不受支持")
                 Command(if (reason == "suspended") "suspend" else "finish", text = reason, at = date(fields["_1"]) ?: at)
             }
+            "swapOpeningSides" -> Command("swap",at=at)
+            "decision" -> Command("decision",flag=fields.bool("_0"),at=at)
+            "extraInning" -> Command("extraInning",flag=fields.bool("_0"),runnerBases=fields.array("_1").map {it.jsonPrimitive.int},at=at)
+            "enableTB" -> Command("enableTB",runnerBases=fields.array("_0").map {it.jsonPrimitive.int},at=at)
+            "placeTB" -> Command("placeTB",playerID=id(fields.text("_0")),position=fields.optional("_1")?.jsonPrimitive?.int,at=at)
+            "note" -> Command("note",text=fields.text("_0"),at=at)
+            "clock" -> Command("clock",text=fields.text("_0").let {if(it=="start") "resume" else it},at=date(fields["_1"]) ?: at)
+            "droppedThirdStrike" -> Command("droppedThirdStrike",decisions=fields.array("_0").map(::decision),at=at)
+            "doubleSwitch" -> Command("doubleSwitch",playerID=id(fields.text("_0")),replacementID=id(fields.text("_1")),position=fields.int("_2"),secondPlayerID=id(fields.text("_3")),secondReplacementID=id(fields.text("_4")),secondPosition=fields.int("_5"),at=at)
+            "lineup" -> {
+                val value=fields.getValue("_0").jsonObject
+                val positions=value.array("players").associate {id(it.jsonObject.text("id")) to it.jsonObject.int("primaryPosition")}
+                val fielders=ids(value.array("fieldingIDs"))
+                val map=fielders.associateBy {positions.getValue(it)}
+                require(map.size==fielders.size) {"阵容历史守位重复"}
+                Command("lineup",homeSide=value.bool("isHome"),order=ids(value.array("battingIDs")),positions=map,
+                    playerID=value.optional("anchorID")?.jsonPrimitive?.content?.let(::id),designatedHitterID=value.optional("dhID")?.jsonPrimitive?.content?.let(::id),at=at)
+            }
+            "situation" -> {
+                val value=fields.getValue("_0").jsonObject;val bases=MutableList<String?>(3) {null}
+                val pairs=value.array("runners");require(pairs.size%2==0)
+                pairs.chunked(2).forEach {(b,p) ->val base=b.jsonPrimitive.int;require(base in 1..3 && bases[base-1]==null);bases[base-1]=id(p.jsonObject.text("id"))}
+                Command("situation",situation=Situation(value.int("inning"),value.bool("isTop"),value.int("balls"),value.int("strikes"),value.int("outs"),value.int("awayScore"),value.int("homeScore"),bases,value.int("batterIndex"),value.optional("pitcherID")?.jsonPrimitive?.content?.let(::id)),at=at)
+            }
+            "review" -> {
+                val value=fields.getValue("_0").jsonObject
+                val owner=eventOwners[id(value.text("id"))] ?: error("复核事件没有原始操作归属，不能猜测编号")
+                Command("review",eventID=owner,text=value.text("title"),reviewNote=value.optional("note")?.jsonPrimitive?.content,
+                    outcome=value.optional("resolvedOutcome")?.jsonPrimitive?.content?.let {title ->Outcome.entries.single {it.title==title}},
+                    playerID=value.optional("secondaryPlayerID")?.jsonPrimitive?.content?.let(::id),at=at)
+            }
+            "violation" -> {
+                Command("violation",runnerKind=violationIDs.getValue(fields.text("_0")),decisions=fields.array("_1").map(::decision),at=at)
+            }
+            "adjudication" -> {
+                val value=fields.getValue("_1").jsonObject
+                val statuses=mapOf("活球" to "live","死球" to "dead","延迟死球" to "delayedDead","按裁判宣判" to "umpireDecision")
+                val previous=mapOf("不涉及上一比赛结果" to "notApplicable","保留上一比赛结果" to "keep","取消上一比赛结果" to "cancel")
+                val appearances=mapOf("继续当前打席" to "continueAtBat","打者出局" to "batterOut","打者上一垒" to "batterFirst")
+                val credits=mapOf("不另记打击结果" to "none","一垒安打" to "single","二垒安打" to "double","三垒安打" to "triple","本垒打" to "homeRun","守备失误上垒" to "reachedOnError","野手选择" to "fieldersChoice","牺牲打" to "sacrifice")
+                Command("adjudication",runnerKind=violationIDs.getValue(fields.text("_0")),decisions=value.array("runnerDecisions").map(::decision),at=at,
+                    adjudication=Ruling(previousPlay=previous.getValue(value.text("previousPlayDisposition")),plateAppearance=appearances.getValue(value.text("plateAppearanceDisposition")),
+                        countsAsAtBat=value.bool("countsAsAtBat"),isFinal=value.bool("isFinalRuling"),battingCredit=credits.getValue(value.text("battingCredit")),
+                        runsBattedIn=value.int("runsBattedIn"),earnedRuns=value.int("earnedRuns"),errorPlayerID=value.optional("fieldingErrorPlayerID")?.jsonPrimitive?.content?.let(::id),ballStatus=statuses.getValue(value.text("ballStatus"))))
+            }
             else -> error("暂不支持历史操作 $kind")
         }
     }
-    /** Replay only clean checkpoints with supported commands. No persisted-data mutation occurs. */
+    /** Read supported journals from a validated checkpoint, including saved
+     * legacy prefixes. No persisted source mutation or edit permission occurs.
+     */
     fun replay(stored: JsonObject): Game {
         require(stored.optional("sharedTeamID") == null && stored.optional("sharedGameID") == null && !stored.bool("isSpectator")) { "暂不支持共享或观赛比赛" }
         val state = stored["state"]!!.jsonObject
         val journal = state.optional("historyJournal")?.jsonObject ?: return replayLegacy(stored, state)
         fun runJournal(source: JsonObject): Game {
-        require(source.int("version") == 1 && !source.bool("legacyPrefix"))
+        require(source.int("version") == 1)
         val checkpoint = GameJson.parseToJsonElement(Base64.getDecoder().decode(source.text("checkpoint")).toString(Charsets.UTF_8)).jsonObject
-        require(checkpoint.int("inning") == 1 && checkpoint.bool("isTop") && checkpoint.int("outs") == 0 && checkpoint.int("homeBatterIndex") == 0 && checkpoint.int("awayBatterIndex") == 0)
-        for (field in listOf("baseRunners", "batting", "pitching", "fielding")) require(checkpoint.array(field).isEmpty()) { "暂不支持非空检查点" }
-        require(checkpoint.array("homeRunsByInning").all { it.jsonPrimitive.int == 0 } && checkpoint.array("awayRunsByInning").all { it.jsonPrimitive.int == 0 })
-        val our = stored.optional("ourTeamID")?.jsonPrimitive?.content?.let(::id) ?: error("缺少本队")
-        val homeRaw = checkpoint["homeTeam"]!!.jsonObject; val awayRaw = checkpoint["awayTeam"]!!.jsonObject
-        val home = team(homeRaw, id(homeRaw.text("id")) != our); val away = team(awayRaw, id(awayRaw.text("id")) != our)
-        val rules = rules(stored["rules"]!!.jsonObject)
-        fun positions(team: Team, field: String): Map<Int, String> {
-            val names = ids(checkpoint.array(field)).toSet()
-            return team.players.filter { it.id in names }.associate { it.position to it.id }.also { require(it.size == rules.fielders) }
-        }
-        var game = Game(id(stored.text("id")), home, away, rules,
-            balls = checkpoint.int("balls"), strikes = checkpoint.int("strikes"),
-            homeOrder = ids(checkpoint.array("homeBattingOrderIDs")), awayOrder = ids(checkpoint.array("awayBattingOrderIDs")),
-            homePositions = positions(home, "homeFieldingPlayerIDs"), awayPositions = positions(away, "awayFieldingPlayerIDs"),
-            homePitcherID = checkpoint.optional("activeHomePitcherID")?.jsonPrimitive?.content?.let(::id), awayPitcherID = checkpoint.optional("activeAwayPitcherID")?.jsonPrimitive?.content?.let(::id),
-            homeRunsByInning = checkpoint.array("homeRunsByInning").map { it.jsonPrimitive.int }, awayRunsByInning = checkpoint.array("awayRunsByInning").map { it.jsonPrimitive.int },
-            ourTeamID = our, createdAt = date(stored["createdAt"]) ?: error("创建时间缺失"),
-            playedTimeZoneID = stored.optional("playedTimeZoneID")?.jsonPrimitive?.content ?: "Asia/Shanghai")
+        // StoredGame metadata belongs to the file, not to GameState's history
+        // checkpoint. In particular, current updatedAt/revision must never
+        // leak into every old audit checkpoint when a new action is appended.
+        var game=AppleStateProjection.read(stored,checkpoint).view().copy(
+            incompletePrefix=source.bool("legacyPrefix"),revision=0,updatedAt=0,
+            scheduledAt=null,playedAt=null,startedAt=null,dateRevisions=emptyList(),
+            historySourceID=null,isScheduled=false,openingPitchRecorded=false)
         val checkpointData = MatchEngine.checkpoint(game)
         val records = mutableListOf<RecordedCommand>()
+        val eventOwners=mutableMapOf<String,String>()
+        source.array("operations").forEach {raw ->
+            val operation=raw.jsonObject;val owner=id(operation.text("id"))
+            operation.array("eventIDs").forEach {rawID ->
+                val event=id(rawID.jsonPrimitive.content)
+                require(eventOwners.put(event,owner)==null) {"不同操作的原始事件编号重复"}
+            }
+        }
         source.array("operations").forEach { raw ->
             val op = raw.jsonObject
             val errors = op.array("errors").map { element -> element.jsonObject.let { ErrorCredit(id(it.text("playerID")), it.int("count", 1), it["note"]?.jsonPrimitive?.content ?: "漏记守备失误") } }
@@ -165,7 +220,7 @@ internal object AppleReplayPrototype {
             val runnerPairs = sourceContext.array("runners"); require(runnerPairs.size % 2 == 0)
             val runners = MutableList<String?>(3) { null }
             runnerPairs.chunked(2).forEach { pair -> val base = pair[0].jsonPrimitive.int; require(base in 1..3 && runners[base - 1] == null); runners[base - 1] = id(pair[1].jsonPrimitive.content) }
-            records += RecordedCommand(id(op.text("id")), command(op), order[batterIndex % order.size], runners,
+            records += RecordedCommand(id(op.text("id")), command(op,eventOwners), order[batterIndex % order.size], runners,
                 acceptContext = op.bool("acceptsNewContext"), context = context,
                 inserted = op.bool("inserted"), edited = op.bool("edited"), additionalErrors = errors, statisticsRuling = ruling)
         }
@@ -217,7 +272,12 @@ internal object AppleReplayPrototype {
         val batting = pairs("batting").mapValues { GameJson.decodeFromJsonElement<BattingLine>(it.value) }
         val pitching = pairs("pitching").mapValues { GameJson.decodeFromJsonElement<PitchingLine>(it.value) }
         val fielding = pairs("fielding").mapValues { GameJson.decodeFromJsonElement<FieldingLine>(it.value) }
-        require(game.batting == batting && game.pitching == pitching && game.fielding == fielding) { "重放球员统计与原始资料不一致" }
+        // Original actions may materialize an all-zero dictionary row while
+        // the other reducer leaves it absent. These have identical official
+        // statistics; the original dictionary is still retained in the file.
+        require(game.batting.filterValues {it!=BattingLine()} == batting.filterValues {it!=BattingLine()}) { "重放打击统计与原始资料不一致" }
+        require(game.pitching.filterValues {it!=PitchingLine()} == pitching.filterValues {it!=PitchingLine()}) { "重放投球统计与原始资料不一致" }
+        require(game.fielding.filterValues {it!=FieldingLine()} == fielding.filterValues {it!=FieldingLine()}) { "重放守备统计与原始资料不一致" }
         val baseValues = state.array("baseRunners"); require(baseValues.size % 2 == 0)
         val bases = MutableList<String?>(3) { null }
         baseValues.chunked(2).forEach { pair ->

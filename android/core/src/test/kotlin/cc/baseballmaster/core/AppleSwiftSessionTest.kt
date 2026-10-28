@@ -4,6 +4,7 @@ import java.io.File
 import java.math.BigDecimal
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
@@ -57,7 +58,7 @@ class AppleSwiftSessionTest {
         val output=root.parentFile.parentFile.resolve("output/validation/android/an04-interactive/sessions").apply {mkdirs()}
         val files=root.walkTopDown().filter {it.isFile && it.name.endsWith("-scoring.json")}.sortedBy {it.relativeTo(root).path}.toList()
         assertEquals(109,files.size)
-        var frames=0;var actions=0;var historyActions=0;var reviews=0;var undos=0;var replayChecks=0
+        var frames=0;var actions=0;var historyActions=0;var reviews=0;var undos=0;var replayChecks=0;var kotlinJournalChecks=0;var sourceImportChecks=0
         val sourceReplayDifferences=mutableListOf<JsonObject>()
         val failures=mutableListOf<String>();val results=mutableListOf<JsonObject>()
         for(file in files) {
@@ -99,6 +100,37 @@ class AppleSwiftSessionTest {
                         "correctionCount"->Unit
                         "pitcherInningHistoryIncomplete"->assertEquals("$name $label incomplete",value.jsonPrimitive.boolean,"pitcherInningHistoryIncomplete" in projection.warnings)
                         else->assertEquals("$name $label projection $key",value,projected[key])
+                    }
+                    val stored=response.getValue("storedGame").jsonObject
+                    if(journal(stored)!=null) {
+                        if(name=="history/history-lineup-after-missed-pitcher-scoring.json" && label=="3 historyInsert") {
+                            assertThrows("Inconsistent original replay must remain blocked",Exception::class.java) {AppleReplayPrototype.replay(stored)}
+                        } else {
+                            val replayed=NativeScoreSnapshot.from(AppleReplayPrototype.replay(stored))
+                            for((key,value) in expected) assertEquals("$name $label Kotlin journal $key",value,replayed[key])
+                            kotlinJournalChecks++
+                            // Package the real Swift-produced record in a new
+                            // test envelope, then exercise the product import
+                            // facade. This is not an export of Native history.
+                            val state=stored.getValue("state").jsonObject
+                            val our=stored.getValue("ourTeamID")
+                            val home=state.getValue("homeTeam").jsonObject;val away=state.getValue("awayTeam").jsonObject
+                            val payload=buildJsonObject {
+                                put("teams",buildJsonArray {add(if(home.getValue("id")==our) home else away)})
+                                put("opponentTeams",buildJsonArray {add(if(home.getValue("id")==our) away else home)})
+                                put("currentTeamID",our);put("games",buildJsonArray {add(stored)})
+                                for(key in listOf("seasons","playerGameRecords","archivedTeams")) put(key,JsonArray(emptyList()))
+                            }.toString().toByteArray()
+                            val bytes=buildJsonObject {
+                                put("format","BaseballMaster Backup");put("version",7);put("createdAt",stored.getValue("createdAt"))
+                                put("payload",Base64.getEncoder().encodeToString(payload));put("checksum",sha(payload))
+                            }.toString().toByteArray()
+                            val plan=AppleSourceBackup.prepare(bytes)
+                            assertArrayEquals("$name $label source bytes",bytes,plan.export())
+                            val imported=NativeScoreSnapshot.from(plan.games().single())
+                            for((key,value) in expected) assertEquals("$name $label source import $key",value,imported[key])
+                            sourceImportChecks++
+                        }
                     }
                     frames++
                 }
@@ -219,6 +251,8 @@ class AppleSwiftSessionTest {
         }
         output.resolve("results.json").writeText(buildJsonObject {
             put("results",JsonArray(results));put("frames",frames);put("actions",actions);put("historyActions",historyActions);put("reviews",reviews);put("undoRedo",undos);put("replayChecks",replayChecks)
+            put("kotlinJournalChecks",kotlinJournalChecks)
+            put("sourceImportChecks",sourceImportChecks)
             put("swiftBinarySHA256",compiled.getValue("sha256"));put("scope","Original Swift core with Linux memory adapters; no App/CoreData/UI/device execution")
             put("sources",sources)
             put("knownSourceReplayDifferences",JsonArray(sourceReplayDifferences))

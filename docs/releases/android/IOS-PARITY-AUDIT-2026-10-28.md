@@ -36,7 +36,7 @@
 | F06 球型／落点／路线 | `BattedBall`、`SituationRecording` | `SituationField`、`PerformanceSheet`、core 观察快照；离线样本已有，跨端全部事件／姓名快照往返未完成 |
 | F07 历史／统计 | `Statistics`、`StatisticsViews`、`ResultsViews` | `StatisticsScreen`、core 统计／来源只读投影；年度已有样本，共享正式副本去重及旧个人记录尚未完整接通 |
 | F08 PDF／海报／文件 | `ReportPDFRenderer`、`PlayByPlayPDFReport`、`StatisticsPDFReports`、`GamePoster` | `ReportExport`、`GamePoster`；阶段实现已有，长名单／实际分享面板及来源历史全面验收未完成 |
-| F09 互导／备份／旧版 | `LocalBackup`、`BackupViews`、`UpgradeProtection`、`HistoricalImportView` | `AppleBackupLibrary`、`AppleImportStorage`、core `AppleSourceBackup`／`AppleGameContinuation`；受限续记、只读旧版、原文保留已接，完整可编辑双向互导和 `.bmteam` 正式映射未完成，真实 v5 缺失 |
+| F09 互导／备份／旧版 | `LocalBackup`、`BackupViews`、`UpgradeProtection`、`HistoricalImportView` | `AppleBackupLibrary`、`AppleImportStorage`、core `AppleSourceBackup`／`AppleGameContinuation`；受限续记、只读旧版、原文保留已接；扩展读取组又通过 487 份真实 Swift journal 的重放及实际来源导入，非空检查点可读，1 份已知来源重放差异拒绝。完整可编辑双向互导和 `.bmteam` 正式映射仍未完成，真实 v5 缺失 |
 | F10 球队协作 | `TeamCollaborationViews`、`TeamSharingStore` | `TeamSharingScreen`、`TeamDirectorySession`；建队／加入／名单／成员／固定邀请／退出已有，第十组已接解散／恢复；完整绑定管理及共享建赛仍缺 |
 | F11 比赛协作 | `SharedMatchViews`、`SharedMatches` | `SharedMatchDirectory` 读取／游标／交接控制基础已有；AN06 第四组补只读产品比赛列表；正式发布／PUT／完整内容编辑／离线更新和冲突核对尚缺，不开放产品交接 |
 | F12 安全／设备／恢复 | `TeamSecurityViews`、`TeamSecurity` | `TeamSecuritySession`、`TeamCredentialRotation`、`CredentialVault`；第八组已接配对、设备管理、管理恢复兑换和卡片分享，第九组补服务恢复核对，第十组补审计；第十一组补撤销 Bearer 后明确重接入和旧工作隔离。界面未执行，AN07 用户明确不做 |
