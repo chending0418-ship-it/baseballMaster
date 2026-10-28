@@ -64,7 +64,33 @@ internal class TeamDirectoryFile(
 internal fun androidTeamDirectory(context: Context, endpoint: String): TeamDirectorySession {
     val app = context.applicationContext
     val vault = CredentialVault(app)
-    val store = TeamDirectoryFile(File(app.noBackupFilesDir, "team-directory"), vault::secret)
-    val credentials = TeamCredentialProvider { java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(vault.secret()) }
+    val store = TeamDirectoryFile(File(app.noBackupFilesDir, "team-directory"), vault::stableEncryptionSecret)
+    val rotator=TeamCredentialRotator(vault) { token -> TeamHttpTransport(endpoint,TeamCredentialProvider { token }) }
+    val credentials = TeamCredentialProvider {
+        val pending=vault.pendingRotation()
+        if (pending != null || vault.rotationDue()) {
+            val device=store.load().deviceID
+            check(device != null || pending == null) { "请先核对设备身份后继续授权更新" }
+            try { if (device != null) rotator.rotate(device) }
+            catch (fault: TeamServiceFault) {
+                when {
+                    fault.status in setOf(409,426) -> Unit
+                    fault.status == 410 && fault.code == "rotation_expired" -> vault.pendingRotation()?.let { vault.clearExpiredRotation(it.id) }
+                    else -> throw fault
+                }
+            }
+        }
+        vault.currentToken()
+    }
     return TeamDirectorySession(TeamDirectoryClient(TeamHttpTransport(endpoint, credentials)), store, android.os.Build.MODEL)
+}
+
+/** Explicit maintenance, never performed just because the app starts. Pending
+ * rotations are resumed by the credential provider before ordinary API traffic.
+ */
+internal suspend fun rotateAndroidTeamCredential(context: Context, endpoint: String): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    val app=context.applicationContext; val vault=CredentialVault(app)
+    val file=TeamDirectoryFile(File(app.noBackupFilesDir,"team-directory"),vault::stableEncryptionSecret)
+    val device=requireNotNull(file.load().deviceID) { "请先注册并核对设备身份" }
+    TeamCredentialRotator(vault) { token -> TeamHttpTransport(endpoint,TeamCredentialProvider { token }) }.rotate(device)
 }

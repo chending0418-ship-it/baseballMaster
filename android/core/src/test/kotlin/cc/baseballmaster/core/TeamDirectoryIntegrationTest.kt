@@ -16,6 +16,18 @@ class TeamDirectoryIntegrationTest {
         override fun load() = state
         override fun save(state: TeamDirectoryState) { if (reject(state)) throw IOException("injected write failure"); this.state = state }
     }
+    private class Credentials : RotatingTeamCredentials {
+        override val monitor=Any(); var current=TeamSecrets.random(); var fixed: ByteArray?=null; var pending: TeamCredentialRotation?=null
+        var failBegin=false; var failFinish=false
+        override fun currentToken()=current
+        override fun stableEncryptionSecret(): ByteArray { if(fixed==null) fixed=java.util.Base64.getUrlDecoder().decode(current); return fixed!!.copyOf() }
+        override fun pendingRotation()=pending
+        override fun beginRotation(): TeamCredentialRotation {
+            if(failBegin) throw IOException("injected credential save")
+            return pending ?: TeamCredentialRotation(UUID.randomUUID().toString(),TeamSecrets.random()).also { pending=it }
+        }
+        override fun finishRotation(rotation: TeamCredentialRotation) { if(failFinish) throw IOException("injected credential finish"); check(pending==rotation); current=rotation.token; pending=null }
+    }
     private class Service : AutoCloseable {
         private val script = File(System.getProperty("parity.fixtures")).parentFile.parentFile.resolve("scripts/android/an05-local-service.mjs")
         private val process = ProcessBuilder("node", script.absolutePath).redirectError(ProcessBuilder.Redirect.DISCARD).start()
@@ -44,6 +56,71 @@ class TeamDirectoryIntegrationTest {
     private fun publishFixture(server: Service, transport: TeamTransport, team: RemoteTeam): SharedMatchDocument {
         val body=JsonObject(server.matchFixture() + ("operationID" to JsonPrimitive(UUID.randomUUID().toString())))
         return SharedMatchDocument(transport.request("POST","teams/${team.id}/games",body))
+    }
+
+    @Test(timeout = 30000) fun credentialRotationKeepsDeviceAndTeamIdentityButRetiresTheOldBearer() {
+        Service().use { server ->
+            val vault=Credentials(); val old=vault.current; val session=session(server.transport(old)); val team=create(session)
+            val device=session.snapshot().deviceID!!; val encryption=vault.stableEncryptionSecret()
+            assertEquals(device,TeamCredentialRotator(vault,server::transport).rotate(device))
+            assertNull(vault.pending); assertNotEquals(old,vault.current); assertArrayEquals(encryption,vault.stableEncryptionSecret())
+            assertEquals(401,assertThrows(TeamServiceFault::class.java) { TeamDirectoryClient(server.transport(old)).teams() }.status)
+            assertEquals(team.memberID,TeamDirectoryClient(server.transport(vault.current)).teams().teams.single().memberID)
+            assertEquals(device,TeamDirectoryClient(server.transport(vault.current)).enroll("同一设备"))
+        }
+    }
+
+    @Test(timeout = 30000) fun lostCredentialPrepareResponseCommitsTheSavedCandidateWithoutPreparingAgain() {
+        Service().use { server ->
+            val vault=Credentials(); val owner=session(server.transport(vault.current)); create(owner); val device=owner.snapshot().deviceID!!
+            var drop=true; var prepares=0
+            val transportFor: (String)->TeamTransport = { token -> val actual=server.transport(token); TeamTransport { method,path,body ->
+                val response=actual.request(method,path,body)
+                if(path.endsWith("credential-prepare")) { prepares++; if(drop) {drop=false;throw IOException("injected prepare response loss")} }; response
+            } }
+            val rotator=TeamCredentialRotator(vault,transportFor)
+            assertThrows(IOException::class.java) { rotator.rotate(device) }; val pending=vault.pending!!
+            assertEquals(device,TeamCredentialRotator(vault,transportFor).rotate(device)); assertEquals(pending.token,vault.current); assertEquals(1,prepares)
+        }
+    }
+
+    @Test(timeout = 30000) fun lostCredentialCommitResponseResumesWithTheNewBearerAfterRestart() {
+        Service().use { server ->
+            val vault=Credentials(); val old=vault.current; val owner=session(server.transport(old)); create(owner); val device=owner.snapshot().deviceID!!
+            var drop=true
+            val transportFor: (String)->TeamTransport = { token -> val actual=server.transport(token); TeamTransport { method,path,body ->
+                val response=actual.request(method,path,body)
+                if(path.endsWith("credential-commit") && drop) {drop=false;throw IOException("injected commit response loss")}; response
+            } }
+            assertThrows(IOException::class.java) { TeamCredentialRotator(vault,transportFor).rotate(device) }
+            val pending=vault.pending!!; assertEquals(old,vault.current)
+            assertEquals(device,TeamCredentialRotator(vault,transportFor).rotate(device)); assertEquals(pending.token,vault.current)
+        }
+    }
+
+    @Test(timeout = 30000) fun credentialLocalFinishFailureCanRetrieveTheSameCommittedRotation() {
+        Service().use { server ->
+            val vault=Credentials(); val owner=session(server.transport(vault.current)); create(owner); val device=owner.snapshot().deviceID!!
+            vault.failFinish=true
+            assertThrows(IOException::class.java) { TeamCredentialRotator(vault,server::transport).rotate(device) }
+            val pending=vault.pending!!; vault.failFinish=false
+            assertEquals(device,TeamCredentialRotator(vault,server::transport).rotate(device)); assertEquals(pending.token,vault.current)
+        }
+    }
+
+    @Test fun failedCredentialStagingNeverOpensATransport() {
+        val vault=Credentials(); vault.failBegin=true; var calls=0
+        val rotator=TeamCredentialRotator(vault) { calls++; error("must not open a transport") }
+        assertThrows(IOException::class.java) { rotator.rotate(UUID.randomUUID().toString()) }; assertEquals(0,calls)
+    }
+
+    @Test(timeout = 30000) fun mismatchedCredentialDeviceReceiptRetainsTheOnlyCandidateForReview() {
+        Service().use { server ->
+            val vault=Credentials(); val owner=session(server.transport(vault.current)); create(owner); val device=owner.snapshot().deviceID!!
+            val rotator=TeamCredentialRotator(vault,server::transport)
+            assertThrows(IllegalStateException::class.java) { rotator.rotate(UUID.randomUUID().toString()) }
+            val candidate=vault.pending!!; assertEquals(device,rotator.rotate(device)); assertEquals(candidate.token,vault.current)
+        }
     }
 
     @Test(timeout = 30000) fun fullOpaqueMatchAndCursorKeepWireIdentityAndUnknownHistoryFields() {
