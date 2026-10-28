@@ -3,6 +3,7 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation("junit:junit:4.13.2")
 }
 tasks.test { systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath) }
@@ -12,6 +13,16 @@ tasks.test {
     systemProperty("wire.output", rootProject.file("../output/validation/android/an04-wire-exchange/kotlin").absolutePath)
     outputs.dir(rootProject.file("../output/validation/android/an04-wire-exchange/kotlin"))
     exclude("**/AppleSwiftWireReturnTest.class")
+    exclude("**/TeamDirectoryIntegrationTest.class")
+}
+// Node 24 is only needed for this explicit, isolated existing-service integration.
+tasks.register<Test>("teamServiceTest") {
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    include("**/TeamDirectoryIntegrationTest.class")
+    systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
+    inputs.files(rootProject.file("../scripts/android/an05-local-service.mjs"))
+    inputs.files(fileTree(rootProject.file("../collaboration")) { include("*.mjs") })
 }
 // Explicit second leg of Kotlin -> original Swift models -> Kotlin. Missing artifacts fail.
 tasks.register<Test>("swiftWireTest") {
