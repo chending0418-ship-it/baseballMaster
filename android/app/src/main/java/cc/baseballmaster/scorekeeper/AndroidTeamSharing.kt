@@ -11,6 +11,10 @@ import kotlinx.coroutines.withContext
 internal class AndroidTeamSharing(private val local: GameRepository, private val session: TeamDirectorySession) {
     suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
     suspend fun refresh() = withContext(Dispatchers.IO) { session.refresh() }
+    suspend fun prepareCreate(name: String, nickname: String) = withContext(Dispatchers.IO) { session.prepareCreate(name,nickname) }
+    suspend fun previewInvitation(input: String) = withContext(Dispatchers.IO) { session.invitationPreview(input) }
+    suspend fun prepareJoin(input: String, nickname: String) = withContext(Dispatchers.IO) { session.prepareJoin(TeamServiceLink.invitation(input),nickname) }
+    suspend fun prepareLeave(teamID: String) = withContext(Dispatchers.IO) { session.prepareLeave(teamID) }
     suspend fun roster(teamID: String, force: Boolean = false) = withContext(Dispatchers.IO) { session.roster(teamID,force) }
     suspend fun members(teamID: String) = withContext(Dispatchers.IO) { session.members(teamID) }
     suspend fun invitations(teamID: String) = withContext(Dispatchers.IO) { session.invitations(teamID) }
@@ -26,6 +30,7 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     suspend fun prepareRevoke(teamID: String, invitationID: String) = withContext(Dispatchers.IO) { session.prepareRevoke(teamID,invitationID) }
     suspend fun sendPending() = withContext(Dispatchers.IO) { session.sendPending() }
     suspend fun keepRejectedAsDraft(operationID: String) = withContext(Dispatchers.IO) { session.keepRejectedAsDraft(operationID) }
+    suspend fun archiveRejectedOperation(operationID: String, confirmed: Boolean) = withContext(Dispatchers.IO) { session.archiveRejectedOperation(operationID,confirmed) }
     suspend fun matches(teamID: String) = withContext(Dispatchers.IO) { session.matches(teamID) }
     suspend fun match(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.match(teamID,gameID) }
     suspend fun participants(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.matchParticipants(teamID,gameID) }

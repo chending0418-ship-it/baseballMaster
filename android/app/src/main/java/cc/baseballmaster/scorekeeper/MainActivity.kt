@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.AndroidViewModel
@@ -72,6 +73,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     AndroidViewModel(application) {
     private val database = LocalDatabase.open(application)
     private val repository = GameRepository(database)
+    internal val sharing by lazy { AndroidTeamSharing(repository,androidTeamDirectory(application,"https://baseballmaster.cc/api/v3")) }
     private val settings = application.getSharedPreferences("baseballmaster-settings", 0)
     var currentTeamID by mutableStateOf(settings.getString("current_team_id", null))
         private set
@@ -804,13 +806,20 @@ private fun TeamsScreen(teams: List<Team>, add: () -> Unit) {
 @Composable
 private fun ProfileScreen(model: ScorekeeperViewModel) {
     var showRules by rememberSaveable { mutableStateOf(false) }
+    var showSharing by rememberSaveable { mutableStateOf(false) }
     if (showRules) RulesScreen { showRules = false }
+    if (showSharing) TeamSharingScreen(model.sharing,model.teams) { showSharing=false }
     Text("关于", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
     CardBlock {
         Text("棒球比赛记录大师", fontWeight = FontWeight.Bold)
         Text("Android ${BuildConfig.VERSION_NAME}")
         Text("开发预览版", color = MaterialTheme.colorScheme.primary)
-        Text("此版本用于体验本机记分，资料保存在当前设备。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("默认仅本机记分，球队共享需要明确启用。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    CardBlock {
+        Text("球队共享",fontWeight=FontWeight.Bold)
+        Text("创建共享球队，或通过邀请加入；本机球队继续独立保存。",color=MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick={showSharing=true},modifier=Modifier.testTag("open-team-sharing")) { Text("管理共享球队") }
     }
     CardBlock {
         Text("棒球规则查询", fontWeight = FontWeight.Bold)
@@ -819,7 +828,7 @@ private fun ProfileScreen(model: ScorekeeperViewModel) {
     }
     CardBlock {
         Text("备份与恢复", fontWeight = FontWeight.Bold)
-        Text("可核验 iOS 备份或仅导入球队名单；完整比赛互导正在开发。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("可核验 iOS 备份、导入名单或受来源保护的比赛；完整可编辑互导仍未完成。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         DeviceBackupControls(model)
         BackupInspection(model)
         TeamArchiveControls()
@@ -838,13 +847,14 @@ internal fun FormPage(
     saveLabel: String,
     dismiss: () -> Unit,
     save: () -> Unit,
+    secure: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
     Dialog(
         onDismissRequest = { if (!busy) dismiss() },
         properties =
-            DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+            DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false,securePolicy=if(secure) SecureFlagPolicy.SecureOn else SecureFlagPolicy.Inherit),
     ) {
         val dialogView = LocalView.current
         SideEffect {

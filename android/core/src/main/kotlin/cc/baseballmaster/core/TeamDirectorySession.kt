@@ -226,6 +226,9 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         check(!state.requiresRecoveryReview && pending.recoveryEpoch == remote.recoveryEpoch) { "服务恢复代次已变化，旧操作已保留，请先核对" }
         val remoteTeam = remote.teams.singleOrNull { it.id.equals(pending.teamID, true) }
         check(remoteTeam == null || remoteTeam.accessEpoch == pending.accessEpoch) { "球队访问代次已变化，旧操作已保留，请先核对" }
+        // A fresh attempt can have a different outcome. Do not leave an earlier
+        // definitive rejection available as proof after a lost retry response.
+        if(state.lastFailure!=null) storage.save(state.copy(lastFailure=null))
         val response = try { client.send(pending) } catch (fault: TeamServiceFault) {
             storage.save(state.copy(lastFailure=DirectoryFailure(pending.id,fault.status,fault.code)))
             throw fault
@@ -258,6 +261,15 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         val state = storage.load(); val pending = requireNotNull(state.pending); val failure = requireNotNull(state.lastFailure)
         require(pending.id == operationID && failure.operationID == operationID && failure.status == 409 &&
             failure.code in setOf("roster_conflict","revision_conflict","identity_conflict","admin_limit","last_admin","last_admin_device","capacity")) { "这笔操作结果尚未明确，不能更换编号" }
+        storage.save(state.copy(pending=null,lastFailure=null,reviewedRequests=state.reviewedRequests + ReviewedDirectoryRequest(pending,failure)))
+    }
+    /** A deliberate manual-review exit for definitive service rejections. It
+     * does not claim the earlier attempt never committed, and never resubmits.
+     */
+    fun archiveRejectedOperation(operationID: String, confirmed: Boolean) = synchronized(storage.monitor) {
+        val state=storage.load(); val pending=requireNotNull(state.pending); val failure=requireNotNull(state.lastFailure)
+        require(confirmed && pending.id==operationID && failure.operationID==operationID && !state.requiresRecoveryReview &&
+            failure.status in setOf(400,403,404,409,410,413,426)) { "操作结果不明或需恢复核对，不能归档重做" }
         storage.save(state.copy(pending=null,lastFailure=null,reviewedRequests=state.reviewedRequests + ReviewedDirectoryRequest(pending,failure)))
     }
 

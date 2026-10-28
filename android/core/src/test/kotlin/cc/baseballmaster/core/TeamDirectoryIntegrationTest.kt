@@ -159,6 +159,31 @@ class TeamDirectoryIntegrationTest {
         }
     }
 
+    @Test(timeout = 30000) fun anExpiredJoinCanBeArchivedForExplicitReviewButNeverAutomaticallyRetried() {
+        Service().use { server ->
+            val owner=session(server.transport()); val team=create(owner); val target=session(server.transport()); target.refresh()
+            owner.prepareInvite(team.id,TeamRole.member); val token=owner.sendPending().request.body.getValue("token").jsonPrimitive.content
+            val id=target.prepareJoin(token,"成员"); val original=target.snapshot().pending
+            server.change("advance","86400001")
+            assertEquals(410,assertThrows(TeamServiceFault::class.java) {target.sendPending()}.status)
+            assertThrows(IllegalArgumentException::class.java) {target.archiveRejectedOperation(id,false)}
+            target.archiveRejectedOperation(id,true); assertEquals(original,target.snapshot().reviewedRequests.single().request)
+            assertTrue(target.refresh().teams.isEmpty()); assertNull(target.snapshot().pending)
+        }
+    }
+
+    @Test(timeout = 30000) fun aLostRetryCannotLeaveTheEarlierDefinitiveRejectionAsProofForRecreatingTheOperation() {
+        Service().use { server ->
+            val transport=server.transport(); val store=Memory(); var lose=false
+            val owner=session(TeamTransport { method,path,body -> if(lose && method=="POST" && path.endsWith("/leave")) throw IOException("injected unknown retry outcome"); transport.request(method,path,body) },store)
+            val team=create(owner); val id=owner.prepareLeave(team.id)
+            assertEquals("last_admin",assertThrows(TeamServiceFault::class.java) {owner.sendPending()}.code)
+            lose=true; assertThrows(IOException::class.java) {owner.sendPending()}
+            assertNull(store.state.lastFailure); assertEquals(id,store.state.pending!!.id)
+            assertThrows(IllegalArgumentException::class.java) {owner.archiveRejectedOperation(id,true)}
+        }
+    }
+
     @Test(timeout = 30000) fun expiredPairAcceptanceCanOnlyBeArchivedAfterExplicitConfirmation() {
         Service().use { server ->
             val owner=session(server.transport()); val team=create(owner); val target=session(server.transport()); target.refresh()
