@@ -2,7 +2,6 @@ package cc.baseballmaster.core
 
 import java.security.MessageDigest
 import java.util.Base64
-import java.util.UUID
 import kotlinx.serialization.json.*
 
 /** Read and verify the iOS .bmbackup envelope without changing or importing any local data. */
@@ -17,19 +16,18 @@ data class AppleBackupInspection(
 
 object AppleBackupEnvelope {
     private const val MAX_BYTES = 100_000_000
-    private val json = Json { ignoreUnknownKeys = false }
     fun inspect(bytes: ByteArray): AppleBackupInspection {
         require(bytes.size <= MAX_BYTES) { "备份超过 100 MB" }
-        val envelope = json.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
-        require(envelope["format"]?.jsonPrimitive?.content == "BaseballMaster Backup") { "备份格式不受支持" }
-        val version = envelope["version"]?.jsonPrimitive?.intOrNull ?: error("备份版本缺失")
+        val envelope = AppleWireJson.parse(bytes).jsonObject
+        require(envelope["format"]?.jsonPrimitive?.takeIf { it.isString }?.content == "BaseballMaster Backup") { "备份格式不受支持" }
+        val version = envelope["version"]?.jsonPrimitive?.takeUnless { it.isString }?.intOrNull ?: error("备份版本缺失")
         require(version in 1..7) { "备份版本不受支持" }
-        require(envelope["createdAt"]?.jsonPrimitive?.doubleOrNull?.isFinite() == true) { "备份时间无效" }
-        val payload = Base64.getDecoder().decode(envelope["payload"]?.jsonPrimitive?.content ?: error("备份内容缺失"))
-        val checksum = envelope["checksum"]?.jsonPrimitive?.content ?: error("备份校验值缺失")
+        require(envelope["createdAt"]?.jsonPrimitive?.takeUnless { it.isString }?.doubleOrNull?.isFinite() == true) { "备份时间无效" }
+        val payload = Base64.getDecoder().decode(envelope["payload"]?.jsonPrimitive?.takeIf { it.isString }?.content ?: error("备份内容缺失"))
+        val checksum = envelope["checksum"]?.jsonPrimitive?.takeIf { it.isString }?.content ?: error("备份校验值缺失")
         val digest = MessageDigest.getInstance("SHA-256").digest(payload).joinToString("") { "%02x".format(it) }
         require(checksum == digest) { "备份校验失败，原有数据未修改" }
-        val snapshot = json.parseToJsonElement(payload.toString(Charsets.UTF_8)).jsonObject
+        val snapshot = AppleWireJson.parse(payload).jsonObject
         fun list(key: String, required: Boolean = false): JsonArray = when (val value = snapshot[key]) {
             null, JsonNull -> if (required) error("备份缺少 $key") else JsonArray(emptyList())
             else -> value.jsonArray
@@ -66,9 +64,13 @@ object AppleBackupEnvelope {
         require(seasonIDs.distinct().size == seasonIDs.size) { "赛季编号重复" }
         val recordIDs = list("playerGameRecords", true).map { id(it.jsonObject) }
         require(recordIDs.distinct().size == recordIDs.size) { "个人记录编号重复" }
+        list("playerGameRecords", true).forEach { record ->
+            AppleStoredGameValidation.validateBattingLine(record.jsonObject["batting"]?.jsonObject ?: error("个人记录统计缺失"))
+        }
         val games = list("games")
         val gameIDs = games.map { id(it.jsonObject) }
         require(gameIDs.distinct().size == gameIDs.size) { "比赛编号重复" }
+        games.forEach { AppleStoredGameValidation.validate(it.jsonObject) }
         return AppleBackupInspection(version, payload, snapshot, teams.size, opponents.size, games.size)
     }
 }

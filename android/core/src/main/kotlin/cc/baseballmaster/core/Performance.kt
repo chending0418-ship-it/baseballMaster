@@ -1,8 +1,5 @@
 package cc.baseballmaster.core
 
-import java.time.Instant
-import java.time.ZoneId
-
 /** Local official projections. Shared sources will be supplied only after AN05 authorisation. */
 data class Contact(
     val id: String,
@@ -20,10 +17,7 @@ data class Performance(
 )
 
 object Performances {
-    fun year(g: Game): Int? =
-        (g.playedAt ?: g.startedAt ?: g.createdAt.takeIf { it > 0 })?.let {
-            Instant.ofEpochMilli(it).atZone(ZoneId.of(g.playedTimeZoneID)).year
-        }
+    fun year(g: Game): Int? = MatchDates.year(g)
 
     fun calculate(current: Game, all: List<Game>, playerID: String, annual: Boolean): Performance {
         val team =

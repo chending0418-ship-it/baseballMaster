@@ -46,15 +46,15 @@ fun addFielding(a: FieldingLine, b: FieldingLine) {
 
 object SeasonStatisticsCalculator {
     fun years(games: List<Game>): List<Int> =
-        (games.mapNotNull { runCatching { Performances.year(it) }.getOrNull() } + Year.now().value)
+        (games.mapNotNull { MatchDates.year(it) } + Year.now().value)
             .distinct().sortedDescending()
 
     fun calculate(team: Team, all: List<Game>, year: Int, mode: GameMode? = null, selectedIDs: Set<String>? = null): SeasonStatistics {
         val games = all.filter { g ->
             g.isFinal && !g.practice && !g.isScheduled && g.ourTeamID == team.id &&
-                runCatching { Performances.year(g) }.getOrNull() == year &&
+                (g.home.id == team.id || g.away.id == team.id) && MatchDates.year(g) == year &&
                 (mode == null || mode == g.rules.mode) && (selectedIDs == null || g.id in selectedIDs)
-        }.sortedWith(compareByDescending<Game> { it.playedAt ?: it.startedAt ?: it.scheduledAt ?: it.createdAt }.thenBy { it.id })
+        }.sortedWith(compareByDescending<Game> { MatchDates.effectivePlayedAt(it) }.thenBy { it.id })
         val players = team.players.associate { it.id to SeasonPlayerStatistics(it, currentRoster = true) }.toMutableMap()
         var wins = 0; var losses = 0; var ties = 0; var runs = 0; var runsAllowed = 0; var pending = 0; var incomplete = 0
         for (game in games) {
@@ -66,15 +66,13 @@ object SeasonStatisticsCalculator {
             when { ours > theirs -> wins++; ours < theirs -> losses++; else -> ties++ }
             pending += game.entries.count { it.incomplete }
             if (game.statisticsIncomplete || game.incompletePrefix) incomplete++
-            val order = (if (home) game.homeOrder else game.awayOrder).orEmpty()
-            val positions = (if (home) game.homePositions else game.awayPositions).orEmpty().values
-            val participants = (order + positions + game.exitedPlayers + game.batting.keys + game.pitching.keys + game.fielding.keys).toSet()
-            for (p in our.players.filter { it.id in participants }) {
+            for (participant in ReportStatisticsProjection.gameParticipants(game, team.id)) {
+                val p = participant.player
                 val row = players.getOrPut(p.id) { SeasonPlayerStatistics(p, currentRoster = false) }
                 row.games++
-                game.batting[p.id]?.let { addBatting(row.batting, it) }
-                if (game.rules.mode != GameMode.coachPitch) game.pitching[p.id]?.let { addPitching(row.pitching, it) }
-                game.fielding[p.id]?.let { addFielding(row.fielding, it) }
+                addBatting(row.batting, participant.batting)
+                addPitching(row.pitching, participant.pitching)
+                addFielding(row.fielding, participant.fielding)
             }
         }
         return SeasonStatistics(games, players.values.toList(), wins, losses, ties, runs, runsAllowed, pending, incomplete)

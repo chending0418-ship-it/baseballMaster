@@ -6,6 +6,8 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -96,17 +98,75 @@ private fun StatisticsSegmented(label: String, values: Map<String, String>, sele
 }
 
 @Composable
-private fun StatisticsMetricGrid(values: List<Pair<String, String>>) {
+private fun StatisticsMetricGrid(values: List<Pair<String, String>>, tagPrefix: String? = null) {
     values.chunked(3).forEach { row ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             row.forEach { (label, value) ->
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                val metricModifier = if (tagPrefix == null) Modifier else Modifier
+                    .testTag("$tagPrefix-$label").semantics(mergeDescendants = true) { contentDescription = "$label：$value" }
+                Column(Modifier.weight(1f).then(metricModifier), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(value, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
         }
+    }
+}
+
+@Composable
+private fun PlayerStatisticsMetrics(category: StatsCategory, row: SeasonPlayerStatistics, coachOnly: Boolean) {
+    CardBlock(Modifier.testTag("stats-player-summary-${category.name}")) {
+        Text(category.label, fontWeight = FontWeight.Bold)
+        when (category) {
+            StatsCategory.BATTING -> {
+                val b = row.batting
+                // Keep this aggregate distinct from the unchanged per-game rows below.
+                Text("打席 ${b.plateAppearances} · 打数 ${b.atBats} · 安打 ${b.hits} · 打点 ${b.runsBattedIn}",
+                    Modifier.testTag("stats-player-batting-totals"), fontSize = 12.sp)
+                StatisticsMetricGrid(listOf(
+                    "打率 AVG" to rate(avg(b)),
+                    "上垒率 OBP" to rate(if (b.atBats + b.walks + b.hitByPitch + b.sacrifices > 0) b.onBasePercentage else null),
+                    "长打率 SLG" to rate(if (b.atBats > 0) b.slugging else null),
+                    "攻击指数 OPS" to rate(ops(b)), "得分 R" to "${b.runs}", "二垒安打 2B" to "${b.doubles}",
+                    "三垒安打 3B" to "${b.triples}", "本垒打 HR" to "${b.homeRuns}", "保送 BB" to "${b.walks}",
+                    "触身球 HBP" to "${b.hitByPitch}", "三振 SO" to "${b.strikeouts}", "盗垒 SB" to "${b.stolenBases}",
+                    "盗垒失败 CS" to "${b.caughtStealing}", "牺牲打 SAC" to "${b.sacrifices}", "垒打数 TB" to "${b.totalBases}",
+                ), "stats-player-batting")
+            }
+            StatsCategory.PITCHING -> if (coachOnly) {
+                Text("教练投手模式：投手数据不适用", Modifier.testTag("stats-player-pitching-not-applicable"))
+            } else {
+                val p = row.pitching
+                StatisticsMetricGrid(listOf(
+                    "投球局数 IP" to innings(p), "防御率 ERA" to pitchRate(era(p)), "每局被上垒率 WHIP" to pitchRate(whip(p)),
+                    "用球数 P" to "${p.pitches}", "好球 S" to "${p.strikes}", "面对打者 BF" to "${p.battersFaced}",
+                    "被安打 H" to "${p.hits}", "失分 R" to "${p.runs}", "自责分 ER" to "${p.earnedRuns}",
+                    "保送 BB" to "${p.walks}", "触身球 HBP" to "${p.hitByPitch}", "三振 SO" to "${p.strikeouts}",
+                    "暴投 WP" to "${p.wildPitches}",
+                ), "stats-player-pitching")
+                Text("ERA 按 7 局计算；局数小数位表示出局数，0.1 为 1 人出局。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            StatsCategory.FIELDING -> {
+                val f = row.fielding
+                StatisticsMetricGrid(listOf(
+                    "守备率 FPCT" to rate(fpct(f)), "守备机会 TC" to "${f.putouts + f.assists + f.errors}",
+                    "刺杀 PO" to "${f.putouts}", "助杀 A" to "${f.assists}", "失误 E" to "${f.errors}", "参与双杀 DP" to "${f.doublePlays}",
+                ), "stats-player-fielding")
+                Text("守备率 =（刺杀 + 助杀）÷ 守备机会；DP 为球员参与次数。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Text("“—”表示没有计算该比率所需的记录。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun PlayerRecentSummary(title: String, tag: String, row: SeasonPlayerStatistics) {
+    CardBlock(Modifier.testTag(tag)) {
+        Text(title, fontWeight = FontWeight.Bold)
+        Text("${row.games} 场 · ${row.batting.hits} 安打 · ${row.batting.atBats} 打数 · ${row.batting.runsBattedIn} 打点",
+            Modifier.testTag("$tag-totals"), fontSize = 12.sp)
+        StatisticsMetricGrid(listOf("打率 AVG" to rate(avg(row.batting)), "攻击指数 OPS" to rate(ops(row.batting))), tag)
     }
 }
 
@@ -279,49 +339,86 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
             Row { TextButton({ draft = eligible.games.map { it.id }.toSet() }) { Text("全选") }; TextButton({ draft = emptySet() }) { Text("清除") } }
             eligible.games.forEach { game ->
                 Row(Modifier.fillMaxWidth().clickable { draft = if (game.id in draft) draft - game.id else draft + game.id }) {
-                    Checkbox(game.id in draft, { checked -> draft = if (checked) draft + game.id else draft - game.id })
-                    Column(Modifier.padding(top = 8.dp)) { Text("${game.away.name} vs ${game.home.name}"); Text("${game.awayRuns} : ${game.homeRuns}", fontSize = 12.sp) }
+                    Checkbox(game.id in draft, { checked -> draft = if (checked) draft + game.id else draft - game.id }, Modifier.testTag("stats-team-game-${game.id}"))
+                    Column(Modifier.weight(1f).padding(top = 8.dp)) {
+                        Text("${game.away.name} vs ${game.home.name}")
+                        Text("${game.awayRuns} : ${game.homeRuns} · ${game.rules.mode.title}", fontSize = 12.sp)
+                        Text(MatchDates.label(game), Modifier.testTag("stats-team-game-date-${game.id}"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
     }
     val player = summary.players.firstOrNull { it.player.id == playerID }
     if (player != null) {
-        val playerGames = summary.games.filter { game ->
-            val ours = if (game.home.id == team.id) game.home else game.away
-            ours.players.any { it.id == player.player.id } &&
-                (player.player.id in game.batting || player.player.id in game.pitching || player.player.id in game.fielding ||
-                    player.player.id in (if (game.home.id == team.id) game.homeOrder else game.awayOrder).orEmpty() ||
-                    player.player.id in (if (game.home.id == team.id) game.homePositions else game.awayPositions).orEmpty().values ||
-                    player.player.id in game.exitedPlayers)
+        var playerYear by remember(player.player.id) { mutableIntStateOf(year) }
+        var playerModeKey by remember(player.player.id) { mutableStateOf(modeKey) }
+        var playerCategoryName by remember(player.player.id) { mutableStateOf(categoryName) }
+        // iOS passes the eligible team IDs even when no manual subset was selected. This
+        // prevents a personal mode change from escaping the team's initial mode scope.
+        var inheritedIDs by remember(player.player.id) {
+            mutableStateOf<Set<String>?>(selectedValid ?: eligible.games.map { it.id }.toSet())
         }
-        var selectedPlayerGames by remember(player.player.id, playerGames) { mutableStateOf(playerGames.map { it.id }.toSet()) }
-        val selectedGames = playerGames.filter { it.id in selectedPlayerGames }
-        val selectedSummary = SeasonStatisticsCalculator.calculate(team, selectedGames, year)
-        val shown = selectedSummary.players.firstOrNull { it.player.id == player.player.id }
-            ?: SeasonPlayerStatistics(player.player, player.currentRoster)
+        val playerMode = GameMode.entries.firstOrNull { it.name == playerModeKey }
+        val playerCategory = StatsCategory.valueOf(playerCategoryName)
+        val allPlayerGames = PlayerStatisticsProjection.calculate(team, player.player, model.games, playerYear, playerMode, inheritedIDs)
+        val eligiblePlayerIDs = allPlayerGames.eligibleGames.map { it.id }.toSet()
+        // A new visit, year or mode selects all then-eligible games, without mutating the team filter.
+        // Later data refreshes intersect the selection instead of silently adding unseen games.
+        var selectedPlayerGames by remember(player.player.id, playerYear, playerModeKey, inheritedIDs) { mutableStateOf(eligiblePlayerIDs) }
+        val projection = if (selectedPlayerGames == eligiblePlayerIDs) allPlayerGames else
+            PlayerStatisticsProjection.calculate(team, player.player, model.games, playerYear, playerMode, inheritedIDs, selectedPlayerGames)
+        val playerGames = projection.eligibleGames
+        val selectedGames = projection.selectedGames
+        val selectedPlayerIDs = selectedGames.map { it.id }.toSet()
+        val shown = projection.statistics
         FormPage("球员统计", false, true, "stats-player-close", "完成", { playerID = null }, { playerID = null }) {
             Text("#${player.player.number} ${player.player.name}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("${year} 年 · 已选 ${selectedGames.size} / ${playerGames.size} 场" + if (player.currentRoster) "" else " · 历史球员")
-            ReportShareButton("导出个人年度 PDF", "export-player-season-pdf") { context -> ReportExport.player(context, team, year, shown, selectedGames) }
-            CardBlock { Text("打击", fontWeight = FontWeight.Bold); Text("打席 ${shown.batting.plateAppearances} · 打数 ${shown.batting.atBats} · 安打 ${shown.batting.hits} · 打点 ${shown.batting.runsBattedIn}\n打率 ${rate(avg(shown.batting))} · OPS ${rate(ops(shown.batting))}") }
-            CardBlock { Text("投手", fontWeight = FontWeight.Bold); Text("投球 ${innings(shown.pitching)} 局 · 三振 ${shown.pitching.strikeouts} · ERA ${pitchRate(era(shown.pitching))} · WHIP ${pitchRate(whip(shown.pitching))}") }
-            CardBlock { Text("守备", fontWeight = FontWeight.Bold); Text("刺杀 ${shown.fielding.putouts} · 助杀 ${shown.fielding.assists} · 失误 ${shown.fielding.errors} · 守备率 ${rate(fpct(shown.fielding))}") }
+            if (player.player.englishName.isNotBlank()) Text(player.player.englishName, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${playerYear} 年 · 已选 ${selectedGames.size} / ${playerGames.size} 场" + if (player.currentRoster) "" else " · 历史球员",
+                Modifier.testTag("stats-player-game-scope"))
+            CardBlock {
+                StatsPicker("个人统计年度", playerYear.toString(), SeasonStatisticsCalculator.years(model.games).associate { it.toString() to "${it} 年" }, "stats-player-season-picker") {
+                    // iOS clears an inherited match subset when changing the personal year.
+                    val chosen = it.toInt()
+                    if (chosen != playerYear) { inheritedIDs = null; playerYear = chosen }
+                }
+                if (inheritedIDs != null) Text("范围继承球队所选比赛；切换个人年度后恢复该年度范围。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            StatisticsSegmented("球员比赛模式", mapOf("all" to "全部模式", *GameMode.entries.map { it.name to it.title }.toTypedArray()), playerModeKey) { playerModeKey = it }
+            StatisticsSegmented("球员统计分类", StatsCategory.entries.associate { it.name to it.label }, playerCategoryName) { playerCategoryName = it }
+            ReportShareButton("导出个人年度 PDF", "export-player-season-pdf") { context -> ReportExport.player(context, team, playerYear, shown, selectedGames) }
+            if (projection.scope.incompleteGames > 0) Text("含过程或责任待确认的比赛 · 统计可能不完整", Modifier.testTag("stats-player-incomplete"), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            if (projection.scope.pendingRecords > 0) Text("所选比赛有 ${projection.scope.pendingRecords} 条待确认记录，统计将随赛后复核更新。", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            PlayerStatisticsMetrics(playerCategory, shown, playerMode == GameMode.coachPitch || projection.scope.coachPitchOnly)
+            if (playerCategory == StatsCategory.BATTING) {
+                Text("表现总结", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                PlayerRecentSummary("近 3 场", "stats-player-recent3", projection.recent3)
+                PlayerRecentSummary("近 10 场", "stats-player-recent10", projection.recent10)
+                PlayerRecentSummary(if (inheritedIDs == null && selectedGames.size == playerGames.size) "本年度" else "当前筛选", "stats-player-current", shown)
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("逐场比赛", Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                TextButton({ selectedPlayerGames = playerGames.map { it.id }.toSet() }) { Text("全选") }
-                TextButton({ selectedPlayerGames = emptySet() }) { Text("清除") }
+                TextButton({ selectedPlayerGames = eligiblePlayerIDs }, Modifier.testTag("stats-player-select-all")) { Text("全选") }
+                TextButton({ selectedPlayerGames = emptySet() }, Modifier.testTag("stats-player-clear")) { Text("清除") }
             }
+            if (playerGames.isEmpty()) CardBlock { Text("这个范围还没有该球员的已结束比赛"); Text("可切换个人年度或比赛模式。", fontSize = 12.sp) }
             playerGames.forEach { game ->
                 CardBlock {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(game.id in selectedPlayerGames, { checked -> selectedPlayerGames = if (checked) selectedPlayerGames + game.id else selectedPlayerGames - game.id }, modifier = Modifier.testTag("stats-player-game-${game.id}"))
+                        Checkbox(game.id in selectedPlayerIDs, { checked -> selectedPlayerGames = if (checked) selectedPlayerIDs + game.id else selectedPlayerIDs - game.id }, modifier = Modifier.testTag("stats-player-game-${game.id}"))
                         Column(Modifier.weight(1f)) {
                             Text("${game.away.name} vs ${game.home.name}", fontWeight = FontWeight.Bold)
                             Text("${game.awayRuns} : ${game.homeRuns} · ${game.rules.mode.title}")
+                            Text(MatchDates.label(game), Modifier.testTag("stats-player-game-date-${game.id}"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    game.batting[player.player.id]?.let { Text("打数 ${it.atBats} · 安打 ${it.hits} · 打点 ${it.runsBattedIn}", fontSize = 12.sp) }
+                    when (playerCategory) {
+                        StatsCategory.BATTING -> game.batting[player.player.id]?.let { Text("打数 ${it.atBats} · 安打 ${it.hits} · 打点 ${it.runsBattedIn}", fontSize = 12.sp) } ?: Text("无打击记录", fontSize = 12.sp)
+                        StatsCategory.PITCHING -> if (game.rules.mode == GameMode.coachPitch) Text("教练投手模式：投手数据不适用", fontSize = 12.sp)
+                            else game.pitching[player.player.id]?.let { Text("投球 ${innings(it)} 局 · 三振 ${it.strikeouts} · ERA ${pitchRate(era(it))}", fontSize = 12.sp) } ?: Text("无投手记录", fontSize = 12.sp)
+                        StatsCategory.FIELDING -> game.fielding[player.player.id]?.let { Text("刺杀 ${it.putouts} · 助杀 ${it.assists} · 失误 ${it.errors}", fontSize = 12.sp) } ?: Text("无守备记录", fontSize = 12.sp)
+                    }
                     TextButton({ playerID = null; model.open(game.id) }) { Text("查看比赛") }
                 }
             }

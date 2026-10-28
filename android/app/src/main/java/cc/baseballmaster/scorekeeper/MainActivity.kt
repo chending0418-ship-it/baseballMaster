@@ -814,6 +814,7 @@ private fun ProfileScreen(model: ScorekeeperViewModel) {
         Text("可核验 iOS 备份或仅导入球队名单；完整比赛互导正在开发。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         DeviceBackupControls(model)
         BackupInspection(model)
+        TeamArchiveControls()
     }
 }
 

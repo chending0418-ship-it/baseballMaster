@@ -14,6 +14,104 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ReportExportTest {
+    @Test fun emptyTableMessageCannotOverlapItsHeader() {
+        val message = ReportExport.emptyTableMessage
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 9f
+            typeface = android.graphics.Typeface.DEFAULT
+        }
+        val bounds = android.graphics.Rect()
+        paint.getTextBounds(message, 0, message.length, bounds)
+        val headerBottom = 100f
+        val baseline = ReportExport.emptyTableTextBaseline(headerBottom)
+        assertTrue("Chinese text ascenders must clear the header", baseline + bounds.top >= headerBottom + 6f)
+        val bitmap = Bitmap.createBitmap(240, 160, Bitmap.Config.ARGB_8888)
+        try {
+            val canvas = android.graphics.Canvas(bitmap)
+            canvas.drawColor(android.graphics.Color.WHITE)
+            val headerColor = android.graphics.Color.rgb(15, 41, 64)
+            paint.color = headerColor
+            canvas.drawRect(20f, 78f, 220f, headerBottom, paint)
+            paint.color = android.graphics.Color.BLACK
+            canvas.drawText(message, 20f, baseline, paint)
+            for (x in 20 until 220) for (y in 78 until 100) {
+                assertEquals("Empty-table text painted over its header at $x,$y", headerColor, bitmap.getPixel(x, y))
+            }
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            File(context.getExternalFilesDir(null), "an04-empty-table-baseline.png").outputStream().use {
+                assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+            }
+        } finally { bitmap.recycle() }
+    }
+
+    @Test fun reportRegressionArtifactsPreserveParticipantsReviewAndSelectedScope() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        fun roster(id: String, name: String) = Team(id, name, (1..13).map {
+            Player("$id-$it", "${name}球员$it", "$it")
+        })
+        var game = MatchFactory.create("report-regression", roster("home", "主队"), roster("away", "客队"), Rules())
+        game = MatchEngine.apply(game, Command("pitch", pitch = PitchAction.calledStrike))
+        game = MatchEngine.apply(game, Command("pitcher", playerID = "home-11"))
+        game = MatchEngine.apply(game, Command("pitch", pitch = PitchAction.ball))
+        game = MatchEngine.apply(game, Command("play", outcome = Outcome.single))
+        game = game.copy(
+            ourTeamID = game.away.id, isFinal = true, statisticsIncomplete = true,
+            playedAt = java.time.Instant.parse("2026-06-01T12:00:00Z").toEpochMilli(),
+            entries = game.entries.mapIndexed { index, entry ->
+                if (index == 0) entry.copy(incomplete = true, reviewNote = "复核保留标记") else entry
+            },
+        )
+        val summary = SeasonStatisticsCalculator.calculate(game.away, listOf(game), 2026)
+        val row = summary.players.first { it.player.id == "away-1" }
+        val coach = game.copy(rules = Rules(GameMode.coachPitch))
+        val coachSummary = SeasonStatisticsCalculator.calculate(coach.away, listOf(coach), 2026)
+        val coachRow = coachSummary.players.first { it.player.id == "away-1" }
+        val participants = ReportStatisticsProjection.gameParticipants(game, game.home.id)
+        assertTrue(participants.any { it.player.id == "home-11" })
+        assertFalse(participants.any { it.player.id == "home-13" })
+        data class Artifact(val name: String, val file: File, val required: List<String>, val forbidden: List<String> = emptyList())
+        val artifacts = listOf(
+            Artifact("an04-regression-boxscore", ReportExport.game(context, game, false),
+                listOf("主队球员11", "统计可能不完整", "数据待复核"), listOf("主队球员13", "客队球员13")),
+            Artifact("an04-regression-detailed", ReportExport.game(context, game, true), listOf("复核保留标记")),
+            Artifact("an04-regression-text", ReportExport.game(context, game, true, textOnly = true),
+                listOf("复核保留标记", "投手：#1 主队球员1", "主队球员11")),
+            Artifact("an04-regression-personal", ReportExport.player(context, game.away, 2026, row, listOf(game)),
+                listOf("统计可能不完整", "所选比赛有 1 条待确认记录")),
+            Artifact("an04-regression-coach-team", ReportExport.team(context, coach.away, 2026, GameMode.coachPitch, coachSummary),
+                listOf("教练投手模式：投手数据不适用")),
+            Artifact("an04-regression-coach-player", ReportExport.player(context, coach.away, 2026, coachRow, listOf(coach)),
+                listOf("教练投手模式：投手数据不适用")),
+        )
+        val external = context.getExternalFilesDir(null)!!
+        val checks = org.json.JSONArray()
+        for (artifact in artifacts) {
+            assertTrue(artifact.file.length() > 1000)
+            artifact.file.copyTo(File(external, artifact.name + ".pdf"), overwrite = true)
+            ParcelFileDescriptor.open(artifact.file, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                PdfRenderer(descriptor).use { pdf ->
+                    assertTrue(pdf.pageCount > 0)
+                    for (index in 0 until pdf.pageCount) pdf.openPage(index).use { page ->
+                        val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+                        try {
+                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            assertTrue((0 until bitmap.width step 8).any { x -> (0 until bitmap.height step 8).any { y -> bitmap.getPixel(x, y) != android.graphics.Color.WHITE } })
+                            File(external, "${artifact.name}-page${index + 1}.png").outputStream().use {
+                                assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+                            }
+                        } finally { bitmap.recycle() }
+                    }
+                    checks.put(org.json.JSONObject().put("file", artifact.name + ".pdf").put("pages", pdf.pageCount)
+                        .put("requiredText", org.json.JSONArray(artifact.required)).put("forbiddenText", org.json.JSONArray(artifact.forbidden)))
+                }
+            }
+        }
+        // Raster success is not a content/visual-parity assertion. Check this manifest against
+        // extracted PDF text and inspect the saved page images on the consuming executor.
+        File(external, "an04-report-regression-checks.json").writeText(org.json.JSONObject()
+            .put("requiresExternalTextAndVisualCheck", true).put("checks", checks).toString(2))
+    }
+
     @Test fun systemChooserOpensForPdfWithoutSending() {
         val inst = InstrumentationRegistry.getInstrumentation()
         val context = inst.targetContext

@@ -25,6 +25,7 @@ android {
     }
     buildFeatures { compose = true; buildConfig = true }
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../test-fixtures/android-parity/backup"))
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../test-fixtures/android-parity/team-archive"))
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../BaseballMaster/Assets.xcassets/AppIcon.appiconset"))
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
@@ -45,8 +46,14 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.5")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+}
+
+// Pure file-store verification does not need an emulator or Android runtime.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
 }

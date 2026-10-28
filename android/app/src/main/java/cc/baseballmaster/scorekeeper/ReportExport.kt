@@ -9,8 +9,6 @@ import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
 import cc.baseballmaster.core.*
 import java.io.File
-import java.time.Instant
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
@@ -21,6 +19,16 @@ internal object ReportExport {
     private val green = Color.rgb(26, 110, 82)
     private val secondary = Color.rgb(92, 109, 122)
     private const val margin = 36f
+    internal const val emptyTableMessage = "暂无符合当前范围的记录。"
+
+    internal fun emptyTableTextBaseline(headerBottom: Float): Float {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 9f; typeface = Typeface.DEFAULT }
+        val bounds = android.graphics.Rect()
+        paint.getTextBounds(emptyTableMessage, 0, emptyTableMessage.length, bounds)
+        // Canvas text positions are baselines, whereas table y is its lower edge.
+        // Measure the actual Chinese glyphs so the message cannot rise into the dark header.
+        return headerBottom - bounds.top.coerceAtMost(0) + 6f
+    }
 
     private class Writer(val kind: String, val title: String, portrait: Boolean = false) : AutoCloseable {
         private val width = if (portrait) 595 else 842
@@ -94,7 +102,11 @@ internal object ReportExport {
                 }
             }
             header(false)
-            if (rows.isEmpty()) { line("暂无符合当前范围的记录。", 9f, muted = true); return }
+            if (rows.isEmpty()) {
+                y = emptyTableTextBaseline(y)
+                line(emptyTableMessage, 9f, muted = true)
+                return
+            }
             rows.forEachIndexed { rowIndex, row ->
                 val cells = row.mapIndexed { i, value -> wrap(value, widths[i] - 8) }
                 val lines = cells.maxOf { it.size }
@@ -199,9 +211,8 @@ internal object ReportExport {
         return "PO ${f.putouts} · A ${f.assists} · E ${f.errors} · DP ${f.doublePlays} · TC $chances · FPCT ${number(if (chances > 0) (f.putouts + f.assists).toDouble() / chances else null)}"
     }
     private const val legend = "比率按累计原始数据计算；ERA 按 7 局计算。IP 小数位为出局数，0.1 表示 1 人出局。— 表示无记录或无可用分母；DP 为球员参与双杀次数。"
-    private fun gameDate(game: Game): String = (game.playedAt ?: game.startedAt ?: game.createdAt.takeIf { it > 0 })?.let {
-        runCatching { Instant.ofEpochMilli(it).atZone(ZoneId.of(game.playedTimeZoneID)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) }.getOrNull()
-    } ?: "比赛时间未记录"
+    private fun gameDate(game: Game): String = MatchDates.localPlayedAt(game)
+        ?.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) ?: "比赛时间未记录"
     private fun tables(w: Writer, players: List<SeasonPlayerStatistics>, gameCount: Int, coachOnly: Boolean = false) {
         fun batting(name: String, games: Int, b: BattingLine) = listOf(name, "$games", "${b.plateAppearances}", "${b.atBats}", "${b.runs}", "${b.hits}", "${b.doubles}", "${b.triples}", "${b.homeRuns}", "${b.runsBattedIn}", "${b.walks}", "${b.hitByPitch}", "${b.strikeouts}", "${b.stolenBases}", number(if (b.atBats > 0) b.average else null), number(if (b.atBats + b.walks + b.hitByPitch + b.sacrifices > 0) b.onBasePercentage else null), number(if (b.atBats > 0) b.slugging else null), number(if (b.atBats > 0) b.onBasePercentage + b.slugging else null))
         fun pitching(name: String, p: PitchingLine) = listOf(name, "${p.outsRecorded / 3}.${p.outsRecorded % 3}", "${p.battersFaced}", "${p.hits}", "${p.runs}", "${p.earnedRuns}", "${p.walks}", "${p.hitByPitch}", "${p.strikeouts}", "${p.wildPitches}", "${p.pitches}", "${p.strikes}", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", p.earnedRuns * 21.0 / p.outsRecorded) else "—", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", (p.walks + p.hits) * 3.0 / p.outsRecorded) else "—")
@@ -231,6 +242,7 @@ internal object ReportExport {
     }
     fun team(context: Context, team: Team, year: Int, mode: GameMode?, summary: SeasonStatistics): File {
         val file = file(context, "team")
+        val scope = ReportStatisticsProjection.scope(summary.games)
         Writer("球队年度报告", "${team.name} · $year 年").use { w ->
             w.line("${mode?.title ?: "全部比赛模式"} · ${summary.games.size} 场比赛 · ${summary.wins}胜${summary.losses}负${summary.ties}平")
             if (summary.incomplete > 0) w.line("含过程或责任待确认的比赛 · 统计可能不完整", bold = true)
@@ -246,10 +258,11 @@ internal object ReportExport {
                 w.line("${gameDate(game)} · ${if (home) "主场" else "客场"} · ${opponent.name} · $result $ourScore:$theirScore · H ${if (home) game.homeHits else game.awayHits} · E ${if (home) game.homeErrors else game.awayErrors}")
             }
             w.line("球队打击", 15f, true); w.line(batted(summary.batting))
-            w.line("球队投手", 15f, true); w.line(pitched(summary.pitching))
+            w.line("球队投手", 15f, true)
+            if (scope.coachPitchOnly) w.line("教练投手模式：投手数据不适用。") else w.line(pitched(summary.pitching))
             w.line("球队守备", 15f, true); w.line(fielded(summary.fielding))
             val players = summary.players.sortedWith(compareBy({ it.player.number.toIntOrNull() ?: 0 }, { it.player.name }, { it.player.id }))
-            tables(w, players, summary.games.size, summary.games.isNotEmpty() && summary.games.all { it.rules.mode == GameMode.coachPitch })
+            tables(w, players, summary.games.size, scope.coachPitchOnly)
             w.line(legend, 8f, muted = true)
             w.save(file)
         }
@@ -257,10 +270,14 @@ internal object ReportExport {
     }
     fun player(context: Context, team: Team, year: Int, row: SeasonPlayerStatistics, games: List<Game> = emptyList()): File {
         val file = file(context, "player")
+        val scope = ReportStatisticsProjection.scope(games)
         Writer("个人年度报告", "#${row.player.number} ${row.player.name}").use { w ->
             w.line("${team.name} · $year 年 · ${row.games} 场")
+            if (scope.incompleteGames > 0) w.line("含过程或责任待确认的比赛 · 统计可能不完整", bold = true)
+            if (scope.pendingRecords > 0) w.line("所选比赛有 ${scope.pendingRecords} 条待确认记录，统计可能在复核后变化。", bold = true)
             w.line("打击", 15f, true); w.line(batted(row.batting))
-            w.line("投手", 15f, true); w.line(pitched(row.pitching))
+            w.line("投手", 15f, true)
+            if (scope.coachPitchOnly) w.line("教练投手模式：投手数据不适用。") else w.line(pitched(row.pitching))
             w.line("守备", 15f, true); w.line(fielded(row.fielding))
             w.line("逐场比赛 · GAME LOG", 15f, true)
             games.forEach { game ->
@@ -278,6 +295,7 @@ internal object ReportExport {
     }
     fun game(context: Context, game: Game, playByPlay: Boolean, textOnly: Boolean = false, appearanceID: String? = null): File {
         val file = file(context, if (playByPlay) "plays" else "game")
+        val scope = ReportStatisticsProjection.scope(listOf(game))
         val kind = if (playByPlay) "逐球比赛记录" else "比赛报告"
         Writer(kind, "${game.away.name} vs ${game.home.name}", portrait = playByPlay && textOnly).use { w ->
             val date = gameDate(game)
@@ -285,6 +303,7 @@ internal object ReportExport {
             w.line("${game.away.name} ${game.awayRuns} : ${game.homeRuns} ${game.home.name}", 19f, true)
             w.line("安打 H（客 / 主）${game.awayHits} / ${game.homeHits}    失误 E（客 / 主）${game.awayErrors} / ${game.homeErrors}")
             if (game.statisticsIncomplete || game.incompletePrefix) w.line("过程或责任待确认 · 统计可能不完整", bold = true)
+            if (scope.pendingRecords > 0) w.line("数据待复核：${scope.pendingRecords} 条记录尚待确认。", bold = true)
             if (playByPlay) {
                 val all = AppearanceProjection.build(game)
                 val appearances = if (appearanceID == null) all else all.filter { it.id == appearanceID }
@@ -302,14 +321,13 @@ internal object ReportExport {
                     w.line(label(appearance), 15f, true)
                     w.line("${status(appearance)} · ${appearance.events.lastOrNull()?.text ?: "暂无记录"}", 10f, true)
                     if (textOnly) {
-                        if (appearance.events.isEmpty()) w.line("暂无文字描述。")
-                        appearance.events.forEach { event -> w.line(event.text + if (event.incomplete) "（待确认）" else "", 11f) }
+                        ReportStatisticsProjection.textAppearance(game, appearance).forEach { w.line(it, 11f) }
                     } else {
                         w.situationPair(appearance.events.firstOrNull()?.before, appearance.events.lastOrNull()?.after, game)
                         w.table("事件过程", listOf("序号 / 类型", "逐球与比赛记录", "投手", "事件后 B/S/O · 比分", "事件后垒况"), appearance.events.mapIndexed { index, event ->
                             val after = event.after
                             val bases = after?.bases?.mapIndexedNotNull { i, id -> id?.let { "${i + 1} 垒：${player(it)}" } }?.joinToString("\n").orEmpty().ifEmpty { "垒上无人" }
-                            listOf("${index + 1} · ${event.notation}", event.text + if (event.incomplete) "（待确认）" else "", if (game.rules.mode == GameMode.coachPitch) "不适用" else player(event.pitcherID), after?.let { "${it.balls}/${it.strikes}/${it.outs} · ${it.awayScore}:${it.homeScore}\n${it.inning}局${if (it.isTop) "上" else "下"}" } ?: "未记录", if (after == null) "未记录" else bases)
+                            listOf("${index + 1} · ${event.notation}", ReportStatisticsProjection.eventDescription(event), if (game.rules.mode == GameMode.coachPitch) "不适用" else player(event.pitcherID), after?.let { "${it.balls}/${it.strikes}/${it.outs} · ${it.awayScore}:${it.homeScore}\n${it.inning}局${if (it.isTop) "上" else "下"}" } ?: "未记录", if (after == null) "未记录" else bases)
                         }, listOf(1.25f, 5.5f, 1.9f, 2.65f, 2.8f))
                         appearance.events.mapNotNull { it.observation }.forEach(w::battedBall)
                         w.line("B/S/O = 坏球 / 好球 / 出局。未保存的球路、球速与局面不作推测。", 8f, muted = true)
@@ -337,8 +355,7 @@ internal object ReportExport {
                 }
                 for (team in listOf(game.away, game.home)) {
                     w.line(team.name + if (team.id == game.away.id) " · 客队" else " · 主队", 15f, true)
-                    val players = team.players.map { p -> SeasonPlayerStatistics(p, true, games = 1,
-                        batting = game.batting[p.id] ?: BattingLine(), pitching = game.pitching[p.id] ?: PitchingLine(), fielding = game.fielding[p.id] ?: FieldingLine()) }
+                    val players = ReportStatisticsProjection.gameParticipants(game, team.id)
                     tables(w, players, 1, game.rules.mode == GameMode.coachPitch)
                 }
                 w.line(legend, 8f, muted = true)
