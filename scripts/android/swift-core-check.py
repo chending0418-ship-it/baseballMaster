@@ -17,8 +17,10 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--output', required=True, type=Path)
-p.add_argument('--input-directory', required=True, type=Path)
+p.add_argument('--input-directory', type=Path)
+p.add_argument('--scenario-directory', type=Path)
 a = p.parse_args()
+assert bool(a.input_directory) != bool(a.scenario_directory), 'Choose backups or command scenarios'
 out = a.output.resolve()
 out.mkdir(parents=True, exist_ok=False)
 cache = out / 'sources'
@@ -66,7 +68,12 @@ sources = [
         ('struct MatchPlayerLink:', 'struct HistoricalImportCandidate:')], ('Combine', 'CryptoKit')),
     extract('BaseballMaster/Components.swift', [('func statText(_ value: Double)', None)], ('SwiftUI',)),
 ]
-for name in ('LinuxAdapters.swift', 'HarnessMain.swift'):
+canonical = extract('BaseballMasterTests/GameStoreTests.swift', [('    func canonical() throws -> [String: Any] {', '    func step(_ command:')])
+canonical.write_text('import Foundation\n@MainActor final class OriginalCanonical {\nlet store: GameStore\ninit(_ store: GameStore) {self.store=store}\n' + canonical.read_text().removeprefix('import Foundation\n') + '\n}\n')
+metadata[-1]['wrapper'] = 'OriginalCanonical: store property and initializer only'
+metadata[-1]['extractedSha256'] = hashlib.sha256(canonical.read_bytes()).hexdigest()
+sources.append(canonical)
+for name in ('LinuxAdapters.swift', 'HarnessMain.swift', 'ScenarioHarness.swift'):
     source = ROOT / 'scripts/android/swift-core' / name
     target = cache / name
     target.write_bytes(source.read_bytes())
@@ -84,6 +91,33 @@ binary = out / 'swift-core'
 command = [compiler, '-swift-version', '5', '-parse-as-library', '-I', str(cache), *map(str, sources), '-o', str(binary)]
 with (out / 'compile.log').open('w') as log:
     subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT)
+if a.scenario_directory:
+    inputs = sorted(a.scenario_directory.resolve().glob('*.scenario.json'))
+    assert inputs, 'No scenarios; no check ran'
+    results = []
+    for index, path in enumerate(inputs):
+        source = path.read_bytes()
+        scenario = json.loads(source)
+        fixture_path = (ROOT / 'test-fixtures/android-parity' / scenario['sourceFixture']).resolve()
+        assert fixture_path.is_relative_to(ROOT / 'test-fixtures/android-parity')
+        fixture_bytes = fixture_path.read_bytes()
+        assert hashlib.sha256(fixture_bytes).hexdigest() == scenario['sourceFixtureSHA256'], 'Frozen fixture changed'
+        fixture = json.loads(fixture_bytes)
+        assert scenario['stored'] == fixture['iosInitialPayload'], 'Initial iOS payload changed'
+        assert [s['expected'] for s in scenario['steps']] == [s['expected'] for s in fixture['steps']], 'Frozen expectations changed'
+        copied = out / f'{index:03}-{path.stem}.input.json'
+        copied.write_bytes(source)
+        report = out / f'{index:03}-{path.stem}.report.json'
+        run = subprocess.run([str(binary), '--scenario', str(copied), str(report)], capture_output=True, text=True)
+        result = json.loads(report.read_bytes()) if run.returncode == 0 else {}
+        results.append(dict(input=str(path), sourceSha256=hashlib.sha256(source).hexdigest(),
+                            passed=result.get('passed', False), exitCode=run.returncode,
+                            report=report.name, stdout=run.stdout, stderr=run.stderr))
+    (out / 'results.json').write_text(json.dumps(results, indent=2))
+    print(json.dumps(dict(scenarios=len(results), passed=sum(r['passed'] for r in results))))
+    if not all(r['passed'] for r in results):
+        raise SystemExit('Swift command execution mismatch; see reports (not an iOS App result)')
+    raise SystemExit(0)
 inputs = sorted(a.input_directory.resolve().glob('*.bmbackup'))
 assert inputs, 'No backups; no check ran'
 results = []
