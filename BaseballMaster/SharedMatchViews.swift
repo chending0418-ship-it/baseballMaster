@@ -260,6 +260,12 @@ struct SharedConflictDetailView: View {
     }
 }
 
+private struct ScheduledRecordingRecovery: Identifiable {
+    let source: StoredGame
+    let reviewed: SharedMatch
+    var id: UUID { source.id }
+}
+
 struct SharedMatchDetailView: View {
     @EnvironmentObject private var store: GameStore
     @ObservedObject var coordinator: SharedMatchCoordinator
@@ -274,12 +280,25 @@ struct SharedMatchDetailView: View {
     @State private var resultPresentation: SharedResultPresentation?
     @State private var error: String?
     @State private var conflict: MatchConflict?
+    @State private var scheduledRecovery: ScheduledRecordingRecovery?
     private var match: SharedMatch? { coordinator.match(id: matchID) }
     var body: some View {
         List {
             if let message = coordinator.message ?? error { Text(message).foregroundStyle(BMTheme.orange) }
             if let match, let game = match.payload {
                 summaryContent(match, game)
+                if game.status == .scheduled {
+                    ForEach(coordinator.recordedScheduleSources(for: match)) { source in
+                        Section("发现本机已记录的比赛") {
+                            Text(source.status == .completed ? "本机比赛已结束" : "本机比赛正在进行")
+                            Text("本机 \(source.state.awayScore) : \(source.state.homeScore) · 云端仍为赛程")
+                            Button("补传本机完整记录到这场比赛") {
+                                scheduledRecovery = ScheduledRecordingRecovery(source: source, reviewed: match)
+                            }.disabled(!coordinator.canEdit(match.id))
+                                .accessibilityIdentifier("recover-recorded-schedule")
+                        }
+                    }
+                }
                 if game.status == .completed && !game.isObservation {
                     Section("球员对应") {
                         NavigationLink {
@@ -306,6 +325,12 @@ struct SharedMatchDetailView: View {
         .toolbar { Button("刷新") { Task { if let match { await coordinator.refresh(match) }; await reload() } } }
         .task { if let match { await coordinator.refresh(match) }; await reload() }
         .navigationDestination(isPresented: $showScore) { ScorekeepingView().environmentObject(store) }
+        .alert("补传本机完整记录？", isPresented: Binding(get: { scheduledRecovery != nil }, set: { if !$0 { scheduledRecovery = nil } }), presenting: scheduledRecovery) { recovery in
+            Button("取消", role: .cancel) { }
+            Button("确认补传") { Task { await coordinator.uploadRecordedSchedule(recovery.source, into: recovery.reviewed) } }
+        } message: { recovery in
+            Text("\(recovery.reviewed.matchTitle)\n将本机 \(recovery.source.state.awayScore) : \(recovery.source.state.homeScore) 的完整比赛记录更新到现有云端赛程。本机原件保留。若云端已有变化，会停止补传并提示核对。")
+        }
         .sheet(item: $resultPresentation) { item in NavigationStack { BoxScoreView().environmentObject(item.store).toolbar { Button("完成") { resultPresentation = nil } } } }
         .alert("确认移交记分？", isPresented: Binding(get: { proposedDevice != nil }, set: { if !$0 { proposedDevice = nil } }), presenting: proposedDevice) { device in
             Button("同步并发起交接") { Task { if let match { await coordinator.command(match, resource: "handoff/propose", fields: ["targetDeviceID": .uuid(device.deviceID)]); await reload() } } }
@@ -339,7 +364,11 @@ struct SharedMatchDetailView: View {
                         try? copy.installSharedCopy(game); copy.openGame(id: game.id); copy.readOnlyPresentation = true
                         resultPresentation = SharedResultPresentation(store: copy)
                     }.accessibilityIdentifier("view-shared-match-result")
-                    if coordinator.canEdit(game.id), game.status != .scheduled {
+                    if coordinator.canEdit(game.id), game.status == .scheduled {
+                        NavigationLink("赛前设置并开始共享比赛") {
+                            ScheduledGamePreparationView(gameID: game.id)
+                        }.accessibilityIdentifier("prepare-shared-scheduled-game")
+                    } else if coordinator.canEdit(game.id) {
                         Button(game.status == .completed ? "更正比赛记录" : "继续记分") {
                             store.openGame(id: game.id); showScore = true
                         }.accessibilityIdentifier("score-shared-match")

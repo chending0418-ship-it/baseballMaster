@@ -245,17 +245,26 @@ final class GameStore: ObservableObject {
     var hasRunners: Bool { !game.baseRunners.isEmpty }
     var currentBatter: Player { game.currentBatter }
     var currentPitcher: Player { game.currentPitcher }
+    private var homeDisplayGames: [StoredGame] {
+        games.filter { $0.sharedGameID == nil }.map { source in
+            guard source.status == .scheduled else { return source }
+            let published = sharedMatches.publishedMatches(sourceID: source.id).filter { !$0.deleted }
+            guard published.count == 1, let match = published.first,
+                  let shared = games.first(where: { $0.id == match.id }) else { return source }
+            return shared
+        }
+    }
     var ongoingGames: [StoredGame] {
-        games.filter { $0.status == .ongoing && $0.sharedGameID == nil }.sorted { $0.updatedAt > $1.updatedAt }
+        homeDisplayGames.filter { $0.status == .ongoing }.sorted { $0.updatedAt > $1.updatedAt }
     }
     var recentGames: [StoredGame] {
-        games.filter { $0.status == .completed && $0.sharedGameID == nil }.sorted {
+        homeDisplayGames.filter { $0.status == .completed }.sorted {
             $0.effectivePlayedAt == $1.effectivePlayedAt
                 ? $0.id.uuidString < $1.id.uuidString : $0.effectivePlayedAt > $1.effectivePlayedAt
         }
     }
     var scheduledGames: [StoredGame] {
-        games.filter { $0.status == .scheduled && $0.sharedGameID == nil }.sorted { $0.effectiveScheduledAt < $1.effectiveScheduledAt }
+        homeDisplayGames.filter { $0.status == .scheduled }.sorted { $0.effectiveScheduledAt < $1.effectiveScheduledAt }
     }
     var activeGameRecordedAt: Date? {
         guard let stored = games.first(where: { $0.id == activeGameID }) else { return nil }
@@ -3077,6 +3086,7 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func saveScheduledLineups(id: UUID, rules: GameRules, awayLineup: [LineupAssignment], homeLineup: [LineupAssignment]) -> Bool {
+        guard sharedMatches.canEdit(id) else { actionErrorMessage = "此设备没有该场比赛的记分权。"; return false }
         guard !requiresDataRecovery, let index = games.firstIndex(where: { $0.id == id && $0.status == .scheduled }) else { return false }
         var stored = games[index]
         let away = stored.isObservation ? opponentTeam(withID: stored.state.awayTeam.id) : (stored.isHome ? opponentTeam(withID: stored.state.awayTeam.id) : team(withID: stored.state.awayTeam.id))
@@ -3099,15 +3109,18 @@ final class GameStore: ObservableObject {
         stored.lineup = stored.isObservation || !stored.isHome ? awayOrder : homeOrder
         stored.secondaryLineup = stored.isObservation || !stored.isHome ? homeOrder : awayOrder
         stored.updatedAt = Date()
+        stored.revision = (stored.revision ?? 0) + 1
         do {
             try persistenceStore.upsertGame(stored)
             games[index] = stored; actionErrorMessage = nil
+            sharedMatches.saved(stored)
             return true
         } catch { actionErrorMessage = "赛前阵容未保存：" + error.localizedDescription; return false }
     }
 
     @discardableResult
     func startScheduledGame(id: UUID) -> Bool {
+        guard sharedMatches.canEdit(id) else { actionErrorMessage = "此设备没有该场比赛的记分权。"; return false }
         guard let index = games.firstIndex(where: { $0.id == id && $0.status == .scheduled }) else {
             return false
         }
@@ -3138,6 +3151,7 @@ final class GameStore: ObservableObject {
         lineup: [LineupAssignment],
         opponentLineup requestedOpponentLineup: [LineupAssignment]? = nil
     ) -> Bool {
+        guard sharedMatches.canEdit(id) else { actionErrorMessage = "此设备没有该场比赛的记分权。"; return false }
         guard let index = games.firstIndex(where: {
             $0.id == id && $0.status == .scheduled && !$0.isObservation
         }),
@@ -3208,6 +3222,7 @@ final class GameStore: ObservableObject {
         awayLineup requestedAwayLineup: [LineupAssignment]? = nil,
         homeLineup requestedHomeLineup: [LineupAssignment]? = nil
     ) -> Bool {
+        guard sharedMatches.canEdit(id) else { actionErrorMessage = "此设备没有该场比赛的记分权。"; return false }
         guard let index = games.firstIndex(where: {
             $0.id == id && $0.status == .scheduled && $0.isObservation
         }) else { return false }

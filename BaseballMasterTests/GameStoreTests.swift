@@ -9,6 +9,98 @@ import Security
 private struct LiveReadEnvelope: Decodable { var snapshot: LiveSnapshot }
 
 extension GameStoreTests {
+    func testSharedScheduledHomeEntryStartsAndUploadsTheSharedCopy() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "赛程记分")
+        let team = try await client.createTeam(name: "首页赛程入口", nickname: "教练", operationID: UUID())
+        let store = freshStore(), sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage())
+        store.sharedMatches = sync
+        let localID = store.scheduleGame(ourTeam: try XCTUnwrap(store.currentTeam), opponent: store.opponentTeams[0], isHome: false, scheduledAt: Date())
+        let original = try XCTUnwrap(store.games.first { $0.id == localID })
+        await sync.publish(original, teamID: team.teamID)
+        let published = try XCTUnwrap(sync.publishedMatch(sourceID: original.id, teamID: team.teamID))
+        let entry = try XCTUnwrap(store.scheduledGames.first { $0.sharedGameID == published.id })
+        XCTAssertEqual(entry.id, published.id)
+        XCTAssertNotEqual(entry.id, original.id)
+        let reader = try await matchPartner(client, team: team.teamID, role: .member)
+        let readerStore = GameStore(persistenceURL: nil)
+        let readOnly = SharedMatchCoordinator(store: readerStore, service: reader, storage: V30MatchMemoryStorage())
+        readerStore.sharedMatches = readOnly
+        await readOnly.synchronize(teamID: team.teamID)
+        let readOnlyBefore = readerStore.games
+        XCTAssertFalse(readerStore.startScheduledGame(id: published.id))
+        XCTAssertEqual(readerStore.games, readOnlyBefore)
+        let lineup = Array(try XCTUnwrap(store.currentTeam).players.prefix(9)).enumerated().map {
+            LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: FieldPosition.allCases[$0.offset])
+        }
+        XCTAssertTrue(store.startScheduledGame(id: entry.id, rules: GameRules(), lineup: lineup))
+        store.recordPitch(.ball)
+        await sync.waitForSync(); await sync.synchronize(teamID: team.teamID)
+        XCTAssertNil(sync.message)
+        let remote = try await client.match(teamID: team.teamID, gameID: published.id)
+        XCTAssertEqual(remote.payload?.status, .ongoing)
+        XCTAssertEqual(remote.payload?.state.balls, 1)
+        XCTAssertTrue(store.ongoingGames.contains { $0.id == published.id })
+        XCTAssertFalse(store.scheduledGames.contains { $0.id == original.id || $0.id == published.id })
+        XCTAssertEqual(store.games.first { $0.id == original.id }, original, "The local schedule remains an independent original")
+    }
+
+    func testRecordedLocalScheduleCanFillItsExistingCloudScheduleWithoutDuplication() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "补传本机记录")
+        let team = try await client.createTeam(name: "赛程补传", nickname: "教练", operationID: UUID())
+        let store = freshStore(), sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage())
+        store.sharedMatches = sync
+        let localID = store.scheduleGame(ourTeam: try XCTUnwrap(store.currentTeam), opponent: store.opponentTeams[0], isHome: false, scheduledAt: Date())
+        let scheduled = try XCTUnwrap(store.games.first { $0.id == localID })
+        await sync.publish(scheduled, teamID: team.teamID)
+        let published = try XCTUnwrap(sync.publishedMatch(sourceID: scheduled.id, teamID: team.teamID))
+        let lineup = Array(try XCTUnwrap(store.currentTeam).players.prefix(9)).enumerated().map {
+            LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: FieldPosition.allCases[$0.offset])
+        }
+        // Reproduce the old homepage path: recording continues on the local source.
+        XCTAssertTrue(store.startScheduledGame(id: scheduled.id, rules: GameRules(), lineup: lineup))
+        XCTAssertTrue(store.applyPlay(.homeRun)); store.finishGame()
+        let complete = try XCTUnwrap(store.games.first { $0.id == scheduled.id })
+        XCTAssertEqual(complete.status, .completed)
+        XCTAssertEqual(sync.recordedScheduleSources(for: published).map(\.id), [complete.id])
+        await sync.uploadRecordedSchedule(complete, into: published)
+        XCTAssertNil(sync.message)
+        let remote = try await client.match(teamID: team.teamID, gameID: published.id)
+        XCTAssertEqual(remote.payload?.status, .completed)
+        XCTAssertEqual(remote.payload?.state, complete.state)
+        XCTAssertEqual(remote.payload?.state.awayScore, 1)
+        XCTAssertEqual(store.games.first { $0.id == complete.id }, complete)
+        XCTAssertTrue(sync.recordedScheduleSources(for: try XCTUnwrap(sync.match(id: published.id))).isEmpty)
+        let page = try await client.matchPage(teamID: team.teamID, cursor: 0)
+        XCTAssertEqual(page.games.count, 1, "Repair updates the same cloud game instead of creating a second match")
+    }
+
+    func testScheduleRecoveryRefusesAChangedCloudRevisionAndRetainsTheLocalRecording() async throws {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "补传并发核对")
+        let team = try await client.createTeam(name: "补传版本保护", nickname: "教练", operationID: UUID())
+        let store = freshStore(), sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage())
+        store.sharedMatches = sync
+        let localID = store.scheduleGame(ourTeam: try XCTUnwrap(store.currentTeam), opponent: store.opponentTeams[0], isHome: false, scheduledAt: Date())
+        let scheduled = try XCTUnwrap(store.games.first { $0.id == localID })
+        await sync.publish(scheduled, teamID: team.teamID)
+        let reviewed = try XCTUnwrap(sync.publishedMatch(sourceID: scheduled.id, teamID: team.teamID))
+        var local = scheduled; local.status = .completed; local.state.isFinal = true
+        local.revision = (local.revision ?? 0) + 1
+        store.games[try XCTUnwrap(store.games.firstIndex { $0.id == local.id })] = local
+        let before = store.games
+        var wire = scheduled; wire.updatedAt = Date()
+        let fields: MatchJSON = .object(["operationID": .uuid(UUID()), "formatVersion": .number(2),
+            "payload": try .encode(wire), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(wire).data()),
+            "baseRevision": .number(Double(reviewed.serverRevision)), "writerEpoch": .number(Double(reviewed.writerEpoch))])
+        _ = try await client.matchCommand(path: TeamServiceClient.matchPath(team.teamID, reviewed.id), method: "PUT", body: fields)
+        await sync.uploadRecordedSchedule(local, into: reviewed)
+        XCTAssertTrue(sync.message?.contains("云端比赛已有变化") == true)
+        XCTAssertEqual(store.games, before)
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        let remote = try await client.match(teamID: team.teamID, gameID: reviewed.id)
+        XCTAssertEqual(remote.payload?.status, .scheduled)
+        XCTAssertEqual(remote.serverRevision, reviewed.serverRevision + 1)
+    }
+
     func testTeamTransportFailureDistinguishesTimeoutCancellationDNSAndTLS() {
         let cases: [(URLError.Code, String)] = [
             (.timedOut, "超时"), (.cancelled, "已取消"),
