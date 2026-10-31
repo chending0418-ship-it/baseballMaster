@@ -362,6 +362,26 @@ actor TeamServiceClient: TeamDirectoryService {
         return result
     }
 
+    nonisolated static func connectionFailureMessage(_ error: Error, path: String) -> String {
+        // Use a fixed operation label, never an URL, team ID, token or NSError.userInfo.
+        let operation = path.contains("/games") ? "比赛同步" : "球队资料连接"
+        let problem = error as NSError
+        guard problem.domain == NSURLErrorDomain else { return "\(operation)未完成，请稍后重试。" }
+        let reason: String
+        switch URLError.Code(rawValue: problem.code) {
+        case .timedOut: reason = "超时"
+        case .cancelled: reason = "已取消"
+        case .cannotFindHost, .dnsLookupFailed: reason = "无法解析服务地址"
+        case .cannotConnectToHost: reason = "无法连接服务器"
+        case .networkConnectionLost: reason = "连接中断"
+        case .notConnectedToInternet: reason = "网络不可用"
+        case .secureConnectionFailed, .serverCertificateHasBadDate, .serverCertificateUntrusted,
+             .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid: reason = "安全连接验证失败"
+        default: reason = "未完成"
+        }
+        return "\(operation)\(reason)（\(problem.code)），请稍后重试。"
+    }
+
     func request<Body: Encodable, Response: Decodable>(_ method: String, path: String, body: Body?, credential: String? = nil) async throws -> Response {
         // This write to Keychain must succeed before any credential is sent to the service.
         let token = try credential ?? vault.loadOrCreate()
@@ -381,7 +401,7 @@ actor TeamServiceClient: TeamDirectoryService {
         }
         let (data, response): (Data, URLResponse)
         do { (data, response) = try await session.data(for: request) }
-        catch { throw TeamServiceError.message("暂时连不上球队服务，请检查网络后重试。") }
+        catch { throw TeamServiceError.message(Self.connectionFailureMessage(error, path: path)) }
         guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode
             let code = (try? JSONDecoder().decode(TeamServiceProblem.self, from: data))?.error.code

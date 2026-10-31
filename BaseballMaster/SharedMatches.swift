@@ -143,6 +143,7 @@ struct SharedMatchFile: SharedMatchStorage {
 @MainActor final class SharedMatchCoordinator: ObservableObject {
     @Published private(set) var state = SharedMatchLocalState()
     @Published private(set) var busy = false
+    @Published private(set) var lastSuccessfulSyncAt: [UUID: Date] = [:]
     @Published var message: String?
     @Published private(set) var importing = false
     private var cancelImportRequested = false
@@ -280,7 +281,9 @@ struct SharedMatchFile: SharedMatchStorage {
         } catch { report(error) }
     }
     func synchronize(teamID: UUID? = nil) async {
-        guard loaded, !busy, !state.requiresRecoveryReview else { return }
+        guard loaded else { message = "共享比赛资料尚未读取，请解锁设备后重新打开 App 再试。"; return }
+        guard !state.requiresRecoveryReview else { message = "共享比赛需要先核对，请前往“球队共享”中的“核对恢复后的球队资料”。本机未同步记录已保留。"; return }
+        guard !busy else { return }
         busy = true; defer { busy = false }; message = nil
         do {
             try migrateIndependentCopies()
@@ -352,6 +355,9 @@ struct SharedMatchFile: SharedMatchStorage {
                 }
             }
             let targets = teamID.map { [$0] } ?? teams.teams.map(\.id)
+            guard teamID.map(accessible.contains) ?? true else {
+                throw TeamServiceError.message("当前设备已无法访问这支共享球队，请返回球队共享核对权限。本机记录已保留。")
+            }
             for team in targets where accessible.contains(team) { try await pull(team) }
             for match in state.matches where match.writerDeviceID == device && match.writerActive && match.liveEnabled && match.payload?.state.isFinal == false {
                 let result = try await service.matchCommand(path: TeamServiceClient.matchPath(match.teamID, match.id) + "/live-heartbeat", method: "POST", body: .object([:]))
@@ -362,6 +368,7 @@ struct SharedMatchFile: SharedMatchStorage {
             // A second edit made during an in-flight upload becomes a new operation based on its acknowledged revision.
             for game in store?.games ?? [] { try stageUpdate(game) }
             if !state.pending.isEmpty { requested = true }
+            for team in targets where accessible.contains(team) { lastSuccessfulSyncAt[team] = Date() }
         } catch { report(error) }
     }
     private func preserveDraft(_ localID: UUID?, reason: String, into next: inout SharedMatchLocalState) {

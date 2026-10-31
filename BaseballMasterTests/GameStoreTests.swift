@@ -9,6 +9,46 @@ import Security
 private struct LiveReadEnvelope: Decodable { var snapshot: LiveSnapshot }
 
 extension GameStoreTests {
+    func testTeamTransportFailureDistinguishesTimeoutCancellationDNSAndTLS() {
+        let cases: [(URLError.Code, String)] = [
+            (.timedOut, "超时"), (.cancelled, "已取消"),
+            (.cannotFindHost, "无法解析服务地址"), (.dnsLookupFailed, "无法解析服务地址"),
+            (.cannotConnectToHost, "无法连接服务器"), (.networkConnectionLost, "连接中断"),
+            (.notConnectedToInternet, "网络不可用"), (.serverCertificateUntrusted, "安全连接验证失败")
+        ]
+        for (code, reason) in cases {
+            let error = NSError(domain: NSURLErrorDomain, code: code.rawValue,
+                userInfo: [NSLocalizedDescriptionKey: "private-token-and-team-id"])
+            let message = TeamServiceClient.connectionFailureMessage(error, path: "teams/private-team/games/private-game")
+            XCTAssertTrue(message.contains("比赛同步" + reason))
+            XCTAssertTrue(message.contains(String(code.rawValue)))
+            XCTAssertFalse(message.contains("private"), "Transport hints must not expose request identifiers or error userInfo")
+        }
+        let detail = TeamServiceClient.connectionFailureMessage(URLError(.timedOut), path: "teams/private-team/members")
+        XCTAssertTrue(detail.contains("球队资料连接超时"))
+        let unknown = TeamServiceClient.connectionFailureMessage(NSError(domain: "PrivateDomain", code: 42,
+            userInfo: [NSLocalizedDescriptionKey: "private-token"]), path: "teams/private-team")
+        XCTAssertEqual(unknown, "球队资料连接未完成，请稍后重试。")
+    }
+
+    func testRestoredRecoveryGateExplainsRefreshWithoutChangingSharedRecords() async throws {
+        let disk = V30MatchMemoryStorage()
+        disk.state.requiresRecoveryReview = true
+        let proxy = V30UnreliableMatchService(try matchClient())
+        await proxy.network(offline: true)
+        let coordinator = SharedMatchCoordinator(store: freshStore(), service: proxy, storage: disk)
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        let before = try encoder.encode(disk.state)
+        XCTAssertNil(coordinator.message, "Reopening restores the gate without restoring the old transient error")
+        await coordinator.synchronize(teamID: UUID())
+        XCTAssertTrue(coordinator.message?.contains("核对恢复后的球队资料") == true)
+        XCTAssertEqual(try encoder.encode(disk.state), before)
+        XCTAssertTrue(coordinator.lastSuccessfulSyncAt.isEmpty)
+        XCTAssertFalse(coordinator.busy)
+    }
+}
+
+extension GameStoreTests {
     func testV21AppearanceNumbersAreSeparateForEachTeamAndContinueAcrossInnings() throws {
         let store = freshStore()
         for _ in 0..<18 { XCTAssertTrue(store.applyPlay(.groundOut)) }

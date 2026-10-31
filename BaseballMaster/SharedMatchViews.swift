@@ -683,10 +683,43 @@ struct SharedStatisticsSyncNotice: View {
         VStack(alignment: .leading, spacing: 5) {
             Text("按已同步的球队比赛汇总，未同步修改将在同步成功后计入。")
             if let latest { Text("最近收到的比赛更新：" + Date(timeIntervalSince1970: latest / 1000).formatted(date: .abbreviated, time: .shortened)) }
-            if let message = coordinator.message { Text(message).foregroundStyle(BMTheme.orange) }
-            Button(coordinator.busy ? "正在同步" : "刷新球队统计") { Task { await store.teamSharing.connect(); await coordinator.synchronize(teamID: teamID) } }.disabled(coordinator.busy)
+            SharedStatisticsRefreshControl(directory: store.teamSharing, coordinator: coordinator, teamID: teamID)
         }.font(.footnote).foregroundStyle(BMTheme.secondaryText)
         .accessibilityIdentifier("shared-statistics-sync-notice")
+    }
+}
+
+private struct SharedStatisticsRefreshControl: View {
+    @ObservedObject var directory: TeamSharingStore
+    @ObservedObject var coordinator: SharedMatchCoordinator
+    let teamID: UUID
+    @State private var refreshing = false
+    private var inProgress: Bool { refreshing || directory.isBusy || coordinator.busy }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if let message = directory.errorMessage ?? coordinator.message {
+                Text(message).foregroundStyle(BMTheme.orange)
+            }
+            if directory.state.requiresRecoveryReview || coordinator.state.requiresRecoveryReview {
+                Text("请前往“球队共享”，选择“核对恢复后的球队资料”后继续同步。")
+                    .foregroundStyle(BMTheme.orange)
+            }
+            if let date = coordinator.lastSuccessfulSyncAt[teamID] {
+                Text("最近完成同步检查：" + date.formatted(date: .abbreviated, time: .shortened))
+            }
+            if inProgress { ProgressView("正在连接并同步球队比赛…") }
+            Button(inProgress ? "正在同步" : "刷新球队统计") {
+                refreshing = true
+                Task { @MainActor in
+                    defer { refreshing = false }
+                    await directory.connect()
+                    // Do not hide a failed directory request with another sync attempt.
+                    guard directory.errorMessage == nil else { return }
+                    await coordinator.synchronize(teamID: teamID)
+                }
+            }.disabled(inProgress)
+        }
     }
 }
 
