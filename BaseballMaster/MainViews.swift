@@ -59,7 +59,22 @@ struct GameHomeView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(store.scheduledGames) { stored in
                             HStack(spacing: 0) {
-                                NavigationLink(destination: ScheduledGameDetailView(gameID: stored.id)) {
+                                NavigationLink {
+                                    if let sharedID = stored.sharedGameID {
+                                        SharedMatchDetailView(coordinator: store.sharedMatches, matchID: sharedID)
+                                    } else {
+                                        let published = store.sharedMatches.publishedMatches(sourceID: stored.id).filter { !$0.deleted }
+                                        if published.isEmpty {
+                                            ScheduledGameDetailView(gameID: stored.id)
+                                        } else {
+                                            List(published) { match in
+                                                NavigationLink(match.matchTitle) {
+                                                    SharedMatchDetailView(coordinator: store.sharedMatches, matchID: match.id)
+                                                }
+                                            }.navigationTitle("选择共享比赛")
+                                        }
+                                    }
+                                } label: {
                                     scheduledGameContent(stored)
                                 }
                                 .buttonStyle(.plain)

@@ -143,6 +143,7 @@ struct SharedMatchFile: SharedMatchStorage {
 @MainActor final class SharedMatchCoordinator: ObservableObject {
     @Published private(set) var state = SharedMatchLocalState()
     @Published private(set) var busy = false
+    @Published private(set) var lastSuccessfulSyncAt: [UUID: Date] = [:]
     @Published var message: String?
     @Published private(set) var importing = false
     private var cancelImportRequested = false
@@ -191,6 +192,60 @@ struct SharedMatchFile: SharedMatchStorage {
     func publishedMatch(sourceID: UUID, teamID: UUID) -> SharedMatch? {
         state.publishedSources?["\(teamID):\(sourceID)"].flatMap { match(id: $0) }
             ?? state.matches.first { $0.teamID == teamID && ($0.historySourceID == sourceID || $0.wireLocalID == sourceID) }
+    }
+    func publishedMatches(sourceID: UUID) -> [SharedMatch] {
+        Set(state.matches.map(\.teamID)).compactMap { publishedMatch(sourceID: sourceID, teamID: $0) }
+    }
+    func recordedScheduleSources(for match: SharedMatch) -> [StoredGame] {
+        guard !match.deleted, match.payload?.status == .scheduled else { return [] }
+        return (store?.games ?? []).filter {
+            $0.sharedGameID == nil && $0.status != .scheduled
+                && publishedMatch(sourceID: $0.id, teamID: match.teamID)?.id == match.id
+        }
+    }
+
+    /// An explicit repair for a locally played schedule whose shared copy was never started.
+    /// Keep the local original and reuse the normal durable update queue and conflict handling.
+    func uploadRecordedSchedule(_ source: StoredGame, into reviewed: SharedMatch) async {
+        guard loaded, !busy, !state.requiresRecoveryReview,
+              store?.teamSharing.state.requiresRecoveryReview != true else {
+            message = "请先完成当前同步或球队资料核对，再补传本机记录。"; return
+        }
+        busy = true; message = nil
+        do {
+            let remote = try await fetchMatch(teamID: reviewed.teamID, gameID: reviewed.id)
+            guard !remote.deleted, remote.payload?.status == .scheduled,
+                  remote.serverRevision == reviewed.serverRevision, remote.writerEpoch == reviewed.writerEpoch,
+                  remote.digest == reviewed.digest else {
+                throw TeamServiceError.message("云端比赛已有变化，请刷新并重新核对。本机完整记录已保留。")
+            }
+            guard remote.canWrite, remote.writerDeviceID == state.deviceID, canEdit(remote.id),
+                  !state.pending.contains(where: { $0.localID == remote.id }),
+                  !state.conflicts.contains(where: { $0.localID == remote.id }) else {
+                throw TeamServiceError.message("请先核对这场比赛的记分权和待同步记录，再补传。")
+            }
+            guard let current = store?.games.first(where: { $0.id == source.id }),
+                  current.revision == source.revision, current == source,
+                  recordedScheduleSources(for: reviewed).contains(where: { $0.id == source.id }) else {
+                throw TeamServiceError.message("本机记录已有变化，请重新核对后补传。")
+            }
+            // Never replace newer, unsent edits already made to the shared copy.
+            if let existing = store?.games.first(where: { $0.id == remote.id }) {
+                guard existing.status == .scheduled,
+                      state.acknowledgedRevisions[remote.id.uuidString] == (existing.revision ?? 0) else {
+                    throw TeamServiceError.message("共享比赛还有本机修改，请先完成同步和核对。")
+                }
+            }
+            var copy = current
+            copy.id = remote.id; copy.sharedGameID = remote.id; copy.sharedTeamID = remote.teamID
+            copy.sharedPlayerLinks = remote.playerLinks; copy.historySourceID = remote.historySourceID
+            copy.publicationState = nil; copy.pendingPublicationRevisions = nil
+            copy.revision = max(current.revision ?? 0, remote.payload?.revision ?? 0) + 1
+            try store?.installSharedCopy(copy)
+            try stageUpdate(copy)
+            busy = false
+            await synchronize(teamID: remote.teamID)
+        } catch { busy = false; report(error) }
     }
     private func fetchMatch(teamID: UUID, gameID: UUID) async throws -> SharedMatch {
         try await service.match(teamID: teamID, gameID: gameID).isolated
@@ -280,7 +335,9 @@ struct SharedMatchFile: SharedMatchStorage {
         } catch { report(error) }
     }
     func synchronize(teamID: UUID? = nil) async {
-        guard loaded, !busy, !state.requiresRecoveryReview else { return }
+        guard loaded else { message = "共享比赛资料尚未读取，请解锁设备后重新打开 App 再试。"; return }
+        guard !state.requiresRecoveryReview else { message = "共享比赛需要先核对，请前往“球队共享”中的“核对恢复后的球队资料”。本机未同步记录已保留。"; return }
+        guard !busy else { return }
         busy = true; defer { busy = false }; message = nil
         do {
             try migrateIndependentCopies()
@@ -352,6 +409,9 @@ struct SharedMatchFile: SharedMatchStorage {
                 }
             }
             let targets = teamID.map { [$0] } ?? teams.teams.map(\.id)
+            guard teamID.map(accessible.contains) ?? true else {
+                throw TeamServiceError.message("当前设备已无法访问这支共享球队，请返回球队共享核对权限。本机记录已保留。")
+            }
             for team in targets where accessible.contains(team) { try await pull(team) }
             for match in state.matches where match.writerDeviceID == device && match.writerActive && match.liveEnabled && match.payload?.state.isFinal == false {
                 let result = try await service.matchCommand(path: TeamServiceClient.matchPath(match.teamID, match.id) + "/live-heartbeat", method: "POST", body: .object([:]))
@@ -362,6 +422,7 @@ struct SharedMatchFile: SharedMatchStorage {
             // A second edit made during an in-flight upload becomes a new operation based on its acknowledged revision.
             for game in store?.games ?? [] { try stageUpdate(game) }
             if !state.pending.isEmpty { requested = true }
+            for team in targets where accessible.contains(team) { lastSuccessfulSyncAt[team] = Date() }
         } catch { report(error) }
     }
     private func preserveDraft(_ localID: UUID?, reason: String, into next: inout SharedMatchLocalState) {
