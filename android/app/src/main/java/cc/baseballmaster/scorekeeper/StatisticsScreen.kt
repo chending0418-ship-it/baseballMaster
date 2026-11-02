@@ -89,15 +89,21 @@ private fun StatsPicker(label: String, selected: String, values: Map<String, Str
 @Composable
 private fun StatisticsSegmented(label: String, values: Map<String, String>, selected: String, onSelect: (String) -> Unit) {
     val shape = RoundedCornerShape(8.dp)
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = .05f)).padding(3.dp), verticalAlignment = Alignment.CenterVertically) {
-        values.forEach { (key, text) ->
-            Box(Modifier.weight(1f).heightIn(min = 44.dp).clip(shape)
-                .background(if (selected == key) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent)
-                .toggleable(value = selected == key, role = Role.RadioButton, onValueChange = { if (it) onSelect(key) })
-                .testTag("choice-$label-$key"), contentAlignment = Alignment.Center) {
-                Text(text, fontSize = 12.sp, fontWeight=if(selected==key) FontWeight.SemiBold else FontWeight.Normal,
-                    color=if(selected==key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    val columns = if (values.size > 3 && androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f) 2 else values.size
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha=.05f))) {
+        values.entries.toList().chunked(columns).forEach { row ->
+            Row(Modifier.fillMaxWidth().padding(3.dp),verticalAlignment=Alignment.CenterVertically) {
+                row.forEach { (key,text) ->
+                    Box(Modifier.weight(1f).heightIn(min=44.dp).clip(shape)
+                        .background(if(selected==key) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent)
+                        .toggleable(value=selected==key,role=Role.RadioButton,onValueChange={if(it) onSelect(key)})
+                        .testTag("choice-$label-$key"),contentAlignment=Alignment.Center) {
+                        Text(text,fontSize=12.sp,fontWeight=if(selected==key) FontWeight.SemiBold else FontWeight.Normal,
+                            color=if(selected==key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+                repeat(columns-row.size) {Spacer(Modifier.weight(1f))}
             }
         }
     }

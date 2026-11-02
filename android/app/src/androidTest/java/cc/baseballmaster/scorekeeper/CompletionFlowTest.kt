@@ -50,6 +50,7 @@ class CompletionFlowTest {
         repeat(120) { i ->
             try {
                 if (android.os.Build.VERSION.SDK_INT >= 34) inst.uiAutomation.clearCache()
+                else inst.uiAutomation.serviceInfo = inst.uiAutomation.serviceInfo
                 device
                     .findObject(s)
                     ?.takeIf { it.visibleBounds.height() > 10 }
@@ -60,7 +61,7 @@ class CompletionFlowTest {
                     .findObject(By.scrollable(true))
                     ?.scroll(if (i < 3 || i >= 63) Direction.UP else Direction.DOWN, .75f)
             } catch (_: StaleObjectException) {}
-            device.waitForIdle()
+            device.waitForIdle(500)
         }
         return device.wait(Until.findObject(s), 5000) ?: error("Missing $s")
     }

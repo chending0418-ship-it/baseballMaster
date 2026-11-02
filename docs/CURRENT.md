@@ -6,7 +6,8 @@
 | --- | --- |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.1（Build 1） |
 | iOS 开发基线 | `codex/dev-3.1.1`；固定 BM／App 图标、后台配置背景与文案的开屏已接入，见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)、[配置说明](releases/3.1.1/CONFIGURABLE-LAUNCH.md) |
-| Android 迁移 | `codex/android-migration`；按用户新要求对齐 iOS 3.1.1 `541e528`，见[现行对齐清单](plans/ANDROID-APK.md#16-ios-311-最新优化对齐2026-11-02)。来源击球／生命周期写回、原生标准终场图、赛前目标三态及 Pro 全部结果目录已补增量，验证与边界见[本机开发记录](releases/android/LOCAL-DEVELOPMENT-2026-11-02.md)。完整原生互导、赛后正式上传／旧关联更新、统一击球图和最终设备回归继续开发；最新已交付仍为 preview.5，官网未发布 Android 下载 |
+| Android 迁移 | `codex/android-migration`；按用户新要求对齐 iOS 3.1.1 `541e528`，见[现行对齐清单](plans/ANDROID-APK.md#16-ios-311-最新优化对齐2026-11-02)。来源击球／生命周期写回、原生标准终场图、赛前目标三态及 Pro 全部结果目录已补增量，验证与边界见[本机开发记录](releases/android/LOCAL-DEVELOPMENT-2026-11-02.md)。共享球场已实现，页面密度与文案已按反馈调整；完整原生互导、赛后正式上传／旧关联更新和最终设备回归继续开发；最新已交付仍为 preview.5，官网未发布 Android 下载 |
+| 界面与文案 | 用户要求两端统一精简：数据与操作优先，删重复解释，公式／图例按需查看；见 [页面密度与文案](plans/ANDROID-APK.md#17-页面密度与文案2026-11-02-用户反馈)。本轮先修改 Android，iOS 界面未改 |
 | 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
 | 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
 | 发布材料 | [3.1.0 发布交接](releases/3.1.0/REVIEW-HANDOFF.md)、`output/releases/3.1.0/` |
