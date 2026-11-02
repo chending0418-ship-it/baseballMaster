@@ -67,8 +67,7 @@ class StatisticsFlowTest {
             assertTeamRecord()
             device.takeScreenshot(File(context.getExternalFilesDir(null), "an04-statistics-summary.png"))
             fun chooseCategory(tag: String) {
-                useVisibleNode(device, By.res(tag)) { if (!it.isChecked) it.click() }
-                assertTrue("Category did not select: $tag", device.wait(Until.hasObject(By.res(tag).checked(true)), 5_000))
+                StatisticsUi.setChecked(device,tag,true)
             }
             chooseCategory("choice-统计分类-PITCHING")
             useVisibleNode(device, By.res("stats-summary-PITCHING")) { Unit }
@@ -90,11 +89,7 @@ class StatisticsFlowTest {
                 assertPlayerTotals(selected = true)
             }
             fun selectPlayerGame(selected: Boolean) {
-                val checkbox = By.res("stats-player-game-$gameID")
-                // Set an intended state: a stale retry must never toggle an already-applied click back.
-                useVisibleNode(device, checkbox) { if (it.isChecked != selected) it.click() }
-                assertTrue("Player game selection did not become $selected",
-                    device.wait(Until.hasObject(By.res("stats-player-game-$gameID").checked(selected)), 5_000))
+                StatisticsUi.setChecked(device,"stats-player-game-$gameID",selected)
                 assertPlayerTotals(selected)
             }
             openPlayer()
@@ -121,49 +116,10 @@ class StatisticsFlowTest {
         }
     }
 
-    /** Re-query within the same wait as the bounds/read/action; never return a UiObject2 to callers. */
     private fun <T : Any> useVisibleNode(
         device: UiDevice,
         selector: BySelector,
         scroll: Boolean = true,
         use: (UiObject2) -> T,
-    ): T {
-        var scrolls = 0
-        var staleCount = 0
-        var lastStale: StaleObjectException? = null
-        val result = device.wait(Condition<UiDevice, T?> { current ->
-            try {
-                val node = current.findObject(selector)
-                val bounds = node?.visibleBounds
-                val viewport = if (scroll) current.findObject(By.scrollable(true))?.visibleBounds else null
-                val inContent = bounds != null &&
-                    (viewport == null || viewport.contains(bounds.centerX(), bounds.centerY()))
-                if (node != null && bounds != null && bounds.height() > 10 && (!scroll || inContent)) {
-                    use(node)
-                } else {
-                    if (scroll && scrolls < 32) {
-                        val down = when {
-                            bounds != null && bounds.height() > 10 -> bounds.centerY() > current.displayHeight / 2
-                            else -> scrolls % 16 < 8
-                        }
-                        val top = viewport?.top ?: current.displayHeight / 6
-                        val bottom = viewport?.bottom ?: current.displayHeight * 8 / 10
-                        val inset = (bottom - top) / 5
-                        val x = viewport?.centerX() ?: current.displayWidth / 2
-                        current.swipe(x, if (down) bottom - inset else top + inset,
-                            x, if (down) top + inset else bottom - inset, 25)
-                        scrolls++
-                    }
-                    null
-                }
-            } catch (stale: StaleObjectException) {
-                // Compose replaced the accessibility node. Poll the selector again, not the old node.
-                // No assertion or other exception is suppressed; timeout remains a test failure.
-                staleCount++
-                lastStale = stale
-                null
-            }
-        }, 30_000)
-        return result ?: throw AssertionError("Missing or unstable $selector ($staleCount stale retries)", lastStale)
-    }
+    ): T = StatisticsUi.use(device,selector,scroll,use)
 }

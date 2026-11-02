@@ -80,12 +80,21 @@ class AppleTerminalPitchTest {
         }
     }
 
-    @Test fun thirdOutRemainsRejectedWithoutChangingAnySourceBytes() {
+    @Test fun ordinaryThirdOutWritesThreeEventsAndKeepsTheOriginalSourceImmutable() {
         var plan = strikeout(strikeout(base(), PitchAction.calledStrike), PitchAction.swingingStrike)
         repeat(2) { plan = pitch(plan, PitchAction.calledStrike) }
-        val before = plan.export()
-        assertThrows(Exception::class.java) { pitch(plan, PitchAction.calledStrike) }
+        val before = plan.export(); val old = state(before)
+        val next = pitch(plan, PitchAction.calledStrike); val after = state(next.export())
         assertArrayEquals(before, plan.export())
+        assertFalse(next.games().single().isTop); assertEquals(0,next.games().single().outs)
+        val events = after.getValue("scoringEvents").jsonArray.takeLast(3).map { it.jsonObject }
+        assertEquals(listOf("C","ꓘ","HALF-END"),events.map {it.getValue("notation").jsonPrimitive.content})
+        val oldJournal = old.getValue("historyJournal").jsonObject
+        val journal = after.getValue("historyJournal").jsonObject
+        assertEquals(oldJournal.getValue("checkpoint"),journal.getValue("checkpoint"))
+        assertEquals(oldJournal.getValue("operations").jsonArray.toList(),journal.getValue("operations").jsonArray.dropLast(1))
+        assertEquals(events.map {it.getValue("id")},journal.getValue("operations").jsonArray.last().jsonObject.getValue("eventIDs").jsonArray.toList())
+        AppleSourceBackup.validateLineage(before,next.export())
     }
 
     @Test fun basesLoadedWalkKeepsTheOriginalAuditAndChargesTheActualEarnedOrUnearnedRunner() {

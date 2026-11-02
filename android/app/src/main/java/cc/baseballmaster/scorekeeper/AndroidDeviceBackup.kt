@@ -20,7 +20,8 @@ import kotlinx.serialization.json.*
 @Serializable internal data class DeviceDraft(val gameID: String, val payload: String, val updatedAt: Long)
 @Serializable internal data class DeviceAppleBackup(val id: String, val name: String, val gameCount: Int, val original: String, val current: String)
 @Serializable internal data class DeviceAppleSource(val gameID: String, val backupID: String)
-@Serializable internal data class DeviceSnapshot(val currentTeamID: String?, val teams: List<DeviceTeam>, val games: List<DeviceGame>, val operations: List<DeviceOperation>, val drafts: List<DeviceDraft>, val appleBackups: List<DeviceAppleBackup> = emptyList(), val appleSources: List<DeviceAppleSource> = emptyList())
+@Serializable internal data class DeviceTeamArchive(val id: String, val original: String)
+@Serializable internal data class DeviceSnapshot(val currentTeamID: String?, val teams: List<DeviceTeam>, val games: List<DeviceGame>, val operations: List<DeviceOperation>, val drafts: List<DeviceDraft>, val appleBackups: List<DeviceAppleBackup> = emptyList(), val appleSources: List<DeviceAppleSource> = emptyList(), val teamArchives: List<DeviceTeamArchive> = emptyList())
 @Serializable private data class DeviceEnvelope(val format: String, val version: Int, val payload: String, val checksum: String)
 
 internal object AndroidDeviceBackup {
@@ -30,9 +31,9 @@ internal object AndroidDeviceBackup {
     private fun hash(data: ByteArray) = MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }
     fun encode(snapshot: DeviceSnapshot): ByteArray {
         validate(snapshot)
-        val version = if (snapshot.appleBackups.isEmpty() && snapshot.appleSources.isEmpty()) 1 else 2
+        val version = if (snapshot.teamArchives.isNotEmpty()) 3 else if (snapshot.appleBackups.isEmpty() && snapshot.appleSources.isEmpty()) 1 else 2
         val value = json.encodeToJsonElement(snapshot).jsonObject
-        val payload = (if (version == 1) JsonObject(value - "appleBackups" - "appleSources") else value).toString().toByteArray(Charsets.UTF_8)
+        val payload = (if (version == 1) JsonObject(value - "appleBackups" - "appleSources" - "teamArchives") else if (version == 2) JsonObject(value - "teamArchives") else value).toString().toByteArray(Charsets.UTF_8)
         val data = json.encodeToString(DeviceEnvelope(FORMAT, version, Base64.getEncoder().encodeToString(payload), hash(payload))).toByteArray(Charsets.UTF_8)
         require(data.size <= LIMIT) { "备份超过 100 MB" }
         return data
@@ -40,15 +41,24 @@ internal object AndroidDeviceBackup {
     fun decode(bytes: ByteArray): DeviceSnapshot {
         require(bytes.size <= LIMIT) { "备份超过 100 MB" }
         val outer = json.decodeFromJsonElement<DeviceEnvelope>(AppleWireJson.parse(bytes))
-        require(outer.format == FORMAT && outer.version in 1..2) { "备份格式或版本不受支持" }
+        require(outer.format == FORMAT && outer.version in 1..3) { "备份格式或版本不受支持" }
         val payload = Base64.getDecoder().decode(outer.payload)
         require(hash(payload) == outer.checksum) { "备份校验失败" }
         return json.decodeFromJsonElement<DeviceSnapshot>(AppleWireJson.parse(payload)).also {
-            require(outer.version == 2 || it.appleBackups.isEmpty() && it.appleSources.isEmpty()) { "来源备份需要格式 2" }
+            require(outer.version >= 2 || it.appleBackups.isEmpty() && it.appleSources.isEmpty()) { "来源备份需要格式 2" }
+            require(outer.version >= 3 || it.teamArchives.isEmpty()) { "球队档案需要格式 3" }
             validate(it)
         }
     }
     private fun validate(snapshot: DeviceSnapshot) {
+        require(snapshot.teamArchives.size <= 100 && snapshot.teamArchives.map { it.id }.distinct().size == snapshot.teamArchives.size) { "档案过多或编号重复" }
+        var archiveBytes = 0L
+        snapshot.teamArchives.forEach {
+            val bytes = Base64.getDecoder().decode(it.original)
+            archiveBytes += bytes.size
+            require(archiveBytes <= TeamArchiveBytes.libraryLimit) { "档案库超过 50 MB" }
+            TeamArchiveBytes.validate(it.id, bytes)
+        }
         require(snapshot.teams.map { it.id }.distinct().size == snapshot.teams.size && snapshot.games.map { it.id }.distinct().size == snapshot.games.size && snapshot.operations.map { it.id }.distinct().size == snapshot.operations.size && snapshot.drafts.map { it.gameID }.distinct().size == snapshot.drafts.size) { "备份编号重复" }
         val teams = snapshot.teams.map { entity ->
             val team = GameJson.decodeFromString<Team>(entity.payload)

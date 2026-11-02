@@ -22,8 +22,8 @@ class CurrentTeamFlowTest {
                 val instrumentation = InstrumentationRegistry.getInstrumentation()
                 val device = UiDevice.getInstance(instrumentation)
                 val output = instrumentation.targetContext.getExternalFilesDir(null)!!
-                device.takeScreenshot(File(output, "current-team-failure.png"))
-                device.dumpWindowHierarchy(File(output, "current-team-failure.xml"))
+                device.takeScreenshot(File(output, "current-team-${description.methodName}-failure.png"))
+                device.dumpWindowHierarchy(File(output, "current-team-${description.methodName}-failure.xml"))
             }
         }
 
@@ -40,8 +40,8 @@ class CurrentTeamFlowTest {
             try {
                 val repo = GameRepository(db)
                 val suffix = UUID.randomUUID().toString().take(5)
-                val first = repo.createTeam("!当前队甲$suffix", roster)
-                val second = repo.createTeam("!当前队乙$suffix", roster)
+                val first = repo.createTeam("!当前队-$suffix-甲", roster)
+                val second = repo.createTeam("!当前队-$suffix-乙", roster)
                 var game = repo.createGame(second, "对手$suffix", roster, GameMode.standard, false)
                 game =
                     repo.command(game.id, Command("play", outcome = Outcome.homeRun), game.revision)
@@ -60,25 +60,21 @@ class CurrentTeamFlowTest {
             assertTrue(device.wait(Until.hasObject(By.res("home-team-record")), 20000))
             device.waitForIdle()
         }
-        fun find(selector: BySelector): UiObject2 {
-            var direction = Direction.DOWN
-            for (i in 0 until 120) {
-                try {
-                    if (android.os.Build.VERSION.SDK_INT >= 34) inst.uiAutomation.clearCache()
-                    device
-                        .findObject(selector)
-                        ?.takeIf { it.visibleBounds.height() > 8 }
-                        ?.let {
-                            return it
-                        }
-                    val scroll = device.findObject(By.scrollable(true)) ?: break
-                    val canContinue = scroll.scroll(direction, .75f)
-                    if (!canContinue && direction == Direction.DOWN) direction = Direction.UP
-                    else if (!canContinue && direction == Direction.UP) break
-                } catch (_: StaleObjectException) {}
-                device.waitForIdle()
+        // Share the bounded, app-only swipe helper; UiObject2.scroll can start gestures
+        // in system bars and cached nodes can move while Compose changes the selected row.
+        fun find(selector: BySelector): UiObject2 = NativeUi.find(device, selector)
+        fun choose(team: Team) {
+            repeat(3) {
+                try { find(By.res("select-current-team-${team.id}")).click() }
+                catch (_: StaleObjectException) { return@repeat }
+                val deadline = android.os.SystemClock.uptimeMillis() + 3000
+                while (android.os.SystemClock.uptimeMillis() < deadline) {
+                    if (settings.getString("current_team_id", null) == team.id) return
+                    device.waitForIdle(100)
+                    android.os.SystemClock.sleep(50)
+                }
             }
-            return device.wait(Until.findObject(selector), 5000) ?: error("Missing $selector")
+            assertEquals("球队选择必须实际写入设置", team.id, settings.getString("current_team_id", null))
         }
         fun step(value: String) {
             File(context.getExternalFilesDir(null), "current-team-test-step.txt").writeText(value)
@@ -95,7 +91,7 @@ class CurrentTeamFlowTest {
             assertTrue("球队页未打开", device.wait(Until.hasObject(By.res("add-roster")), 10000))
             device.waitForIdle()
             step("select-first")
-            find(By.res("select-current-team-${pair.first.id}")).click()
+            choose(pair.first)
             device.waitForIdle()
             step("home-first")
             find(By.res("tab-0")).click()
@@ -107,7 +103,7 @@ class CurrentTeamFlowTest {
             assertTrue("球队页未打开", device.wait(Until.hasObject(By.res("add-roster")), 10000))
             device.waitForIdle()
             step("select-second")
-            find(By.res("select-current-team-${pair.second.id}")).click()
+            choose(pair.second)
             device.waitForIdle()
             step("home-second")
             find(By.res("tab-0")).click()
@@ -121,6 +117,7 @@ class CurrentTeamFlowTest {
                 )
             )
             assertEquals(pair.second.id, settings.getString("current_team_id", null))
+            File(context.filesDir, "current-team-test-origin-pid.txt").writeText(android.os.Process.myPid().toString())
             step("selected")
         } catch (failure: Throwable) {
             settings
@@ -143,6 +140,10 @@ class CurrentTeamFlowTest {
         val previous = File(context.filesDir, "current-team-test-previous.txt").readText()
         val (id, name) = File(context.filesDir, "current-team-test-selected.txt").readLines()
         try {
+            assertEquals("先单独执行 selectCurrentTeamAndRecord，失败后不能继续恢复测试", "selected",
+                File(context.getExternalFilesDir(null), "current-team-test-step.txt").readText())
+            val originPID = File(context.filesDir, "current-team-test-origin-pid.txt").readText().trim().toInt()
+            assertNotEquals("恢复测试必须在外部 force-stop 之后的新进程执行，不能运行整个 class 冒充杀进程", originPID, android.os.Process.myPid())
             context.startActivity(
                 context.packageManager
                     .getLaunchIntentForPackage(context.packageName)!!

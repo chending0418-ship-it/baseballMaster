@@ -38,6 +38,8 @@ object AppleStoredGameValidation {
         stored.text("seasonID")
         stored.bool("isHome")
         stored.optional("isSpectator")?.let { boolean(it, "isSpectator") }
+        stored.optional("postgameUploadTeamID")?.let(::uuid)
+        stored.optional("postgameTargetConfigured")?.let {boolean(it,"postgameTargetConfigured")}
         for (key in listOf("ourTeamID", "opponentTeamID", "sharedTeamID", "sharedGameID", "historySourceID")) stored.optional(key)?.let(::uuid)
         stored.optional("revision")?.let { number(it, "revision", 0..Int.MAX_VALUE) }
         val status = stored.number("status", 0..2)

@@ -493,6 +493,7 @@ object History {
         state.historyRevisions = input.historyRevisions
         state.correctionRevisions = input.correctionRevisions
         state.correctionBoundary = input.correctionBoundary
+        state.postgameSharingChoice = input.postgameSharingChoice
         state.revision = input.revision + 1
         state.validate()
         return CorrectionPreview(state, state.journal, emptyList())

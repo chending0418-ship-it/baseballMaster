@@ -439,6 +439,12 @@ data class Game(
     var isScheduled: Boolean = false,
     var startedAt: Long? = null,
     var ourTeamID: String? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var sharedRosterOrigin: SharedRosterOrigin? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var postgameSharingChoice: PostgameSharingChoice? = null,
     var journal: List<RecordedCommand> = emptyList(),
     var cursor: Int = 0,
     var checkpoint: String? = null,
@@ -573,6 +579,7 @@ data class Game(
         clockElapsedMs + (clockRunningSince?.let { (at - it).coerceAtLeast(0) } ?: 0)
 
     fun validate() {
+        sharedRosterOrigin?.validate(this)
         require(appleSourceID == null || Regex("[a-f0-9]{64}").matches(appleSourceID!!)) { "iOS 来源编号无效" }
         require(home.players.isNotEmpty() && away.players.isNotEmpty() && home.id != away.id)
         require(

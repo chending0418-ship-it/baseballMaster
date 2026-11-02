@@ -112,6 +112,35 @@ class ReportExportTest {
             .put("requiresExternalTextAndVisualCheck", true).put("checks", checks).toString(2))
     }
 
+    @Test fun extremeRunnerNamesStayInsideSituationCardsAndKeepFullTextBelow() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val longName = "姓名完整保留开始" + "长姓名测试".repeat(30) + "姓名完整保留结束"
+        fun roster(id: String) = Team(id, id, (1..9).map { Player("$id-$it", if (it == 1) longName else "球员$it", "$it") })
+        var game = MatchFactory.create("report-long-base-names", roster("主队"), roster("客队"), Rules())
+        game = MatchEngine.apply(game, Command("play", outcome = Outcome.single))
+        game = MatchEngine.apply(game, Command("pitch", pitch = PitchAction.ball))
+        val report = ReportExport.game(context, game, true)
+        val external = context.getExternalFilesDir(null)!!
+        report.copyTo(File(external, "an04-long-situation-names.pdf"), overwrite = true)
+        ParcelFileDescriptor.open(report, ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+            PdfRenderer(fd).use { pdf ->
+                for (i in 0 until pdf.pageCount) pdf.openPage(i).use { page ->
+                    val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+                    try {
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        File(external, "an04-long-situation-names-page${i + 1}.png").outputStream().use {
+                            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+                        }
+                    } finally { bitmap.recycle() }
+                }
+            }
+        }
+        File(external, "an04-long-situation-names-checks.json").writeText(org.json.JSONObject()
+            .put("requiresExternalTextAndVisualCheck", true)
+            .put("file", "an04-long-situation-names.pdf")
+            .put("requiredText", org.json.JSONArray(listOf("姓名见下方", "记录后 · 1 垒：", "姓名完整保留结束"))).toString(2))
+    }
+
     @Test fun systemChooserOpensForPdfWithoutSending() {
         val inst = InstrumentationRegistry.getInstrumentation()
         val context = inst.targetContext

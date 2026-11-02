@@ -20,13 +20,19 @@ class CompletionFlowTest {
     private val output
         get() = context.getExternalFilesDir(null)!!
 
+    private var testName = "unknown"
+
     @org.junit.Rule
     @JvmField
     val capture =
         object : org.junit.rules.TestWatcher() {
+            override fun starting(d: org.junit.runner.Description) {
+                testName = d.methodName
+                File(output, "completion-$testName-step.txt").writeText("starting")
+            }
             override fun failed(e: Throwable, d: org.junit.runner.Description) {
-                device.takeScreenshot(File(output, "completion-failure.png"))
-                device.dumpWindowHierarchy(File(output, "completion-failure.xml"))
+                device.takeScreenshot(File(output, "completion-${d.methodName}-failure.png"))
+                device.dumpWindowHierarchy(File(output, "completion-${d.methodName}-failure.xml"))
             }
         }
 
@@ -60,8 +66,14 @@ class CompletionFlowTest {
     }
 
     private fun click(tag: String) {
-        find(By.res(tag)).click()
-        device.waitForIdle()
+        repeat(3) {
+            try {
+                find(By.res(tag)).click()
+                device.waitForIdle(500)
+                return
+            } catch (_: StaleObjectException) { }
+        }
+        error("Control kept changing before click: $tag")
     }
 
     private fun text(value: String) = find(By.text(value))
@@ -141,10 +153,10 @@ class CompletionFlowTest {
     @Test
     fun rosterProfileAndThreeModeSetupUseRealScreens() {
         val own = db { _, r ->
-            r.createTeam("AN03 名单 ${UUID.randomUUID().toString().take(5)}", roster())
+            r.createTeam("!UI 名单 ${UUID.randomUUID().toString().take(5)}", roster())
         }
         val opponent = db { _, r ->
-            r.createTeam("AN03 对手 ${UUID.randomUUID().toString().take(5)}", roster()).let {
+            r.createTeam("!UI 对手 ${UUID.randomUUID().toString().take(5)}", roster()).let {
                 it.copy(isOpponent = true)
             }
         }
@@ -411,7 +423,7 @@ class CompletionFlowTest {
         click("tab-1")
         assertNotNull(text("本机球队管理"))
         click("tab-2")
-        assertNotNull(text("本机记录"))
+        assertNotNull(find(By.res("stats-open-game-filter")))
         click("tab-0")
         assertTrue(stored(g.id).isFinal)
     }

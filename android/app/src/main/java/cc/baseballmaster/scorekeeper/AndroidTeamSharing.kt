@@ -11,6 +11,12 @@ import kotlinx.coroutines.ensureActive
  */
 internal class AndroidTeamSharing(private val local: GameRepository, private val session: TeamDirectorySession) {
     suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
+    /** Complete source-backed final archives only; native Game JSON is never uploaded here. */
+    suspend fun stageFinalArchive(backupID: String, gameID: String, teamID: String, confirmed: Boolean) = withContext(Dispatchers.IO) {
+        session.stageFinalArchive(local.exportAppleBackup(backupID),gameID,teamID,confirmed)
+    }
+    suspend fun previewFinalArchive(key: String, independent: Boolean = false) = withContext(Dispatchers.IO) { session.previewFinalArchive(key,independent) }
+    suspend fun sendFinalArchive(key: String) = withContext(Dispatchers.IO) { session.sendFinalArchive(key) }
     suspend fun reconnect(confirmed: Boolean) = withContext(Dispatchers.IO) {session.reconnect(confirmed)}
     suspend fun retainIncomingLink(link: IncomingTeamLink) = withContext(Dispatchers.IO) {session.retainIncomingLink(link)}
     suspend fun consumeIncomingLink(id: String) = withContext(Dispatchers.IO) {session.consumeIncomingLink(id)}

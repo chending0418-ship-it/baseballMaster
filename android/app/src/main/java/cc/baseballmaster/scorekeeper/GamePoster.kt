@@ -93,7 +93,8 @@ internal fun GamePosterScreen(game: Game, dismiss: () -> Unit) {
     var headline by remember { mutableStateOf("一起到场，为球队加油") }
     var venue by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("欢迎队员、家长和朋友们到场观赛") }
-    val preview = remember(game.id, headline, venue, note) { GamePoster.render(game, headline, venue, note) }
+    val preview = remember(game, headline, venue, note) { GamePoster.render(game, headline, venue, note) }
+    DisposableEffect(preview) { onDispose { preview.recycle() } }
     FormPage("比赛宣传海报", false, true, "poster-close", "完成", dismiss, dismiss) {
         Image(preview.asImageBitmap(), contentDescription = "比赛海报，${game.away.name}对${game.home.name}", modifier = Modifier.fillMaxWidth().testTag("game-poster-preview"))
         Text("海报信息", fontWeight = FontWeight.Bold)

@@ -60,7 +60,7 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     maxHeapSize = "2g"
     systemProperty("apple.source.output", rootProject.file("../output/validation/android/an04-source-roundtrip/kotlin").absolutePath)
     outputs.dir(rootProject.file("../output/validation/android/an04-source-roundtrip/kotlin"))
-    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+    systemProperty("robolectric.dependency.repo.url", providers.gradleProperty("robolectricRepository").orElse("https://repo.maven.apache.org/maven2").get())
     systemProperty("maven.repo.local", rootProject.file("../output/cache/android/robolectric").absolutePath)
     systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
 }

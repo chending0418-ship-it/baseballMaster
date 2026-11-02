@@ -4,6 +4,7 @@
 Does not install packages, clear data, dismiss ANRs, or treat adb exit code alone as a pass.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,7 +16,10 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
 p.add_argument('--output', type=Path, required=True)
 p.add_argument('--class-name', action='append', dest='classes')
+p.add_argument('--keep-going', action='store_true', help='Collect independent class failures, then fail the run')
 a = p.parse_args()
+if not a.serial.startswith('emulator-'):
+    p.error('Use an owned synthetic-data emulator, not a personal device')
 a.output.mkdir(parents=True, exist_ok=False)
 adb = str(Path(os.environ['ANDROID_HOME']) / 'platform-tools/adb') if os.environ.get('ANDROID_HOME') else 'adb'
 package = 'cc.baseballmaster.scorekeeper.preview'
@@ -35,6 +39,15 @@ try:
     metadata = {key: call('shell', 'getprop', key).stdout.decode().strip() for key in
                 ['ro.build.version.sdk', 'ro.build.fingerprint', 'sys.boot_completed']}
     metadata['window'] = call('shell', 'wm', 'size').stdout.decode() + call('shell', 'wm', 'density').stdout.decode()
+    metadata['package'] = call('shell', 'dumpsys', 'package', package).stdout.decode()
+    # Record the exact installed-code identity and connectivity alongside results.
+    metadata['connectivity'] = call('shell', 'dumpsys', 'connectivity').stdout.decode()
+    metadata['source_revision'] = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+    metadata['source_changes'] = subprocess.run(['git', 'status', '--short'], capture_output=True, text=True).stdout
+    for label, path in [('app', Path('output/cache/android/build/app/outputs/apk/debug/app-debug.apk')),
+                        ('tests', Path('output/cache/android/build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk'))]:
+        if path.is_file():
+            metadata[label + '_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
     (a.output / 'device.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2))
     if metadata['sys.boot_completed'] != '1':
         raise RuntimeError('AVD not booted')
@@ -55,7 +68,8 @@ try:
     else:
         raise RuntimeError('App readiness timed out')
     classes = a.classes or ['StatisticsFlowTest', 'PlayerStatisticsFlowTest', 'TeamArchiveUIFlowTest',
-                             'ReportExportTest', 'DeviceBackupTest', 'BackupInteropTest', 'RulesFlowTest']
+                             'ReportExportTest', 'DeviceBackupTest', 'DeviceBackupUIFlowTest',
+                             'BackupInteropTest', 'RulesFlowTest', 'ProfileSystemFlowTest', 'IconParityTest']
     for name in classes:
         result = call('shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
                       f'cc.baseballmaster.scorekeeper.{name}',
@@ -68,8 +82,10 @@ try:
             token in text for token in ['FAILURES!!!', 'INSTRUMENTATION_FAILED', 'shortMsg=', 'Process crashed'])
         results.append({'class': name, 'passed': passed, 'tests': int(match[1]) if match else None})
         print(json.dumps(results[-1]), flush=True)
-        if not passed:
+        if not passed and not a.keep_going:
             raise RuntimeError(f'{name} failed; see raw instrumentation log')
+    if any(not row['passed'] for row in results):
+        raise RuntimeError('One or more instrumented classes failed; see results.json')
 finally:
     (a.output / 'results.json').write_text(json.dumps(results, indent=2))
     evidence()

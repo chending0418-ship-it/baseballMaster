@@ -29,6 +29,16 @@ class AppleSourceBackup private constructor(
         return prepare(next)
     }
 
+    fun appendCommand(gameID: String, command: Command, operationID: String): AppleSourceBackup {
+        require(projected.any { it.id == appleUUID(gameID) }) { "来源中没有这场比赛" }
+        if (command.kind == "pitch") {
+            require(command == Command("pitch", pitch = command.pitch, at = command.at)) { "来源投球含尚未支持的附加资料" }
+            return appendPitch(gameID, requireNotNull(command.pitch), operationID, command.at)
+        }
+        if (command.kind == "play") return prepare(ApplePlayAppend.append(bytes, gameID, command, operationID))
+        return prepare(AppleLifecycleAppend.append(bytes, gameID, command, operationID))
+    }
+
     companion object {
         fun prepare(input: ByteArray): AppleSourceBackup {
             val bytes = input.copyOf()
@@ -80,9 +90,9 @@ class AppleSourceBackup private constructor(
             var additions = 0
             var expected = old
             oldGames.zip(newGames).forEach { (before, after) ->
-                require(JsonObject(before - "state" - "revision" - "updatedAt") == JsonObject(after - "state" - "revision" - "updatedAt")) { "来源比赛资料被改写" }
+                require(JsonObject(before - "state" - "revision" - "updatedAt" - "status" - "openingPitchRecorded") == JsonObject(after - "state" - "revision" - "updatedAt" - "status" - "openingPitchRecorded")) { "来源比赛资料被改写" }
                 val oldState = before.getValue("state").jsonObject; val newState = after.getValue("state").jsonObject
-                val mutable = setOf("balls", "strikes", "plateAppearancePitchCount", "pitching", "playLog", "scoringEvents", "historyJournal", "batting", "homeBatterIndex", "awayBatterIndex", "outs", "baseRunners", "runnerPitcherIDs", "unearnedRunnerIDs", "plateAppearances", "currentPlateAppearanceID", "homeRunsByInning", "awayRunsByInning")
+                val mutable = setOf("extraFoulUsed", "inning", "isTop", "automaticRunnerIDs", "balls", "strikes", "plateAppearancePitchCount", "pitching", "playLog", "scoringEvents", "historyJournal", "batting", "fielding", "homeHits", "awayHits", "homeErrors", "awayErrors", "homeBatterIndex", "awayBatterIndex", "outs", "baseRunners", "runnerPitcherIDs", "unearnedRunnerIDs", "plateAppearances", "currentPlateAppearanceID", "homeRunsByInning", "awayRunsByInning", "isFinal", "endedAt", "endReason", "canResumePrecisely", "pendingDecision", "dismissedWalkOffHalf", "clockElapsedSeconds", "clockRunningSince")
                 require(oldState.filterKeys { it !in mutable } == newState.filterKeys { it !in mutable }) { "来源局面或纠错审计被改写" }
                 val oldJournal = oldState.getValue("historyJournal").jsonObject; val newJournal = newState.getValue("historyJournal").jsonObject
                 require(JsonObject(oldJournal - "operations") == JsonObject(newJournal - "operations")) { "来源检查点被改写" }
@@ -92,11 +102,13 @@ class AppleSourceBackup private constructor(
                 require(additions <= 10_000) { "来源续记过多，暂不能安全恢复" }
                 newOps.drop(oldOps.size).forEach { raw ->
                     val operation = raw.jsonObject
-                    val command = operation.getValue("command").jsonObject
-                    require(command.keys == setOf("pitch")) { "来源包含尚不支持的新增操作" }
-                    val action = PitchAction.entries.single { it.title == command.getValue("pitch").jsonObject.getValue("_0").jsonPrimitive.content }
-                    val at = BigDecimal(operation.getValue("timestamp").jsonPrimitive.content).add(BigDecimal("978307200")).movePointRight(3).longValueExact()
-                    expected = expected.appendPitch(before.getValue("id").jsonPrimitive.content, action, operation.getValue("id").jsonPrimitive.content, at)
+                    val operationID = appleUUID(operation.getValue("id").jsonPrimitive.content)
+                    val selected = next.projected.single { it.id == appleUUID(before.getValue("id").jsonPrimitive.content) }
+                    val command = selected.journal.single { it.id == operationID }.command
+                    // Reconstruct through the same independent, raw-preserving writer.
+                    // The final whole-snapshot comparison also verifies command bodies,
+                    // timestamps, status, old audit bytes and every other match.
+                    expected = expected.appendCommand(selected.id, command, operationID)
                 }
                 val id = appleUUID(before.getValue("id").jsonPrimitive.content)
                 require(next.projected.single { it.id == id }.revision == old.projected.single { it.id == id }.revision + added) { "来源修订与续记数量不一致" }

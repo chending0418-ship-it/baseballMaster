@@ -219,6 +219,7 @@ internal object AppleExportPrototype {
             put("seasonID", (Performances.year(g) ?: error("缺少年度")).toString()); idField("ourTeamID", g.ourTeamID); put("opponentTeamID", uid(if (home) g.away.id else g.home.id))
             put("isHome", home); put("isSpectator", false); put("rules", rules(g.rules)); put("lineup", lineup(if (home) cp.home else cp.away, home)); put("secondaryLineup", lineup(if (home) cp.away else cp.home, !home))
             put("status", if (g.isScheduled) 2 else if (g.isFinal) 1 else 0); put("revision", g.revision); put("openingPitchRecorded", g.openingPitchRecorded)
+            g.postgameSharingChoice?.let {choice -> put("postgameTargetConfigured",true);idField("postgameUploadTeamID",choice.teamID)}
             put("state", JsonObject(state(g, logs, events, appearances, groups.lastOrNull()?.let { groupID.getValue(it.id) }, history) +
                 if (revisions.isEmpty()) emptyMap() else mapOf("correctionRevisions" to revisions)))
         }

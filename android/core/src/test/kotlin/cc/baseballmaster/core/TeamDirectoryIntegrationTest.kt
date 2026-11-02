@@ -89,6 +89,135 @@ class TeamDirectoryIntegrationTest {
         return SharedMatchDocument(transport.request("POST","teams/${team.id}/games",body))
     }
 
+    /** Node re-encodes 8.116928E8 as 811692800. Compare every field while treating JSON numbers numerically. */
+    private fun assertArchiveWireValues(expected: JsonElement, actual: JsonElement, path: String = "payload") {
+        when {
+            expected is JsonObject && actual is JsonObject -> {
+                assertEquals(path,expected.keys,actual.keys)
+                expected.forEach { (key,value) -> assertArchiveWireValues(value,actual.getValue(key),"$path/$key") }
+            }
+            expected is JsonArray && actual is JsonArray -> {
+                assertEquals(path,expected.size,actual.size)
+                expected.zip(actual).forEachIndexed {index,(a,b) -> assertArchiveWireValues(a,b,"$path/$index")}
+            }
+            expected is JsonPrimitive && actual is JsonPrimitive && !expected.isString && !actual.isString &&
+                expected.content.toBigDecimalOrNull()!=null && actual.content.toBigDecimalOrNull()!=null ->
+                assertEquals(path,0,expected.content.toBigDecimal().compareTo(actual.content.toBigDecimal()))
+            else -> assertEquals(path,expected,actual)
+        }
+    }
+
+    private class DurableFinalStore(private val file: File) : TeamDirectoryStorage {
+        override val monitor = Any()
+        override fun load(): TeamDirectoryState = if (file.exists()) GameJson.decodeFromString(file.readText()) else TeamDirectoryState()
+        override fun save(state: TeamDirectoryState) { file.writeText(GameJson.encodeToString(TeamDirectoryState.serializer(),state)) }
+    }
+    private fun finalSource() = File(System.getProperty("parity.fixtures"), "backup/android-complex-prototype-v7.bmbackup").readBytes()
+
+    @Test(timeout=30000) fun finalArchiveFrozenRequestSurvivesRestartAndLostCommitResponseWithoutDuplicates() {
+        Service().use {server ->
+            val folder=java.nio.file.Files.createTempDirectory("bm-final-test").toFile()
+            try {
+                val actual=server.transport();val file=File(folder,"state.json");val store=DurableFinalStore(file)
+                var lose=true;val sent=mutableListOf<JsonObject>()
+                val transport=TeamTransport {method,path,body ->
+                    val result=actual.request(method,path,body)
+                    if(path.endsWith("history-imports/commit")) {
+                        sent+=requireNotNull(body)
+                        if(lose) {lose=false;throw IOException("injected lost commit response")}
+                    }
+                    result
+                }
+                val session=TeamDirectorySession(TeamDirectoryClient(transport),store,"安卓终场测试")
+                val bytes=finalSource();val source=AppleSourceBackup.prepare(bytes);val local=source.games().single()
+                val own=source.teams().single {it.id==local.ourTeamID}
+                session.refresh();session.prepareCreate(own,"管理员");session.sendPending()
+                val team=session.refresh().teams.single()
+                val staged=session.stageFinalArchive(bytes,local.id,team.id,true)
+                assertFalse(staged.previewReady)
+                assertEquals(staged.id,session.stageFinalArchive(bytes,local.id,team.id,true).id)
+                assertEquals("new",session.previewFinalArchive(staged.key).getValue("status").jsonPrimitive.content)
+                val frozen=store.load().finalArchivePending.getValue(staged.key)
+                assertThrows(IOException::class.java) {session.sendFinalArchive(staged.key)}
+                assertEquals(frozen,store.load().finalArchivePending.getValue(staged.key))
+                val restarted=TeamDirectorySession(TeamDirectoryClient(transport),DurableFinalStore(file),"安卓终场测试")
+                val receipt=restarted.sendFinalArchive(staged.key)
+                assertEquals(frozen,receipt.request);assertEquals(2,sent.size);assertEquals(sent[0],sent[1])
+                assertEquals(local.revision,receipt.request.localRevision)
+                assertTrue(store.load().finalArchivePending.isEmpty())
+                val remote=restarted.match(team.id,receipt.document.id)
+                assertArchiveWireValues(frozen.body.getValue("payload"),requireNotNull(remote.payload))
+                val requestedLinks=frozen.body.getValue("playerLinks").jsonArray
+                assertEquals(own.players.size,requestedLinks.size)
+                requestedLinks.forEach { link -> assertEquals(link.jsonObject.getValue("sourceID"),link.jsonObject.getValue("targetID")) }
+                // Service normalizes identity links away. Player IDs still match roster.sourceID.
+                assertTrue(remote.raw.getValue("playerLinks").jsonArray.isEmpty())
+                val roster=restarted.roster(team.id)
+                val sources=roster.players.map {it.sourceID}.toSet()
+                assertTrue(own.players.all {it.id in sources})
+                val box=remote.raw.getValue("projection").jsonObject.getValue("box").jsonObject.getValue("batting").jsonArray
+                local.batting.filterKeys { id -> own.players.any {it.id==id} }.forEach { (id,line) ->
+                    val row=box.single {it.jsonObject.getValue("player").jsonObject.getValue("id").jsonPrimitive.content.equals(id,true)}.jsonObject
+                    assertEquals(line.hits,row.getValue("values").jsonObject.getValue("hits").jsonPrimitive.int)
+                }
+                assertEquals(1,restarted.matches(team.id).count { !it.deleted })
+                assertArrayEquals(bytes,source.export())
+                assertThrows(IllegalStateException::class.java) {restarted.stageFinalArchive(bytes,local.id,team.id,true)}
+            } finally {folder.deleteRecursively()}
+        }
+    }
+
+    @Test(timeout=30000) fun finalArchiveChangedAccessEpochNeverSendsThePreservedCommit() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();var commits=0
+            val transport=TeamTransport {method,path,body ->
+                if(path.endsWith("history-imports/commit")) commits++
+                actual.request(method,path,body)
+            }
+            val session=session(transport,store);val bytes=finalSource();val source=AppleSourceBackup.prepare(bytes);val local=source.games().single()
+            session.refresh();session.prepareCreate(source.teams().single {it.id==local.ourTeamID},"管理员");session.sendPending()
+            val team=session.refresh().teams.single();val pending=session.stageFinalArchive(bytes,local.id,team.id,true)
+            session.previewFinalArchive(pending.key);val frozen=store.load().finalArchivePending.getValue(pending.key)
+            server.change("access",team.id)
+            assertThrows(IllegalStateException::class.java) {session.sendFinalArchive(pending.key)}
+            assertEquals(0,commits);assertTrue(store.load().finalArchivePending.isEmpty())
+            assertTrue(store.load().recoveryWork.any {work -> work.finalRequests.any {it==frozen}})
+        }
+    }
+
+    @Test(timeout=30000) fun finalArchiveRevokedCredentialArchivesIntentBeforeReconnectOrAnyCommit() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();val session=session(actual,store)
+            val bytes=finalSource();val source=AppleSourceBackup.prepare(bytes);val local=source.games().single()
+            session.refresh();session.prepareCreate(source.teams().single {it.id==local.ourTeamID},"管理员");session.sendPending()
+            val team=session.refresh().teams.single();val pending=session.stageFinalArchive(bytes,local.id,team.id,true)
+            session.previewFinalArchive(pending.key);val frozen=store.load().finalArchivePending.getValue(pending.key)
+            server.change("credential",store.load().deviceID)
+            assertThrows(TeamServiceFault::class.java) {session.sendFinalArchive(pending.key)}
+            assertTrue(store.load().credentialExpired);assertTrue(store.load().finalArchivePending.isEmpty())
+            assertTrue(store.load().recoveryWork.any {work -> work.finalRequests.any {it==frozen}})
+        }
+    }
+
+    @Test(timeout=30000) fun finalArchiveStageFailureNeverSendsARequestAndInProgressSourcesAreRejected() {
+        Service().use {server ->
+            val actual=server.transport();val store=Memory();var submissions=0
+            val transport=TeamTransport {method,path,body ->
+                if(path.contains("history-imports")) submissions++
+                actual.request(method,path,body)
+            }
+            val session=session(transport,store);val bytes=finalSource();val source=AppleSourceBackup.prepare(bytes);val local=source.games().single()
+            session.refresh();session.prepareCreate(source.teams().single {it.id==local.ourTeamID},"管理员");session.sendPending()
+            val team=session.refresh().teams.single()
+            store.reject={it.finalArchivePending.isNotEmpty()}
+            assertThrows(IOException::class.java) {session.stageFinalArchive(bytes,local.id,team.id,true)}
+            assertTrue(store.load().finalArchivePending.isEmpty());assertEquals(0,submissions)
+            val current=File(System.getProperty("parity.fixtures"),"backup/ios-reference-v7.bmbackup").readBytes()
+            assertThrows(IllegalArgumentException::class.java) {session.stageFinalArchive(current,AppleSourceBackup.prepare(current).games().single().id,team.id,true)}
+            assertEquals(0,submissions)
+        }
+    }
+
     @Test(timeout=30000) fun historicalWatchingPublicRestrictedAndClosedKeepTheFullArchiveAndRevokeImmediately() {
         Service().use {server ->
             val actual=server.transport();val store=Memory();val owner=session(actual,store);val team=create(owner)

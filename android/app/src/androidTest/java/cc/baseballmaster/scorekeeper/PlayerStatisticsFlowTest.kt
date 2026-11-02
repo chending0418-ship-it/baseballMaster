@@ -57,11 +57,15 @@ class PlayerStatisticsFlowTest {
             node(device, By.res(tag).text(expected)) { assertEquals(expected, it.text) }
         }
         fun expectDescription(tag: String, expected: String) {
-            node(device, By.res(tag).desc(expected)) { assertEquals(expected, it.contentDescription) }
+            node(device, By.res(tag)) { metric ->
+                // API 31 exposes a merged Compose description as a child virtual
+                // node. Keep the exact value assertion inside this metric's subtree.
+                val description=metric.contentDescription ?: metric.findObject(By.desc(expected))?.contentDescription
+                assertEquals("Metric $tag", expected, description)
+            }
         }
         fun choose(tag: String) {
-            node(device, By.res(tag)) { if (!it.isChecked) it.click() }
-            assertTrue(device.wait(Until.hasObject(By.res(tag).checked(true)), 10_000))
+            StatisticsUi.setChecked(device,tag,true)
         }
         fun year(tag: String, selected: Int) {
             click(tag)
@@ -93,8 +97,7 @@ class PlayerStatisticsFlowTest {
             expectText("stats-team-record", "2 场比赛 · 2胜0负0平")
             click("stats-open-game-filter")
             val teamChoice = "stats-team-game-${fixture.coach.id}"
-            node(device, By.res(teamChoice)) { if (it.isChecked) it.click() }
-            assertTrue(device.wait(Until.hasObject(By.res(teamChoice).checked(false)), 10_000))
+            StatisticsUi.setChecked(device,teamChoice,false)
             expectText("stats-team-game-date-${fixture.standard.id}", "2026-01-02 00:30 · Asia/Shanghai")
             click("stats-save-filter", scroll = false)
             expectText("stats-team-record", "1 场比赛 · 1胜0负0平")
@@ -144,32 +147,6 @@ class PlayerStatisticsFlowTest {
         }
     }
 
-    /** Fresh lookup and use are one bounded action; a replacement node is never retained. */
-    private fun <T : Any> node(device: UiDevice, selector: BySelector, scroll: Boolean = true, use: (UiObject2) -> T): T {
-        var swipes = 0
-        var lastStale: StaleObjectException? = null
-        val value = device.wait(Condition<UiDevice, T?> { current ->
-            try {
-                val target = current.findObject(selector)
-                val bounds = target?.visibleBounds
-                val viewport = if (scroll) current.findObject(By.scrollable(true))?.visibleBounds else null
-                if (target != null && bounds != null && bounds.height() > 10 &&
-                    (!scroll || viewport == null || viewport.contains(bounds.centerX(), bounds.centerY()))) {
-                    use(target)
-                } else {
-                    if (scroll && swipes < 32) {
-                        val down = if (bounds != null && bounds.height() > 10) bounds.centerY() > current.displayHeight / 2 else swipes % 16 < 8
-                        val top = viewport?.top ?: current.displayHeight / 6
-                        val bottom = viewport?.bottom ?: current.displayHeight * 8 / 10
-                        val inset = (bottom - top) / 5
-                        val x = viewport?.centerX() ?: current.displayWidth / 2
-                        current.swipe(x, if (down) bottom - inset else top + inset, x, if (down) top + inset else bottom - inset, 25)
-                        swipes++
-                    }
-                    null
-                }
-            } catch (failure: StaleObjectException) { lastStale = failure; null }
-        }, 60_000)
-        return value ?: throw AssertionError("Missing or unstable $selector", lastStale)
-    }
+    private fun <T : Any> node(device: UiDevice, selector: BySelector, scroll: Boolean = true, use: (UiObject2) -> T): T =
+        StatisticsUi.use(device,selector,scroll,use)
 }

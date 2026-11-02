@@ -37,7 +37,9 @@ class LiveProjectionTest {
         val code="aB0_".repeat(8);val token=TeamSecrets.random()
         for(url in listOf("https://baseballmaster.cc/watch/#$code","https://baseballmaster.cc/watch/#$code/$token","https://baseballmaster.cc/watch/#live/$code")) {
             val qr=watchViewQr(url)
-            assertEquals(url,MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(qr.width,qr.height,qr.pixels)))).text)
+            // A generated bitmap has no camera perspective. Pure decoding checks every encoded
+            // fragment byte without the detector randomly misidentifying dense token patterns.
+            assertEquals(url,MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(qr.width,qr.height,qr.pixels))), mapOf(com.google.zxing.DecodeHintType.PURE_BARCODE to true)).text)
         }
         for(url in listOf("https://example.com/watch/#$code/$token","https://baseballmaster.cc/watch/?token=$token#$code","https://baseballmaster.cc/watch/#$code/invalid")) assertThrows(IllegalArgumentException::class.java) {watchViewQr(url)}
     }

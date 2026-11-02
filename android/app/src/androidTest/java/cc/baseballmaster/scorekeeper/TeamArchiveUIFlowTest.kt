@@ -13,6 +13,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import kotlinx.serialization.json.jsonObject
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import java.io.ByteArrayOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class TeamArchiveUIFlowTest {
@@ -21,20 +24,27 @@ class TeamArchiveUIFlowTest {
         val context = inst.targetContext
         val device = UiDevice.getInstance(inst)
         val bytes = inst.context.assets.open("ios-team-reference.bmteam").use { it.readBytes() }
-        val directory = File(context.filesDir, "team-archives")
-        val store = TeamArchiveStore(directory, File(context.cacheDir, "team-archive-staging"))
+        val store = TeamArchiveRoomStore(context)
         val pending = store.stage(bytes.inputStream())
-        val saved = try { store.save(pending) } finally { store.discard(pending) }
-        val original = File(directory, "${saved.item.id}.bmteam")
+        val saved = try {
+            runBlocking(Dispatchers.IO) {
+                val first = store.save(pending)
+                assertTrue("重复保存同档案必须幂等", store.save(pending).alreadyPresent)
+                first
+            }
+        } finally { store.discard(pending) }
         try {
             context.startActivity(context.packageManager.getLaunchIntentForPackage(context.packageName)!!
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
             assertTrue(device.wait(Until.hasObject(By.res("tab-3")), 20_000))
             click(device, "tab-3", scroll = false)
+            click(device, "open-local-data")
             click(device, "open-team-archives")
-            assertTrue(device.wait(Until.hasObject(By.res("import-team-archive")), 10_000))
+            // The import button may start below the explanatory text on a 360 dp
+            // phone. Find it in the reader rather than opening the reader again.
+            NativeUi.find(device, By.res("import-team-archive"))
             click(device, "team-archive-${saved.item.id}")
-            assertTrue(device.wait(Until.hasObject(By.res("export-team-archive")), 10_000))
+            NativeUi.find(device, By.res("export-team-archive"))
             assertTrue(device.hasObject(By.text("互导测试球队")))
             assertTrue(device.hasObject(By.textContains("只读快照")))
             click(device, "archive-game-history")
@@ -49,7 +59,7 @@ class TeamArchiveUIFlowTest {
             }
             device.takeScreenshot(File(context.getExternalFilesDir(null), "an04-archive-corrections.png"))
             device.pressBack()
-            assertTrue(device.wait(Until.hasObject(By.res("export-team-archive")), 10_000))
+            NativeUi.find(device, By.res("export-team-archive"))
             // Return to the top before opening the system picker.
             repeat(4) { device.swipe(device.displayWidth / 2, device.displayHeight / 3, device.displayWidth / 2, device.displayHeight * 8 / 10, 20) }
             repeat(2) {
@@ -61,50 +71,39 @@ class TeamArchiveUIFlowTest {
             }
             device.pressBack()
             assertTrue(device.wait(Until.gone(By.res("export-team-archive")), 10_000))
-            assertTrue(device.hasObject(By.res("import-team-archive")))
+            NativeUi.find(device, By.res("import-team-archive"))
             click(device, "team-archive-${saved.item.id}")
-            assertTrue(device.wait(Until.hasObject(By.res("export-team-archive")), 10_000))
+            NativeUi.find(device, By.res("export-team-archive"))
+            device.pressBack()
             device.pressBack()
             device.pressBack()
             assertTrue(device.wait(Until.hasObject(By.res("tab-3")), 10_000))
-            assertArrayEquals(bytes, original.readBytes())
-            assertEquals(1, store.list().items.count { it.id == saved.item.id })
+            runBlocking(Dispatchers.IO) {
+                val exported = ByteArrayOutputStream()
+                store.export(saved.item.id, exported)
+                assertArrayEquals("Repeated picker cancellation must preserve every original byte", bytes, exported.toByteArray())
+                assertEquals(1, store.list().items.count { it.id == saved.item.id })
+            }
         } catch (failure: Throwable) {
             val evidence = context.getExternalFilesDir(null)!!
             device.takeScreenshot(File(evidence, "an04-team-archive-failure.png"))
             device.dumpWindowHierarchy(File(evidence, "an04-team-archive-failure.xml"))
             throw failure
         } finally {
-            // Keep any pre-existing copy; only remove the synthetic file this test newly installed.
-            if (!saved.alreadyPresent) original.delete()
+            // Keep all device data, including any pre-existing identical synthetic archive.
+            store.close()
         }
     }
 
     private fun click(device: UiDevice, tag: String, scroll: Boolean = true) {
-        val deadline = SystemClock.uptimeMillis() + 15_000
-        var attempts = 0
-        while (SystemClock.uptimeMillis() < deadline) {
-            var down = attempts % 8 < 4
+        repeat(3) {
             try {
-                val node = device.findObject(By.res(tag))
-                if (node != null) {
-                    val bounds = node.visibleBounds
-                    down = bounds.centerY() > device.displayHeight / 2
-                    if (!bounds.isEmpty && (!scroll || bounds.centerY() in device.displayHeight / 8..device.displayHeight * 9 / 10)) {
-                        node.click()
-                        return
-                    }
-                }
-            } catch (_: StaleObjectException) { continue }
-            if (scroll) {
-                val top = device.displayHeight * 3 / 10
-                val bottom = device.displayHeight * 8 / 10
-                device.swipe(device.displayWidth / 2, if (down) bottom else top, device.displayWidth / 2, if (down) top else bottom, 25)
-                attempts++
-            }
-            device.waitForIdle(500)
+                NativeUi.find(device, By.res(tag)).click()
+                device.waitForIdle(500)
+                return
+            } catch (_: StaleObjectException) { }
         }
-        error("找不到可操作的档案控件：$tag")
+        error("找不到稳定的档案控件：$tag")
     }
 
 }

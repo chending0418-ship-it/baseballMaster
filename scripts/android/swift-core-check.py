@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay backups with original Swift GameStore/HistoryCorrection on Linux.
+"""Replay backups with original Swift GameStore/HistoryCorrection on macOS/Linux.
 
 Only platform imports/adapters change. No Xcode, Core Data, UI, networking or
 real-device result is implied. Inputs must be local modern-journal backups.
@@ -10,6 +10,7 @@ import base64
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -80,10 +81,14 @@ for name in ('LinuxAdapters.swift', 'HarnessMain.swift', 'ScenarioHarness.swift'
     target.write_bytes(source.read_bytes())
     metadata.append(dict(path=str(source.relative_to(ROOT)), sha256=hashlib.sha256(source.read_bytes()).hexdigest()))
     sources.append(target)
-# SHA-256 is OpenSSL, with a known-answer check in the driver. No mock hashes.
-header = Path('/usr/include/openssl/sha.h')
-assert header.exists(), 'Install OpenSSL development headers; no reference check ran'
-(cache / 'module.modulemap').write_text('module COpenSSL [system] { header "' + str(header) + '" link "crypto" export * }\n')
+# SHA-256 uses CryptoKit on macOS and OpenSSL on Linux, with a known-answer
+# check in the driver. No mock hashes.
+if platform.system() != 'Darwin':
+    header = Path('/usr/include/openssl/sha.h')
+    assert header.exists(), 'Install OpenSSL development headers; no reference check ran'
+    (cache / 'module.modulemap').write_text('module COpenSSL [system] { header "' + str(header) + '" link "crypto" export * }\n')
+# macOS uses the real system CryptoKit implementation in the adapter. Neither
+# platform needs modified application source or a substituted hash function.
 compiler = os.environ.get('SWIFTC', shutil.which('swiftc'))
 assert compiler, 'Set SWIFTC to an installed Swift compiler'
 (out / 'sources.json').write_text(json.dumps(metadata, indent=2))

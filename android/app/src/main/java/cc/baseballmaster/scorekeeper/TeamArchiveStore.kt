@@ -8,6 +8,8 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.FileAlreadyExistsException
 import java.security.MessageDigest
 
 /** Private, read-only copies of the original .bmteam bytes. No Room or authority dependency. */
@@ -52,12 +54,13 @@ internal class TeamArchiveStore(
         require(pending.file.canonicalFile.parentFile == stagingDirectory.canonicalFile) { "档案暂存位置无效" }
         require(digest(pending.file) == pending.digest) { "暂存档案已改变，请重新选择" }
         val summary = pending.file.inputStream().use(AppleTeamArchiveIntegrity::inspect)
-        val destination = file(pending.digest)
+        val destination = location(pending.digest)
         if (destination.exists()) {
-            verify(destination, pending.digest)
+            verify(content(destination), pending.digest)
             return@synchronized Saved(Item(pending.digest, summary), true)
         }
-        val temporary = File.createTempFile("archive-", ".pending", directory)
+        val temporaryDirectory = Files.createTempDirectory(directory.toPath(), "archive-").toFile()
+        val temporary = File(temporaryDirectory, "original.bmteam")
         var published = false
         try {
             pending.file.inputStream().use { input ->
@@ -65,17 +68,25 @@ internal class TeamArchiveStore(
             }
             verify(temporary, pending.digest)
             beforePublish()
-            // Atomic no-clobber publication: even a competing writer cannot replace an existing file.
-            // Fail closed on filesystems without hard links; never fall back to an overwrite.
-            Files.createLink(destination.toPath(), temporary.toPath())
+            // Android's app sandbox can prohibit hard links. Publish a complete, nonempty
+            // directory instead: an atomic directory rename cannot replace an existing
+            // regular file or a nonempty archive directory. ATOMIC_MOVE on a plain FILE
+            // would permit overwrite on Linux even without REPLACE_EXISTING.
+            try {
+                if (destination.exists()) throw FileAlreadyExistsException(destination.path)
+                Files.move(temporaryDirectory.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            } catch (failure: Exception) {
+                if (destination.exists()) throw FileAlreadyExistsException(destination.path).also { it.initCause(failure) }
+                throw failure
+            }
             published = true
-            verify(destination, pending.digest)
+            verify(content(destination), pending.digest)
             Saved(Item(pending.digest, summary), false)
         } catch (failure: Throwable) {
-            if (published) destination.delete()
+            if (published) destination.deleteRecursively()
             throw failure
         } finally {
-            temporary.delete()
+            temporaryDirectory.deleteRecursively()
         }
     }
 
@@ -84,12 +95,13 @@ internal class TeamArchiveStore(
         val items = mutableListOf<Item>()
         var unreadable = 0
         val files = directory.listFiles() ?: error("无法读取本机档案目录")
-        files.filter { it.isFile && it.extension == "bmteam" }.sortedBy { it.name }.forEach { candidate ->
+        files.filter { it.extension == "bmteam" }.sortedBy { it.name }.forEach { candidate ->
             try {
                 val id = candidate.nameWithoutExtension
                 require(idPattern.matches(id))
-                verify(candidate, id)
-                items += Item(id, candidate.inputStream().use(AppleTeamArchiveIntegrity::inspect))
+                val bytes = content(candidate)
+                verify(bytes, id)
+                items += Item(id, bytes.inputStream().use(AppleTeamArchiveIntegrity::inspect))
             } catch (_: Exception) { unreadable++ }
         }
         Listing(items, unreadable)
@@ -108,10 +120,15 @@ internal class TeamArchiveStore(
         output.flush()
     }
 
-    private fun file(id: String): File {
+    private fun location(id: String): File {
         require(idPattern.matches(id)) { "档案编号无效" }
         return File(directory, "$id.bmteam")
     }
+
+    private fun content(location: File): File =
+        if (location.isDirectory) File(location, "original.bmteam") else location
+
+    private fun file(id: String): File = content(location(id))
 
     private fun verify(file: File, expectedDigest: String) {
         require(file.isFile && file.length() <= byteLimit) { "档案不存在或超过 100 MB" }

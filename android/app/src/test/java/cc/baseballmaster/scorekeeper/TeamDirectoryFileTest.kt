@@ -29,6 +29,22 @@ class TeamDirectoryFileTest {
     }
     private fun folder() = Files.createTempDirectory("android-team-directory-").toFile()
 
+    @Test fun finalArchiveIntentPersistsEncryptedWithItsFrozenOperationAndSnapshot() {
+        val dir=folder()
+        try {
+            val id=UUID.randomUUID().toString();val team=UUID.randomUUID().toString();val source=UUID.randomUUID().toString()
+            val pending=PendingFinalArchive(id,team,source,12,"a".repeat(64),UUID.randomUUID().toString(),1,UUID.randomUUID().toString(),buildJsonObject {
+                put("operationID",id);put("sourceID",source);put("payload",buildJsonObject {put("privateFixtureText","private final archive fixture")})
+            })
+            val state=TeamDirectoryState(finalArchivePending=mapOf(pending.key to pending))
+            val store=TeamDirectoryFile(dir,{key.copyOf()});store.save(state)
+            assertEquals(state,TeamDirectoryFile(dir,{key.copyOf()}).load())
+            assertFalse(File(dir,"directory-v1.sealed").readBytes().toString(Charsets.UTF_8).contains("private final archive fixture"))
+            assertThrows(IOException::class.java) {TeamDirectoryFile(dir,{key.copyOf()}) {throw IOException("injected final archive write")}.save(state.copy(finalArchivePending=emptyMap()))}
+            assertEquals(state,store.load())
+        } finally {dir.deleteRecursively()}
+    }
+
     @Test fun encryptedPendingRequestSurvivesReopenWithoutWritingAnyPlaintextSecret() {
         val dir = folder()
         try {

@@ -37,7 +37,7 @@ internal fun TeamArchiveControls() {
 private fun TeamArchiveLibrary(dismiss: () -> Unit) {
     val context = LocalContext.current
     val store = remember(context.applicationContext) {
-        TeamArchiveStore(File(context.filesDir, "team-archives"), File(context.cacheDir, "team-archive-staging"))
+        TeamArchiveRoomStore(context.applicationContext)
     }
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -52,7 +52,7 @@ private fun TeamArchiveLibrary(dismiss: () -> Unit) {
     var archive by remember { mutableStateOf<AppleTeamArchive?>(null) }
 
     val stagedForCleanup = rememberUpdatedState(pending)
-    DisposableEffect(store) { onDispose { active = false; stagedForCleanup.value?.let(store::discard) } }
+    DisposableEffect(store) { onDispose { active = false; stagedForCleanup.value?.let(store::discard); store.close() } }
     LaunchedEffect(store) {
         try { listing = withContext(Dispatchers.IO) { store.list() } }
         catch (e: CancellationException) { throw e }
@@ -109,10 +109,11 @@ private fun TeamArchiveLibrary(dismiss: () -> Unit) {
 
     FormPage("球队完整档案", blocked, true, "", "", dismiss, {}) {
         Text("保存共享球队导出的原始档案，离线查看名单与比分。不会替换当前球队，也不会恢复管理、记录或观看权限。")
-        Text("当前为只读快照，不可续记；完整比赛互导仍在开发。档案另存于本机，不包含在 Android 本机备份中，请另行导出保管。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("当前为只读快照，不可续记；完整比赛互导仍在开发。校验通过的档案原文纳入 Android 本机备份，恢复时与比赛一起提交；不恢复共享授权。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextButton(onClick = { picker = "import"; open.launch(arrayOf("application/octet-stream", "application/json", "*/*")) }, enabled = !blocked && pending == null, modifier = Modifier.testTag("import-team-archive")) {
             Text(if (busy) "正在处理档案…" else "选择 .bmteam 档案（不超过 100 MB）")
         }
+        store.migrationWarning?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (listing.unreadableCount > 0) Text("${listing.unreadableCount} 份本机文件未通过校验，已保留原文件且不会打开。", color = MaterialTheme.colorScheme.error)
         if (listing.items.isEmpty() && !busy) Text("尚无本机球队档案")
         listing.items.forEach { item ->

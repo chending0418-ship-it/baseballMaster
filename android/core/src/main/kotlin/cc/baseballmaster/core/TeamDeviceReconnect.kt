@@ -17,6 +17,7 @@ internal fun TeamDirectoryState.withExpiredAuthorization(): TeamDirectoryState {
     val preserved=preservingRecoveryWork(directory?.recoveryEpoch ?: java.util.UUID.randomUUID().toString())
     return preserved.copy(credentialExpired=true,directory=null,profiles=emptyMap(),bindings=emptyList(),
         retainedSecrets=emptyList(),lastCompletion=null,matches=emptyMap(),matchCursors=emptyMap(),
+        finalArchivePending=emptyMap(),finalArchiveReceipts=emptyMap(),
         matchReceipts=emptyMap(),watchReceipts=emptyMap(),watchLinks=emptyMap(),recoveryCards=emptyList(),pairing=null,outgoingPairing=null,fixedInvitations=emptyMap())
 }
 

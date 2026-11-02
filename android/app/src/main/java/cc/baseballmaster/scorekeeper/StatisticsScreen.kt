@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.testTag as semanticTestTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -102,8 +103,10 @@ private fun StatisticsMetricGrid(values: List<Pair<String, String>>, tagPrefix: 
     values.chunked(3).forEach { row ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             row.forEach { (label, value) ->
-                val metricModifier = if (tagPrefix == null) Modifier else Modifier
-                    .testTag("$tagPrefix-$label").semantics(mergeDescendants = true) { contentDescription = "$label：$value" }
+                val metricModifier = if (tagPrefix == null) Modifier else Modifier.semantics(mergeDescendants = true) {
+                    semanticTestTag = "$tagPrefix-$label"
+                    contentDescription = "$label：$value"
+                }
                 Column(Modifier.weight(1f).then(metricModifier), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(value, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -215,7 +218,7 @@ internal fun ReportShareButton(label: String, tag: String, mime: String = "appli
 
 @Composable
 internal fun StatisticsScreen(model: ScorekeeperViewModel) {
-    val teams = model.rosters.filter { !it.isOpponent && it.source == "local" }
+    val teams = LocalMatchSource.statisticsTeams(model.rosters,model.games)
     if (teams.isEmpty()) {
         Text("统计", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         CardBlock { Text("还没有球队", fontWeight = FontWeight.Bold); Text("先在球队页面创建球队并添加球员。") }
@@ -247,11 +250,12 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
         }
     }
     CardBlock {
-        StatsPicker("球队", team.id, teams.associate { it.id to (it.name + if (it.archived) " · 已归档" else " · 本机") }, "stats-team-picker") { teamID = it; selected = null }
+        StatsPicker("球队", team.id, teams.associate { it.id to (it.name + if (it.archived) " · 已归档" else if(it.source=="sharedSnapshot") " · 本机共享名单记录" else " · 本机") }, "stats-team-picker") { teamID = it; selected = null }
         HorizontalDivider()
         StatsPicker("年度", year.toString(), SeasonStatisticsCalculator.years(model.games).associate { it.toString() to "${it} 年" }, "stats-season-picker") {
             year = it.toInt(); selected = null
         }
+        if(team.source=="sharedSnapshot") Text("这是本机比赛统计；不代表已上传球队正式档案。", Modifier.testTag("stats-shared-snapshot-note"), fontSize=12.sp)
         Text("按比赛日期自动归入年度，无需创建或划分赛季。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         HorizontalDivider()
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

@@ -46,14 +46,39 @@ internal fun PlayEditor(
     }
     var typeChosen by rememberSaveable { mutableStateOf(initial?.observation != null) }
     var issue by rememberSaveable { mutableStateOf<String?>(null) }
+    var catalogReturnStage by rememberSaveable { mutableStateOf("entry") }
+    var contactReturnStage by rememberSaveable { mutableStateOf("entry") }
+    var catalogSearch by rememberSaveable { mutableStateOf("") }
+    fun unavailableReason(outcome: Outcome): String? = when(outcome) {
+        Outcome.doublePlay -> if(game.outs>=2) "已有两出局，不能记录双杀。" else if(game.bases.none {it!=null}) "双杀需要垒上有跑者。" else null
+        Outcome.triplePlay -> if(game.outs!=0) "三杀需要零出局。" else if(game.bases.count {it!=null}<2) "三杀需要至少两名跑者。" else null
+        Outcome.sacrificeBunt -> if(game.rules.mode==GameMode.slowPitch) "慢垒不允许触击。" else if(game.outs>=2) "牺牲触击需要少于两出局。" else if(game.bases.none {it!=null}) "牺牲触击需要垒上有跑者。" else null
+        Outcome.sacrificeFly -> if(game.outs>=2) "牺牲高飞需要少于两出局。" else if(game.bases[2]==null) "牺牲高飞需要三垒有跑者。" else null
+        Outcome.infieldFly -> if(game.outs>=2) "内野高飞必死需要少于两出局。" else if(game.bases[0]==null || game.bases[1]==null) "需一、二垒均有跑者。" else null
+        else -> null
+    }
     fun update(f: (Command) -> Command) {
         json = GameJson.encodeToString(f(GameJson.decodeFromString(json)))
         issue = null
     }
     fun choose(outcome: Outcome) {
+        unavailableReason(outcome)?.let { issue=it; return }
+        contactReturnStage=stage
+        val chosenType=when(outcome) {
+            Outcome.sacrificeBunt -> "bunt"
+            Outcome.sacrificeFly -> "fly"
+            else -> cmd.observation?.type?.takeIf {typeChosen} ?: when(outcome) {
+                Outcome.groundOut -> "ground"
+                Outcome.flyOut -> "fly"
+                Outcome.lineOut -> "line"
+                else -> null
+            }
+        }
+        if(pro) typeChosen=chosenType!=null
         update {
             it.copy(
                 outcome = outcome,
+                observation = if(pro) Observation(type=chosenType ?: "unknown") else null,
                 decisions =
                     MatchEngine.suggested(game, outcome).map { d ->
                         if (!pro && d.origin == 0) d.copy(destination = arrival) else d
@@ -67,6 +92,8 @@ internal fun PlayEditor(
     val fieldIssue =
         when {
             !typeChosen -> "请选择球型"
+            cmd.outcome==Outcome.sacrificeBunt && observation.type!="bunt" -> "牺牲触击请将球型选为触击。"
+            cmd.outcome==Outcome.sacrificeFly && observation.type !in setOf("fly","line","popup") -> "牺牲高飞请核对高飞、平飞或内野小飞球型。"
             observation.precision == "unknown" -> "请点选落点，或选择大致区域"
             observation.precision == "point" && (observation.x == null || observation.y == null) ->
                 "请点选球场落点"
@@ -88,10 +115,10 @@ internal fun PlayEditor(
     val close: () -> Unit = {
         when (stage) {
             "entry" -> dismiss()
-            "cause",
-            "catalog",
-            "process" -> stage = "entry"
-            "contact" -> stage = "entry"
+            "cause", "process" -> stage = "entry"
+            "catalog" -> stage = catalogReturnStage
+            "processResult" -> stage = "process"
+            "contact" -> stage = contactReturnStage
             else -> stage = if (pro) "contact" else "cause"
         }
     }
@@ -101,6 +128,8 @@ internal fun PlayEditor(
             "cause" -> "为什么到这里？"
             "contact" -> "落点与守备"
             "review" -> "核对本球"
+            "process" -> "按击球过程记录"
+            "processResult" -> "选择最后结果"
             else -> "全部击球"
         },
         busy,
@@ -170,18 +199,23 @@ internal fun PlayEditor(
                     .forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             row.forEach { o ->
+                                val reason=unavailableReason(o)
+                                Column(Modifier.weight(1f)) {
                                 OutlinedButton(
                                     { choose(o) },
-                                    Modifier.weight(1f)
+                                    Modifier.fillMaxWidth()
                                         .heightIn(min = 58.dp)
                                         .testTag("pro-outcome-${o.name}"),
+                                    enabled=reason==null,
                                 ) {
                                     Text(o.title)
+                                }
+                                reason?.let {Text(it,Modifier.testTag("outcome-unavailable-${o.name}"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
                                 }
                             }
                         }
                     }
-                TextButton({ stage = "catalog" }, Modifier.testTag("all-batted-outcomes")) {
+                TextButton({ catalogReturnStage="entry";stage = "catalog" }, Modifier.testTag("all-batted-outcomes")) {
                     Text("全部击球")
                 }
                 TextButton({ stage = "process" }, Modifier.testTag("situation-by-process")) {
@@ -241,13 +275,24 @@ internal fun PlayEditor(
                 }
             }
         } else if (stage == "catalog") {
-            Outcome.entries
-                .filter { game.rules.mode != GameMode.slowPitch || it != Outcome.sacrificeBunt }
-                .forEach { o ->
-                    TextButton({ choose(o) }, Modifier.testTag("pro-outcome-${o.name}")) {
-                        Text(o.title)
+            OutlinedTextField(catalogSearch,{catalogSearch=it},Modifier.fillMaxWidth().testTag("outcome-catalog-search"),label={Text("搜索：牺牲、野手选择、待确认…")},singleLine=true)
+            val groups=listOf("安打" to listOf(Outcome.single,Outcome.double,Outcome.triple,Outcome.homeRun),
+                "接杀与出局" to listOf(Outcome.groundOut,Outcome.flyOut,Outcome.lineOut,Outcome.foulFlyOut,Outcome.infieldFly),
+                "战术与多人出局" to listOf(Outcome.sacrificeBunt,Outcome.sacrificeFly,Outcome.doublePlay,Outcome.triplePlay),
+                "其他结果" to listOf(Outcome.error,Outcome.fieldersChoice,Outcome.runnerTagOut),
+                "待确认" to listOf(Outcome.pendingOut,Outcome.pending,Outcome.other))
+            groups.forEach { (label,outcomes) ->
+                val matches=outcomes.filter {catalogSearch.isBlank() || it.title.contains(catalogSearch.trim())}
+                if(matches.isNotEmpty()) {
+                    Text(label,fontWeight=FontWeight.Bold)
+                    matches.forEach {o ->
+                        val reason=unavailableReason(o)
+                        TextButton({choose(o)},Modifier.testTag("pro-outcome-${o.name}"),enabled=reason==null) {Text(if(o==Outcome.other) "结果待确认" else o.title)}
+                        reason?.let {Text(it,Modifier.testTag("outcome-unavailable-${o.name}"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
                     }
                 }
+            }
+            if(catalogSearch.isNotBlank() && Outcome.entries.none {it.title.contains(catalogSearch.trim())}) Text("没有匹配结果，请试试失误或接杀。")
         } else if (stage == "process") {
             Text("先选看到的球型，再选择最后结果。", fontSize = 13.sp)
             Choices(
@@ -259,10 +304,23 @@ internal fun PlayEditor(
             ) { type ->
                 typeChosen = true
                 update { it.copy(observation = observation.copy(type = type)) }
+                stage="processResult"
             }
-            Outcome.entries
-                .filter { game.rules.mode != GameMode.slowPitch || it != Outcome.sacrificeBunt }
-                .forEach { o -> TextButton({ choose(o) }) { Text(o.title) } }
+        } else if(stage=="processResult") {
+            Text("${ScoringOptions.ballTypes[observation.type]} · 选择最后结果",Modifier.testTag("process-selected-type"),fontWeight=FontWeight.Bold)
+            val outcomes=when(observation.type) {
+                "ground","hardGround" -> listOf(Outcome.single,Outcome.groundOut,Outcome.error,Outcome.fieldersChoice,Outcome.doublePlay)
+                "bunt" -> listOf(Outcome.sacrificeBunt,Outcome.single,Outcome.groundOut,Outcome.error,Outcome.fieldersChoice)
+                "line" -> listOf(Outcome.single,Outcome.lineOut,Outcome.double,Outcome.error)
+                else -> listOf(Outcome.single,Outcome.flyOut,Outcome.double,Outcome.sacrificeFly,Outcome.foulFlyOut,Outcome.error)
+            }
+            outcomes.forEach {o ->
+                val reason=unavailableReason(o)
+                TextButton({choose(o)},Modifier.testTag("process-outcome-${o.name}"),enabled=reason==null) {Text(o.title)}
+                reason?.let {Text(it,Modifier.testTag("outcome-unavailable-${o.name}"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+            }
+            TextButton({catalogReturnStage="processResult";stage="catalog"},Modifier.testTag("process-all-outcomes")) {Text("其他结果／全部结果")}
+            TextButton({choose(Outcome.other)},Modifier.testTag("process-pending-outcome")) {Text("结果待确认")}
         } else if (stage == "contact") {
             Text(cmd.outcome!!.title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             ObservationEditor(
@@ -286,7 +344,7 @@ internal fun PlayEditor(
                     "${ScoringOptions.ballTypes[observation.type]} · ${if(observation.precision=="point")"已点选落点"else ScoringOptions.regions[observation.region].orEmpty()}",
                     fontSize = 13.sp,
                 )
-                TextButton({ stage = "contact" }) { Text("修改落点与守备") }
+                TextButton({ contactReturnStage="review";stage = "contact" }) { Text("修改落点与守备") }
             } else if (
                 cmd.outcome == Outcome.error ||
                     cmd.outcome!!.name.endsWith("Out") ||

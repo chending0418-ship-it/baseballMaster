@@ -1,16 +1,25 @@
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#else
 import COpenSSL
+#endif
+#if os(Linux)
 extension URL {
     func startAccessingSecurityScopedResource()->Bool {false}
     func stopAccessingSecurityScopedResource() {}
 }
+#endif
 struct Color {}
 enum BMTheme {static let green=Color();static let red=Color();static let orange=Color()}
 
-// Linux reference harness only. In-memory/no-op platform adapters are NOT Core Data, UI,
+// Portable reference harness. In-memory/no-op platform adapters are NOT Core Data, UI,
 // networking, Keychain, live or shared-match validation. Business source is unchanged.
 enum SHA256 {
     static func hash(data: Data) -> [UInt8] {
+        #if canImport(CryptoKit)
+        return Array(CryptoKit.SHA256.hash(data: data))
+        #else
         var bytes=[UInt8](repeating: 0,count:32)
         data.withUnsafeBytes { source in
             bytes.withUnsafeMutableBytes { target in
@@ -18,6 +27,7 @@ enum SHA256 {
             }
         }
         return bytes
+        #endif
     }
 }
 @MainActor protocol ObservableObject {}

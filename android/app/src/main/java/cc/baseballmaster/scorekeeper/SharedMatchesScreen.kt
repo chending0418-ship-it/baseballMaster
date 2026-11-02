@@ -54,6 +54,7 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
         if(!ui.fresh) Text("以下为本机缓存；请刷新核对球队授权后再分享或修改。")
         if(ui.state.requiresRecoveryReview) Text("请先返回完成恢复后的资料核对，旧操作不会自动重做。")
         if(selected==null) {
+            Text("这里查看球队档案和管理观看权限；创建、开始和继续比赛请返回首页。")
             if(rows.isEmpty() && !ui.busy) Text("还没有球队比赛。")
             var visible by remember {mutableIntStateOf(50)}
             rows.take(visible).forEach {row -> CardBlock {
@@ -82,11 +83,11 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
             }}
             if(!document.finalForWatching) {
                 Text("实时文字直播",fontWeight=FontWeight.Bold)
-                Text("仅当前记分设备可开关，公开本场阵容、球员姓名／背号和比赛过程；连续一小时未同步会到期。历史档案另行授权。")
+                Text("这是旧共享比赛的直播入口。新比赛请从首页创建，并在本机记分页开启文字直播；这里保留旧链接及关闭功能。")
                 if(document.liveAvailable) document.sharedLiveURL?.let {url -> TextButton(enabled=ui.fresh && !ui.busy,onClick={shownLink=url}) {Text("分享实时观赛链接")}}
-                if(document.canWrite) TextButton(enabled=canAct,onClick={val enabled=!document.liveAvailable;confirmation=SharingConfirmation(if(enabled) "开启实时直播？" else "关闭实时直播？",if(enabled) "任何持有链接的人都能看到本场公开比赛资料，请确认适合分享。" else "旧直播链接将失效，球队比赛档案保留。") {
-                    mutate {api.sharedLive(document,enabled,true)}
-                }}) {Text(if(document.liveAvailable) "关闭实时直播" else "开启实时直播")}
+                if(document.canWrite && document.liveAvailable) TextButton(enabled=canAct,onClick={confirmation=SharingConfirmation("关闭旧共享直播？", "旧直播链接将失效，球队比赛档案保留。") {
+                    mutate {api.sharedLive(document,false,true)}
+                }}) {Text("关闭实时直播")}
             } else {
                 Text("历史观看：${document.watchMode.title()}",fontWeight=FontWeight.Bold)
                 Text("档案长期保留与观看权限分开；关闭观看不删除比赛。")

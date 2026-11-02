@@ -19,6 +19,7 @@ class DeviceBackupUIFlowTest {
         context.startActivity(context.packageManager.getLaunchIntentForPackage(context.packageName)!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         assertTrue(device.wait(Until.hasObject(By.res("tab-3")), 20_000))
         device.findObject(By.res("tab-3")).click()
+        NativeUi.find(device, By.res("open-local-data")).click()
         repeat(8) {
             val save = device.findObject(By.res("device-backup-save"))
             if (save != null && save.visibleBounds.centerY() in device.displayHeight / 6..device.displayHeight * 8 / 10) return@repeat

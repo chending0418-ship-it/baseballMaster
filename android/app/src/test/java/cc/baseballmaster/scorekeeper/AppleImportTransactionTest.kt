@@ -30,6 +30,66 @@ class AppleImportTransactionTest {
     }
     private fun database() = Room.inMemoryDatabaseBuilder(context, LocalDatabase::class.java).build()
 
+    @Test fun sourcePlayThenPitchKeepsOriginalAuditAndRestoresTheCompleteSource() = runBlocking {
+        val db=database();val restored=database()
+        try {
+            val bytes=source();val repo=GameRepository(db);val receipt=repo.importAppleBackup(bytes)
+            var game=GameRepository.decode(db.dao().allGames().single())
+            val originalAudit=game.historyRevisions
+            val play=Command("play",outcome=Outcome.homeRun,at=1_800_000_000_000L)
+            val id="f2000000-0000-0000-0000-000000000001"
+            val expected=MatchEngine.apply(game,play,id)
+            game=repo.command(game.id,play,game.revision,id)
+            assertEquals(expected.awayRuns,game.awayRuns);assertEquals(expected.homeRuns,game.homeRuns)
+            assertEquals(expected.batting,game.batting);assertEquals(expected.pitching,game.pitching)
+            game=repo.command(game.id,Command("pitch",pitch=PitchAction.ball,at=play.at+1000),game.revision,"f2000000-0000-0000-0000-000000000002")
+            assertEquals(originalAudit,game.historyRevisions)
+            val exported=repo.exportAppleBackup(receipt.id)
+            assertArrayEquals(exported,AppleSourceBackup.validateLineage(bytes,exported).export())
+            assertArrayEquals(bytes,repo.exportAppleBackup(receipt.id,original=true))
+            GameRepository(restored).restoreDeviceBackup(repo.exportDeviceBackup(game.ourTeamID))
+            assertEquals(game,GameRepository.decode(restored.dao().allGames().single()))
+            assertArrayEquals(exported,GameRepository(restored).exportAppleBackup(receipt.id))
+            artifact("play-corrected-source.bmbackup",exported)
+        } finally {db.close();restored.close()}
+    }
+
+    @Test fun sourceLifecycleCommitsAtomicallyAndSurvivesBackupRecovery() = runBlocking {
+        val db=database(); val restored=database(); val failed=database()
+        val bytes=source()
+        try {
+            val repo=GameRepository(db);val receipt=repo.importAppleBackup(bytes)
+            var game=GameRepository.decode(db.dao().allGames().single())
+            val at=1_800_000_000_000L
+            game=repo.command(game.id,Command("suspend",at=at),game.revision,"f1000000-0000-0000-0000-000000000001")
+            assertFalse(game.isFinal);assertNull(game.clockRunningSince)
+            game=repo.command(game.id,Command("clock",text="resume",at=at+1000),game.revision,"f1000000-0000-0000-0000-000000000002")
+            val finish=Command("finish",text="scorerDecision",at=at+3000)
+            val revision=game.revision
+            game=repo.command(game.id,finish,revision,"f1000000-0000-0000-0000-000000000003")
+            assertEquals(game,repo.command(game.id,finish,revision,"f1000000-0000-0000-0000-000000000003"))
+            assertTrue(game.isFinal);assertEquals(at+3000,game.endedAt)
+            val exported=repo.exportAppleBackup(receipt.id)
+            assertArrayEquals(exported,AppleSourceBackup.validateLineage(bytes,exported).export())
+            assertArrayEquals(bytes,repo.exportAppleBackup(receipt.id,original=true))
+            GameRepository(restored).restoreDeviceBackup(repo.exportDeviceBackup(game.ourTeamID))
+            assertEquals(game,GameRepository.decode(restored.dao().allGames().single()))
+            assertArrayEquals(exported,GameRepository(restored).exportAppleBackup(receipt.id))
+            val failureRepo=GameRepository(failed);val failureReceipt=failureRepo.importAppleBackup(bytes)
+            val original=failed.dao().allGames().single()
+            val before=GameRepository.decode(original)
+            try {
+                GameRepository(failed) {error("synthetic disk failure before lifecycle commit")}
+                    .command(before.id,finish,before.revision,"f1000000-0000-0000-0000-000000000004")
+                fail("must roll back the game, operation and source together")
+            } catch (_: IllegalStateException) { }
+            assertEquals(original,failed.dao().allGames().single())
+            assertTrue(failed.dao().allOperations().isEmpty())
+            assertArrayEquals(bytes,failureRepo.exportAppleBackup(failureReceipt.id))
+            artifact("lifecycle-corrected-source.bmbackup",exported)
+        } finally {db.close();restored.close();failed.close()}
+    }
+
     @Test fun nonemptySourceCheckpointImportsAndRestoresWithoutRewritingPrefixOrAllowingUnsupportedEdits() = runBlocking {
         val original=File(System.getProperty("parity.fixtures"),"backup/ios-reference-v7.bmbackup").readBytes()
         val outer=AppleWireJson.parse(original).jsonObject;val snapshot=AppleBackupEnvelope.inspect(original).snapshot

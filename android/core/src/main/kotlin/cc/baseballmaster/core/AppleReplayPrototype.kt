@@ -256,6 +256,9 @@ internal object AppleReplayPrototype {
         }
         game.statisticsIncomplete = state.bool("statisticsIncomplete") || game.statisticsIncomplete
         game.revision = stored.optional("revision")?.jsonPrimitive?.longOrNull ?: game.revision
+        val target=stored.optional("postgameUploadTeamID")?.jsonPrimitive?.content?.let(::id)
+        if(target!=null || stored.bool("postgameTargetConfigured")) game.postgameSharingChoice=PostgameSharingChoice(target,
+            target?.let {selected -> listOf(game.home,game.away).firstOrNull {it.id==selected}?.name ?: "原赛后共享目标"})
         validateResult(game, state)
         return game
     }

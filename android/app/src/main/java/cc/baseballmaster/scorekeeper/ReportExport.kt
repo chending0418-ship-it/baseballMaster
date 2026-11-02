@@ -134,6 +134,7 @@ internal object ReportExport {
         fun situationPair(before: Situation?, after: Situation?, game: Game) {
             if (y + 128 > height - 42) nextPage()
             val cardWidth = (width - margin * 2 - 14) / 2f
+            val overflowNames = mutableListOf<String>()
             listOf("记录前" to before, "记录后" to after).forEachIndexed { i, (label, state) ->
                 val x = margin + i * (cardWidth + 14)
                 paint.color = Color.rgb(239, 245, 242); page!!.canvas.drawRect(x, y, x + cardWidth, y + 116, paint)
@@ -151,11 +152,18 @@ internal object ReportExport {
                     draw("B ${state.balls}   S ${state.strikes}   O ${state.outs}", x + 115, y + 57, 10f, true)
                     state.bases.forEachIndexed { base, id ->
                         val name = (game.home.players + game.away.players).firstOrNull { it.id == id }?.name ?: "—"
-                        draw("${base + 1} 垒：$name", x + 115, y + 73 + base * 12, 8f)
+                        val text = "${base + 1} 垒：$name"
+                        paint.textSize = 8f; paint.typeface = Typeface.DEFAULT
+                        if (paint.measureText(text) <= cardWidth - 127f) draw(text, x + 115, y + 73 + base * 12, 8f)
+                        else {
+                            draw("${base + 1} 垒：姓名见下方", x + 115, y + 73 + base * 12, 8f)
+                            overflowNames += "$label · $text"
+                        }
                     }
                 }
             }
             y += 126
+            overflowNames.forEach { line(it, 9f) }
         }
         fun battedBall(observation: Observation) {
             if (y + 150 > height - 42) nextPage()
@@ -182,12 +190,17 @@ internal object ReportExport {
             draw("球型：${ScoringOptions.ballTypes[observation.type] ?: "未知"}", detailX, top + 38, 10f)
             val position = when (observation.precision) { "point" -> "点选位置"; "region" -> ScoringOptions.regions[observation.region] ?: "大致区域"; else -> "没有看清" }
             draw("去向：$position", detailX, top + 55, 10f)
+            var overflowRoute: String? = null
             observation.fielding?.let { fielding ->
-                draw("守备路线：${fielding.route.joinToString(" → ").ifEmpty { "待补" }}", detailX, top + 72, 10f)
+                val route = "守备路线：${fielding.route.joinToString(" → ").ifEmpty { "待补" }}"
+                paint.textSize = 10f; paint.typeface = Typeface.DEFAULT
+                if (paint.measureText(route) <= width - margin - detailX) draw(route, detailX, top + 72, 10f)
+                else { draw("守备路线：完整路线见下方", detailX, top + 72, 10f); overflowRoute = route }
                 fielding.errorPosition?.let { draw("失误责任：$it", detailX, top + 89, 10f) }
             }
             draw("实线圈为点选位置，虚线圈表示区域。", detailX, top + 110, 8f, color = secondary)
             y += 148
+            overflowRoute?.let { line(it, 10f) }
         }
         fun pageBreak() = nextPage()
         fun save(file: File) { page?.let(document::finishPage); page = null; file.outputStream().use(document::writeTo) }

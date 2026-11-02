@@ -286,11 +286,17 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         done()
     }
 
-    internal suspend fun deviceBackupBytes(): ByteArray = withContext(Dispatchers.IO) { repository.exportDeviceBackup(currentTeamID) }
+    internal suspend fun deviceBackupBytes(): ByteArray = withContext(Dispatchers.IO) {
+        repository.migrateLegacyTeamArchives(getApplication())
+        repository.exportDeviceBackup(currentTeamID)
+    }
 
     internal suspend fun restoreDeviceBackup(bytes: ByteArray) {
         live.prepareForRestore()
-        val selected = withContext(Dispatchers.IO) { repository.restoreDeviceBackup(bytes) }
+        val selected = withContext(Dispatchers.IO) {
+            repository.migrateLegacyTeamArchives(getApplication())
+            repository.restoreDeviceBackup(bytes)
+        }
         rememberCurrentTeam(selected)
         live.requestSync()
     }
@@ -468,7 +474,8 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         }
 
     fun createPreparedGame(game: Game, done: () -> Unit) = commit {
-        val created = repository.createPreparedGame(game)
+        val created = if (game.sharedRosterOrigin == null) repository.createPreparedGame(game)
+            else repository.createSharedRosterGame(game)
         created.ourTeamID?.let(::selectCurrentTeam)
         accept(created)
         open(created.id)
@@ -617,10 +624,11 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                 tab = 0
             }
         }
-    if (newGame && model.teams.isNotEmpty())
+    if (newGame)
         NewGameDialog(
             model.teams.sortedBy { it.id != model.currentTeam?.id },
             model.rosters,
+            model.sharing,
             model.busy,
             { newGame = false },
         ) { prepared ->
@@ -723,7 +731,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
             Text("创建球队", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         }
     Button(
-        onClick = if (team == null) addTeam else newGame,
+        onClick = newGame,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth().height(56.dp).testTag("new-game"),
     ) {

@@ -84,13 +84,13 @@ class TeamArchiveStoreTest {
         val staged = original.stage(source().inputStream())
         val saved = original.save(staged)
         original.discard(staged)
-        val originalFile = File(directory, "${saved.item.id}.bmteam")
+        val originalFile = File(directory, "${saved.item.id}.bmteam/original.bmteam")
         val bytes = originalFile.readBytes()
         val failing = store(beforePublish = { error("simulated storage failure") })
         val pending = failing.stage(differentSource().inputStream())
         try { assertThrows(IllegalStateException::class.java) { failing.save(pending) } }
         finally { failing.discard(pending) }
-        assertEquals(listOf(originalFile.name), directory.listFiles()!!.map { it.name })
+        assertEquals(listOf("${saved.item.id}.bmteam"), directory.listFiles()!!.map { it.name })
         assertArrayEquals(bytes, originalFile.readBytes())
         assertEquals(1, original.list().items.size)
     }
@@ -104,7 +104,7 @@ class TeamArchiveStoreTest {
         assertTrue(store.list().items.isEmpty())
         val valid = store.stage(source().inputStream())
         val saved = store.save(valid)
-        val existing = File(directory, "${saved.item.id}.bmteam")
+        val existing = File(directory, "${saved.item.id}.bmteam/original.bmteam")
         existing.appendText("existing corruption")
         val corrupted = existing.readBytes()
         try { assertThrows(IllegalArgumentException::class.java) { store.save(valid) } }
@@ -124,6 +124,22 @@ class TeamArchiveStoreTest {
         try { assertThrows(java.nio.file.FileAlreadyExistsException::class.java) { store.save(pending) } }
         finally { store.discard(pending) }
         assertArrayEquals(conflict, destination!!.readBytes())
+        assertEquals(listOf(destination!!.name), directory.listFiles()!!.map { it.name })
+    }
+
+    @Test fun atomicDirectoryPublicationCannotReplaceNonemptyConflictOrReadDamagedContainer() {
+        var destination: File? = null
+        val store = store(beforePublish = {
+            assertTrue(destination!!.mkdirs())
+            File(destination, "existing-user-content").writeText("must survive")
+        })
+        val pending = store.stage(source().inputStream())
+        destination = File(directory, "${pending.digest}.bmteam")
+        try { assertThrows(java.nio.file.FileAlreadyExistsException::class.java) { store.save(pending) } }
+        finally { store.discard(pending) }
+        assertEquals("must survive", File(destination, "existing-user-content").readText())
+        assertEquals(1, store.list().unreadableCount)
+        assertThrows(IllegalArgumentException::class.java) { store.read(pending.digest) }
         assertEquals(listOf(destination!!.name), directory.listFiles()!!.map { it.name })
     }
 

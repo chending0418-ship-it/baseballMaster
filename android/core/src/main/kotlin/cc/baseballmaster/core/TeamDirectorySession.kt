@@ -60,6 +60,8 @@ import kotlinx.serialization.json.*
     val credentialExpired: Boolean = false, val reconnectRequestID: String? = null,
     val watchPending: Map<String,PendingMatchWatch> = emptyMap(),val watchReceipts: Map<String,CompletedMatchWatch> = emptyMap(),
     val watchLinks: Map<String,MatchWatchLink> = emptyMap(),val watchFailures: Map<String,DirectoryFailure> = emptyMap(),
+    val finalArchivePending: Map<String,PendingFinalArchive> = emptyMap(),
+    val finalArchiveReceipts: Map<String,FinalArchiveReceipt> = emptyMap(),
 ) {
     override fun toString() = "TeamDirectoryState(pending=${pending?.kind}, requiresRecoveryReview=$requiresRecoveryReview)"
 }
@@ -124,7 +126,8 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         }.getOrNull() }
         val cards=(state.recoveryCards + legacyCards).groupBy { appleUUID(it.teamID) }.values.map { group -> group.maxBy { it.version } }
         val protectedState=if(changed) state.preservingRecoveryWork(remote.recoveryEpoch) else state
-        return protectedState.copy(directory = remote, requiresRecoveryReview = state.requiresRecoveryReview || changed,
+        val finalProtected=protectedState.isolateFinalArchives(remote.recoveryEpoch) {accessible(it)?.role?.let {role -> role!=TeamRole.member}==true}
+        return finalProtected.copy(directory = remote, requiresRecoveryReview = state.requiresRecoveryReview || changed,
             pairing=state.pairing?.takeUnless { changed || it.request.status=="accepted" && it.request.teamID?.let { id -> accessible(id)==null }==true },outgoingPairing=state.outgoingPairing?.takeIf { pair -> !changed && pair.teamID?.let { accessible(it) != null } == true },
             recoveryCards=cards.filter { card -> !changed && remote.teams.any { it.id.equals(card.teamID,true) && it.role==TeamRole.admin && (it.recoveryVersion==null || it.recoveryVersion==card.version) } },
             profiles = state.profiles.filter { (id, cache) -> accessible(id)?.let { member -> cache.memberID.equals(member.memberID,true) && cache.accessEpoch == member.accessEpoch && cache.recoveryEpoch == remote.recoveryEpoch } == true },

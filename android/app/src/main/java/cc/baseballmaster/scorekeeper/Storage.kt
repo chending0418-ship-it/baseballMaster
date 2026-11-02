@@ -67,8 +67,15 @@ data class CorrectionDraftEntity(
     val updatedAt: Long,
 )
 
+@Entity(tableName = "team_archives")
+data class TeamArchiveEntity(@PrimaryKey val id: String, val original: ByteArray)
+
 @Dao
 interface LocalDao {
+    @Query("SELECT * FROM team_archives ORDER BY id") suspend fun allTeamArchives(): List<TeamArchiveEntity>
+    @Query("SELECT * FROM team_archives WHERE id = :id") suspend fun teamArchive(id: String): TeamArchiveEntity?
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTeamArchive(row: TeamArchiveEntity)
+
     @Query("SELECT * FROM apple_original_operations WHERE id = :id") suspend fun appleOriginalOperation(id: String): AppleOriginalOperationEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAppleOriginalOperation(row: AppleOriginalOperationEntity)
 
@@ -137,8 +144,9 @@ interface LocalDao {
             AppleBackupEntity::class,
             AppleGameSourceEntity::class,
             AppleOriginalOperationEntity::class,
+            TeamArchiveEntity::class,
         ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class LocalDatabase : RoomDatabase() {
@@ -147,8 +155,14 @@ abstract class LocalDatabase : RoomDatabase() {
     companion object {
         fun open(context: Context, name: String = "baseballmaster.db") =
             Room.databaseBuilder(context, LocalDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS team_archives (id TEXT NOT NULL, original BLOB NOT NULL, PRIMARY KEY(id))")
+            }
+        }
 
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -261,6 +275,22 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         for (team in newTeams) db.dao().insertTeam(TeamEntity(team.id, team.name, GameJson.encodeToString(team), team.isOpponent))
     }
 
+    internal suspend fun teamArchiveRows(): List<TeamArchiveEntity> = db.dao().allTeamArchives()
+    internal suspend fun teamArchiveRow(id: String): TeamArchiveEntity? = db.dao().teamArchive(id)
+    internal suspend fun importTeamArchives(rows: List<TeamArchiveEntity>) = db.withTransaction {
+        require(rows.map { it.id }.distinct().size == rows.size) { "档案编号重复" }
+        require((db.dao().allTeamArchives().map { it.id } + rows.map { it.id }).distinct().size <= 100) { "档案库最多保存 100 份档案" }
+        val existing = db.dao().allTeamArchives().associateBy { it.id }
+        require((existing.values + rows).distinctBy { it.id }.sumOf { it.original.size.toLong() } <= TeamArchiveBytes.libraryLimit) { "档案库超过 50 MB，无法加入本机备份" }
+        rows.forEach { row ->
+            TeamArchiveBytes.validate(row.id, row.original)
+            val old = existing[row.id]
+            if (old == null) db.dao().insertTeamArchive(row)
+            else require(old.original.contentEquals(row.original)) { "同编号档案内容不同，原资料未修改" }
+        }
+        beforeCommit()
+    }
+
     /** Export a consistent database snapshot including the operation ledger and correction drafts. */
     suspend fun exportDeviceBackup(currentTeamID: String?): ByteArray = db.withTransaction {
         AndroidDeviceBackup.encode(DeviceSnapshot(
@@ -271,6 +301,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             drafts = db.dao().allCorrectionDrafts().map { DeviceDraft(it.gameID, it.payload, it.updatedAt) },
             appleBackups = db.dao().allAppleBackups().map { DeviceAppleBackup(it.id, it.name, it.gameCount, Base64.getEncoder().encodeToString(it.original), Base64.getEncoder().encodeToString(it.current)) },
             appleSources = db.dao().allAppleGameSources().map { DeviceAppleSource(it.gameID, it.backupID) },
+            teamArchives = db.dao().allTeamArchives().map { DeviceTeamArchive(it.id, Base64.getEncoder().encodeToString(it.original)) },
         ))
     }
 
@@ -278,7 +309,8 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
     suspend fun restoreDeviceBackup(bytes: ByteArray): String? {
         val snapshot = AndroidDeviceBackup.decode(bytes)
         return db.withTransaction {
-            require(db.dao().allTeams().isEmpty() && db.dao().allGames().isEmpty() && db.dao().allOperations().isEmpty() && db.dao().allCorrectionDrafts().isEmpty() && db.dao().allAppleBackups().isEmpty() && db.dao().allAppleGameSources().isEmpty()) { "本机已有资料，未覆盖任何数据" }
+            require(db.dao().allTeams().isEmpty() && db.dao().allGames().isEmpty() && db.dao().allOperations().isEmpty() && db.dao().allCorrectionDrafts().isEmpty() && db.dao().allAppleBackups().isEmpty() && db.dao().allAppleGameSources().isEmpty() && db.dao().allTeamArchives().isEmpty()) { "本机已有资料，未覆盖任何数据" }
+            snapshot.teamArchives.forEach { db.dao().insertTeamArchive(TeamArchiveEntity(it.id, Base64.getDecoder().decode(it.original))) }
             snapshot.teams.forEach { db.dao().insertTeam(TeamEntity(it.id, it.name, it.payload, it.isOpponent)) }
             snapshot.games.forEach { db.dao().insertGame(GameEntity(it.id, it.payload, it.revision, it.updatedAt, it.payloadVersion)) }
             snapshot.operations.forEach { db.dao().insertOperation(OperationEntity(it.id, it.gameID, it.action, it.baseRevision, it.createdAt)) }
@@ -356,7 +388,11 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         return game
     }
 
-    suspend fun createPreparedGame(prepared: Game): Game = db.withTransaction {
+    suspend fun createPreparedGame(prepared: Game): Game = createPreparedGameTransaction(prepared, false)
+
+    suspend fun createSharedRosterGame(prepared: Game): Game = createPreparedGameTransaction(prepared, true)
+
+    private suspend fun createPreparedGameTransaction(prepared: Game, sharedSnapshot: Boolean): Game = db.withTransaction {
         require(prepared.appleSourceID == null) { "带来源标记的比赛必须通过来源导入事务保存" }
         val g = GameJson.decodeFromString<Game>(GameJson.encodeToString(prepared))
         g.validate()
@@ -366,10 +402,17 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                 !g.clockHasStarted &&
                 g.ourTeamID != null
         )
-        val own =
-            db.dao().team(g.ourTeamID!!)?.let { GameJson.decodeFromString<Team>(it.payload) }
+        val own = if (sharedSnapshot) {
+            requireNotNull(g.sharedRosterOrigin) { "共享名单来源缺失" }.validate(g)
+            require(db.dao().team(g.ourTeamID!!) == null) { "共享名单身份与已有本机球队冲突，请核对；原资料已保留" }
+            listOf(g.home, g.away).single { it.id == g.ourTeamID }
+        } else {
+            require(g.sharedRosterOrigin == null) { "共享名单比赛须通过独立保存入口" }
+            val local = db.dao().team(g.ourTeamID!!)?.let { GameJson.decodeFromString<Team>(it.payload) }
                 ?: error("我方球队不存在")
-        require(!own.archived && own.source == "local" && own.id in listOf(g.home.id, g.away.id))
+            require(!local.archived && local.source == "local" && local.id in listOf(g.home.id, g.away.id))
+            local
+        }
         Participation.validate(g.rules, g.homeOrder!!, g.homePositions!!, g.homeDesignatedHitterID)
         Participation.validate(g.rules, g.awayOrder!!, g.awayPositions!!, g.awayDesignatedHitterID)
         val opponent = if (g.home.id == own.id) g.away else g.home
@@ -446,7 +489,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         baseRevision: Long,
         operationID: String = UUID.randomUUID().toString(),
     ): Game =
-        mutate(gameID, baseRevision, operationID, action.name, applePitch = action) {
+        mutate(gameID, baseRevision, operationID, action.name, appleCommand = Command("pitch", pitch = action)) {
             MatchEngine.apply(it, Command("pitch", pitch = action), operationID)
         }
 
@@ -456,7 +499,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         baseRevision: Long,
         operationID: String = UUID.randomUUID().toString(),
     ): Game =
-        mutate(gameID, baseRevision, operationID, GameJson.encodeToString(command), applePitch = if (command.kind == "pitch" && command == Command("pitch", pitch = command.pitch, at = command.at)) command.pitch else null, atMillis = command.at.takeIf { it > 0 }) {
+        mutate(gameID, baseRevision, operationID, GameJson.encodeToString(command), appleCommand = command) {
             MatchEngine.apply(it, command, operationID)
         }
 
@@ -534,8 +577,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         operationID: String,
         signature: String,
         clearDraft: Boolean = false,
-        applePitch: PitchAction? = null,
-        atMillis: Long? = null,
+        appleCommand: Command? = null,
         reduce: (Game) -> Game,
     ): Game = db.withTransaction {
         require(operationID.isNotBlank())
@@ -557,12 +599,12 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         val marker = decode(current).appleSourceID
         require((imported == null && marker == null) || imported != null && marker == imported.backupID) { "比赛来源映射缺失或不一致，已停止写入" }
         val next = if (imported == null) reduce(MatchEngine.upgradeLegacy(decode(current))) else {
-            require(applePitch != null) { "这场 iOS 导入比赛目前仅支持受限投球续记；此操作尚不能无损转换，原记录未修改" }
+            require(appleCommand != null) { "这场 iOS 导入比赛的此项历史操作尚不能无损转换，原记录未修改" }
             val source = db.dao().appleBackup(imported.backupID) ?: error("比赛来源缺失，原资料未修改")
             val backup = verifyAppleSource(source)
             val priorGame = backup.games(source.id).single { it.id == gameID }
             require(GameJson.encodeToJsonElement(priorGame) == GameJson.parseToJsonElement(current.payload)) { "比赛与来源备份不一致，已停止写入" }
-            val updated = backup.appendPitch(gameID, applePitch, operationID, atMillis ?: System.currentTimeMillis())
+            val updated = backup.appendCommand(gameID, appleCommand.copy(at = appleCommand.at.takeIf { it > 0 } ?: System.currentTimeMillis()), operationID)
             db.dao().updateAppleBackup(source.copy(current = updated.export()))
             updated.games(source.id).single { it.id == gameID }
         }
