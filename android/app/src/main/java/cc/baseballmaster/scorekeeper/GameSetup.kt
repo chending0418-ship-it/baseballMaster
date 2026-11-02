@@ -116,9 +116,7 @@ internal fun NewGameDialog(
                         }
                     }
                 }
-                Text(if (prepared.sharedRosterOrigin != null) "名单来源：共享球队。比赛先完整保存在本机，名单快照不自动回写共享球队。" else "名单来源：本机球队。", fontSize = 12.sp)
-                Text(when {sharingChoice==null -> "赛后共享目标：尚未选择";sharingChoice.teamID==null -> "赛后共享目标：仅本机";else -> "赛后共享目标：${sharingChoice.teamName}（结束后再次确认）"},Modifier.testTag("setup-postgame-summary"),fontSize=12.sp)
-                Text("请核对主客、先发球员和守位。取消本页不会创建比赛。", fontSize = 12.sp)
+                Text(when {sharingChoice==null -> "赛后共享：尚未选择";sharingChoice.teamID==null -> "赛后共享：仅本机";else -> "赛后共享：${sharingChoice.teamName}（赛后确认）"},Modifier.testTag("setup-postgame-summary"),fontSize=12.sp)
             }
         return
     }
@@ -174,7 +172,7 @@ internal fun NewGameDialog(
                     catch (_: Exception) { issue = "共享名单暂不可用，可继续使用本机球队。" }
                     finally { sourceBusy = false }
                 }
-            }) { Text(if (sourceBusy) "读取中…" else "从共享球队选择名单") }
+            }) { Text(if (sourceBusy) "读取中…" else "选择共享名单") }
             sharedTeams.forEach { membership ->
                 TextButton(enabled = !busy && !sourceBusy, modifier = Modifier.testTag("setup-shared-${membership.id}"), onClick = {
                     sourceBusy = true; issue = null
@@ -194,7 +192,6 @@ internal fun NewGameDialog(
                     }
                 }) { Text("${membership.name} · ${membership.role.title()}") }
             }
-            Text(if (shared != null) "以当前共享名单保存本机比赛；全程本机记分，结束前不上传球队档案。" else "本机记分与直播，比赛结束后可再选择共享目标。", fontSize = 12.sp)
             Text("对手", fontWeight = FontWeight.Bold)
             RosterChoice(rosters.filter { it.isOpponent && !it.archived }, opponentID, true) {
                 opponentID = it
@@ -208,11 +205,12 @@ internal fun NewGameDialog(
                 )
         }
         CardBlock {
-            Text("赛后共享目标",fontWeight=FontWeight.Bold)
-            Text("比赛先完整保存在本机。这里只预设目标，结束保存后仍需单独确认上传。",fontSize=12.sp)
+            Text("赛后共享",fontWeight=FontWeight.Bold)
             Text(when {sharingChoice==null -> "尚未选择";sharingChoice.teamID==null -> "仅本机";else -> sharingChoice.teamName.orEmpty()},Modifier.testTag("setup-postgame-choice"))
-            TextButton({sharingChoiceExplicit=true;sharingChoiceJSON=GameJson.encodeToString(PostgameSharingChoice())},Modifier.testTag("setup-postgame-local")) {Text("仅本机保留")}
-            TextButton({sharingChoiceExplicit=true;sharingChoiceJSON=""},Modifier.testTag("setup-postgame-undecided")) {Text("结束后再选")}
+            Row(Modifier.fillMaxWidth()) {
+                TextButton({sharingChoiceExplicit=true;sharingChoiceJSON=GameJson.encodeToString(PostgameSharingChoice())},Modifier.weight(1f).testTag("setup-postgame-local")) {Text("仅本机保留")}
+                TextButton({sharingChoiceExplicit=true;sharingChoiceJSON=""},Modifier.weight(1f).testTag("setup-postgame-undecided")) {Text("赛后再选")}
+            }
             sharedTeams.filter {it.role!=TeamRole.member}.forEach {target ->
                 TextButton({sharingChoiceExplicit=true;sharingChoiceJSON=GameJson.encodeToString(PostgameSharingChoice(target.id,target.name))},Modifier.testTag("setup-postgame-team-${target.id}")) {Text(target.name)}
             }
@@ -243,7 +241,7 @@ internal fun NewGameDialog(
         if (previous == null)
             CardBlock {
                 Text("对方球员名单", fontWeight = FontWeight.Bold)
-                Text("每行：中文名,英文名,背号；英文名可省略，多个背号用 / 分隔。", fontSize = 12.sp)
+                Text("每行：姓名,背号（可加英文名）", fontSize = 12.sp)
                 OutlinedTextField(
                     roster,
                     { roster = it },

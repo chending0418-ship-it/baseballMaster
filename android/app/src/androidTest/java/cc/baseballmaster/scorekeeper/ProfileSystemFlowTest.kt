@@ -63,7 +63,7 @@ class ProfileSystemFlowTest {
             device.pressBack()
             click("open-local-data")
             click("manage-roster-from-profile")
-            assertNotNull(NativeUi.find(device, By.text("本机球队管理")))
+            assertNotNull(NativeUi.find(device, By.text("本机球队")))
             click("tab-0")
             assertNotNull(NativeUi.find(device, By.res("new-game")))
         } finally {

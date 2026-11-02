@@ -11,6 +11,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -69,11 +71,12 @@ private fun metricValue(row: SeasonPlayerStatistics, metric: StatsMetric): Doubl
 }
 
 @Composable
-private fun StatsPicker(label: String, selected: String, values: Map<String, String>, tag: String, onSelect: (String) -> Unit) {
+private fun StatsPicker(label: String, selected: String, values: Map<String, String>, tag: String, modifier:Modifier=Modifier, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth()) {
+    Box(modifier.fillMaxWidth()) {
         TextButton({ expanded = true }, modifier = Modifier.fillMaxWidth().testTag(tag), contentPadding = PaddingValues(horizontal = 4.dp)) {
-            Text((values[selected] ?: "请选择") + "  ⌄", modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+            Text(values[selected] ?: "请选择", modifier = Modifier.weight(1f), fontSize=14.sp, fontWeight=FontWeight.SemiBold, maxLines=1, overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+            Text("⌄", Modifier.padding(start=4.dp), fontSize=14.sp)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             values.forEach { (key, title) ->
@@ -85,14 +88,16 @@ private fun StatsPicker(label: String, selected: String, values: Map<String, Str
 
 @Composable
 private fun StatisticsSegmented(label: String, values: Map<String, String>, selected: String, onSelect: (String) -> Unit) {
-    val shape = RoundedCornerShape(50)
-    Row(Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.onSurface.copy(alpha = .08f)).padding(2.dp), verticalAlignment = Alignment.CenterVertically) {
+    val shape = RoundedCornerShape(8.dp)
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = .05f)).padding(3.dp), verticalAlignment = Alignment.CenterVertically) {
         values.forEach { (key, text) ->
             Box(Modifier.weight(1f).heightIn(min = 44.dp).clip(shape)
                 .background(if (selected == key) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent)
                 .toggleable(value = selected == key, role = Role.RadioButton, onValueChange = { if (it) onSelect(key) })
                 .testTag("choice-$label-$key"), contentAlignment = Alignment.Center) {
-                Text(text, fontSize = 12.sp, maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text(text, fontSize = 12.sp, fontWeight=if(selected==key) FontWeight.SemiBold else FontWeight.Normal,
+                    color=if(selected==key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
     }
@@ -100,20 +105,23 @@ private fun StatisticsSegmented(label: String, values: Map<String, String>, sele
 
 @Composable
 private fun StatisticsMetricGrid(values: List<Pair<String, String>>, tagPrefix: String? = null) {
-    values.chunked(3).forEach { row ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column {
+    values.chunked(3).forEachIndexed { index, row ->
+        if(index>0) HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
+        Row(Modifier.fillMaxWidth().padding(vertical=6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             row.forEach { (label, value) ->
                 val metricModifier = if (tagPrefix == null) Modifier else Modifier.semantics(mergeDescendants = true) {
                     semanticTestTag = "$tagPrefix-$label"
                     contentDescription = "$label：$value"
                 }
                 Column(Modifier.weight(1f).then(metricModifier), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(value, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(value, fontSize = if(index==0) 22.sp else 17.sp, lineHeight=if(index==0) 26.sp else 21.sp, fontWeight = FontWeight.SemiBold)
+                    Text(label, fontSize = 11.sp, lineHeight=14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
         }
+    }
     }
 }
 
@@ -148,7 +156,6 @@ private fun PlayerStatisticsMetrics(category: StatsCategory, row: SeasonPlayerSt
                     "保送 BB" to "${p.walks}", "触身球 HBP" to "${p.hitByPitch}", "三振 SO" to "${p.strikeouts}",
                     "暴投 WP" to "${p.wildPitches}",
                 ), "stats-player-pitching")
-                Text("ERA 按 7 局计算；局数小数位表示出局数，0.1 为 1 人出局。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             StatsCategory.FIELDING -> {
                 val f = row.fielding
@@ -156,10 +163,8 @@ private fun PlayerStatisticsMetrics(category: StatsCategory, row: SeasonPlayerSt
                     "守备率 FPCT" to rate(fpct(f)), "守备机会 TC" to "${f.putouts + f.assists + f.errors}",
                     "刺杀 PO" to "${f.putouts}", "助杀 A" to "${f.assists}", "失误 E" to "${f.errors}", "参与双杀 DP" to "${f.doublePlays}",
                 ), "stats-player-fielding")
-                Text("守备率 =（刺杀 + 助杀）÷ 守备机会；DP 为球员参与次数。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Text("“—”表示没有计算该比率所需的记录。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -209,7 +214,7 @@ internal fun ReportShareButton(label: String, tag: String, mime: String = "appli
         }
     }
     TextButton(onClick = { choose = true }, enabled = !busy, modifier = Modifier.testTag(tag)) { Text(if (busy) "正在生成…" else label) }
-    if (choose) AlertDialog(onDismissRequest = { choose = false }, title = { Text(label) }, text = { Text("选择保存到文件，或通过系统分享。") },
+    if (choose) AlertDialog(onDismissRequest = { choose = false }, title = { Text(label) },
         confirmButton = { TextButton({ choose = false; saveLauncher.launch(if (mime == "image/png") "比赛海报.png" else "比赛记录.pdf") }) { Text("保存到文件") } },
         dismissButton = { TextButton({ choose = false; share() }) { Text("系统分享") } })
     if (error != null) AlertDialog(onDismissRequest = { error = null }, title = { Text("导出未完成") }, text = { Text(error.orEmpty()) }, confirmButton = { TextButton({ error = null }) { Text("知道了") } })
@@ -244,34 +249,37 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
     val selectedValid = selected?.intersect(eligible.games.map { it.id }.toSet())
     val summary = SeasonStatisticsCalculator.calculate(team, model.games, year, mode, selectedValid)
     Box(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        StatisticsHelp(Modifier.align(Alignment.CenterStart))
         Text("统计", Modifier.align(Alignment.Center), fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Box(Modifier.align(Alignment.CenterEnd)) {
             ReportShareButton("导出 PDF", "export-team-season-pdf") { context -> ReportExport.team(context, team, year, mode, summary) }
         }
     }
     CardBlock {
-        StatsPicker("球队", team.id, teams.associate { it.id to (it.name + if (it.archived) " · 已归档" else if(it.source=="sharedSnapshot") " · 本机共享名单记录" else " · 本机") }, "stats-team-picker") { teamID = it; selected = null }
-        HorizontalDivider()
-        StatsPicker("年度", year.toString(), SeasonStatisticsCalculator.years(model.games).associate { it.toString() to "${it} 年" }, "stats-season-picker") {
-            year = it.toInt(); selected = null
+        val teamLabels=teams.associate {it.id to (it.name+if(it.archived) " · 已归档" else if(it.source=="sharedSnapshot") " · 本机共享名单记录" else " · 本机")}
+        val yearLabels=SeasonStatisticsCalculator.years(model.games).associate {it.toString() to "${it} 年"}
+        if(androidx.compose.ui.platform.LocalDensity.current.fontScale>1.2f) {
+            StatsPicker("球队",team.id,teamLabels,"stats-team-picker") {teamID=it;selected=null}
+            StatsPicker("年度",year.toString(),yearLabels,"stats-season-picker") {year=it.toInt();selected=null}
+        } else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            StatsPicker("球队",team.id,teamLabels,"stats-team-picker",Modifier.weight(2.1f)) {teamID=it;selected=null}
+            StatsPicker("年度",year.toString(),yearLabels,"stats-season-picker",Modifier.weight(1f)) {year=it.toInt();selected=null}
         }
-        if(team.source=="sharedSnapshot") Text("这是本机比赛统计；不代表已上传球队正式档案。", Modifier.testTag("stats-shared-snapshot-note"), fontSize=12.sp)
-        Text("按比赛日期自动归入年度，无需创建或划分赛季。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if(team.source=="sharedSnapshot") Text("本机统计 · 未计入球队正式档案", Modifier.testTag("stats-shared-snapshot-note"), fontSize=12.sp)
         HorizontalDivider()
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            TextButton({ filterOpen = true }, Modifier.testTag("stats-open-game-filter")) { Text("筛选比赛") }
-            Text("已选 ${selectedValid?.size ?: eligible.games.size} / ${eligible.games.size} 场", Modifier.testTag("stats-game-scope"), fontSize = 12.sp)
+            Text("已选 ${selectedValid?.size ?: eligible.games.size} / ${eligible.games.size} 场", Modifier.testTag("stats-game-scope"), fontSize = 12.sp, color=MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton({ filterOpen = true }, Modifier.testTag("stats-open-game-filter"), contentPadding=PaddingValues(horizontal=4.dp)) { Text("筛选比赛",fontSize=13.sp) }
         }
         if (selected != null) TextButton({ selected = null }) { Text("恢复全部比赛") }
     }
     StatisticsSegmented("比赛模式", mapOf("all" to "全部模式", *GameMode.entries.map { it.name to it.title }.toTypedArray()), modeKey) { modeKey = it; selected = null }
     CardBlock {
-        if (summary.incomplete > 0) Text("含过程或责任待确认的比赛 · 统计可能不完整", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-        Text("${summary.games.size} 场比赛 · ${summary.wins}胜${summary.losses}负${summary.ties}平", Modifier.testTag("stats-team-record"), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        if (summary.incomplete > 0) Text("含待复核比赛", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+        Text("${summary.games.size} 场比赛 · ${summary.wins}胜${summary.losses}负${summary.ties}平", Modifier.testTag("stats-team-record"), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color=MaterialTheme.colorScheme.primary)
         StatisticsMetricGrid(listOf("累计得分" to "${summary.runs}", "累计失分" to "${summary.runsAllowed}", "净胜分" to "${summary.runs - summary.runsAllowed}"))
     }
-    Text("仅统计已结束的本队比赛；观赛、练习和进行中比赛不计入。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (summary.pending > 0) Text("有 ${summary.pending} 条待确认记录，统计将随赛后复核更新。", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+    if (summary.pending > 0) Text("${summary.pending} 条记录待确认", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
     StatisticsSegmented("统计分类", StatsCategory.entries.associate { it.name to it.label }, categoryName) {
         categoryName = it
         val first = StatsMetric.entries.first { metric -> metric.category.name == it }
@@ -287,17 +295,15 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
             StatsCategory.PITCHING -> {
                 val p = summary.pitching
                 StatisticsMetricGrid(listOf("投球局数 IP" to innings(p), "防御率 ERA" to pitchRate(era(p)), "每局被上垒率 WHIP" to pitchRate(whip(p)), "用球数 P" to "${p.pitches}", "好球 S" to "${p.strikes}", "面对打者 BF" to "${p.battersFaced}", "被安打 H" to "${p.hits}", "失分 R" to "${p.runs}", "自责分 ER" to "${p.earnedRuns}", "保送 BB" to "${p.walks}", "三振 SO" to "${p.strikeouts}", "暴投 WP" to "${p.wildPitches}"))
-                Text("ERA 按 7 局计算；局数小数位表示出局数，0.1 为 1 人出局。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             StatsCategory.FIELDING -> {
                 val f = summary.fielding
                 StatisticsMetricGrid(listOf("守备率 FPCT" to rate(fpct(f)), "守备机会 TC" to "${f.putouts + f.assists + f.errors}", "刺杀 PO" to "${f.putouts}", "助杀 A" to "${f.assists}", "失误 E" to "${f.errors}", "参与双杀 DP" to "${f.doublePlays}"))
-                Text("守备率 =（刺杀 + 助杀）÷ 守备机会；DP 为球员参与次数。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
     if (summary.games.isEmpty()) CardBlock { Text(if (selected == null) "这个年度还没有已结束的比赛" else "当前筛选范围没有比赛"); Text("完成并保存比赛后会自动加入可选范围。", fontSize = 12.sp) }
-    Text("球员表现", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+    Text("球员表现", fontWeight = FontWeight.Bold, fontSize = 16.sp)
     OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().testTag("stats-search"), label = { Text("搜索姓名、英文名或背号") }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Checkbox(recordsOnly, { recordsOnly = it }, Modifier.testTag("stats-records-only"))
@@ -377,23 +383,23 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
         val selectedPlayerIDs = selectedGames.map { it.id }.toSet()
         val shown = projection.statistics
         FormPage("球员统计", false, true, "stats-player-close", "完成", { playerID = null }, { playerID = null }) {
-            Text("#${player.player.number} ${player.player.name}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            if (player.player.englishName.isNotBlank()) Text(player.player.englishName, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("${playerYear} 年 · 已选 ${selectedGames.size} / ${playerGames.size} 场" + if (player.currentRoster) "" else " · 历史球员",
-                Modifier.testTag("stats-player-game-scope"))
-            CardBlock {
-                StatsPicker("个人统计年度", playerYear.toString(), SeasonStatisticsCalculator.years(model.games).associate { it.toString() to "${it} 年" }, "stats-player-season-picker") {
-                    // iOS clears an inherited match subset when changing the personal year.
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Text("#${player.player.number} ${player.player.name}",Modifier.weight(1f),fontSize=20.sp,fontWeight=FontWeight.Bold)
+                ReportShareButton("导出 PDF", "export-player-season-pdf") { context -> ReportExport.player(context, team, playerYear, shown, selectedGames) }
+            }
+            if (player.player.englishName.isNotBlank()) Text(player.player.englishName,fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                StatsPicker("个人统计年度", playerYear.toString(), SeasonStatisticsCalculator.years(model.games).associate { it.toString() to "${it} 年" }, "stats-player-season-picker",Modifier.weight(1f)) {
                     val chosen = it.toInt()
                     if (chosen != playerYear) { inheritedIDs = null; playerYear = chosen }
                 }
-                if (inheritedIDs != null) Text("范围继承球队所选比赛；切换个人年度后恢复该年度范围。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${playerYear} 年 · 已选 ${selectedGames.size} / ${playerGames.size} 场" + if (player.currentRoster) "" else " · 历史球员",
+                    Modifier.testTag("stats-player-game-scope"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             StatisticsSegmented("球员比赛模式", mapOf("all" to "全部模式", *GameMode.entries.map { it.name to it.title }.toTypedArray()), playerModeKey) { playerModeKey = it }
             StatisticsSegmented("球员统计分类", StatsCategory.entries.associate { it.name to it.label }, playerCategoryName) { playerCategoryName = it }
-            ReportShareButton("导出个人年度 PDF", "export-player-season-pdf") { context -> ReportExport.player(context, team, playerYear, shown, selectedGames) }
-            if (projection.scope.incompleteGames > 0) Text("含过程或责任待确认的比赛 · 统计可能不完整", Modifier.testTag("stats-player-incomplete"), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-            if (projection.scope.pendingRecords > 0) Text("所选比赛有 ${projection.scope.pendingRecords} 条待确认记录，统计将随赛后复核更新。", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            if (projection.scope.incompleteGames > 0) Text("含待复核比赛", Modifier.testTag("stats-player-incomplete"), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            if (projection.scope.pendingRecords > 0) Text("${projection.scope.pendingRecords} 条记录待确认", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             PlayerStatisticsMetrics(playerCategory, shown, playerMode == GameMode.coachPitch || projection.scope.coachPitchOnly)
             if (playerCategory == StatsCategory.BATTING) {
                 Text("表现总结", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -428,4 +434,13 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
             }
         }
     }
+}
+
+@Composable
+private fun StatisticsHelp(modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    IconButton({open=true},modifier) {Icon(Icons.Outlined.Info,contentDescription="统计口径",Modifier.size(20.dp),tint=MaterialTheme.colorScheme.onSurfaceVariant)}
+    if(open) AlertDialog(onDismissRequest={open=false},title={Text("统计口径")},text={
+        Text("仅统计已结束的本队比赛，按比赛日期归入年度。观赛和练习不计入。\n\nERA 按 7 局计算。局数的小数位表示出局数，0.1 为 1 人出局。\n\n守备率 =（刺杀 + 助杀）÷ 守备机会；DP 为球员参与次数。\n\n“—”表示缺少计算该比率所需的记录。")
+    },confirmButton={TextButton({open=false}) {Text("完成")}})
 }

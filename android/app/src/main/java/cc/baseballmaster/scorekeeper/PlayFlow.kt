@@ -1,6 +1,8 @@
 package cc.baseballmaster.scorekeeper
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -165,7 +167,6 @@ internal fun PlayEditor(
                 )
             }
             if (!pro) {
-                Text("先点你看到的结果，不需要先判断安打、失误或专业符号。", fontSize = 13.sp)
                 listOf(-1 to "打者出局", 1 to "到一垒", 2 to "到二垒", 3 to "到三垒", 4 to "打者得分")
                     .chunked(2)
                     .forEach { row ->
@@ -186,7 +187,7 @@ internal fun PlayEditor(
                         }
                     }
             } else {
-                Text("这次击球最后是什么结果？", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("击球结果", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 listOf(
                         Outcome.single,
                         Outcome.double,
@@ -222,7 +223,6 @@ internal fun PlayEditor(
                     Text("从看到的过程开始")
                 }
                 TextButton({ choose(Outcome.other) }) { Text("结果待确认") }
-                Text("点落点，再点守备员；有跑者时统一核对。", fontSize = 12.sp)
             }
         } else if (stage == "cause") {
             val choices =
@@ -275,7 +275,7 @@ internal fun PlayEditor(
                 }
             }
         } else if (stage == "catalog") {
-            OutlinedTextField(catalogSearch,{catalogSearch=it},Modifier.fillMaxWidth().testTag("outcome-catalog-search"),label={Text("搜索：牺牲、野手选择、待确认…")},singleLine=true)
+            OutlinedTextField(catalogSearch,{catalogSearch=it},Modifier.fillMaxWidth().testTag("outcome-catalog-search"),label={Text("搜索结果")},singleLine=true)
             val groups=listOf("安打" to listOf(Outcome.single,Outcome.double,Outcome.triple,Outcome.homeRun),
                 "接杀与出局" to listOf(Outcome.groundOut,Outcome.flyOut,Outcome.lineOut,Outcome.foulFlyOut,Outcome.infieldFly),
                 "战术与多人出局" to listOf(Outcome.sacrificeBunt,Outcome.sacrificeFly,Outcome.doublePlay,Outcome.triplePlay),
@@ -285,16 +285,11 @@ internal fun PlayEditor(
                 val matches=outcomes.filter {catalogSearch.isBlank() || it.title.contains(catalogSearch.trim())}
                 if(matches.isNotEmpty()) {
                     Text(label,fontWeight=FontWeight.Bold)
-                    matches.forEach {o ->
-                        val reason=unavailableReason(o)
-                        TextButton({choose(o)},Modifier.testTag("pro-outcome-${o.name}"),enabled=reason==null) {Text(if(o==Outcome.other) "结果待确认" else o.title)}
-                        reason?.let {Text(it,Modifier.testTag("outcome-unavailable-${o.name}"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-                    }
+                    OutcomeGrid(matches,"pro-outcome",::unavailableReason,::choose)
                 }
             }
-            if(catalogSearch.isNotBlank() && Outcome.entries.none {it.title.contains(catalogSearch.trim())}) Text("没有匹配结果，请试试失误或接杀。")
+            if(catalogSearch.isNotBlank() && Outcome.entries.none {it.title.contains(catalogSearch.trim())}) Text("没有匹配结果")
         } else if (stage == "process") {
-            Text("先选看到的球型，再选择最后结果。", fontSize = 13.sp)
             Choices(
                 "球型",
                 ScoringOptions.ballTypes.filterKeys {
@@ -314,11 +309,7 @@ internal fun PlayEditor(
                 "line" -> listOf(Outcome.single,Outcome.lineOut,Outcome.double,Outcome.error)
                 else -> listOf(Outcome.single,Outcome.flyOut,Outcome.double,Outcome.sacrificeFly,Outcome.foulFlyOut,Outcome.error)
             }
-            outcomes.forEach {o ->
-                val reason=unavailableReason(o)
-                TextButton({choose(o)},Modifier.testTag("process-outcome-${o.name}"),enabled=reason==null) {Text(o.title)}
-                reason?.let {Text(it,Modifier.testTag("outcome-unavailable-${o.name}"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-            }
+            OutcomeGrid(outcomes,"process-outcome",::unavailableReason,::choose)
             TextButton({catalogReturnStage="processResult";stage="catalog"},Modifier.testTag("process-all-outcomes")) {Text("其他结果／全部结果")}
             TextButton({choose(Outcome.other)},Modifier.testTag("process-pending-outcome")) {Text("结果待确认")}
         } else if (stage == "contact") {
@@ -335,7 +326,7 @@ internal fun PlayEditor(
                 Text(fieldIssue, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
         } else {
             Text(
-                "${cmd.outcome!!.title} · 核对所有跑者最终位置",
+                "${cmd.outcome!!.title} · 跑者位置",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
             )
@@ -350,7 +341,7 @@ internal fun PlayEditor(
                     cmd.outcome!!.name.endsWith("Out") ||
                     cmd.outcome in listOf(Outcome.doublePlay, Outcome.triplePlay)
             ) {
-                Text("守备路线（不知道可标记待补）", fontWeight = FontWeight.Bold)
+                Text("守备路线", fontWeight = FontWeight.Bold)
                 FieldingEditor(
                     game,
                     cmd.fielding ?: Fielding(status = "pending"),
@@ -368,9 +359,32 @@ internal fun PlayEditor(
                 }
             if (reviewIssue != null)
                 Text(reviewIssue, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-            Text("取消不会增加投球、打席或统计。", fontSize = 12.sp)
         }
         if (stage != "entry") TextButton(dismiss, Modifier.testTag("cancel-play")) { Text("取消本球") }
         if (issue != null) Text(issue.orEmpty(), color = MaterialTheme.colorScheme.error)
+    }
+}
+
+
+@Composable
+private fun OutcomeGrid(
+    values:List<Outcome>, prefix:String, unavailable:(Outcome)->String?, choose:(Outcome)->Unit,
+) {
+    values.chunked(2).forEach {row ->
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            row.forEach {outcome ->
+                val reason=unavailable(outcome)
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                    OutlinedButton({choose(outcome)},Modifier.fillMaxWidth().heightIn(min=48.dp).testTag("$prefix-${outcome.name}"),enabled=reason==null,
+                        shape=RoundedCornerShape(10.dp),
+                        border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant),
+                        colors=ButtonDefaults.outlinedButtonColors(containerColor=MaterialTheme.colorScheme.surface,contentColor=MaterialTheme.colorScheme.onSurface)) {
+                        Text(if(outcome==Outcome.other) "结果待确认" else outcome.title,fontWeight=FontWeight.Medium)
+                    }
+                    reason?.let {Text(it,Modifier.testTag("outcome-unavailable-${outcome.name}"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                }
+            }
+            if(row.size==1) Spacer(Modifier.weight(1f))
+        }
     }
 }

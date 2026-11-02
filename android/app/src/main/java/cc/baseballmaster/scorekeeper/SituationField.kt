@@ -36,7 +36,7 @@ internal enum class SituationFieldMode {
     error,
 }
 
-/** Approved iOS SituationFieldBackground, in the same 360 × 260 coordinate system. */
+/** Shared iOS 3.1.1 geometry; persisted observations retain their legacy coordinates. */
 @Composable
 internal fun SituationField(
     game: Game,
@@ -53,10 +53,10 @@ internal fun SituationField(
                 .semantics { contentDescription = "在球场点选击球落点" }
                 .pointerInput(Unit) {
                     detectTapGestures { location ->
-                        pointHandler?.invoke(
-                            (location.x / size.width).toDouble().coerceIn(0.0, 1.0),
-                            (location.y / size.height).toDouble().coerceIn(0.0, 1.0),
-                        )
+                        val scale=density.toDouble()
+                        val geometry=BaseballFieldGeometry(size.width/scale,size.height/scale)
+                        val stored=geometry.contactCoordinate(FieldPoint(location.x/scale,location.y/scale))
+                        pointHandler?.invoke(stored.x,stored.y)
                     }
                 }
         else Modifier
@@ -64,104 +64,14 @@ internal fun SituationField(
         Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(15.dp)).then(touch)
     ) {
         val width = maxWidth.value
+        val geometry=BaseballFieldGeometry(width.toDouble(),260.0)
         Canvas(Modifier.fillMaxSize()) {
-            val sx = size.width / 360f
-            val sy = size.height / 260f
-            fun path(build: Path.() -> Unit) = Path().apply(build)
-            fun Path.move(x: Float, y: Float) = moveTo(x * sx, y * sy)
-            fun Path.line(x: Float, y: Float) = lineTo(x * sx, y * sy)
-            fun diamond(points: List<Offset>) = path {
-                points.forEachIndexed { i, p -> if (i == 0) move(p.x, p.y) else line(p.x, p.y) }
-                close()
-            }
-            drawRect(Color(0xFFEDE3CE))
-            drawPath(
-                path {
-                    move(-5f, 72f)
-                    quadraticTo(180f * sx, -80f * sy, 365f * sx, 72f * sy)
-                    line(180f, 251f)
-                    close()
-                },
-                Color(0xFFD5B780),
-            )
-            drawPath(
-                path {
-                    move(3f, 77f)
-                    quadraticTo(180f * sx, -68f * sy, 357f * sx, 77f * sy)
-                    line(180f, 242f)
-                    close()
-                },
-                Color(0xFF2B7558),
-            )
-            drawPath(
-                diamond(
-                    listOf(
-                        Offset(180f, 130f),
-                        Offset(247f, 192f),
-                        Offset(180f, 251f),
-                        Offset(113f, 192f),
-                    )
-                ),
-                Color(0xFFCDB27F),
-            )
-            drawPath(
-                diamond(
-                    listOf(
-                        Offset(180f, 148f),
-                        Offset(228f, 192f),
-                        Offset(180f, 236f),
-                        Offset(132f, 192f),
-                    )
-                ),
-                Color(0xFF397C60),
-            )
-            drawPath(
-                path {
-                    move(0f, 65f)
-                    line(180f, 246f)
-                    line(360f, 65f)
-                    move(116f, 192f)
-                    line(180f, 134f)
-                    line(244f, 192f)
-                },
-                Color(0xFFFFF5D9),
-                style = Stroke(2.dp.toPx(), cap = StrokeCap.Round),
-            )
-            // Small bases make the same approved infield geometry legible without changing
-            // coordinates.
-            listOf(Offset(116f, 192f), Offset(180f, 134f), Offset(244f, 192f)).forEach { base ->
-                val center = Offset(base.x * sx, base.y * sy)
-                val r = 3.3.dp.toPx()
-                drawPath(
-                    path {
-                        moveTo(center.x, center.y - r)
-                        lineTo(center.x + r, center.y)
-                        lineTo(center.x, center.y + r)
-                        lineTo(center.x - r, center.y)
-                        close()
-                    },
-                    Color(0xFFFFF8E8),
-                )
-            }
-            val plate = Offset(180f * sx, 246f * sy)
-            val r = 3.6.dp.toPx()
-            drawPath(
-                path {
-                    moveTo(plate.x - r, plate.y - r)
-                    lineTo(plate.x + r, plate.y - r)
-                    lineTo(plate.x + r, plate.y)
-                    lineTo(plate.x, plate.y + r)
-                    lineTo(plate.x - r, plate.y)
-                    close()
-                },
-                Color(0xFFFFF8E8),
-            )
-            // Retain the exact iOS fielder coordinates and arrow insets for cross-platform routes.
+            drawBaseballField(geometry)
             fielding.route.zipWithNext().forEach { (a, b) ->
-                val start = defensivePoint(a)
-                val end = defensivePoint(b)
-                val from = Offset(start.x * size.width, start.y * size.height)
-                val to = Offset(end.x * size.width, end.y * size.height)
+                val start=geometry.fielder(a);val end=geometry.fielder(b)
+                val scale=size.width/width
+                val from=Offset(start.x.toFloat()*scale,start.y.toFloat()*scale)
+                val to=Offset(end.x.toFloat()*scale,end.y.toFloat()*scale)
                 val dx = to.x - from.x
                 val dy = to.y - from.y
                 val length = hypot(dx, dy)
@@ -181,7 +91,7 @@ internal fun SituationField(
                     val h = 8.dp.toPx()
                     val w = 4.dp.toPx()
                     drawPath(
-                        path {
+                        Path().apply {
                             moveTo(tip.x - ux * h - uy * w, tip.y - uy * h + ux * w)
                             lineTo(tip.x, tip.y)
                             lineTo(tip.x - ux * h + uy * w, tip.y - uy * h - ux * w)
@@ -195,12 +105,12 @@ internal fun SituationField(
         if (mode != SituationFieldMode.landing)
             game.fieldingPositions.toSortedMap().forEach { (position, pid) ->
                 val p = game.fieldingTeam.players.first { it.id == pid }
-                val at = defensivePoint(position)
+                val at = geometry.fielder(position)
                 val selected =
                     if (mode == SituationFieldMode.error) fielding.errorPosition == position
                     else position in fielding.route
                 Box(
-                    Modifier.offset((at.x * width - 30).dp, (at.y * 260 - 22).dp)
+                    Modifier.offset((at.x - 30).dp, (at.y - 22).dp)
                         .size(60.dp, 44.dp)
                         .shadow(3.dp, RoundedCornerShape(12.dp))
                         .background(
@@ -251,8 +161,9 @@ internal fun SituationField(
         val point = observationPoint(observation)
         if (point != null)
             Canvas(Modifier.fillMaxSize()) {
-                val center =
-                    Offset(point.first.toFloat() * size.width, point.second.toFloat() * size.height)
+                val mapped=geometry.contactPoint(FieldPoint(point.first,point.second))
+                val scale=size.width/width
+                val center=Offset(mapped.x.toFloat()*scale,mapped.y.toFloat()*scale)
                 if (observation?.precision == "region") {
                     drawCircle(Color(0xFFFFD14A).copy(alpha = .20f), 19.dp.toPx(), center)
                     drawCircle(
@@ -292,21 +203,6 @@ internal fun SituationField(
         )
     }
 }
-
-private fun defensivePoint(position: Int): Offset =
-    when (position) {
-        1 -> Offset(.5f, .70f)
-        2 -> Offset(.5f, .91f)
-        3 -> Offset(.84f, .65f)
-        4 -> Offset(.65f, .49f)
-        5 -> Offset(.16f, .65f)
-        6 -> Offset(.35f, .49f)
-        7 -> Offset(.22f, .23f)
-        8 -> Offset(.5f, .12f)
-        9 -> Offset(.78f, .23f)
-        10 -> Offset(.5f, .31f)
-        else -> error("Invalid field position")
-    }
 
 private fun observationPoint(o: Observation?): Pair<Double, Double>? {
     if (o == null) return null

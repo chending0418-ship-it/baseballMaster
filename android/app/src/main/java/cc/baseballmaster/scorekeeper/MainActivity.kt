@@ -41,6 +41,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -496,9 +498,12 @@ internal fun BaseballTheme(appearance: String = "system", content: @Composable (
     val defaultTypography = Typography()
     MaterialTheme(
         typography = defaultTypography.copy(
-            bodyLarge = defaultTypography.bodyLarge.copy(lineHeight = 21.sp),
-            bodyMedium = defaultTypography.bodyMedium.copy(lineHeight = 18.sp),
-            bodySmall = defaultTypography.bodySmall.copy(lineHeight = 16.sp),
+            // Let each Text's actual font size choose its line box. A fixed
+            // inherited 21sp line height made even 11sp metadata occupy a full
+            // body line. Natural metrics also grow with accessibility font size.
+            bodyLarge = defaultTypography.bodyLarge.copy(lineHeight = TextUnit.Unspecified,platformStyle=PlatformTextStyle(includeFontPadding=false)),
+            bodyMedium = defaultTypography.bodyMedium.copy(lineHeight = TextUnit.Unspecified,platformStyle=PlatformTextStyle(includeFontPadding=false)),
+            bodySmall = defaultTypography.bodySmall.copy(lineHeight = TextUnit.Unspecified,platformStyle=PlatformTextStyle(includeFontPadding=false)),
         ),
         colorScheme =
             if (dark)
@@ -515,13 +520,13 @@ internal fun BaseballTheme(appearance: String = "system", content: @Composable (
             else
                 lightColorScheme(
                     primary = Accent,
-                    background = Color(0xFFF5F2EA),
-                    surface = Color(0xFFFFFEFA),
-                    onSurface = Color(0xFF102A43),
-                    onBackground = Color(0xFF102A43),
-                    outlineVariant = Color(0xFFDADFD9),
-                    outline = Color(0xFFDADFD9),
-                    onSurfaceVariant = Color(0xFF607284),
+                    background = Color(0xFFF3F5F4),
+                    surface = Color.White,
+                    onSurface = Color(0xFF192C29),
+                    onBackground = Color(0xFF192C29),
+                    outlineVariant = Color(0xFFE5EAE7),
+                    outline = Color(0xFFB4C0BA),
+                    onSurfaceVariant = Color(0xFF687872),
                     secondaryContainer = Color(0xFFE4F2EA),
                 ),
         content = content,
@@ -591,7 +596,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                 Column(
                     Modifier.fillMaxSize()
                         .verticalScroll(key(tab) { rememberScrollState() })
-                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(UiSpacing.section),
                 ) {
                     if (tab != 2) Text(
@@ -662,9 +667,8 @@ private fun BrandHeader() {
 internal fun CardBlock(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
             Modifier.padding(UiSpacing.cardInset),
@@ -692,13 +696,13 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(13.dp),
     ) {
-        if (team != null) TeamMark(team.name, 56)
+        if (team != null) TeamMark(team.name, 44)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 team?.name ?: "尚未创建球队",
                 Modifier.testTag("home-team-name"),
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Black,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "${java.time.Year.now()} 年 · ${team?.players?.count { !it.archived } ?: 0} 名球员",
@@ -732,21 +736,23 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         }
     Button(
         onClick = newGame,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth().height(56.dp).testTag("new-game"),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth().height(50.dp).testTag("new-game"),
     ) {
         Icon(Icons.Outlined.AddCircle, null, Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Text(
-            if (model.games.isEmpty()) "开始新比赛" else "再开始一场比赛",
+            "开始新比赛",
             fontSize = 17.sp,
             fontWeight = FontWeight.SemiBold,
         )
     }
-    SectionTitle("正在进行", if (ongoing.isEmpty()) null else "${ongoing.size} 场")
-    TextButton({ model.practice() }, modifier = Modifier.testTag("start-practice")) { Text("练习记分") }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("正在进行", Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        TextButton({ model.practice() }, modifier = Modifier.testTag("start-practice")) { Text("练习记分", fontSize = 13.sp) }
+    }
     if (ongoing.isEmpty())
-        EmptyCard("没有进行中的比赛", "新比赛创建后会自动保存在这里，可在 App 重启后继续。", Icons.Outlined.PlayArrow)
+        EmptyCard("没有进行中的比赛", Icons.Outlined.PlayArrow)
     ongoing.forEach { game ->
         CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -782,12 +788,12 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         scheduled.forEach { game ->
             CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
                 Text("${game.away.name}  vs  ${game.home.name}", fontWeight = FontWeight.Bold)
-                Text("预告比赛 · 查看详情", color = MaterialTheme.colorScheme.primary)
+                Text("预告比赛", color = MaterialTheme.colorScheme.primary)
             }
         }
     }
     SectionTitle("最近比赛", "按比赛日期排序")
-    if (completed.isEmpty()) EmptyCard("还没有已完成的比赛", "比赛结束并保存后，会按时间显示在这里。", Icons.Outlined.DateRange)
+    if (completed.isEmpty()) EmptyCard("还没有已完成的比赛", Icons.Outlined.DateRange)
     completed.forEach { game ->
         CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
             Text("${game.away.name}  vs  ${game.home.name}", fontWeight = FontWeight.Bold)
@@ -796,7 +802,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black,
             )
-            Text("已结束 · 查看完整记录", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+            Text("已结束", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -819,7 +825,7 @@ private fun TeamMark(name: String, size: Int) {
 @Composable
 private fun SectionTitle(title: String, detail: String?) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         if (detail != null)
             Text(detail, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -828,7 +834,6 @@ private fun SectionTitle(title: String, detail: String?) {
 @Composable
 private fun EmptyCard(
     title: String,
-    detail: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
 ) {
     CardBlock {
@@ -844,12 +849,6 @@ private fun EmptyCard(
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    detail,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
     }
@@ -894,16 +893,13 @@ private fun ProfileScreen(model: ScorekeeperViewModel, manageTeams: ()->Unit) {
     var showRules by rememberSaveable { mutableStateOf(false) }
     var page by rememberSaveable {mutableStateOf<String?>(null)}
     if (showRules) RulesScreen(showExamples=model.showRuleExamples) { showRules = false }
-    Text("我的", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
     CardBlock {
         Text("棒球比赛记录大师", fontWeight = FontWeight.Bold)
         Text("Android ${BuildConfig.VERSION_NAME}")
         Text("开发预览版", color = MaterialTheme.colorScheme.primary)
-        Text("默认仅本机记分；进入球队共享后连接球队服务。", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     CardBlock {
         Text("棒球规则查询", fontWeight = FontWeight.Bold)
-        Text("常用规则解释与完整规则 PDF", color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextButton(onClick = { showRules = true }, modifier = Modifier.testTag("open-rules")) { Text("查看规则") }
         TextButton(onClick={model.practice()},modifier=Modifier.testTag("open-practice-inning")) {Text("练习一局")}
     }
@@ -987,7 +983,7 @@ internal fun FormPage(
                     else Spacer(Modifier.width(60.dp))
                 }
                 Column(
-                    Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = UiSpacing.formVerticalInset),
+                    Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = UiSpacing.formVerticalInset),
                     verticalArrangement = Arrangement.spacedBy(UiSpacing.form),
                     content = content,
                 )
@@ -1277,92 +1273,9 @@ internal fun Field(game: Game, modifier: Modifier) {
     ) {
         val w = maxWidth.value
         val h = maxHeight.value
-        val home = Offset(w / 2, h - 48)
-        val radius =
-            min((w / 2 - min(24f, max(14f, w * .04f))) * sqrt(2f) * 1.30f, (home.y - 40) / .62f)
-                .coerceAtLeast(1f)
-        val d =
-            min(
-                w * .18f,
-                min(max(132f, home.y - max(34f, h * .40f)) / 2, max(1f, (home.y - 74) / 2)),
-            )
-        val center = Offset(w / 2, home.y - d)
-        Canvas(Modifier.fillMaxSize()) {
-            val scale = size.width / w
-            fun point(p: Offset) = p * scale
-            val homePx = point(home)
-            val r = radius * scale
-            val sector =
-                Path().apply {
-                    moveTo(homePx.x, homePx.y)
-                    arcTo(
-                        Rect(homePx.x - r, homePx.y - r, homePx.x + r, homePx.y + r),
-                        225f,
-                        90f,
-                        false,
-                    )
-                    close()
-                }
-            drawPath(sector, field)
-            drawPath(sector, dirt.copy(alpha = .9f), style = Stroke(8.dp.toPx()))
-            val offset = r / sqrt(2f)
-            drawLine(
-                Color.White.copy(alpha = .82f),
-                homePx,
-                homePx + Offset(-offset, -offset),
-                1.5.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())),
-            )
-            drawLine(
-                Color.White.copy(alpha = .82f),
-                homePx,
-                homePx + Offset(offset, -offset),
-                1.5.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())),
-            )
-            fun diamond(at: Offset, depth: Float) =
-                Path().apply {
-                    moveTo(at.x, at.y + depth)
-                    lineTo(at.x + depth, at.y)
-                    lineTo(at.x, at.y - depth)
-                    lineTo(at.x - depth, at.y)
-                    close()
-                }
-            drawPath(diamond(point(center), d * 1.25f * scale), dirt)
-            drawPath(diamond(point(center), d * .58f * scale), field)
-            drawPath(
-                diamond(point(center), d * scale),
-                Color.White.copy(alpha = .72f),
-                style = Stroke(2.dp.toPx()),
-            )
-            val bases =
-                listOf(
-                    Offset(center.x + d, center.y),
-                    Offset(center.x, center.y - d),
-                    Offset(center.x - d, center.y),
-                )
-            bases.forEachIndexed { i, at ->
-                drawPath(
-                    diamond(point(at), (if (game.bases[i] == null) 7f else 13f) * scale),
-                    if (game.bases[i] == null) Color.White else Color(0xFFFABD29),
-                )
-            }
-            drawPath(diamond(homePx, 8 * scale), Color.White)
-        }
-        val cfY = max(29f, home.y - radius * .65f)
-        val spots =
-            listOf(
-                center,
-                Offset(home.x, min(h - 18, home.y + 30)),
-                Offset(min(w - 38, center.x + d + 66), center.y + 35),
-                Offset(center.x + max(66f, d * 1.1f), center.y - d * .72f),
-                Offset(max(38f, center.x - d - 66), center.y + 35),
-                Offset(center.x - max(66f, d * 1.1f), center.y - d * .72f),
-                Offset(w * .19f, max(51f, home.y - radius * .58f)),
-                Offset(w * .5f, cfY),
-                Offset(w * .81f, max(51f, home.y - radius * .58f)),
-                Offset(w * .5f, (cfY + center.y - d) / 2),
-            )
+        val geometry=BaseballFieldGeometry(w.toDouble(),h.toDouble())
+        Canvas(Modifier.fillMaxSize()) {drawBaseballField(geometry,field,dirt,game.bases.map {it!=null})}
+        val spots=(1..10).map {position -> geometry.fielder(position).let {Offset(it.x.toFloat(),it.y.toFloat())}}
         game.fieldingPositions.toSortedMap().forEach { (position, id) ->
             val index = position - 1
             val player = game.fieldingTeam.players.first { it.id == id }

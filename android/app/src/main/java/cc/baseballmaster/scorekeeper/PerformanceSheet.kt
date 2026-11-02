@@ -3,6 +3,8 @@ package cc.baseballmaster.scorekeeper
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,6 +27,7 @@ internal fun PerformanceSheet(game: Game, games: List<Game>, close: () -> Unit) 
     var pid by rememberSaveable { mutableStateOf(game.batter.id) }
     var annual by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableStateOf("") }
+    var showLegend by remember { mutableStateOf(false) }
     val player = (game.home.players + game.away.players).first { it.id == pid }
     val performance =
         remember(game, games, pid, annual) { Performances.calculate(game, games, pid, annual) }
@@ -60,25 +63,22 @@ internal fun PerformanceSheet(game: Game, games: List<Game>, close: () -> Unit) 
                 }
         }
         Text("${game.rules.mode.title} · ${performance.gameCount} 场 · 仅统计已完成打席", fontSize = 12.sp)
-        Text("击球图", fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+            Text("击球图", Modifier.weight(1f), fontWeight=FontWeight.Bold)
+            TextButton({showLegend=true}) {Text("图例",fontSize=12.sp)}
+        }
         ContactPlot(performance.contacts) { selected = it.id }
         Text("● 安打    ● 出局    ● 其他", fontSize = 12.sp)
         Text(
             "有去向 ${performance.contacts.size} 球 · 缺少去向 ${performance.missingLocations} 球",
             Modifier.testTag("contact-coverage"),
         )
-        Text(
-            "实线圈表示点选位置，虚线圈只表示区域。旧记录缺少资料时保持未知，保送与三振不画线。",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         if (performance.incompleteGames > 0)
             Text(
-                "其中 ${performance.incompleteGames} 场过程或统计不完整，请结合原记录核对。",
+                "${performance.incompleteGames} 场待复核",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.error,
             )
-        if (annual) Text("年度仅包含本设备实际保存、同球队身份、同比赛模式的比赛；副本按来源去重。", fontSize = 12.sp)
         performance.contacts
             .firstOrNull { it.id == selected }
             ?.let { CardBlock { Text(it.detail, Modifier.testTag("selected-contact")) } }
@@ -87,15 +87,18 @@ internal fun PerformanceSheet(game: Game, games: List<Game>, close: () -> Unit) 
             TextButton({ selected = contact.id }) { Text(contact.detail, fontSize = 12.sp) }
         }
     }
+    if(showLegend) AlertDialog(onDismissRequest={showLegend=false},title={Text("击球图图例")},text={
+        Text("实线圈：点选位置\n虚线圈：区域位置\n\n缺少去向的击球、保送和三振不画线。年度范围为本设备保存的同队、同模式比赛。")
+    },confirmButton={TextButton({showLegend=false}) {Text("完成")}})
 }
 
 @Composable
 private fun ContactPlot(contacts: List<Contact>, select: (Contact) -> Unit) {
     val green = MaterialTheme.colorScheme.primary
-    val soft = MaterialTheme.colorScheme.secondaryContainer
+
     val latest by rememberUpdatedState(contacts)
     Canvas(
-        Modifier.fillMaxWidth().height(235.dp).testTag("contact-plot").pointerInput(Unit) {
+        Modifier.fillMaxWidth().height(235.dp).clip(RoundedCornerShape(16.dp)).testTag("contact-plot").pointerInput(Unit) {
             detectTapGestures { tap ->
                 latest
                     .mapNotNull { c ->
@@ -104,11 +107,9 @@ private fun ContactPlot(contacts: List<Contact>, select: (Contact) -> Unit) {
                                 c.observation.x?.let { x -> c.observation.y?.let { y -> x to y } }
                             else Performances.regionPoint(c.observation.region)
                         point?.let {
-                            c to
-                                hypot(
-                                    tap.x - it.first * size.width,
-                                    tap.y - it.second * size.height,
-                                )
+                            val scale=density.toDouble()
+                            val mapped=BaseballFieldGeometry(size.width/scale,size.height/scale).contactPoint(FieldPoint(it.first,it.second))
+                            c to hypot(tap.x-mapped.x*scale,tap.y-mapped.y*scale)
                         }
                     }
                     .minByOrNull { it.second }
@@ -117,32 +118,12 @@ private fun ContactPlot(contacts: List<Contact>, select: (Contact) -> Unit) {
             }
         }
     ) {
-        drawRoundRect(soft, cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx()))
-        fun p(x: Float, y: Float) = Offset(size.width * x, size.height * y)
-        val field =
-            Path().apply {
-                moveTo(size.width * .5f, size.height * .90f)
-                lineTo(size.width * .08f, size.height * .38f)
-                quadraticTo(
-                    size.width * .5f,
-                    -size.height * .13f,
-                    size.width * .92f,
-                    size.height * .38f,
-                )
-                close()
-            }
-        drawPath(field, green.copy(alpha = .18f))
-        val diamond =
-            Path().apply {
-                moveTo(size.width * .5f, size.height * .90f)
-                lineTo(size.width * .25f, size.height * .63f)
-                lineTo(size.width * .5f, size.height * .36f)
-                lineTo(size.width * .75f, size.height * .63f)
-                close()
-            }
-        drawPath(diamond, Color(0xFFA35513).copy(alpha = .65f), style = Stroke(2.dp.toPx()))
-        drawLine(green, p(.02f, .3f), p(.5f, .9f), 1.5.dp.toPx())
-        drawLine(green, p(.5f, .9f), p(.98f, .3f), 1.5.dp.toPx())
+        val geometry=BaseballFieldGeometry((size.width/density).toDouble(),(size.height/density).toDouble())
+        drawBaseballField(geometry)
+        fun p(x:Float,y:Float):Offset {
+            val mapped=geometry.contactPoint(FieldPoint(x.toDouble(),y.toDouble()))
+            return Offset(mapped.x.toFloat()*density,mapped.y.toFloat()*density)
+        }
         contacts.forEach { c ->
             val o = c.observation
             val point =
@@ -169,10 +150,15 @@ private fun ContactPlot(contacts: List<Contact>, select: (Contact) -> Unit) {
                         Color(0xFFC7463D)
                     else Color(0xFFA35513)
                 val at = p(x.toFloat(), y.toFloat())
-                drawCircle(color.copy(alpha = .3f), 9.dp.toPx(), at)
+                val home=Offset(geometry.home.x.toFloat()*density,geometry.home.y.toFloat()*density)
+                val dash=PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(),3.dp.toPx()))
+                drawLine(Color.White.copy(alpha=.65f),home,at,2.8.dp.toPx(),pathEffect=dash)
+                drawLine(color.copy(alpha=.9f),home,at,1.3.dp.toPx(),pathEffect=dash)
+                val radius=(if(o.precision=="region") 18.dp else 11.5.dp).toPx()
+                drawCircle(Color.White.copy(alpha=.95f),radius,at)
                 drawCircle(
                     color,
-                    7.dp.toPx(),
+                    radius,
                     at,
                     style =
                         Stroke(

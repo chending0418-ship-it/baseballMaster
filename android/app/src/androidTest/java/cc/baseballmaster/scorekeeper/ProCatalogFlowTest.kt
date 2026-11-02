@@ -37,6 +37,12 @@ class ProCatalogFlowTest {
     private fun payload(id:String)=db {_,database->database.dao().game(id)!!.payload}
     private fun stored(id:String)=GameJson.decodeFromString<Game>(payload(id))
     private fun click(tag:String) {NativeUi.find(device,By.res(tag)).click();device.waitForIdle(500)}
+    private fun choose(tag:String)=StatisticsUi.setChecked(device,tag,true)
+    private fun reviewAndSave() {
+        StatisticsUi.use(device,By.res("play-next"),scroll=false) {assertTrue("Contact must be valid before review",it.isEnabled);it.click()}
+        assertTrue(device.wait(Until.hasObject(By.res("save-play")),10_000))
+        click("save-play")
+    }
     private fun text(value:String)=NativeUi.find(device,By.text(value))
     private fun open(game:Game) {
         context.startActivity(context.packageManager.getLaunchIntentForPackage(context.packageName)!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
@@ -48,6 +54,8 @@ class ProCatalogFlowTest {
         assertTrue(device.wait(Until.hasObject(By.res("process-selected-type")),10_000))
         assertTrue(device.findObject(By.res("process-selected-type")).text.startsWith(ScoringOptions.ballTypes.getValue(type)))
         click("process-all-outcomes")
+        assertTrue(device.wait(Until.hasObject(By.res("outcome-catalog-search")),10_000))
+        device.takeScreenshot(File(context.getExternalFilesDir(null),"pro311-full-catalog.png"))
     }
     private fun await(id:String,predicate:(Game)->Boolean):Game {
         val end=android.os.SystemClock.uptimeMillis()+10_000
@@ -70,8 +78,8 @@ class ProCatalogFlowTest {
     }
     @Test fun processOtherResultsCanRecordHomeRunExactlyOnceAndUndoRedo() {
         val game=seed();open(game);process("line");click("pro-outcome-homeRun")
-        click("choice-落点精度-region");click("choice-区域-left");click("choice-守备处理-noFielding")
-        click("play-next");click("save-play")
+        choose("choice-落点精度-region");choose("choice-区域-left");choose("choice-守备处理-noFielding")
+        reviewAndSave()
         val result=await(game.id) {it.awayRuns==1}
         assertEquals(1,result.totalPitches);assertEquals(1,result.cursor)
         assertEquals("line",result.entries.single().observation?.type)
@@ -86,10 +94,10 @@ class ProCatalogFlowTest {
         NativeUi.find(device,By.res("outcome-catalog-search")).text="牺牲"
         click("pro-outcome-sacrificeFly")
         StatisticsUi.use(device,By.res("choice-球型-fly")) {assertTrue(it.isChecked)}
-        click("choice-球型-ground");click("choice-落点精度-region");click("choice-区域-center");click("choice-守备处理-pending")
+        choose("choice-球型-ground");choose("choice-落点精度-region");choose("choice-区域-center");choose("choice-守备处理-pending")
         text("牺牲高飞请核对高飞、平飞或内野小飞球型。")
         assertFalse(device.findObject(By.res("play-next")).isEnabled)
-        click("choice-球型-fly");click("play-next");click("save-play")
+        choose("choice-球型-fly");reviewAndSave()
         val result=await(game.id) {it.awayRuns==1 && it.outs==1}
         val batter=result.batting.getValue(game.batter.id)
         assertEquals(0,batter.atBats);assertEquals(1,batter.sacrifices);assertEquals(1,batter.runsBattedIn)

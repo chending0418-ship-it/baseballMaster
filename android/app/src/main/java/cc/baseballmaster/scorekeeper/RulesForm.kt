@@ -88,6 +88,10 @@ internal fun RulesForm(initial: Rules, change: (Rules?) -> Unit) {
             mutableStateOf(GameJson.encodeToString(RuleDraft.from(initial)))
         }
     val draft = remember(json) { GameJson.decodeFromString<RuleDraft>(json) }
+    var advanced by rememberSaveable(initial.mode) { mutableStateOf(
+        initial.halfRunLimit!=null || initial.pitchLimit!=null || initial.pitchWarningRemaining!=null ||
+            initial.pitcherInningsLimit!=null || initial.designatedHitter
+    ) }
     val result = remember(json, initial.mode) { runCatching { draft.build(initial.mode) } }
     SideEffect { change(result.getOrNull()) }
     fun update(f: (RuleDraft) -> RuleDraft) {
@@ -133,7 +137,6 @@ internal fun RulesForm(initial: Rules, change: (Rules?) -> Unit) {
             singleLine = true,
         )
     if (initial.mode == GameMode.slowPitch) {
-        Text("10 人守备（含 Free），可在阵容中增加打者。", fontSize = 12.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 draft.balls,
@@ -165,10 +168,15 @@ internal fun RulesForm(initial: Rules, change: (Rules?) -> Unit) {
             label = { Text("每打席规定投球数") },
             singleLine = true,
         )
+    TextButton({advanced=!advanced},Modifier.testTag("rule-advanced-toggle")) {
+        Text(if(advanced) "收起更多规则" else "更多规则")
+    }
+    if(advanced) {
     OutlinedTextField(
         draft.runLimit,
         { v -> update { it.copy(runLimit = value(v)) } },
         label = { Text("半局得分上限（留空不限制）") },
+        modifier=Modifier.testTag("rule-run-limit"),
         singleLine = true,
     )
     if (initial.mode != GameMode.coachPitch) {
@@ -201,6 +209,7 @@ internal fun RulesForm(initial: Rules, change: (Rules?) -> Unit) {
             Checkbox(draft.twoWay, { v -> update { it.copy(twoWay = v) } })
             Text("允许二刀流投打身份", Modifier.padding(top = 13.dp))
         }
+    }
     if (result.isFailure)
         Text(
             result.exceptionOrNull()?.message.orEmpty(),
@@ -261,7 +270,6 @@ internal fun MatchTimeEditor(
             )
         },
     ) {
-        Text("比赛时间与记分计时分别保留；更正时间不改变比赛统计。", fontSize = 12.sp)
         if (!game.openingPitchRecorded)
             Choices(
                 "时间用途",

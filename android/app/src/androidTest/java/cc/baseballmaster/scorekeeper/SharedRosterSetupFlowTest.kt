@@ -67,6 +67,10 @@ class SharedRosterSetupFlowTest {
             assertTrue(device.wait(Until.hasObject(By.res("setup-shared-source")), 10000))
             find(By.res("opponent-name")).text = "界面对手"
             device.pressBack()
+            find(By.res("rule-advanced-toggle")).click()
+            find(By.res("rule-run-limit")).text = "5"
+            device.pressBack()
+            find(By.res("rule-advanced-toggle")).click()
             find(By.text("填入示例名单")).click()
             find(By.res("start-game")).click()
             assertTrue(device.wait(Until.hasObject(By.res("start-confirmed-game")), 10000))
@@ -80,6 +84,7 @@ class SharedRosterSetupFlowTest {
             assertEquals("sharedSnapshot", game.away.source)
             assertEquals(profile.players.map { it.sourceID }, game.away.players.map { it.id })
             assertEquals(0, game.totalPitches)
+            assertEquals(5,game.rules.halfRunLimit)
             runBlocking {
                 val saved = GameRepository(db).createSharedRosterGame(game)
                 assertEquals(game.id, saved.id)

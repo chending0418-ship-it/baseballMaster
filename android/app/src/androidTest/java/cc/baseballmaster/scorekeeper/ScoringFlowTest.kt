@@ -52,6 +52,7 @@ class ScoringFlowTest {
         check(frame.await(3, java.util.concurrent.TimeUnit.SECONDS))
         instrumentation.waitForIdleSync()
         if (android.os.Build.VERSION.SDK_INT >= 34) instrumentation.uiAutomation.clearCache()
+        else instrumentation.uiAutomation.serviceInfo=instrumentation.uiAutomation.serviceInfo
     }
 
     private fun stable(selector: BySelector): UiObject2 {
@@ -59,6 +60,7 @@ class ScoringFlowTest {
         var same = 0
         repeat(80) {
             if (android.os.Build.VERSION.SDK_INT >= 34) instrumentation.uiAutomation.clearCache()
+            else instrumentation.uiAutomation.serviceInfo=instrumentation.uiAutomation.serviceInfo
             val node = device.findObject(selector)
             val bounds = node?.visibleBounds
             if (bounds != null && bounds == previous) same++ else same = 0
@@ -231,8 +233,15 @@ class ScoringFlowTest {
         text("平飞").click()
         text("精确落点").click()
         tag("contact-field")
+        repeat(10) {
+            if(stable(By.res("contact-field")).visibleBounds.height()<250*context.resources.displayMetrics.density) {
+                device.findObject(By.scrollable(true))?.scroll(Direction.DOWN,.2f)
+                settle()
+            }
+        }
         settle()
         val rect = stable(By.res("contact-field")).visibleBounds
+        assertTrue("Tap must use the full field viewport",rect.height()>=250*context.resources.displayMetrics.density)
         File(context.getExternalFilesDir(null), "an03-tap-target.txt")
             .writeText("$rect / density=${context.resources.displayMetrics.density}")
         device
@@ -267,8 +276,10 @@ class ScoringFlowTest {
         assertEquals(3, game.awayHits)
         assertEquals("point", game.entries.last().observation!!.precision)
         assertEquals(listOf(8, 4, 3), game.entries.last().observation!!.fielding!!.route)
-        assertEquals(1.0 / 3.0, game.entries.last().observation!!.x!!, .02)
-        assertEquals(.25, game.entries.last().observation!!.y!!, .02)
+        val geometry=BaseballFieldGeometry(rect.width()/context.resources.displayMetrics.density.toDouble(),rect.height()/context.resources.displayMetrics.density.toDouble())
+        val plotted=geometry.contactPoint(FieldPoint(game.entries.last().observation!!.x!!,game.entries.last().observation!!.y!!))
+        assertEquals(1.0 / 3.0, plotted.x/geometry.width, .02)
+        assertEquals(.25, plotted.y/geometry.height, .02)
         val stats = GameJson.encodeToString(game.batting)
         click("game-history")
         text("纠错／补充本球").click()

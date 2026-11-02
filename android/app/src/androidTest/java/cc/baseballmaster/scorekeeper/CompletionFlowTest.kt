@@ -421,7 +421,7 @@ class CompletionFlowTest {
         shot("16-final-navigation")
         click("back-home")
         click("tab-1")
-        assertNotNull(text("本机球队管理"))
+        assertNotNull(text("本机球队"))
         click("tab-2")
         assertNotNull(find(By.res("stats-open-game-filter")))
         click("tab-0")

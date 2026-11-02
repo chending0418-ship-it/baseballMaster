@@ -22,11 +22,12 @@ internal fun RosterScreen(model: ScorekeeperViewModel, quickAdd: () -> Unit) {
     val team = model.rosters.firstOrNull { it.id == teamID }
     if (showSharing) TeamSharingScreen(model.sharing, model.teams) { showSharing = false }
     CardBlock {
-        Text("球队共享", fontWeight = FontWeight.Bold)
-        Text("创建共享球队，或通过邀请加入；本机球队继续独立保存。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick = { showSharing = true }, modifier = Modifier.testTag("open-team-sharing")) { Text("管理共享球队") }
+        Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+            Text("球队共享",Modifier.weight(1f),fontWeight=FontWeight.Bold)
+            TextButton(onClick = { showSharing = true }, modifier = Modifier.testTag("open-team-sharing")) { Text("管理") }
+        }
     }
-    Text("本机球队管理", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+    Text("本机球队", fontSize = 16.sp, fontWeight = FontWeight.Bold)
     Choices("名单", mapOf("own" to "我的球队", "opponent" to "对手", "archived" to "已移除"), filter) {
         filter = it
     }
@@ -34,7 +35,7 @@ internal fun RosterScreen(model: ScorekeeperViewModel, quickAdd: () -> Unit) {
         TextButton({ adding = true }, Modifier.weight(1f).testTag("add-roster")) {
             Text(if (filter == "opponent") "添加对手" else "添加球队")
         }
-        TextButton(quickAdd, Modifier.weight(1f).testTag("add-team")) { Text("批量创建球队与名单") }
+        TextButton(quickAdd, Modifier.weight(1f).testTag("add-team")) { Text("批量创建") }
     }
     model.rosters
         .filter {
@@ -61,7 +62,7 @@ internal fun RosterScreen(model: ScorekeeperViewModel, quickAdd: () -> Unit) {
                             Text("设为当前球队")
                         }
                     TextButton({ teamID = t.id }, Modifier.weight(1f).testTag("roster-${t.id}")) {
-                        Text("球队资料与名单")
+                        Text("资料与名单")
                     }
                 }
             }
@@ -197,7 +198,6 @@ private fun TeamProfileEditor(
             OutlinedTextField(short, { short = it }, label = { Text("球队简称") })
             OutlinedTextField(city, { city = it }, label = { Text("所在城市") })
         }
-        Text("球员数量由名单自动统计。", fontSize = 12.sp)
     }
 }
 
@@ -254,7 +254,6 @@ private fun PlayerProfileEditor(
                 modifier = Modifier.fillMaxWidth().testTag("player-numbers"),
             )
         }
-        Text("支持 0 和 00；同名球员保留各自独立身份。", fontSize = 12.sp)
         if (issue != null) Text(issue, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
     }
 }
