@@ -4,11 +4,12 @@ const {pathToFileURL}=require('node:url');
 const root=path.resolve(__dirname,'../..');
 const modules=process.env.CODEX_ARTIFACT_NODE_MODULES||path.join(os.homedir(),'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules');
 const {chromium}=require(path.join(modules,'playwright'));
-const output=path.join(root,'output/validation/3.1.1/configurable-launch');
+const output=process.env.BM_LAUNCH_VALIDATION_OUTPUT?path.resolve(process.env.BM_LAUNCH_VALIDATION_OUTPUT):path.join(root,'output/validation/3.1.1/configurable-launch');
 (async()=>{
  const {adminFixture}=await import(pathToFileURL(path.join(root,'collaboration/test/admin-fixture.mjs')).href);
- const fixture=await adminFixture(),browser=await chromium.launch({headless:true});
+ const fixture=await adminFixture();let browser;
  try{
+  browser=await chromium.launch({headless:true,...(process.env.BM_LAUNCH_BROWSER_PATH?{executablePath:process.env.BM_LAUNCH_BROWSER_PATH}:{})});
   fs.mkdirSync(output,{recursive:true});
   const page=await browser.newPage({viewport:{width:1440,height:1100},deviceScaleFactor:1});
   const errors=[],blocked=[];page.on('pageerror',e=>errors.push(e.message));
@@ -38,5 +39,5 @@ const output=path.join(root,'output/validation/3.1.1/configurable-launch');
   if(errors.length||blocked.length)throw Error(JSON.stringify({errors,blocked}));
   fs.writeFileSync(path.join(output,'browser-checks.json'),JSON.stringify({localOnly:true,productionRequests:0,passed:['owner login','PNG upload and preview','message and duration publication','Beijing schedule serialization','desktop and mobile layout','disable','restore bundled defaults'],config},null,2)+'\n');
   console.log('Local launch-editor browser checks passed.');
- }finally{await browser.close();await fixture.close();}
+ }finally{await browser?.close();await fixture.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});
