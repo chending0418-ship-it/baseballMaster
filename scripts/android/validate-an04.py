@@ -15,6 +15,7 @@ import time
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--serial', required=True)
 p.add_argument('--output', type=Path, required=True)
+p.add_argument('--apk', type=Path, default=Path('output/cache/android/build/app/outputs/apk/debug/app-debug.apk'), help='Already installed APK whose identity is recorded; does not install it')
 p.add_argument('--class-name', action='append', dest='classes')
 p.add_argument('--keep-going', action='store_true', help='Collect independent class failures, then fail the run')
 a = p.parse_args()
@@ -44,7 +45,7 @@ try:
     metadata['connectivity'] = call('shell', 'dumpsys', 'connectivity').stdout.decode()
     metadata['source_revision'] = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
     metadata['source_changes'] = subprocess.run(['git', 'status', '--short'], capture_output=True, text=True).stdout
-    for label, path in [('app', Path('output/cache/android/build/app/outputs/apk/debug/app-debug.apk')),
+    for label, path in [('app', a.apk),
                         ('tests', Path('output/cache/android/build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk'))]:
         if path.is_file():
             metadata[label + '_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
