@@ -1,6 +1,6 @@
 # BaseballMaster Android
 
-最新阶段交付为 0.1.0-preview.5（versionCode 5）。最低 Android 12／API 31，编译及目标 API 37。功能和发布状态从 [CURRENT](../docs/CURRENT.md) 与 [单份迁移计划](../docs/plans/ANDROID-APK.md) 进入。
+最新测试交付为 0.1.0（versionCode 7），见 [测试交付](../docs/releases/android/0.1.0-TEST-HANDOFF.md)。最低 Android 12／API 31，编译及目标 API 37。功能和发布状态从 [CURRENT](../docs/CURRENT.md) 与 [单份迁移计划](../docs/plans/ANDROID-APK.md) 进入。
 
 源码结构：`core/` 为不依赖 Android 的规则／数据模块；`app/` 为 Compose、ViewModel、Room、Keystore 及平台接入。AN03 离线比赛核心已实现并通过阶段回归：名单、三模式记分、重放／纠错、特殊阵容、练习、表现图、当前球队与年度战绩；Pro 球场采用 iOS V4 设计，手机仅竖屏。48 条全量用例矩阵仍待 AN07 逐项登记；完整互导仍在 AN04，AN05 已启动协作基础层，内部 JSON 快照不直接上传为 iOS 的共享比赛 payload。
 
@@ -9,7 +9,7 @@
 在仓库根目录构建：
 
 ```sh
-scripts/android/gradle.sh :core:test :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest :app:lintDebug -PpreviewVersionCode=5
+scripts/android/gradle.sh :core:test :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest :app:lintDebug -PpreviewVersionCode=7
 ```
 
 脚本默认使用 `/Applications/Android Studio.app` 内 JDK 和 `~/Library/Android/sdk`；可通过标准 `JAVA_HOME`／`ANDROID_HOME` 覆盖。构建输出和 Gradle 用户缓存均在 `output/cache/android/`。Room 的 `schemas/` 是迁移契约，应提交；`.gradle`、`.kotlin`、IDE、本机路径与签名文件不提交。
