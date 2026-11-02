@@ -111,11 +111,10 @@ struct CountStrip: View {
     }
 }
 
-struct BaseballDiamondView: View {
-    let game: GameState
-    var fixedHeight: CGFloat? = 260
-
-    private struct FieldGeometry {
+/// Shared geometry from the scorekeeping home field. Contact coordinates remain in
+/// their original normalized space; only their presentation is adapted below.
+enum BaseballFieldLayout {
+    struct Geometry {
         let home: CGPoint
         let first: CGPoint
         let second: CGPoint
@@ -127,85 +126,132 @@ struct BaseballDiamondView: View {
         let baseHalfDiagonal: CGFloat
     }
 
+    static func geometry(in size: CGSize) -> Geometry {
+        let sideInset = min(24, max(14, size.width * 0.04))
+        let bottomReserve = CGFloat(48)
+        let home = CGPoint(x: size.width / 2, y: size.height - bottomReserve)
+
+        // A baseball field is a 90-degree circular sector: the two foul lines
+        // leave home plate at 45 degrees and the fence is an arc centered on home.
+        let rootTwo = CGFloat(2).squareRoot()
+        // The portrait card is taller than a square field diagram. A small,
+        // symmetric overscan keeps the true quarter-circle large and lets the
+        // card crop only its two far corners instead of leaving a blank header.
+        // Practice guidance and the reset toolbar shorten this card. Keep the
+        // center fielder's entire marker below the top edge at every height.
+        let widthRadius = (size.width / 2 - sideInset) * rootTwo * 1.30
+        let heightRadius = (home.y - 40) / 0.62
+        let outfieldRadius = max(1, min(widthRadius, heightRadius))
+        let fenceOffset = outfieldRadius / rootTwo
+        let leftFence = CGPoint(x: home.x - fenceOffset, y: home.y - fenceOffset)
+        let rightFence = CGPoint(x: home.x + fenceOffset, y: home.y - fenceOffset)
+
+        // Home, first, second and third are the four vertices of one exact square.
+        // Leave room between occupied bases and the pitcher’s name/number label.
+        let availableBaseDepth = max(132, home.y - max(34, size.height * 0.40))
+        let baseHalfDiagonal = min(size.width * 0.18, availableBaseDepth / 2, max(1, (home.y - 74) / 2))
+        let first = CGPoint(x: home.x + baseHalfDiagonal, y: home.y - baseHalfDiagonal)
+        let second = CGPoint(x: home.x, y: home.y - baseHalfDiagonal * 2)
+        let third = CGPoint(x: home.x - baseHalfDiagonal, y: home.y - baseHalfDiagonal)
+        let center = CGPoint(x: home.x, y: home.y - baseHalfDiagonal)
+
+        return Geometry(
+            home: home,
+            first: first,
+            second: second,
+            third: third,
+            center: center,
+            leftFence: leftFence,
+            rightFence: rightFence,
+            outfieldRadius: outfieldRadius,
+            baseHalfDiagonal: baseHalfDiagonal
+        )
+    }
+
+    static func fielderPosition(_ position: FieldPosition, in size: CGSize) -> CGPoint {
+        let field = geometry(in: size)
+        let d = field.baseHalfDiagonal
+        switch position {
+        case .pitcher:
+            return field.center
+        case .catcher:
+            return CGPoint(x: field.home.x, y: min(size.height - 18, field.home.y + 30))
+        case .firstBase:
+            return CGPoint(x: min(size.width - 38, field.first.x + 66), y: field.first.y + 35)
+        case .secondBase:
+            return CGPoint(x: field.center.x + max(66, d * 1.1), y: field.center.y - d * 0.72)
+        case .thirdBase:
+            return CGPoint(x: max(38, field.third.x - 66), y: field.third.y + 35)
+        case .shortstop:
+            return CGPoint(x: field.center.x - max(66, d * 1.1), y: field.center.y - d * 0.72)
+        case .leftField:
+            return CGPoint(x: size.width * 0.19, y: max(51, field.home.y - field.outfieldRadius * 0.58))
+        case .centerField:
+            return CGPoint(x: size.width * 0.5, y: max(29, field.home.y - field.outfieldRadius * 0.65))
+        case .rightField:
+            return CGPoint(x: size.width * 0.81, y: max(51, field.home.y - field.outfieldRadius * 0.58))
+        case .free:
+            let centerFieldY = max(29, field.home.y - field.outfieldRadius * 0.65)
+            return CGPoint(x: size.width * 0.5, y: (centerFieldY + field.second.y) / 2)
+        }
+    }
+
+    /// Piecewise mapping pins the legacy diagram’s bases and all four canvas edges.
+    /// Keeping the inverse here makes new taps compatible with stored observations.
+    static func contactPoint(_ legacy: CGPoint, in size: CGSize) -> CGPoint {
+        let field = geometry(in: size)
+        return CGPoint(
+            x: interpolate(legacy.x, from: [0, 0.25, 0.5, 0.75, 1], to: [0, field.third.x, field.home.x, field.first.x, size.width]),
+            y: interpolate(legacy.y, from: [0, 0.36, 0.63, 0.90, 1], to: [0, field.second.y, field.center.y, field.home.y, size.height])
+        )
+    }
+
+    static func contactCoordinate(at point: CGPoint, in size: CGSize) -> CGPoint {
+        let field = geometry(in: size)
+        return CGPoint(
+            x: interpolate(point.x, from: [0, field.third.x, field.home.x, field.first.x, size.width], to: [0, 0.25, 0.5, 0.75, 1]),
+            y: interpolate(point.y, from: [0, field.second.y, field.center.y, field.home.y, size.height], to: [0, 0.36, 0.63, 0.90, 1])
+        )
+    }
+
+    private static func interpolate(_ value: CGFloat, from source: [CGFloat], to target: [CGFloat]) -> CGFloat {
+        let clamped = min(source.last!, max(source[0], value))
+        let index = (0..<(source.count - 1)).first { clamped <= source[$0 + 1] } ?? source.count - 2
+        let fraction = (clamped - source[index]) / max(0.000001, source[index + 1] - source[index])
+        return target[index] + fraction * (target[index + 1] - target[index])
+    }
+}
+
+/// The same field artwork for scoring, recording contact, and reviewing performance.
+struct BaseballFieldBackground: View {
+    var showsBases = true
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            let activeIDs = Set(game.fieldingPlayerIDs)
+            let field = fieldGeometry(in: size)
             ZStack {
                 BMTheme.field.opacity(0.86)
-
-                outfield(in: size)
-                    .fill(BMTheme.field)
-
-                outfield(in: size)
-                    .stroke(BMTheme.dirt.opacity(0.9), lineWidth: 8)
-
-                foulLines(in: size)
-                    .stroke(.white.opacity(0.82), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-
-                infieldDirt(in: size)
-                    .fill(BMTheme.dirt)
-
-                innerGrass(in: size)
-                    .fill(BMTheme.field.opacity(0.92))
-
-                basePath(in: size)
-                    .stroke(.white.opacity(0.72), lineWidth: 2)
-
+                outfield(in: size).fill(BMTheme.field)
+                outfield(in: size).stroke(BMTheme.dirt.opacity(0.9), lineWidth: 8)
+                foulLines(in: size).stroke(.white.opacity(0.82), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                infieldDirt(in: size).fill(BMTheme.dirt)
+                innerGrass(in: size).fill(BMTheme.field.opacity(0.92))
+                basePath(in: size).stroke(.white.opacity(0.72), lineWidth: 2)
                 mound(in: size)
-
-                ForEach(game.rulesSnapshot?.positions ?? FieldPosition.allCases.filter { $0 != .free }) { position in
-                    if let player = position == .pitcher
-                        ? Optional(game.currentPitcher)
-                        : game.fieldingTeam.players.first(where: {
-                            activeIDs.contains($0.id) && $0.primaryPosition == position
-                        }) {
-                        fielderMarker(player: player, position: position)
-                            .position(fieldPosition(position, in: size))
+                if showsBases {
+                    ForEach(0..<3) { index in
+                        RoundedRectangle(cornerRadius: 3).fill(.white)
+                            .frame(width: 16, height: 16).rotationEffect(.degrees(45))
+                            .shadow(color: .black.opacity(0.14), radius: 2, y: 1)
+                            .position([field.first, field.second, field.third][index])
                     }
                 }
-
-                baseMarker(.first)
-                    .position(basePosition(.first, in: size))
-                baseMarker(.second)
-                    .position(basePosition(.second, in: size))
-                baseMarker(.third)
-                    .position(basePosition(.third, in: size))
-
-                HomePlateShape()
-                    .fill(.white)
-                    .frame(width: 18, height: 18)
-                    .position(fieldGeometry(in: size).home)
-                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(alignment: .topLeading) {
-                Text("\(game.fieldingTeam.shortName)守备")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(.black.opacity(0.22))
-                    .clipShape(Capsule())
-                    .padding(10)
-            }
-            .overlay(alignment: .topTrailing) {
-                Text(game.baseRunners.isEmpty ? "垒上无人" : "垒上 \(game.baseRunners.count) 人")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(game.baseRunners.isEmpty ? .white : BMTheme.brandNavy)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(game.baseRunners.isEmpty ? .black.opacity(0.22) : .white.opacity(0.9))
-                    .clipShape(Capsule())
-                    .padding(10)
-            }
-        }
-        .frame(height: game.rulesSnapshot?.isSlowPitch == true ? max(fixedHeight ?? 330, 330) : fixedHeight)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("完整棒球场，\(game.fieldingTeam.shortName)守备，垒上\(game.baseRunners.count)人")
-        .accessibilityIdentifier("scorekeeping-field")
+                HomePlateShape().fill(.white).frame(width: 18, height: 18)
+                    .position(field.home).shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+            }.clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }.allowsHitTesting(false).accessibilityHidden(true)
     }
-
+    private func fieldGeometry(in size: CGSize) -> BaseballFieldLayout.Geometry { BaseballFieldLayout.geometry(in: size) }
     private func outfield(in size: CGSize) -> Path {
         let field = fieldGeometry(in: size)
         return Path { path in
@@ -280,6 +326,67 @@ struct BaseballDiamondView: View {
         .position(field.center)
     }
 
+}
+
+struct BaseballDiamondView: View {
+    let game: GameState
+    var fixedHeight: CGFloat? = 260
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            let activeIDs = Set(game.fieldingPlayerIDs)
+            ZStack {
+                BaseballFieldBackground(showsBases: false)
+
+                ForEach(game.rulesSnapshot?.positions ?? FieldPosition.allCases.filter { $0 != .free }) { position in
+                    if let player = position == .pitcher
+                        ? Optional(game.currentPitcher)
+                        : game.fieldingTeam.players.first(where: {
+                            activeIDs.contains($0.id) && $0.primaryPosition == position
+                        }) {
+                        fielderMarker(player: player, position: position)
+                            .position(fieldPosition(position, in: size))
+                    }
+                }
+
+                baseMarker(.first)
+                    .position(basePosition(.first, in: size))
+                baseMarker(.second)
+                    .position(basePosition(.second, in: size))
+                baseMarker(.third)
+                    .position(basePosition(.third, in: size))
+
+
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(alignment: .topLeading) {
+                Text("\(game.fieldingTeam.shortName)守备")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.22))
+                    .clipShape(Capsule())
+                    .padding(10)
+            }
+            .overlay(alignment: .topTrailing) {
+                Text(game.baseRunners.isEmpty ? "垒上无人" : "垒上 \(game.baseRunners.count) 人")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(game.baseRunners.isEmpty ? .white : BMTheme.brandNavy)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(game.baseRunners.isEmpty ? .black.opacity(0.22) : .white.opacity(0.9))
+                    .clipShape(Capsule())
+                    .padding(10)
+            }
+        }
+        .frame(height: game.rulesSnapshot?.isSlowPitch == true ? max(fixedHeight ?? 330, 330) : fixedHeight)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("完整棒球场，\(game.fieldingTeam.shortName)守备，垒上\(game.baseRunners.count)人")
+        .accessibilityIdentifier("scorekeeping-field")
+    }
+
     private func baseMarker(_ base: Base) -> some View {
         let runner = game.baseRunners[base]
         return ZStack {
@@ -331,82 +438,12 @@ struct BaseballDiamondView: View {
     }
 
     private func fieldPosition(_ position: FieldPosition, in size: CGSize) -> CGPoint {
-        let field = fieldGeometry(in: size)
-        let d = field.baseHalfDiagonal
-        switch position {
-        case .pitcher:
-            return field.center
-        case .catcher:
-            return CGPoint(x: field.home.x, y: min(size.height - 18, field.home.y + 30))
-        case .firstBase:
-            return CGPoint(x: min(size.width - 38, field.first.x + 66), y: field.first.y + 35)
-        case .secondBase:
-            return CGPoint(x: field.center.x + max(66, d * 1.1), y: field.center.y - d * 0.72)
-        case .thirdBase:
-            return CGPoint(x: max(38, field.third.x - 66), y: field.third.y + 35)
-        case .shortstop:
-            return CGPoint(x: field.center.x - max(66, d * 1.1), y: field.center.y - d * 0.72)
-        case .leftField:
-            return CGPoint(x: size.width * 0.19, y: max(51, field.home.y - field.outfieldRadius * 0.58))
-        case .centerField:
-            return CGPoint(x: size.width * 0.5, y: max(29, field.home.y - field.outfieldRadius * 0.65))
-        case .rightField:
-            return CGPoint(x: size.width * 0.81, y: max(51, field.home.y - field.outfieldRadius * 0.58))
-        case .free:
-            let centerFieldY = max(29, field.home.y - field.outfieldRadius * 0.65)
-            return CGPoint(x: size.width * 0.5, y: (centerFieldY + field.second.y) / 2)
-        }
+        BaseballFieldLayout.fielderPosition(position, in: size)
+    }
+    private func fieldGeometry(in size: CGSize) -> BaseballFieldLayout.Geometry {
+        BaseballFieldLayout.geometry(in: size)
     }
 
-    private func fieldGeometry(in size: CGSize) -> FieldGeometry {
-        let sideInset = min(24, max(14, size.width * 0.04))
-        let bottomReserve = CGFloat(48)
-        let home = CGPoint(x: size.width / 2, y: size.height - bottomReserve)
-
-        // A baseball field is a 90-degree circular sector: the two foul lines
-        // leave home plate at 45 degrees and the fence is an arc centered on home.
-        let rootTwo = CGFloat(2).squareRoot()
-        // The portrait card is taller than a square field diagram. A small,
-        // symmetric overscan keeps the true quarter-circle large and lets the
-        // card crop only its two far corners instead of leaving a blank header.
-        // Practice guidance and the reset toolbar shorten this card. Keep the
-        // center fielder's entire marker below the top edge at every height.
-        let widthRadius = (size.width / 2 - sideInset) * rootTwo * 1.30
-        let heightRadius = (home.y - 40) / 0.62
-        let outfieldRadius = max(1, min(widthRadius, heightRadius))
-        let fenceOffset = outfieldRadius / rootTwo
-        let leftFence = CGPoint(x: home.x - fenceOffset, y: home.y - fenceOffset)
-        let rightFence = CGPoint(x: home.x + fenceOffset, y: home.y - fenceOffset)
-
-        // Home, first, second and third are the four vertices of one exact square.
-        // Leave room between occupied bases and the pitcher’s name/number label.
-        let availableBaseDepth = max(132, home.y - max(34, size.height * 0.40))
-        let baseHalfDiagonal = min(size.width * 0.18, availableBaseDepth / 2, max(1, (home.y - 74) / 2))
-        let first = CGPoint(x: home.x + baseHalfDiagonal, y: home.y - baseHalfDiagonal)
-        let second = CGPoint(x: home.x, y: home.y - baseHalfDiagonal * 2)
-        let third = CGPoint(x: home.x - baseHalfDiagonal, y: home.y - baseHalfDiagonal)
-        let center = CGPoint(x: home.x, y: home.y - baseHalfDiagonal)
-
-        return FieldGeometry(
-            home: home,
-            first: first,
-            second: second,
-            third: third,
-            center: center,
-            leftFence: leftFence,
-            rightFence: rightFence,
-            outfieldRadius: outfieldRadius,
-            baseHalfDiagonal: baseHalfDiagonal
-        )
-    }
-
-    private func polarPoint(angle: CGFloat, radius: CGFloat, center: CGPoint) -> CGPoint {
-        let radians = angle * .pi / 180
-        return CGPoint(
-            x: center.x + cos(radians) * radius,
-            y: center.y + sin(radians) * radius
-        )
-    }
 }
 
 private struct HomePlateShape: Shape {

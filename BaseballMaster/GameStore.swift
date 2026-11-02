@@ -429,6 +429,21 @@ final class GameStore: ObservableObject {
         game.clockDisplayMode = gameClockDisplayMode == .elapsed ? .remaining : .elapsed
     }
 
+    private struct PostgamePromptKey: Hashable {
+        let gameID: UUID
+        let endedAt: Date?
+    }
+    private var presentedPostgamePrompts: Set<PostgamePromptKey> = []
+
+    /// Both scoring and results can observe the same saved finish, including after a navigation pop.
+    /// Claim the automatic prompt once per finish; manual upload review remains available in results.
+    func claimAutomaticPostgamePrompt(gameID: UUID) -> Bool {
+        guard let saved = activeStoredGame, saved.id == gameID, saved.sharedGameID == nil,
+              saved.status == .completed, saved.state.isFinal, !requiresDataRecovery,
+              storageErrorMessage == nil else { return false }
+        return presentedPostgamePrompts.insert(PostgamePromptKey(gameID: gameID, endedAt: saved.state.endedAt)).inserted
+    }
+
     func returnToGameHome() {
         selectedTab = 0
         gameNavigationID = UUID()
@@ -3058,7 +3073,12 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func setPostgameUploadTarget(gameID: UUID, teamID: UUID?) -> Bool {
+        let queued = sharedMatches.pendingPostgameUploads(sourceID: gameID)
         guard let index = games.firstIndex(where: { $0.id == gameID }), games[index].sharedGameID == nil else { return false }
+        guard queued.allSatisfy({ $0.teamID == teamID }) else {
+            actionErrorMessage = "已有确认过的终场上传等待核对，不能改投其他球队或标为仅本机。请先核对这次上传的结果。"
+            return false
+        }
         let previous = games[index]
         games[index].postgameUploadTeamID = teamID
         games[index].postgameTargetConfigured = true

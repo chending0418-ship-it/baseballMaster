@@ -811,12 +811,28 @@ struct LocalMatchShareView: View {
     @State private var reviewedTeamID: UUID?
     @State private var preparingReview = false
     private var current: StoredGame { store.games.first { $0.id == game.id } ?? game }
+    private var pendingUploads: [PendingMatchOperation] { store.sharedMatches.pendingPostgameUploads(sourceID: game.id) }
+    private func queuedTeamName(_ id: UUID) -> String {
+        store.teamSharing.teams.first { $0.id == id }?.name ?? "原确认的共享球队（权限待核对）"
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ShareDestinationPicker(teamID: $teamID).disabled(preparingReview || reviewed != nil)
+            ShareDestinationPicker(teamID: $teamID).disabled(preparingReview || reviewed != nil || !pendingUploads.isEmpty)
             Text("本机始终保留完整原件。文字直播使用原本机链路，上传球队档案不会改变直播链接。")
                 .font(.footnote).foregroundStyle(BMTheme.secondaryText)
-            if current.status != .completed || !current.state.isFinal {
+            if !pendingUploads.isEmpty {
+                ForEach(pendingUploads, id: \.id) { pending in
+                    Text("已确认的终场版本待上传到：" + queuedTeamName(pending.teamID))
+                        .font(.subheadline.bold()).accessibilityIdentifier("queued-postgame-target")
+                    Text("重试只发送此前确认的完整记录。本机的新更正需在核对该次上传后，另行确认上传。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                }
+                Text("这项已确认的上传仍在等待核对，当前不会取消或改投其他球队；本机原件始终保留。")
+                    .font(.footnote).accessibilityIdentifier("postgame-pending-explanation")
+                Button("重试已确认的上传") { Task { await store.sharedMatches.synchronize() } }
+                    .buttonStyle(SecondaryButtonStyle()).disabled(store.sharedMatches.busy)
+                    .accessibilityIdentifier("retry-confirmed-postgame-upload")
+            } else if current.status != .completed || !current.state.isFinal {
                 Text("比赛尚未结束；这里仅预设赛后目标，不会上传。结束后仍需确认是否上传。")
                     .font(.footnote)
             } else if let teamID {
@@ -843,7 +859,12 @@ struct LocalMatchShareView: View {
             }
             if let message = store.sharedMatches.message { Text(message).font(.footnote).foregroundStyle(BMTheme.orange) }
         }
-        .onAppear { teamID = current.postgameTargetConfigured == true ? current.postgameUploadTeamID : (current.postgameUploadTeamID ?? (store.teamSharing.teams.contains { $0.id == current.ourTeamID } ? current.ourTeamID : nil)) }
+        .onAppear {
+            teamID = pendingUploads.first?.teamID ?? (current.postgameTargetConfigured == true ? current.postgameUploadTeamID : (current.postgameUploadTeamID ?? (store.teamSharing.teams.contains { $0.id == current.ourTeamID } ? current.ourTeamID : nil)))
+        }
+        .onChange(of: pendingUploads.map(\.id)) { _ in
+            if let pending = pendingUploads.first { teamID = pending.teamID }
+        }
         .onChange(of: teamID) { target in _ = store.setPostgameUploadTarget(gameID: game.id, teamID: target) }
         .alert("是否上传这场已结束的比赛？", isPresented: Binding(get: { reviewed != nil }, set: { if !$0 { reviewed = nil } }), presenting: reviewed) { snapshot in
             Button("暂不上传，保留本机", role: .cancel) { reviewed = nil }

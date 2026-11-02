@@ -763,6 +763,7 @@ struct ScorekeepingView: View {
                   let saved = store.activeStoredGame, saved.id == id, saved.sharedGameID == nil,
                   saved.status == .completed, saved.state.isFinal, store.game.isFinal else { return }
             pendingPostgameGameID = nil
+            guard store.claimAutomaticPostgamePrompt(gameID: id) else { return }
             showPostgameUpload = true
         }
     }

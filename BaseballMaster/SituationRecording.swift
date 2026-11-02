@@ -75,10 +75,10 @@ struct SituationFieldView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                SituationFieldBackground()
+                BaseballFieldBackground()
                 if mode == .landing, let onPoint {
                     Color.clear.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded { value in
-                        onPoint(CGPoint(x: value.location.x / proxy.size.width, y: value.location.y / proxy.size.height))
+                        onPoint(BaseballFieldLayout.contactCoordinate(at: value.location, in: proxy.size))
                     }).accessibilityLabel("在球场点选击球落点").accessibilityIdentifier("contact-field")
                 }
                 Path { path in
@@ -132,64 +132,14 @@ struct SituationFieldView: View {
                         .overlay(Circle().stroke(.white, lineWidth: 3))
                         .frame(width: 17, height: 17)
                         .background(Circle().fill(Color.yellow.opacity(0.3)).padding(-6))
-                        .position(x: point.x * proxy.size.width, y: point.y * proxy.size.height)
+                        .position(BaseballFieldLayout.contactPoint(point, in: proxy.size))
                         .allowsHitTesting(false)
                 }
             }.clipShape(RoundedRectangle(cornerRadius: 15))
-        }.frame(height: 260)
+        }.frame(height: game.rulesSnapshot?.isSlowPitch == true ? 330 : 260)
     }
     private func scaled(_ position: FieldPosition, _ size: CGSize) -> CGPoint {
-        let point: CGPoint = switch position {
-        case .pitcher: CGPoint(x: 0.5, y: 0.70)
-        case .catcher: CGPoint(x: 0.5, y: 0.91)
-        case .firstBase: CGPoint(x: 0.84, y: 0.65)
-        case .secondBase: CGPoint(x: 0.65, y: 0.49)
-        case .thirdBase: CGPoint(x: 0.16, y: 0.65)
-        case .shortstop: CGPoint(x: 0.35, y: 0.49)
-        case .leftField: CGPoint(x: 0.22, y: 0.23)
-        case .centerField: CGPoint(x: 0.5, y: 0.12)
-        case .rightField: CGPoint(x: 0.78, y: 0.23)
-        case .free: CGPoint(x: 0.5, y: 0.31)
-        }
-        return CGPoint(x: point.x * size.width, y: point.y * size.height)
-    }
-}
-
-/// Exact 360 × 260 geometry and palette of the approved recording/demoReview V4.
-/// Player labels are supplied separately so they can show names and jersey numbers.
-private struct SituationFieldBackground: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let transform = CGAffineTransform(scaleX: proxy.size.width / 360, y: proxy.size.height / 260)
-            ZStack {
-                Color(red: 237/255, green: 227/255, blue: 206/255)
-                Path { p in
-                    p.move(to: CGPoint(x: -5, y: 72))
-                    p.addQuadCurve(to: CGPoint(x: 365, y: 72), control: CGPoint(x: 180, y: -80))
-                    p.addLine(to: CGPoint(x: 180, y: 251)); p.closeSubpath()
-                }.transform(transform).fill(Color(red: 213/255, green: 183/255, blue: 128/255))
-                Path { p in
-                    p.move(to: CGPoint(x: 3, y: 77))
-                    p.addQuadCurve(to: CGPoint(x: 357, y: 77), control: CGPoint(x: 180, y: -68))
-                    p.addLine(to: CGPoint(x: 180, y: 242)); p.closeSubpath()
-                }.transform(transform).fill(Color(red: 43/255, green: 117/255, blue: 88/255))
-                diamond([(180,130),(247,192),(180,251),(113,192)], transform)
-                    .fill(Color(red: 205/255, green: 178/255, blue: 127/255))
-                diamond([(180,148),(228,192),(180,236),(132,192)], transform)
-                    .fill(Color(red: 57/255, green: 124/255, blue: 96/255))
-                Path { p in
-                    p.move(to: CGPoint(x: 0, y: 65)); p.addLine(to: CGPoint(x: 180, y: 246)); p.addLine(to: CGPoint(x: 360, y: 65))
-                    p.move(to: CGPoint(x: 116, y: 192)); p.addLine(to: CGPoint(x: 180, y: 134)); p.addLine(to: CGPoint(x: 244, y: 192))
-                }.transform(transform).stroke(Color(red: 1, green: 245/255, blue: 217/255), lineWidth: 2)
-            }
-        }.allowsHitTesting(false).accessibilityHidden(true)
-    }
-    private func diamond(_ vertices: [(CGFloat, CGFloat)], _ transform: CGAffineTransform) -> Path {
-        Path { p in
-            p.move(to: CGPoint(x: vertices[0].0, y: vertices[0].1))
-            for point in vertices.dropFirst() { p.addLine(to: CGPoint(x: point.0, y: point.1)) }
-            p.closeSubpath()
-        }.applying(transform)
+        BaseballFieldLayout.fielderPosition(position, in: size)
     }
 }
 

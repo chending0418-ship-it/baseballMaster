@@ -117,7 +117,8 @@ struct BoxScoreView: View {
             defer { pendingFinishedGameID = nil }
             guard let id = pendingFinishedGameID, let saved = store.activeStoredGame,
                   saved.id == id, saved.sharedGameID == nil, saved.status == .completed,
-                  saved.state.isFinal, store.storageErrorMessage == nil else { return }
+                  saved.state.isFinal, store.storageErrorMessage == nil,
+                  store.claimAutomaticPostgamePrompt(gameID: id) else { return }
             showPostgameUpload = true
         }) {
             GameEndReasonSheet()
@@ -466,7 +467,11 @@ struct PostgameUploadPrompt: View {
                     }.padding()
                 }
             }.navigationTitle("赛后记录去向")
-                .toolbar { Button("暂不上传，保留本机") { dismiss() }.accessibilityIdentifier("keep-final-local") }
+                .toolbar {
+                    Button(store.activeStoredGame.map { !store.sharedMatches.pendingPostgameUploads(sourceID: $0.id).isEmpty } == true
+                           ? "完成" : "暂不上传，保留本机") { dismiss() }
+                        .accessibilityIdentifier("keep-final-local")
+                }
         }
     }
 }

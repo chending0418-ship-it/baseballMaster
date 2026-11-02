@@ -86,7 +86,12 @@ final class BaseballMasterUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5), app.debugDescription)
         app.terminate(); app.launch()
         app.buttons["import-local-backup"].tap()
-        XCTAssertTrue(app.navigationBars["Browse"].waitForExistence(timeout: 3) || app.buttons["Browse"].exists || app.buttons["浏览"].exists || app.buttons["Cancel"].exists || app.buttons["取消"].exists)
+        let picker = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.navigationBars["Browse"].exists || app.buttons["Browse"].exists || app.buttons["浏览"].exists
+                || app.buttons["Cancel"].exists || app.buttons["取消"].exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [picker], timeout: 20), .completed, app.debugDescription)
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "本机备份系统文件选择器"; capture.lifetime = .keepAlways; add(capture)
     }
 
     func testGamePosterCanEditVenueAndShareImage() throws {
@@ -1115,9 +1120,11 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
         app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["return-final-game-home"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["return-game-home"].isHittable)
-        app.buttons["return-game-home"].tap()
-        XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5))
+        let returnHome = app.buttons["return-game-home"]
+        XCTAssertFalse(app.buttons["keep-final-local"].exists, "Returning from results must not present a second postgame prompt")
+        XCTAssertTrue(returnHome.isHittable, app.debugDescription)
+        returnHome.tap()
+        XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5), app.debugDescription)
         app.tabBars.buttons["统计"].tap()
         XCTAssertTrue(app.navigationBars["统计"].waitForExistence(timeout: 5))
     }
@@ -1166,10 +1173,11 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
         let playBall = app.buttons["start-game-clock"]
         if playBall.exists {
-            revealStatisticsControl(playBall, in: app)
-            XCTAssertTrue(playBall.isHittable)
-            playBall.tap()
-            XCTAssertTrue(app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 5))
+            if !app.frame.contains(playBall.frame) { revealStatisticsControl(playBall, in: app) }
+            // Verify the actual tap and confirmation for this visible compact-header control.
+            XCTAssertTrue(app.frame.intersects(playBall.frame), app.debugDescription)
+            playBall.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            XCTAssertTrue(app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 5), app.debugDescription)
             app.alerts.buttons["确认开赛"].tap()
         }
     }
@@ -2284,9 +2292,23 @@ extension BaseballMasterUITests {
             let destination = app.buttons["share-destination-picker"]; XCTAssertTrue(destination.waitForExistence(timeout: 5)); destination.tap()
             app.buttons["海浪棒球队 · 共享球队"].tap()
             let share = app.buttons["share-current-local-game"]; revealStatisticsControl(share, in: app); share.tap()
-            captureHistory(app, name: "3.0.1-result-import-confirmation")
-            app.alerts.buttons["确认共享"].tap()
-            XCTAssertTrue(app.buttons["查看已共享的比赛"].waitForExistence(timeout: 10)); app.buttons["查看已共享的比赛"].tap()
+            let confirmation = app.alerts["是否上传这场已结束的比赛？"]
+            XCTAssertTrue(confirmation.waitForExistence(timeout: 8))
+            XCTAssertTrue(confirmation.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "本机原件永远保留")).firstMatch.exists)
+            let beforeConfirmation = try await sharingAPI(other, "/teams/\(teamID)/games", method: "GET")
+            XCTAssertEqual((beforeConfirmation["games"] as? [[String: Any]])?.count, 0, "Reviewing a local final must not upload it")
+            captureHistory(app, name: "3.1.1-result-upload-confirmation")
+            confirmation.buttons["暂不上传，保留本机"].tap()
+            let afterCancel = try await sharingAPI(other, "/teams/\(teamID)/games", method: "GET")
+            XCTAssertEqual((afterCancel["games"] as? [[String: Any]])?.count, 0, "Cancelling confirmation must keep the complete match local")
+            share.tap()
+            XCTAssertTrue(confirmation.waitForExistence(timeout: 8))
+            confirmation.buttons["确认上传到球队"].tap()
+            let uploaded = app.staticTexts["postgame-upload-status"]
+            let acknowledged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "完整记录已上传，本机原件保留"), object: uploaded)
+            await fulfillment(of: [acknowledged], timeout: 12)
+            let archive = app.buttons["查看球队已保存的档案"]
+            revealStatisticsControl(archive, in: app); XCTAssertTrue(archive.waitForExistence(timeout: 5)); archive.tap()
         } else {
         revealStatisticsControl(app.buttons["open-shared-matches"], in: app); app.buttons["open-shared-matches"].tap(); XCTAssertTrue(app.buttons["publish-local-match"].waitForExistence(timeout: 5)); app.buttons["publish-local-match"].tap()
         app.buttons["select-match-to-share"].firstMatch.tap(); app.buttons["确认共享"].firstMatch.tap()
@@ -2724,7 +2746,7 @@ extension BaseballMasterUITests {
 }
 
 extension BaseballMasterUITests {
-    @MainActor func testV301FixedInviteMultipleMembersAndShareFutureFromSetup() async throws {
+    @MainActor func testV311FixedInviteMultipleMembersAndSharedRosterScheduleStaysLocal() async throws {
         let app = launchDeviceSecurityApp()
         app.buttons["create-shared-team"].tap()
         app.textFields["shared-team-name"].tap(); app.textFields["shared-team-name"].typeText("301共享队")
@@ -2751,7 +2773,10 @@ extension BaseballMasterUITests {
         let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", initial), object: link)
         await fulfillment(of: [changed], timeout: 8)
         app.buttons["完成"].firstMatch.tap()
-        let create = app.buttons["shared-roster-new-game"]; revealStatisticsControl(create, in: app); create.tap()
+        XCTAssertFalse(app.buttons["shared-roster-new-game"].exists, "Shared-team pages only view and manage archives")
+        app.tabBars.buttons["比赛"].tap()
+        let create = app.buttons["start-new-game"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5)); create.tap()
         XCTAssertTrue(app.navigationBars["新比赛"].waitForExistence(timeout: 5))
         let ownChoice = app.buttons["new-game-own-team"]
         XCTAssertTrue(ownChoice.exists); ownChoice.tap()
@@ -2760,16 +2785,22 @@ extension BaseballMasterUITests {
         app.buttons["301共享队 · 共享球队 · 0 人"].tap()
         let future = app.switches["安排未来比赛"]; revealStatisticsControl(future, in: app)
         future.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        let destination = app.buttons["share-destination-picker"]; revealStatisticsControl(destination, in: app); destination.tap()
-        app.buttons["301共享队 · 共享球队"].tap()
-        captureHistory(app, name: "3.0.1-share-future-setup")
+        let destination = app.buttons["share-destination-picker"]; revealStatisticsControl(destination, in: app)
+        XCTAssertTrue(destination.label.contains("301共享队"), "Selecting a shared roster only presets its post-game upload target")
+        let beforeSave = try await sharingAPI(reader, "/teams/\(teamID)/games?cursor=0", method: "GET")
+        XCTAssertEqual((beforeSave["games"] as? [[String: Any]])?.count, 0, "Choosing a shared roster must not create a cloud match")
+        captureHistory(app, name: "3.1.1-shared-roster-postgame-target")
         let save = app.buttons["continue-to-lineup"]; revealStatisticsControl(save, in: app); save.tap()
         app.alerts.buttons["保存安排"].tap()
         XCTAssertTrue(app.alerts["比赛安排已保存"].waitForExistence(timeout: 12))
         let response = try await sharingAPI(reader, "/teams/\(teamID)/games?cursor=0", method: "GET")
         let games = try XCTUnwrap(response["games"] as? [[String: Any]])
-        XCTAssertEqual(games.count, 1)
-        captureHistory(app, name: "3.0.1-future-shared-and-local-saved")
+        XCTAssertEqual(games.count, 0, "Saving a future match is local only; uploading requires a new confirmation after completion")
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "比赛结束后仍需确认是否上传")).firstMatch.exists)
+        captureHistory(app, name: "3.1.1-future-local-only-saved")
+        app.alerts.buttons["返回比赛首页"].tap()
+        let localSchedule = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "scheduled-game-", "301共享队")).firstMatch
+        XCTAssertTrue(localSchedule.waitForExistence(timeout: 5), "The complete schedule must remain available on this device")
     }
 }
 
@@ -2779,9 +2810,16 @@ extension BaseballMasterUITests {
         let (app, reader, teamID, gameID) = try await createSharedMatchUI(final: true, shareFromResult: true)
         let delete = app.buttons["删除共享比赛"]; revealStatisticsControl(delete, in: app); delete.tap()
         app.alerts.buttons["确认删除共享比赛"].tap()
-        let remote = try await sharingAPI(reader, "/teams/\(teamID)/games/\(gameID)", method: "GET")
+        var remote = try await sharingAPI(reader, "/teams/\(teamID)/games/\(gameID)", method: "GET")
+        for _ in 0..<20 where remote["deleted"] as? Bool != true {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            remote = try await sharingAPI(reader, "/teams/\(teamID)/games/\(gameID)", method: "GET")
+        }
         XCTAssertEqual(remote["deleted"] as? Bool, true)
-        app.tabBars.buttons["比赛"].tap()
+        app.navigationBars["共享比赛"].buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5))
         let original = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "completed-game-")).firstMatch
         XCTAssertTrue(original.waitForExistence(timeout: 5)); revealStatisticsControl(original, in: app); original.tap()
         XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
@@ -3072,10 +3110,13 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.staticTexts["比赛已结束，完整记录已保存在本机。"].exists)
         let keep = app.buttons["keep-final-local"]
         XCTAssertTrue(keep.waitForExistence(timeout: 5)); keep.tap()
+        XCTAssertTrue(keep.waitForNonExistence(timeout: 5), "Wait for the postgame sheet to finish dismissing before navigating")
         let home = app.buttons["return-final-game-home"]
         XCTAssertTrue(home.waitForExistence(timeout: 5))
-        app.buttons["open-box-score"].tap()
-        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        let result = app.buttons["open-box-score"]
+        XCTAssertTrue(app.frame.intersects(result.frame), app.debugDescription)
+        result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5), app.debugDescription)
         app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
         XCTAssertFalse(app.navigationBars["赛后记录去向"].exists, "Viewing a saved result must not reopen the automatic prompt")
         home.tap()

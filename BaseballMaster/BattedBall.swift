@@ -158,30 +158,11 @@ struct BattedBallField: View {
         GeometryReader { proxy in
             let size = proxy.size
             ZStack {
-                RoundedRectangle(cornerRadius: 16).fill(BMTheme.greenSoft)
-                Path { p in
-                    let home = point(CGPoint(x: 0.5, y: 0.90), size)
-                    p.move(to: home)
-                    p.addLine(to: point(CGPoint(x: 0.08, y: 0.38), size))
-                    p.addQuadCurve(to: point(CGPoint(x: 0.92, y: 0.38), size), control: point(CGPoint(x: 0.5, y: -0.13), size))
-                    p.closeSubpath()
-                }.fill(BMTheme.green.opacity(0.18))
-                Path { p in
-                    p.move(to: point(CGPoint(x: 0.5, y: 0.90), size))
-                    p.addLine(to: point(CGPoint(x: 0.25, y: 0.63), size))
-                    p.addLine(to: point(CGPoint(x: 0.5, y: 0.36), size))
-                    p.addLine(to: point(CGPoint(x: 0.75, y: 0.63), size))
-                    p.closeSubpath()
-                }.stroke(BMTheme.orange.opacity(0.65), lineWidth: 2)
-                Path { p in
-                    p.move(to: point(CGPoint(x: 0.02, y: 0.30), size))
-                    p.addLine(to: point(CGPoint(x: 0.5, y: 0.90), size))
-                    p.addLine(to: point(CGPoint(x: 0.98, y: 0.30), size))
-                }.stroke(BMTheme.green, lineWidth: 1.5)
+                BaseballFieldBackground()
                 // This background alone handles input, so reading a mark never moves a draft point.
                 if let onPoint {
                     Color.clear.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded { value in
-                        onPoint(CGPoint(x: value.location.x / size.width, y: value.location.y / size.height))
+                        onPoint(BaseballFieldLayout.contactCoordinate(at: value.location, in: size))
                     }).accessibilityLabel("击球去向球场，点选大致位置；也可使用下方区域按钮")
                         .accessibilityIdentifier("contact-field")
                 }
@@ -201,15 +182,21 @@ struct BattedBallField: View {
             }
         }.frame(height: 265)
     }
-    private func point(_ value: CGPoint, _ size: CGSize) -> CGPoint { CGPoint(x: value.x * size.width, y: value.y * size.height) }
+    private func point(_ value: CGPoint, _ size: CGSize) -> CGPoint { BaseballFieldLayout.contactPoint(value, in: size) }
     private func trajectory(_ value: CGPoint, size: CGSize, color: Color) -> some View {
-        Path { p in p.move(to: point(CGPoint(x: 0.5, y: 0.90), size)); p.addLine(to: point(value, size)) }
-            .stroke(color.opacity(0.35), style: StrokeStyle(lineWidth: 1.3, dash: [4, 3])).allowsHitTesting(false)
+        let path = Path { p in
+            p.move(to: BaseballFieldLayout.geometry(in: size).home)
+            p.addLine(to: point(value, size))
+        }
+        return ZStack {
+            path.stroke(.white.opacity(0.65), style: StrokeStyle(lineWidth: 2.8, dash: [4, 3]))
+            path.stroke(color.opacity(0.9), style: StrokeStyle(lineWidth: 1.3, dash: [4, 3]))
+        }.allowsHitTesting(false)
     }
     private func marker(_ observation: BattedBallObservation, color: Color) -> some View {
         Text(observation.type.symbol).font(.caption2.bold()).foregroundStyle(color)
             .frame(width: observation.precision == .region ? 36 : 23, height: observation.precision == .region ? 36 : 23)
-            .background(color.opacity(observation.precision == .region ? 0.12 : 0.22), in: Circle())
+            .background(.white.opacity(0.95), in: Circle())
             .overlay(Circle().stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: observation.precision == .region ? [3, 2] : [])))
     }
 }

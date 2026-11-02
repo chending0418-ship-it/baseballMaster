@@ -9,6 +9,65 @@ import Security
 private struct LiveReadEnvelope: Decodable { var snapshot: LiveSnapshot }
 
 extension GameStoreTests {
+    func testV311UnifiedFieldMapsLegacyBaseAnchorsToScorekeepingDiamond() {
+        for size in [CGSize(width: 360, height: 260), CGSize(width: 340, height: 265), CGSize(width: 360, height: 330)] {
+            let field = BaseballFieldLayout.geometry(in: size)
+            let anchors: [(CGPoint, CGPoint)] = [
+                (CGPoint(x: 0.5, y: 0.90), field.home),
+                (CGPoint(x: 0.75, y: 0.63), field.first),
+                (CGPoint(x: 0.5, y: 0.36), field.second),
+                (CGPoint(x: 0.25, y: 0.63), field.third)
+            ]
+            for (legacy, expected) in anchors {
+                let rendered = BaseballFieldLayout.contactPoint(legacy, in: size)
+                XCTAssertEqual(rendered.x, expected.x, accuracy: 0.000001)
+                XCTAssertEqual(rendered.y, expected.y, accuracy: 0.000001)
+            }
+            // Home scoring, Pro defense, and all contact views share this exact square.
+            XCTAssertEqual(field.first.x - field.home.x, field.home.y - field.first.y, accuracy: 0.000001)
+            XCTAssertEqual(hypot(field.third.x - field.second.x, field.third.y - field.second.y), hypot(field.first.x - field.second.x, field.first.y - field.second.y), accuracy: 0.000001)
+        }
+    }
+
+    func testV311UnifiedFieldContactInputAndHistoricalLocationsRoundTripWithoutMutation() throws {
+        for size in [CGSize(width: 320, height: 260), CGSize(width: 402, height: 265), CGSize(width: 360, height: 330)] {
+            for x in stride(from: 0.0, through: 1.0, by: 0.1) {
+                for y in stride(from: 0.0, through: 1.0, by: 0.1) {
+                    let legacy = CGPoint(x: x, y: y)
+                    let rendered = BaseballFieldLayout.contactPoint(legacy, in: size)
+                    XCTAssertTrue((0...size.width).contains(rendered.x))
+                    XCTAssertTrue((0...size.height).contains(rendered.y))
+                    let restored = BaseballFieldLayout.contactCoordinate(at: rendered, in: size)
+                    XCTAssertEqual(restored.x, legacy.x, accuracy: 0.000001)
+                    XCTAssertEqual(restored.y, legacy.y, accuracy: 0.000001)
+                }
+            }
+        }
+        let size = CGSize(width: 360, height: 260)
+        let outsideStart = BaseballFieldLayout.contactCoordinate(at: CGPoint(x: -20, y: -10), in: size)
+        let outsideEnd = BaseballFieldLayout.contactCoordinate(at: CGPoint(x: 380, y: 280), in: size)
+        XCTAssertEqual(outsideStart, .zero)
+        XCTAssertEqual(outsideEnd, CGPoint(x: 1, y: 1))
+        var original = BattedBallObservation(type: .line)
+        original.selectPoint(CGPoint(x: 0.23, y: 0.31))
+        let before = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(BattedBallObservation.self, from: before)
+        _ = BaseballFieldLayout.contactPoint(try XCTUnwrap(decoded.illustration), in: CGSize(width: 360, height: 260))
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.precision, .point)
+        for region in BattedBallRegion.allCases {
+            var approximate = BattedBallObservation(type: .fly)
+            approximate.selectRegion(region)
+            let rendered = BaseballFieldLayout.contactPoint(region.illustration, in: CGSize(width: 360, height: 260))
+            let restored = BaseballFieldLayout.contactCoordinate(at: rendered, in: CGSize(width: 360, height: 260))
+            XCTAssertEqual(restored.x, region.illustration.x, accuracy: 0.000001)
+            XCTAssertEqual(restored.y, region.illustration.y, accuracy: 0.000001)
+            XCTAssertEqual(approximate.precision, .region)
+            XCTAssertNil(approximate.x)
+            XCTAssertNil(approximate.y)
+        }
+    }
+
     func testV21AppearanceNumbersAreSeparateForEachTeamAndContinueAcrossInnings() throws {
         let store = freshStore()
         for _ in 0..<18 { XCTAssertTrue(store.applyPlay(.groundOut)) }
@@ -7516,6 +7575,27 @@ extension GameStoreTests {
 }
 
 extension GameStoreTests {
+    func testV311AutomaticPostgamePromptIsSharedAcrossScreensAndTargetEdits() throws {
+        let store = freshStore()
+        let id = try XCTUnwrap(store.activeStoredGame).id
+        XCTAssertFalse(store.claimAutomaticPostgamePrompt(gameID: id), "An unfinished record cannot consume the prompt")
+        store.recordPitch(.ball)
+        store.finishGame(at: Date(timeIntervalSince1970: 1000))
+        XCTAssertFalse(store.claimAutomaticPostgamePrompt(gameID: UUID()))
+        store.storageErrorMessage = "save failed"
+        XCTAssertFalse(store.claimAutomaticPostgamePrompt(gameID: id))
+        store.storageErrorMessage = nil
+        XCTAssertTrue(store.claimAutomaticPostgamePrompt(gameID: id))
+        XCTAssertTrue(store.setPostgameUploadTarget(gameID: id, teamID: nil))
+        XCTAssertFalse(store.claimAutomaticPostgamePrompt(gameID: id), "Returning to another observer must not display a second sheet")
+        XCTAssertTrue(store.reopenGame())
+        XCTAssertFalse(store.claimAutomaticPostgamePrompt(gameID: id))
+        store.finishGame(at: Date(timeIntervalSince1970: 2000))
+        XCTAssertTrue(store.claimAutomaticPostgamePrompt(gameID: id), "A newly finished reopened match needs its own confirmation")
+        XCTAssertFalse(store.claimAutomaticPostgamePrompt(gameID: id))
+        XCTAssertTrue(store.sharedMatches.state.pending.isEmpty, "Showing the prompt never authorizes uploading")
+    }
+
     func testV311LocalTargetNeverUploadsAndSurvivesBackup() async throws {
         let store = freshStore(), client = try matchClient()
         let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk)
@@ -7842,5 +7922,167 @@ extension GameStoreTests {
         XCTAssertEqual(store.activeStoredGame, original)
         let operations = await proxy.operations
         XCTAssertTrue(operations.isEmpty, "Completing recovery review does not grant upload consent")
+    }
+}
+
+extension GameStoreTests {
+    func testV311ProSacrificeBuntAndFlyKeepOfficialBattingAndUndo() throws {
+        for outcome in [PlayOutcome.sacrificeBunt, .sacrificeFly] {
+            var rules = GameRules(); rules.recordingMethod = .situation
+            let store = v111Store(rules: rules)
+            let setupOutcome: PlayOutcome = outcome == .sacrificeBunt ? .single : .triple
+            XCTAssertTrue(store.applyPlay(setupOutcome, observation: v4Observation(.line, [.centerField])), store.actionErrorMessage ?? "")
+            let origin: Base = outcome == .sacrificeBunt ? .first : .third
+            let runner = try XCTUnwrap(store.game.baseRunners[origin]), batter = store.currentBatter
+            let before = store.game
+            let beforeBatter = before.batting[batter.id] ?? BattingLine()
+            let observation = outcome == .sacrificeBunt
+                ? v4Observation(.bunt, [.pitcher, .firstBase])
+                : v4Observation(.fly, [.centerField])
+            let decisions = store.suggestedRunnerDecisions(for: outcome)
+            let defense = situationDefensivePlay(outcome: outcome, observation: observation, decisions: decisions)
+            XCTAssertTrue(store.applyPlay(outcome, defensivePlay: defense, decisions: decisions, observation: observation), store.actionErrorMessage ?? "")
+            let after = store.game
+            let line = try XCTUnwrap(after.batting[batter.id])
+            XCTAssertEqual(line.plateAppearances, beforeBatter.plateAppearances + 1)
+            XCTAssertEqual(line.atBats, beforeBatter.atBats, "A valid sacrifice is a plate appearance but not an at-bat")
+            XCTAssertEqual(line.sacrifices, beforeBatter.sacrifices + 1)
+            XCTAssertEqual(line.runsBattedIn, beforeBatter.runsBattedIn + (outcome == .sacrificeFly ? 1 : 0))
+            XCTAssertEqual(after.outs, before.outs + 1)
+            XCTAssertEqual(after.awayScore, before.awayScore + (outcome == .sacrificeFly ? 1 : 0))
+            XCTAssertEqual(after.scoringEvents?.filter { $0.category == .battedBall }.count,
+                           (before.scoringEvents?.filter { $0.category == .battedBall }.count ?? 0) + 1)
+            if outcome == .sacrificeBunt {
+                XCTAssertEqual(after.baseRunners[.second]?.id, runner.id)
+                XCTAssertEqual(after.batting[runner.id]?.runs, before.batting[runner.id]?.runs)
+            } else {
+                XCTAssertTrue(after.baseRunners.isEmpty)
+                XCTAssertEqual(after.batting[runner.id]?.runs, (before.batting[runner.id]?.runs ?? 0) + 1)
+            }
+            store.undo()
+            XCTAssertEqual(store.game.outs, before.outs)
+            XCTAssertEqual(store.game.baseRunners, before.baseRunners)
+            XCTAssertEqual(store.game.awayScore, before.awayScore)
+            XCTAssertEqual(store.game.batting[batter.id] ?? BattingLine(), beforeBatter)
+            store.redo()
+            XCTAssertEqual(store.game.batting[batter.id], after.batting[batter.id])
+            XCTAssertEqual(store.game.outs, after.outs)
+            XCTAssertEqual(store.game.awayScore, after.awayScore)
+        }
+    }
+
+    func testV311ProGrandSlamScoresEachRunnerOnceAndUndoRedoPreservesOnePlay() throws {
+        var rules = GameRules(); rules.recordingMethod = .situation
+        let store = v111Store(rules: rules)
+        for _ in 0..<3 { for _ in 0..<4 { store.recordPitch(.ball) } }
+        XCTAssertEqual(store.game.baseRunners.count, 3)
+        let runners = Array(store.game.baseRunners.values), batter = store.currentBatter, before = store.game
+        let beforeBatter = before.batting[batter.id] ?? BattingLine()
+        let observation = v4Observation(.fly, [], status: .noFielding)
+        let decisions = store.suggestedRunnerDecisions(for: .homeRun)
+        XCTAssertEqual(decisions.count, 4)
+        XCTAssertTrue(decisions.allSatisfy { $0.destination == .score })
+        XCTAssertTrue(store.applyPlay(.homeRun,
+            defensivePlay: situationDefensivePlay(outcome: .homeRun, observation: observation, decisions: decisions),
+            decisions: decisions, observation: observation), store.actionErrorMessage ?? "")
+        let after = store.game
+        XCTAssertTrue(after.baseRunners.isEmpty)
+        XCTAssertEqual(after.awayScore, before.awayScore + 4)
+        XCTAssertEqual(after.outs, before.outs)
+        let line = try XCTUnwrap(after.batting[batter.id])
+        XCTAssertEqual(line.plateAppearances, beforeBatter.plateAppearances + 1)
+        XCTAssertEqual(line.atBats, beforeBatter.atBats + 1)
+        XCTAssertEqual(line.hits, beforeBatter.hits + 1)
+        XCTAssertEqual(line.homeRuns, beforeBatter.homeRuns + 1)
+        XCTAssertEqual(line.runsBattedIn, beforeBatter.runsBattedIn + 4)
+        for player in runners + [batter] {
+            XCTAssertEqual(after.batting[player.id]?.runs, (before.batting[player.id]?.runs ?? 0) + 1)
+        }
+        let beforePitches = before.pitching.values.reduce(0) { $0 + $1.pitches }
+        XCTAssertEqual(after.pitching.values.reduce(0) { $0 + $1.pitches }, beforePitches + 1)
+        let battedCount = (before.scoringEvents?.filter { $0.category == .battedBall }.count ?? 0) + 1
+        XCTAssertEqual(after.scoringEvents?.filter { $0.category == .battedBall }.count, battedCount)
+        store.undo()
+        XCTAssertEqual(store.game.awayScore, before.awayScore)
+        XCTAssertEqual(store.game.baseRunners, before.baseRunners)
+        XCTAssertEqual(store.game.pitching.values.reduce(0) { $0 + $1.pitches }, beforePitches)
+        store.redo()
+        XCTAssertEqual(store.game.awayScore, before.awayScore + 4)
+        XCTAssertEqual(store.game.batting[batter.id], line)
+        XCTAssertEqual(store.game.scoringEvents?.filter { $0.category == .battedBall }.count, battedCount)
+        XCTAssertEqual(store.game.pitching.values.reduce(0) { $0 + $1.pitches }, beforePitches + 1)
+    }
+}
+
+extension GameStoreTests {
+    func testV311NewConfirmationCannotReplaceAnOlderPendingFinalSnapshot() async throws {
+        let store = freshStore(), client = try matchClient()
+        _ = try await client.enroll(deviceName: "冻结上传版本")
+        let team = try await client.createTeam(name: "确认版本隔离", nickname: "记录员", operationID: UUID())
+        let proxy = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage()
+        let coordinator = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = coordinator
+        store.finishGame()
+        let first = try XCTUnwrap(store.activeStoredGame)
+        await proxy.network(offline: true)
+        await coordinator.publish(first, teamID: team.teamID)
+        let queued = try XCTUnwrap(coordinator.pendingPostgameUploads(sourceID: first.id).first)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let body = try encoder.encode(queued.body)
+        store.undo(); store.recordPitch(.ball); store.finishGame()
+        let corrected = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertNotEqual(corrected.state, first.state)
+        XCTAssertNotEqual(corrected.revision, first.revision)
+        await proxy.network() // If an incorrect retry is sent now, it will really reach the isolated service.
+        let before = await proxy.operations.count
+        await coordinator.publish(corrected, teamID: team.teamID)
+        XCTAssertNotNil(coordinator.message)
+        let after = await proxy.operations.count
+        XCTAssertEqual(after, before, "Confirming a different snapshot must not send the previous body under that confirmation")
+        let retained = try XCTUnwrap(coordinator.pendingPostgameUploads(sourceID: first.id).first)
+        XCTAssertEqual(retained.id, queued.id)
+        XCTAssertEqual(try encoder.encode(retained.body), body)
+        XCTAssertEqual(store.activeStoredGame, corrected)
+        // Explicitly retry the earlier confirmed request, then separately confirm the new version.
+        await coordinator.synchronize()
+        XCTAssertTrue(coordinator.pendingPostgameUploads(sourceID: first.id).isEmpty, coordinator.message ?? "")
+        let uploadedFirst = try XCTUnwrap(coordinator.publishedMatch(sourceID: first.id, teamID: team.teamID))
+        XCTAssertEqual(uploadedFirst.payload?.state, first.state)
+        XCTAssertEqual(store.activeStoredGame, corrected)
+        await coordinator.publish(corrected, teamID: team.teamID, reviewedServerRevision: uploadedFirst.serverRevision)
+        XCTAssertNil(coordinator.message)
+        let uploadedLatest = try XCTUnwrap(coordinator.publishedMatch(sourceID: first.id, teamID: team.teamID))
+        XCTAssertEqual(uploadedLatest.id, uploadedFirst.id)
+        XCTAssertEqual(uploadedLatest.payload?.state, corrected.state)
+        XCTAssertEqual(store.activeStoredGame, corrected)
+    }
+
+    func testV311PendingConfirmedUploadLocksItsActualTargetUntilResultIsKnown() async throws {
+        let store = freshStore(), client = try matchClient()
+        let proxy = V30UnreliableMatchService(client), coordinator = SharedMatchCoordinator(store: store, service: proxy, storage: V30MatchMemoryStorage())
+        store.sharedMatches = coordinator
+        let id = try XCTUnwrap(store.activeStoredGame).id, target = UUID()
+        XCTAssertTrue(store.setPostgameUploadTarget(gameID: id, teamID: target))
+        store.finishGame()
+        let confirmed = try XCTUnwrap(store.activeStoredGame)
+        await proxy.network(offline: true)
+        await coordinator.publish(confirmed, teamID: target)
+        let queued = try XCTUnwrap(coordinator.pendingPostgameUploads(sourceID: id).first)
+        XCTAssertFalse(store.setPostgameUploadTarget(gameID: id, teamID: nil), "An unknown upload outcome must not be relabelled as local-only")
+        XCTAssertFalse(store.setPostgameUploadTarget(gameID: id, teamID: UUID()), "An already confirmed request cannot be silently retargeted")
+        XCTAssertEqual(store.activeStoredGame?.postgameUploadTeamID, target)
+        XCTAssertTrue(store.activeStoredGame?.postgameTargetConfigured == true)
+        XCTAssertEqual(coordinator.pendingPostgameUploads(sourceID: id).first?.id, queued.id)
+        XCTAssertEqual(coordinator.pendingPostgameUploads(sourceID: id).first?.teamID, target)
+        XCTAssertTrue(store.setPostgameUploadTarget(gameID: id, teamID: target), "Reapplying the same displayed target is harmless")
+        XCTAssertEqual(store.activeStoredGame, confirmed)
+        await proxy.network()
+        let before = await proxy.operations.count
+        await coordinator.publish(confirmed, teamID: UUID())
+        let after = await proxy.operations.count
+        XCTAssertEqual(after, before, "Calling the upload API directly cannot bypass the locked target")
+        XCTAssertEqual(coordinator.pendingPostgameUploads(sourceID: id).map(\.id), [queued.id])
+        XCTAssertEqual(coordinator.pendingPostgameUploads(sourceID: id).first?.teamID, target)
+        XCTAssertFalse(coordinator.isShared(id))
+        XCTAssertTrue(coordinator.canEdit(id), "The queued team upload still must not lock the local original")
     }
 }

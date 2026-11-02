@@ -282,6 +282,10 @@ struct SharedMatchFile: SharedMatchStorage {
         return PendingMatchOperation(id: id, localID: localID, teamID: teamID, gameID: gameID, path: path, method: method,
             body: .object(body), kind: kind, sentLocalRevision: revision, token: token)
     }
+    func pendingPostgameUploads(sourceID: UUID) -> [PendingMatchOperation] {
+        state.pending.filter { $0.localID == sourceID && $0.kind.hasPrefix("postgame") }
+    }
+
     func postgameStatus(_ game: StoredGame, teamID: UUID) -> String {
         if state.pending.contains(where: { $0.localID == game.id && $0.teamID == teamID && $0.kind.hasPrefix("postgame") }) {
             return busy ? "本机已保存，正在上传到球队" : "本机已保存，待上传到球队"
@@ -302,8 +306,26 @@ struct SharedMatchFile: SharedMatchStorage {
             message = "请先结束并保存本机比赛，再确认上传。记录若已更改，请重新核对。"; return
         }
         guard !busy else { message = "正在处理其他请求，本机记录已保留，请稍后确认上传。"; return }
-        if state.pending.contains(where: { $0.localID == game.id && $0.teamID == teamID && $0.kind.hasPrefix("postgame") }) {
-            await synchronize(); return
+        let uploads = pendingPostgameUploads(sourceID: game.id)
+        guard uploads.allSatisfy({ $0.teamID == teamID }) else {
+            message = "这场比赛已有确认过的上传等待核对，不能在结果未明时改投另一支球队。原请求和本机原件均已保留。"
+            return
+        }
+        if let pending = uploads.first {
+            do {
+                guard case .object(let queuedFields) = pending.body, let queuedPayload = queuedFields["payload"],
+                      let proposedPayload = try documentFields(game)["payload"] else {
+                    throw TeamServiceError.message("原上传快照无法读取，已保留请求和本机记录，请先核对。")
+                }
+                let queued = try JSONDecoder().decode(StoredGame.self, from: JSONEncoder().encode(queuedPayload))
+                let proposed = try JSONDecoder().decode(StoredGame.self, from: JSONEncoder().encode(proposedPayload))
+                guard queued == proposed else {
+                    message = "此前确认的终场版本仍待上传。本机已有新修改，请先核对旧上传结果，再重新确认上传最新版；原请求和本机原件均已保留。"
+                    return
+                }
+                await synchronize()
+            } catch { report(error) }
+            return
         }
         let key = "\(teamID):\(game.id)"
         if state.acknowledgedRevisions["postgame:" + key] == (game.revision ?? 0) {
