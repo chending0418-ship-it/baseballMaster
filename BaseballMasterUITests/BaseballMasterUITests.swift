@@ -266,6 +266,13 @@ final class BaseballMasterUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["没有符合条件的球员"].exists)
     }
 
+    private func keepFinishedGameLocal(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let keep = app.buttons["keep-final-local"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 5), "Saved formal matches must ask whether to upload", file: file, line: line)
+        keep.tap()
+        XCTAssertTrue(keep.waitForNonExistence(timeout: 5), file: file, line: line)
+    }
+
     private func revealStatisticsControl(_ element: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<15 {
             if element.exists && element.isHittable && element.frame.minY > 100
@@ -633,6 +640,7 @@ final class BaseballMasterUITests: XCTestCase {
         app.buttons["确认保存"].tap()
         let back = app.buttons["return-final-game-home"]
         XCTAssertTrue(back.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["keep-final-local"].exists, "Practice is never a saved formal match")
         XCTAssertTrue(back.label.contains("返回练习")); back.tap()
         XCTAssertTrue(start.waitForExistence(timeout: 5))
     }
@@ -1031,6 +1039,7 @@ extension BaseballMasterUITests {
         XCTAssertTrue(reason.waitForExistence(timeout: 5))
         reason.tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         let capture = XCTAttachment(screenshot: app.screenshot())
         capture.name = "手动结束比赛后的导航"; capture.lifetime = .keepAlways; add(capture)
         let home = app.buttons["return-final-game-home"]
@@ -1059,6 +1068,7 @@ extension BaseballMasterUITests {
         let reason = app.buttons["finish-reason-时间限制结束"]
         XCTAssertTrue(reason.waitForExistence(timeout: 5)); reason.tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         XCTAssertTrue(app.buttons["return-final-game-home"].waitForExistence(timeout: 5))
         let capture = XCTAttachment(screenshot: app.screenshot())
         capture.name = "新建比赛手动结束后的返回入口"; capture.lifetime = .keepAlways; add(capture)
@@ -1101,6 +1111,7 @@ extension BaseballMasterUITests {
         let reason = app.buttons["finish-reason-规定局数完成"]
         XCTAssertTrue(reason.waitForExistence(timeout: 5)); reason.tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
         app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["return-final-game-home"].waitForExistence(timeout: 5))
@@ -1129,6 +1140,7 @@ extension BaseballMasterUITests {
         revealStatisticsControl(suspend, in: app)
         suspend.tap(); app.buttons["确认保存"].tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["keep-final-local"].exists, "Suspending is not finishing and must not offer upload")
         app.buttons["return-game-home"].tap()
         XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5))
         let ongoing = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
@@ -1191,6 +1203,7 @@ extension BaseballMasterUITests {
         revealStatisticsControl(finishReason, in: app)
         finishReason.tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         XCTAssertTrue(app.buttons["return-final-game-home"].waitForExistence(timeout: 3))
         app.buttons["open-box-score"].tap()
         let reopen = app.buttons["reopen-game"]
@@ -1343,6 +1356,7 @@ extension BaseballMasterUITests {
         app.buttons["结束比赛"].tap()
         XCTAssertTrue(app.buttons["finish-reason-记录员结束记录"].waitForExistence(timeout: 5))
         app.buttons["finish-reason-记录员结束记录"].tap(); app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         _ = try waitForPublicLive(code) { $0["isFinal"] as? Bool == true && $0["batterOrder"] is NSNull }
         app.buttons["open-box-score"].tap()
         let reopen = app.buttons["reopen-game"]
@@ -2044,6 +2058,7 @@ extension BaseballMasterUITests {
         app.buttons["结束比赛"].tap()
         app.buttons["finish-reason-记录员结束记录"].tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         let result = app.buttons["open-box-score"]
         XCTAssertTrue(result.waitForExistence(timeout: 5))
         result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -2960,5 +2975,111 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.staticTexts["situation-error-responsibility"].label.contains("一垒手"))
         app.buttons["confirm-situation-play"].tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+    }
+}
+
+
+extension BaseballMasterUITests {
+    func testV311ProOtherResultsOpensFullCatalogAndPreservesSelectedTypeOnBack() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealStatisticsControl(start, in: app); start.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        app.buttons["situation-by-process"].tap()
+        app.buttons["contact-type-line"].tap()
+        let more = app.buttons["process-all-outcomes"]
+        revealStatisticsControl(more, in: app); more.tap()
+        XCTAssertTrue(app.buttons["quick-outcome-HR"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["quick-outcome-HR"].isEnabled)
+        app.navigationBars.buttons["返回"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["平飞 · 结果"].waitForExistence(timeout: 5))
+        revealStatisticsControl(more, in: app); more.tap()
+        app.buttons["quick-outcome-HR"].tap()
+        XCTAssertTrue(app.navigationBars["本垒打"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["contact-type-line"].value as? String, "已选择")
+        app.navigationBars.buttons["返回"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["全部击球"].waitForExistence(timeout: 5))
+        app.buttons["cancel-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertEqual(batter.label, before, "Browsing or cancelling other results must not record a play")
+    }
+
+    func testV311ProSacrificeResultsExplainUnavailableAndSelectMatchingBallType() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealStatisticsControl(start, in: app); start.tap()
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        app.buttons["all-batted-outcomes"].tap()
+        let sacrifice = app.buttons["quick-outcome-SH"]
+        revealStatisticsControl(sacrifice, in: app)
+        XCTAssertFalse(sacrifice.isEnabled)
+        XCTAssertFalse(app.buttons["quick-outcome-SF"].isEnabled)
+        XCTAssertTrue(app.staticTexts["outcome-unavailable-SH"].label.contains("垒上有跑者"))
+        XCTAssertTrue(app.staticTexts["outcome-unavailable-SF"].label.contains("三垒有跑者"))
+        // Record one actual triple, so both sacrifice results become available at zero outs.
+        let triple = app.buttons["quick-outcome-3B"]
+        revealStatisticsControl(triple, in: app); triple.tap()
+        app.buttons["contact-type-line"].tap()
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)).tap()
+        app.buttons["situation-fielder-8"].tap()
+        app.buttons["finish-situation-field"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+        app.buttons["ball-in-play"].tap()
+        app.buttons["situation-by-process"].tap(); app.buttons["contact-type-ground"].tap()
+        let more = app.buttons["process-all-outcomes"]
+        revealStatisticsControl(more, in: app); more.tap()
+        revealStatisticsControl(sacrifice, in: app)
+        XCTAssertTrue(sacrifice.isEnabled)
+        XCTAssertTrue(app.buttons["quick-outcome-SF"].isEnabled)
+        app.buttons["quick-outcome-SF"].tap()
+        XCTAssertEqual(app.buttons["contact-type-fly"].value as? String, "已选择")
+        app.navigationBars.buttons["返回"].firstMatch.tap()
+        revealStatisticsControl(sacrifice, in: app); sacrifice.tap()
+        XCTAssertEqual(app.buttons["contact-type-bunt"].value as? String, "已选择")
+        app.buttons["cancel-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertEqual(batter.label, before)
+    }
+}
+
+
+extension BaseballMasterUITests {
+    func testV311ManualFinishWaitsForRecordingSheetAndKeepsLocalWithoutUpload() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let ongoing = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(ongoing.waitForExistence(timeout: 5)); ongoing.tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        app.buttons["结束比赛"].tap()
+        let reason = app.buttons["finish-reason-记录员结束记录"]
+        XCTAssertTrue(reason.waitForExistence(timeout: 5)); reason.tap()
+        app.buttons["确认保存"].tap()
+        XCTAssertTrue(app.navigationBars["赛后记录去向"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.navigationBars["结束或中断比赛"].exists)
+        XCTAssertTrue(app.staticTexts["比赛已结束，完整记录已保存在本机。"].exists)
+        let keep = app.buttons["keep-final-local"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 5)); keep.tap()
+        let home = app.buttons["return-final-game-home"]
+        XCTAssertTrue(home.waitForExistence(timeout: 5))
+        app.buttons["open-box-score"].tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
+        XCTAssertFalse(app.navigationBars["赛后记录去向"].exists, "Viewing a saved result must not reopen the automatic prompt")
+        home.tap()
+        XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5))
+        XCTAssertFalse(ongoing.exists)
     }
 }

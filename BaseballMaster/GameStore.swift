@@ -806,8 +806,14 @@ final class GameStore: ObservableObject {
 
     var statisticsTeams: [Team] {
         var result = teams + teamSharing.sharedRosterTeams + archivedTeams.filter { archived in !teams.contains { $0.id == archived.id } }
+        var seen = Set<UUID>()
+        result = result.filter { seen.insert($0.id).inserted }
         for stored in games where !stored.isObservation && stored.ourTeamID != nil && stored.sharedTeamID == nil {
-            if !result.contains(where: { $0.id == stored.ourTeam.id }) { result.append(stored.ourTeam) }
+            var team = stored.ourTeam
+            if teamSharing.teams.contains(where: { $0.id == team.id }) {
+                team = Team(id: localStatisticsScope(team.id), name: team.name + " · 本机记录", shortName: team.shortName + " · 本机", city: team.city, players: team.players)
+            }
+            if !result.contains(where: { $0.id == team.id }) { result.append(team) }
         }
         return result
     }
@@ -3048,6 +3054,16 @@ final class GameStore: ObservableObject {
         }
         markGameFinal(reason: reason, at: date)
         addLog("比赛结束：\(reason.rawValue)", category: .game, notation: "END")
+    }
+
+    @discardableResult
+    func setPostgameUploadTarget(gameID: UUID, teamID: UUID?) -> Bool {
+        guard let index = games.firstIndex(where: { $0.id == gameID }), games[index].sharedGameID == nil else { return false }
+        let previous = games[index]
+        games[index].postgameUploadTeamID = teamID
+        games[index].postgameTargetConfigured = true
+        do { try persistenceStore.upsertGame(games[index]); return true }
+        catch { games[index] = previous; storageErrorMessage = "赛后上传目标未能保存，本机比赛仍会保留。"; return false }
     }
 
     func openGame(id: UUID) {

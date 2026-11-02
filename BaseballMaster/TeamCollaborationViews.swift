@@ -280,12 +280,8 @@ struct SharedTeamDetailView: View {
                         .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-shared-matches")
                     NavigationLink { StatsOverviewView(initialTeamID: teamID) } label: { Label("球队年度统计", systemImage: "chart.bar") }
                         .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("shared-annual-statistics")
-                    if detail.role != .member {
-                        Button("使用共享名单开始比赛") { store.setCurrentTeam(id: teamID); showNewGame = true }
-                            .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("shared-roster-new-game")
-                        Text("比赛先保存在本机。需要让成员查看时，可在比赛设置中选择共享。共享后，两边的修改和删除互不影响。")
-                            .font(.caption).foregroundStyle(BMTheme.secondaryText)
-                    }
+                    Text("创建、设置和记分请从首页的比赛入口进入。比赛始终保存在本机，结束后确认上传，球队成员才能查看完整档案。")
+                        .font(.caption).foregroundStyle(BMTheme.secondaryText)
                     SectionHeader(title: "共享名单", subtitle: "\(detail.team.players.filter { !$0.isArchived }.count) 名现役球员")
                     if detail.role.canEditPlayers {
                         HStack {

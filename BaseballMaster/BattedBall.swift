@@ -317,12 +317,11 @@ extension GameStore {
             }
             let grouped = Dictionary(grouping: eligible, by: sourceKey)
             sources = grouped.values.compactMap { values in values.max { a, b in
-                if (a.sharedGameID != nil) != (b.sharedGameID != nil) { return a.sharedGameID == nil }
+                if (a.sharedGameID != nil) != (b.sharedGameID != nil) { return a.sharedGameID != nil }
                 return a.updatedAt < b.updatedAt
             } }
-            if let current, current.sharedGameID == nil,
-               !sources.contains(where: { $0.sharedGameID != nil && sourceKey($0) == current.id }) {
-                sources.removeAll { $0.id == current.id }
+            if let current, current.sharedGameID == nil {
+                sources.removeAll { sourceKey($0) == current.id }
                 var live = current; live.state = game; sources.append(live)
             }
         } else if var current { current.state = game; sources = [current] }

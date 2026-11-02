@@ -2,6 +2,12 @@ import SwiftUI
 import UIKit
 
 struct ScorekeepingView: View {
+    @State private var showPostgameUpload = false
+    @State private var pendingPostgameGameID: UUID?
+    @State private var recordingPresentationActive = false
+    @State private var scorekeepingVisible = false
+    @State private var correctionAfterDismissal = false
+
     var showsGameHomeButton = false
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: GameStore
@@ -182,22 +188,45 @@ struct ScorekeepingView: View {
             Button("确认交换攻守") { store.endCurrentHalf() }
             Button("取消", role: .cancel) {}
         }
-        .sheet(isPresented: $showRuleNotices) {
+        .sheet(isPresented: $showRuleNotices, onDismiss: recordingSheetDidDismiss) {
             NavigationStack {
                 List(Array(store.ruleNotices().enumerated()), id: \.offset) { _, notice in Text(notice) }
                     .navigationTitle("比赛规则提醒")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showRuleNotices = false } } }
-            }
+            }.onAppear { recordingPresentationActive = true }
         }
-        .sheet(isPresented: $showEndReasonSheet) { GameEndReasonSheet().environmentObject(store) }
-        .sheet(isPresented: $showLiveBroadcast) {
+        .onAppear { scorekeepingVisible = true; schedulePostgameUploadIfReady() }
+        .onDisappear {
+            if !hasRecordingPresentation && !showPostgameUpload { scorekeepingVisible = false }
+        }
+        .onChange(of: store.game.isFinal) { final in
+            if final { queueSavedPostgamePrompt() }
+            else { pendingPostgameGameID = nil }
+        }
+        .onChange(of: store.activeStoredGame?.status) { if $0 == .completed { queueSavedPostgamePrompt() } }
+        .onChange(of: confirmTimeEnd) { if !$0 { schedulePostgameUploadIfReady() } }
+        .onChange(of: confirmEndHalf) { if !$0 { schedulePostgameUploadIfReady() } }
+        .onChange(of: confirmOpeningLineups) { if !$0 { schedulePostgameUploadIfReady() } }
+        .onChange(of: store.storageErrorMessage) { if $0 == nil { schedulePostgameUploadIfReady() } }
+        .onChange(of: store.actionErrorMessage) { if $0 == nil { schedulePostgameUploadIfReady() } }
+        .sheet(isPresented: $showPostgameUpload) { PostgameUploadPrompt() }
+        .sheet(isPresented: $showEndReasonSheet, onDismiss: recordingSheetDidDismiss) {
+            GameEndReasonSheet().environmentObject(store).onAppear { recordingPresentationActive = true }
+        }
+        .sheet(isPresented: $showLiveBroadcast, onDismiss: recordingSheetDidDismiss) {
             if store.liveBroadcasts.isEnabled, let id = store.activeStoredGame?.id {
-                LiveBroadcastSheet(store: store, gameID: id)
+                LiveBroadcastSheet(store: store, gameID: id).onAppear { recordingPresentationActive = true }
             }
         }
-        .sheet(isPresented: $showHistoryCorrection) { HistoryCorrectionView().environmentObject(store) }
-        .sheet(isPresented: $showBatterPerformance) { BatterPerformanceSheet(player: store.currentBatter).environmentObject(store) }
-        .sheet(item: $situationAmendment) { selected in SituationAmendmentSheet(store: store, eventID: selected.id) }
+        .sheet(isPresented: $showHistoryCorrection, onDismiss: recordingSheetDidDismiss) {
+            HistoryCorrectionView().environmentObject(store).onAppear { recordingPresentationActive = true }
+        }
+        .sheet(isPresented: $showBatterPerformance, onDismiss: recordingSheetDidDismiss) {
+            BatterPerformanceSheet(player: store.currentBatter).environmentObject(store).onAppear { recordingPresentationActive = true }
+        }
+        .sheet(item: $situationAmendment, onDismiss: recordingSheetDidDismiss) { selected in
+            SituationAmendmentSheet(store: store, eventID: selected.id).onAppear { recordingPresentationActive = true }
+        }
         .toolbar {
             if showsGameHomeButton {
                 ToolbarItem(placement: .topBarLeading) {
@@ -256,7 +285,7 @@ struct ScorekeepingView: View {
                 .accessibilityIdentifier("open-box-score")
             }
         }
-        .sheet(isPresented: $showPlayFlowSheet) {
+        .sheet(isPresented: $showPlayFlowSheet, onDismiss: recordingSheetDidDismiss) {
             Group {
                 if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation {
                     SituationPlayFlowSheet(illegalPitch: illegalPlay)
@@ -268,33 +297,38 @@ struct ScorekeepingView: View {
                 }
             }
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showRunnerEventSheet) {
+        .sheet(isPresented: $showRunnerEventSheet, onDismiss: recordingSheetDidDismiss) {
             RunnerEventFlowSheet()
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showSpecialEventSheet) {
+        .sheet(isPresented: $showSpecialEventSheet, onDismiss: recordingSheetDidDismiss) {
             SpecialEventSheet {
                 showSpecialEventSheet = false
                 presentCorrectionAfterDismissal()
             }
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showCorrectionSheet) {
+        .sheet(isPresented: $showCorrectionSheet, onDismiss: recordingSheetDidDismiss) {
             GameStateCorrectionSheet()
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showSubstitutionSheet) {
+        .sheet(isPresented: $showSubstitutionSheet, onDismiss: recordingSheetDidDismiss) {
             SubstitutionSheet()
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -302,10 +336,12 @@ struct ScorekeepingView: View {
             isPresented: Binding(
                 get: { store.requiresTiebreakRunnerPlacement },
                 set: { _ in }
-            )
+            ),
+            onDismiss: recordingSheetDidDismiss
         ) {
             TiebreakRunnerSheet()
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.hidden)
                 .interactiveDismissDisabled()
@@ -691,8 +727,43 @@ struct ScorekeepingView: View {
     }
 
     private func presentCorrectionAfterDismissal() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        correctionAfterDismissal = true
+    }
+
+    private func recordingSheetDidDismiss() {
+        recordingPresentationActive = false
+        if correctionAfterDismissal {
+            correctionAfterDismissal = false
             showCorrectionSheet = true
+            return
+        }
+        schedulePostgameUploadIfReady()
+    }
+
+    private var hasRecordingPresentation: Bool {
+        recordingPresentationActive || showRuleNotices || showEndReasonSheet || showLiveBroadcast
+            || showHistoryCorrection || showBatterPerformance || situationAmendment != nil
+            || showPlayFlowSheet || showRunnerEventSheet || showSpecialEventSheet || showCorrectionSheet
+            || showSubstitutionSheet || store.requiresTiebreakRunnerPlacement
+            || confirmTimeEnd || confirmEndHalf || confirmOpeningLineups || correctionAfterDismissal
+    }
+
+    private func queueSavedPostgamePrompt() {
+        guard scorekeepingVisible, let saved = store.activeStoredGame, saved.status == .completed, saved.state.isFinal,
+              saved.sharedGameID == nil, store.storageErrorMessage == nil else { return }
+        pendingPostgameGameID = saved.id
+        schedulePostgameUploadIfReady()
+    }
+
+    private func schedulePostgameUploadIfReady() {
+        // Run after SwiftUI consumes the final-state / alert bindings. Sheets call this only after onDismiss.
+        DispatchQueue.main.async {
+            guard scorekeepingVisible, let id = pendingPostgameGameID, !showPostgameUpload, !hasRecordingPresentation,
+                  !store.requiresDataRecovery, store.storageErrorMessage == nil, store.actionErrorMessage == nil,
+                  let saved = store.activeStoredGame, saved.id == id, saved.sharedGameID == nil,
+                  saved.status == .completed, saved.state.isFinal, store.game.isFinal else { return }
+            pendingPostgameGameID = nil
+            showPostgameUpload = true
         }
     }
 }

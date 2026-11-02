@@ -987,6 +987,10 @@ struct NewGameSetupView: View {
         .navigationTitle("新比赛")
         .scrollDismissesKeyboard(.interactively)
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: selectedTeamID) { id in
+            if store.teamSharing.teams.contains(where: { $0.id == id }) { shareTeamID = id }
+            else { shareTeamID = nil }
+        }
         .onAppear {
             if selectedTeamID == nil || !store.recordableTeams.contains(where: { $0.id == selectedTeamID }) {
                 selectedTeamID = store.currentTeam?.id
@@ -1051,11 +1055,7 @@ struct NewGameSetupView: View {
     }
 
     private var scheduledSharingResult: String {
-        guard let shareTeamID else { return "" }
-        if let createdGameID, store.sharedMatches.publishedMatch(sourceID: createdGameID, teamID: shareTeamID) != nil {
-            return "\n已共享到球队，成员可以查看这场比赛。"
-        }
-        return "\n共享尚未完成：" + (store.sharedMatches.message ?? "请稍后从比赛设置重试共享。")
+        shareTeamID == nil ? "" : "\n已预设赛后上传目标；比赛结束后仍需确认是否上传。现在只保存在本机。"
     }
 
     private func saveSchedule() {
@@ -1071,10 +1071,8 @@ struct NewGameSetupView: View {
                 scheduledAt: scheduledAt
             )
         }
-        Task {
-            if let shareTeamID, let game = store.games.first(where: { $0.id == createdGameID }) { await store.sharedMatches.publish(game, teamID: shareTeamID) }
-            showScheduledCreated = true
-        }
+        if let createdGameID { _ = store.setPostgameUploadTarget(gameID: createdGameID, teamID: shareTeamID) }
+        showScheduledCreated = createdGameID != nil
     }
 
     private func settingPickerRow<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
@@ -2308,8 +2306,8 @@ struct ObservedGameLineupView: View {
             Text(confirmationSummary)
         }
         .onChange(of: createdGameID) { id in
-            if let shareTeamID, let game = store.games.first(where: { $0.id == id }) {
-                Task { await store.sharedMatches.publish(game, teamID: shareTeamID) }
+            if let id {
+                _ = store.setPostgameUploadTarget(gameID: id, teamID: shareTeamID)
             }
         }
         .sheet(item: $posterGame) { stored in

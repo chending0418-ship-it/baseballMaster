@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 enum StatisticsCategory: String, CaseIterable, Identifiable {
     case batting = "打击"
@@ -211,12 +212,24 @@ extension GameStore {
         return years.sorted(by: >).map { Season(id: $0, name: "\($0) 年") }
     }
 
+    /// Separate stable scope for local originals made from a shared roster.
+    func localStatisticsScope(_ teamID: UUID) -> UUID {
+        let bytes = Array(SHA256.hash(data: Data(("BaseballMaster.local-statistics:" + teamID.uuidString).utf8)).prefix(16))
+        return UUID(uuid: (bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]))
+    }
     func belongsToStatisticsTeam(_ game: StoredGame, teamID: UUID?) -> Bool {
         if let shared = game.sharedTeamID {
-            return teamSharing.teams.contains { $0.id == shared } && (teamID == nil || teamID == shared)
+            guard teamSharing.teams.contains(where: { $0.id == shared }) else { return false }
+            if let teamID { return teamID == shared }
+            // Global totals count an accessible local original once, using its latest saved version.
+            let source = game.historySourceID ?? sharedMatches.match(id: game.sharedGameID ?? game.id)?.wireLocalID
+            return !games.contains { $0.id == source && $0.sharedGameID == nil && $0.status == .completed }
         }
-        if let teamID, teamSharing.teams.contains(where: { $0.id == teamID }) { return false }
-        return teamID == nil || game.ourTeamID == teamID
+        guard let teamID else { return true }
+        if teamSharing.teams.contains(where: { $0.id == game.ourTeamID }) {
+            return game.ourTeamID.map(localStatisticsScope) == teamID
+        }
+        return game.ourTeamID == teamID
     }
 
     func completedStatisticsGames(teamID: UUID? = nil, seasonID: String, mode: GameMode? = nil, gameIDs: Set<UUID>? = nil) -> [StoredGame] {

@@ -13,10 +13,7 @@ struct SharedMatchesListView: View {
         List {
             if let message = coordinator.message { Text(message).foregroundStyle(BMTheme.orange) }
             Section {
-                Text("这里的比赛可供球队成员查看。每场比赛同一时间由一台设备负责记分，更新后会同步给成员。")
-                if store.teamSharing.teams.first(where: { $0.id == teamID })?.role != .member {
-                    Button("共享本机比赛") { publish = true }.accessibilityIdentifier("publish-local-match")
-                }
+                Text("这里查看和管理已上传的球队档案。创建、设置、记分和赛后上传请从首页的本机比赛进入。")
                 if store.teamSharing.teams.first(where: { $0.id == teamID })?.role == .admin {
                     Button("导入历史比赛") { importHistory = true }.accessibilityIdentifier("import-history")
                 }
@@ -76,7 +73,7 @@ struct PublishSharedMatchView: View {
         List {
             Text("选择要共享的本机比赛，球队成员就能查看阵容、逐球记录和统计。本机比赛仍会保留，两边的修改和删除互不影响。队外人员暂时不能通过历史回看网页观看，可另行设置。")
             if let message = coordinator.message { Text(message).foregroundStyle(BMTheme.orange) }
-            ForEach(store.games.filter { !coordinator.isShared($0.id) }) { game in
+            ForEach(store.games.filter { $0.status == .completed && $0.state.isFinal && !coordinator.isShared($0.id) }) { game in
                 Button { selected = game } label: {
                     VStack(alignment: .leading) {
                         Text("\(game.state.awayTeam.name) vs \(game.state.homeTeam.name)")
@@ -170,7 +167,7 @@ struct SharedConflictReviewView: View {
     @State private var error: String?
     var body: some View {
         List {
-            Text("这里是各设备提交的未同步记录。请与球队已保存的记录对照；需要补录时，先接手记分，再到比赛页面更正并同步，最后在这里填写处理说明。")
+            Text("这里是各设备提交的未同步记录。请与球队已保存的记录对照；需要补录时，从首页打开本机原件核对更正，结束后确认上传，最后在这里填写处理说明。")
             if let error { Text(error).foregroundStyle(BMTheme.orange) }
             if drafts.isEmpty { Text("暂无提交的待核对记录。") }
             ForEach(drafts) { draft in
@@ -224,7 +221,7 @@ struct SharedConflictDetailView: View {
                 }
                 if draft.status == "pending" {
                     Section("处理方式") {
-                        Text("需要补录时，请返回共享比赛并接手记分，对照这份记录更正比赛，再同步给球队。此处只保存核对结果，不会自动修改比赛。")
+                        Text("需要补录时，请从首页打开本机原件，对照这份记录更正比赛，并在结束后核对上传。此处只保存核对结果，不会自动修改比赛。")
                         TextField("处理说明（必填）", text: $note, axis: .vertical).lineLimit(2...5)
                             .accessibilityIdentifier("conflict-resolution-note")
                         Button("已补录，完成核对") { decision = "supplemented" }
@@ -288,7 +285,6 @@ struct SharedMatchDetailView: View {
                         .accessibilityIdentifier("open-match-player-links")
                     }
                 }
-                handoffContent(match, game)
                 conflictContent(match, game)
                 if store.teamSharing.teams.first(where: { $0.id == match.teamID })?.role == .admin {
                     Section("比赛记录核对") {
@@ -297,7 +293,6 @@ struct SharedMatchDetailView: View {
                         }.accessibilityIdentifier("open-team-conflicts")
                     }
                 }
-                liveContent(match, game)
                 historyContent(match, game)
                 deleteContent(match, game)
             } else { Text("比赛暂不可用，请刷新后再试。") }
@@ -339,11 +334,7 @@ struct SharedMatchDetailView: View {
                         try? copy.installSharedCopy(game); copy.openGame(id: game.id); copy.readOnlyPresentation = true
                         resultPresentation = SharedResultPresentation(store: copy)
                     }.accessibilityIdentifier("view-shared-match-result")
-                    if coordinator.canEdit(game.id), game.status != .scheduled {
-                        Button(game.status == .completed ? "更正比赛记录" : "继续记分") {
-                            store.openGame(id: game.id); showScore = true
-                        }.accessibilityIdentifier("score-shared-match")
-                    }
+
                 }
     }
     @ViewBuilder private func handoffContent(_ match: SharedMatch, _ game: StoredGame) -> some View {
@@ -810,29 +801,60 @@ struct SharedPlayerLinksView: View {
     }
 }
 
-/// Explicitly shares a snapshot; subsequent changes belong to the chosen side only.
+/// Upload always follows an explicit confirmation of the saved local final snapshot.
 struct LocalMatchShareView: View {
     @EnvironmentObject private var store: GameStore
     let game: StoredGame
     @State private var teamID: UUID?
-    @State private var confirm = false
+    @State private var reviewed: StoredGame?
+    @State private var reviewedRemote: SharedMatch?
+    @State private var reviewedTeamID: UUID?
+    @State private var preparingReview = false
+    private var current: StoredGame { store.games.first { $0.id == game.id } ?? game }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ShareDestinationPicker(teamID: $teamID)
-            if let teamID {
-                if let match = store.sharedMatches.publishedMatch(sourceID: game.id, teamID: teamID) {
-                    NavigationLink("查看已共享的比赛") { SharedMatchDetailView(coordinator: store.sharedMatches, matchID: match.id) }
-                } else {
-                    Button(game.status == .completed ? "导入这场比赛到共享球队" : "共享这场比赛到球队") { confirm = true }
-                        .buttonStyle(SecondaryButtonStyle()).disabled(store.sharedMatches.busy).accessibilityIdentifier("share-current-local-game")
+            ShareDestinationPicker(teamID: $teamID).disabled(preparingReview || reviewed != nil)
+            Text("本机始终保留完整原件。文字直播使用原本机链路，上传球队档案不会改变直播链接。")
+                .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+            if current.status != .completed || !current.state.isFinal {
+                Text("比赛尚未结束；这里仅预设赛后目标，不会上传。结束后仍需确认是否上传。")
+                    .font(.footnote)
+            } else if let teamID {
+                Text(store.sharedMatches.postgameStatus(current, teamID: teamID))
+                    .accessibilityIdentifier("postgame-upload-status")
+                Button("核对并上传完整比赛到球队") {
+                    preparingReview = true
+                    Task {
+                        defer { preparingReview = false }
+                        await store.sharedMatches.synchronize(teamID: teamID)
+                        guard self.teamID == teamID else { return }
+                        reviewedTeamID = teamID
+                        reviewedRemote = store.sharedMatches.publishedMatch(sourceID: game.id, teamID: teamID)
+                        reviewed = current
+                    }
                 }
+                    .buttonStyle(SecondaryButtonStyle()).disabled(store.sharedMatches.busy || preparingReview)
+                    .accessibilityIdentifier("share-current-local-game")
+                if let match = store.sharedMatches.publishedMatch(sourceID: game.id, teamID: teamID) {
+                    NavigationLink("查看球队已保存的档案") { SharedMatchDetailView(coordinator: store.sharedMatches, matchID: match.id) }
+                }
+            } else {
+                Text("仅保存在本机。需要上传时，请先选择共享球队。")
             }
             if let message = store.sharedMatches.message { Text(message).font(.footnote).foregroundStyle(BMTheme.orange) }
         }
-        .alert("是否共享本次比赛到共享队伍，让成员可以查看？", isPresented: $confirm) {
-            Button("取消", role: .cancel) {}
-            Button("确认共享") { Task { if let teamID { await store.sharedMatches.publish(game, teamID: teamID) } } }
-        } message: { Text("共享队伍：" + (store.teamSharing.teams.first { $0.id == teamID }?.name ?? "") + "\n本机比赛仍会保留，两边的修改和删除互不影响。") }
+        .onAppear { teamID = current.postgameTargetConfigured == true ? current.postgameUploadTeamID : (current.postgameUploadTeamID ?? (store.teamSharing.teams.contains { $0.id == current.ourTeamID } ? current.ourTeamID : nil)) }
+        .onChange(of: teamID) { target in _ = store.setPostgameUploadTarget(gameID: game.id, teamID: target) }
+        .alert("是否上传这场已结束的比赛？", isPresented: Binding(get: { reviewed != nil }, set: { if !$0 { reviewed = nil } }), presenting: reviewed) { snapshot in
+            Button("暂不上传，保留本机", role: .cancel) { reviewed = nil }
+            Button("确认上传到球队") { Task { if let reviewedTeamID { await store.sharedMatches.publish(snapshot, teamID: reviewedTeamID, reviewedServerRevision: reviewedRemote?.serverRevision) }; reviewed = nil } }
+        } message: { snapshot in
+            Text("\(snapshot.state.awayTeam.name) \(snapshot.state.awayScore) : \(snapshot.state.homeScore) \(snapshot.state.homeTeam.name)\n上传到：" + (store.teamSharing.teams.first { $0.id == reviewedTeamID }?.name ?? "") + "\n" + reviewSummary + "\n本机原件永远保留。确认后上传上述完整本机记录。")
+        }
+    }
+    private var reviewSummary: String {
+        guard let remote = reviewedRemote, let cloud = remote.payload else { return "球队中尚未找到关联档案，将创建一次。" }
+        return "球队现有：\(cloud.state.awayScore) : \(cloud.state.homeScore) · \(cloud.status == .scheduled ? "未开始" : cloud.status == .completed ? "已结束" : "进行中") · 版本 \(remote.serverRevision)\n将更新原场次，不另外建赛。若球队内容或权限已改变，将停止并保留本机原件。"
     }
 }
 
@@ -841,17 +863,18 @@ struct ShareDestinationPicker: View {
     @Binding var teamID: UUID?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("队内共享").font(.headline)
-            Picker("共享到球队", selection: $teamID) {
+            Text("赛后上传目标").font(.headline)
+            Picker("赛后上传到球队", selection: $teamID) {
                 Text("仅保存在本机").tag(Optional<UUID>.none)
+                if let teamID, !store.teamSharing.teams.contains(where: { $0.id == teamID && $0.role != .member }) {
+                    Text("原目标球队 · 权限待核对").tag(Optional(teamID))
+                }
                 ForEach(store.teamSharing.teams.filter { $0.role != .member }) { team in
                     Text(team.name + " · 共享球队").tag(Optional(team.id))
                 }
             }.accessibilityIdentifier("share-destination-picker")
-            if teamID != nil {
-                Text("保存后，所选球队的成员就能查看这场比赛。本机比赛仍会保留，两边的修改和删除互不影响。要向成员更新记录，请从共享球队中打开这场比赛继续记分。")
-                    .font(.footnote).foregroundStyle(BMTheme.secondaryText)
-            }
+            Text("这里只预设目标。所有比赛均在本机记录，结束保存后仍需确认是否上传。")
+                .font(.footnote).foregroundStyle(BMTheme.secondaryText)
         }
     }
 }

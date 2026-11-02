@@ -5,6 +5,8 @@ struct BoxScoreView: View {
     @EnvironmentObject private var store: GameStore
     @State private var selectedSection = 0
     @State private var showEndReasonSheet = false
+    @State private var showPostgameUpload = false
+    @State private var pendingFinishedGameID: UUID?
     @State private var confirmLegacyReopen = false
     @State private var showShareSheet = false
     @State private var showLiveBroadcast = false
@@ -61,6 +63,7 @@ struct BoxScoreView: View {
                 }
                 if !store.game.isFinal && store.canEditCurrentMatch {
                     Button {
+                        pendingFinishedGameID = store.activeStoredGame?.id
                         showEndReasonSheet = true
                     } label: {
                         Label("结束并保存比赛结果", systemImage: "checkmark.seal.fill")
@@ -109,7 +112,14 @@ struct BoxScoreView: View {
         } message: {
             Text("第 \(store.game.inning) 局\(store.game.isTop ? "上" : "下")，\(store.game.outs) 出局，打者 \(store.currentBatter.compactName)，垒上 \(store.game.baseRunners.count) 人。旧版本未保存完整的结束阶段，请核对后恢复；需要调整时使用现场局面修正。")
         }
-        .sheet(isPresented: $showEndReasonSheet) {
+        .sheet(isPresented: $showPostgameUpload) { PostgameUploadPrompt() }
+        .sheet(isPresented: $showEndReasonSheet, onDismiss: {
+            defer { pendingFinishedGameID = nil }
+            guard let id = pendingFinishedGameID, let saved = store.activeStoredGame,
+                  saved.id == id, saved.sharedGameID == nil, saved.status == .completed,
+                  saved.state.isFinal, store.storageErrorMessage == nil else { return }
+            showPostgameUpload = true
+        }) {
             GameEndReasonSheet()
                 .environmentObject(store)
                 .presentationDetents([.large])
@@ -438,6 +448,25 @@ struct BoxScoreView: View {
         .frame(height: 46)
         .overlay(alignment: .bottom) {
             Rectangle().fill(BMTheme.line.opacity(0.65)).frame(height: 1)
+        }
+    }
+}
+
+struct PostgameUploadPrompt: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: GameStore
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if let saved = store.activeStoredGame, saved.sharedGameID == nil,
+                   saved.status == .completed, saved.state.isFinal {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text("比赛已结束，完整记录已保存在本机。").font(.headline)
+                        LocalMatchShareView(game: saved)
+                    }.padding()
+                }
+            }.navigationTitle("赛后记录去向")
+                .toolbar { Button("暂不上传，保留本机") { dismiss() }.accessibilityIdentifier("keep-final-local") }
         }
     }
 }

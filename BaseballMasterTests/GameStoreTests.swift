@@ -5799,6 +5799,49 @@ extension GameStoreTests {
         _ = try await client.join(token: token, nickname: role.title, operationID: UUID())
         return client
     }
+    /// Seed documents created by old releases using the server protocol, never the new product upload action.
+    /// This keeps legacy archive/permission tests independent from the final-only product flow.
+    private func seedLegacyMatch(_ game: StoredGame, teamID: UUID, coordinator: SharedMatchCoordinator) async throws {
+        _ = try await coordinator.service.enroll(deviceName: "Legacy fixture")
+        var clean = game
+        clean.sharedTeamID = nil; clean.sharedGameID = nil; clean.sharedPlayerLinks = nil; clean.historySourceID = nil
+        clean.publicationState = nil; clean.pendingPublicationRevisions = nil
+        clean.postgameUploadTeamID = nil; clean.postgameTargetConfigured = nil; clean.minimumWriterFormat = 2
+        _ = try await coordinator.service.matchCommand(path: "teams/\(teamID.uuidString.lowercased())/games", method: "POST", body: .object([
+            "operationID": .uuid(UUID()), "formatVersion": .number(2), "payload": try .encode(clean),
+            "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(clean).data())
+        ]))
+        await coordinator.synchronize(teamID: teamID)
+        XCTAssertNil(coordinator.message)
+        XCTAssertNotNil(coordinator.publishedMatch(sourceID: game.id, teamID: teamID))
+    }
+
+    /// Explicit protocol writes exercise old server compatibility, not automatic product synchronization.
+    private func writeLegacyMatch(_ game: StoredGame, match: SharedMatch, coordinator: SharedMatchCoordinator) async throws {
+        var clean = game; clean.id = match.wireLocalID ?? clean.id
+        clean.sharedTeamID = nil; clean.sharedGameID = nil; clean.sharedPlayerLinks = nil; clean.historySourceID = nil
+        clean.publicationState = nil; clean.pendingPublicationRevisions = nil
+        clean.postgameUploadTeamID = nil; clean.postgameTargetConfigured = nil; clean.minimumWriterFormat = 2
+        _ = try await coordinator.service.matchCommand(path: TeamServiceClient.matchPath(match.teamID, match.id), method: "PUT", body: .object([
+            "operationID": .uuid(UUID()), "baseRevision": .number(Double(match.serverRevision)), "writerEpoch": .number(Double(match.writerEpoch)),
+            "formatVersion": .number(2), "payload": try .encode(clean),
+            "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(clean).data())
+        ]))
+        await coordinator.refresh(match)
+        if let conflict = coordinator.state.conflicts.first(where: { $0.localID == match.id && $0.game.state == game.state }) {
+            try coordinator.useOfficialVersion(conflict)
+        }
+    }
+
+    private func legacyHandoff(_ match: SharedMatch, coordinator: SharedMatchCoordinator, action: String, fields: [String: MatchJSON] = [:]) async throws {
+        var body = fields
+        body["operationID"] = .uuid(UUID()); body["baseRevision"] = .number(Double(match.serverRevision))
+        body["writerEpoch"] = .number(Double(match.writerEpoch))
+        if let handoff = match.handoff { body["handoffID"] = .uuid(handoff.id); body["digest"] = .string(match.digest) }
+        _ = try await coordinator.service.matchCommand(path: TeamServiceClient.matchPath(match.teamID, match.id) + "/handoff/" + action, method: "POST", body: .object(body))
+        await coordinator.refresh(match)
+    }
+
     func testV30FullMatchSyncHandoffAndReadOnlyScoringUseActualAppPayload() async throws {
         let admin = try matchClient(); _ = try await admin.enroll(deviceName: "原记录员")
         let team = try await admin.createTeam(name: "比赛交接集成", nickname: "教练", operationID: UUID())
@@ -5810,7 +5853,7 @@ extension GameStoreTests {
         a.sharedMatches = ca; b.sharedMatches = cb; c.sharedMatches = cc
         a.startGameClock(); a.recordPitch(.ball)
         let source = try XCTUnwrap(a.activeStoredGame)
-        await ca.publish(source, teamID: team.teamID)
+        try await seedLegacyMatch(source, teamID: team.teamID, coordinator: ca)
         let sharedCopyID = try XCTUnwrap(ca.state.matches.last?.payload?.id)
         a.openGame(id: sharedCopyID)
         XCTAssertNil(ca.message)
@@ -5823,15 +5866,19 @@ extension GameStoreTests {
         c.recordPitch(.calledStrike); c.finishGame(); XCTAssertEqual(c.game, readOnly)
         XCTAssertFalse(cc.canEdit(sharedCopyID))
         let nextDevice = try await partner.enroll(deviceName: "接手设备")
-        await ca.command(match, resource: "handoff/propose", fields: ["targetDeviceID": .uuid(nextDevice)])
+        try await legacyHandoff(match, coordinator: ca, action: "propose", fields: ["targetDeviceID": .uuid(nextDevice)])
         XCTAssertNil(ca.message); XCTAssertFalse(ca.canEdit(sharedCopyID))
         let frozen = a.game; a.recordPitch(.calledStrike); XCTAssertEqual(a.game, frozen)
         await cb.synchronize(teamID: team.teamID)
         let offered = try XCTUnwrap(cb.match(id: match.id)); XCTAssertNotNil(offered.handoff)
-        await cb.command(offered, resource: "handoff/accept")
+        try await legacyHandoff(offered, coordinator: cb, action: "accept")
         XCTAssertNil(cb.message); XCTAssertTrue(cb.canEdit(sharedCopyID))
         b.openGame(id: sharedCopyID); b.recordPitch(.calledStrike)
         await cb.waitForSync()
+        XCTAssertTrue(cb.state.pending.isEmpty, "Ordinary legacy-cache edits are not upload consent")
+        let beforeExplicitWrite = try await partner.match(teamID: team.teamID, gameID: match.id)
+        XCTAssertEqual(beforeExplicitWrite.payload?.state.strikes, 0)
+        try await writeLegacyMatch(try XCTUnwrap(b.activeStoredGame), match: try XCTUnwrap(cb.match(id: match.id)), coordinator: cb)
         await ca.synchronize(teamID: team.teamID)
         XCTAssertEqual(a.games.first(where: { $0.id == sharedCopyID })?.state.strikes, 1)
         XCTAssertFalse(ca.canEdit(sharedCopyID)); XCTAssertEqual(cb.match(id: match.id)?.writerEpoch, 2)
@@ -5842,6 +5889,7 @@ extension GameStoreTests {
         let team = try await client.createTeam(name: "续传测试", nickname: "教练", operationID: UUID())
         let unreliable = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage(), store = freshStore()
         let coordinator = SharedMatchCoordinator(store: store, service: unreliable, storage: disk); store.sharedMatches = coordinator
+        store.finishGame()
         await unreliable.network(loseNextResponse: true)
         await coordinator.publish(try XCTUnwrap(store.activeStoredGame), teamID: team.teamID)
         XCTAssertEqual(disk.state.pending.count, 1)
@@ -5855,6 +5903,7 @@ extension GameStoreTests {
         for call in calls { XCTAssertTrue(call.lowercased().contains(operationID.uuidString.lowercased())) }
         let second = freshStore(), failing = V30MatchMemoryStorage(); failing.failSave = true
         let protected = SharedMatchCoordinator(store: second, service: unreliable, storage: failing)
+        second.finishGame()
         await protected.publish(try XCTUnwrap(second.activeStoredGame), teamID: team.teamID)
         let after = await unreliable.operations; XCTAssertEqual(after.count, 2)
     }
@@ -5865,16 +5914,25 @@ extension GameStoreTests {
         let members = try await client.members(teamID: team.teamID), secondMember = try XCTUnwrap(members.first { $0.id != team.memberID })
         try await client.changeMember(teamID: team.teamID, member: secondMember, role: .admin, remove: false, operationID: UUID())
         let a = freshStore(), disk = V30MatchMemoryStorage(), unreliable = V30UnreliableMatchService(client)
-        let ca = SharedMatchCoordinator(store: a, service: unreliable, storage: disk); a.sharedMatches = ca
-        await ca.publish(try XCTUnwrap(a.activeStoredGame), teamID: team.teamID)
+        var ca = SharedMatchCoordinator(store: a, service: unreliable, storage: disk); a.sharedMatches = ca
+        try await seedLegacyMatch(try XCTUnwrap(a.activeStoredGame), teamID: team.teamID, coordinator: ca)
         a.openGame(id: try XCTUnwrap(ca.state.matches.first?.payload?.id))
         let shared = try XCTUnwrap(ca.state.matches.first), localID = try XCTUnwrap(shared.payload?.id)
         await unreliable.network(offline: true); a.recordPitch(.ball); await ca.waitForSync()
-        XCTAssertEqual(a.game.balls, 1); XCTAssertFalse(ca.state.pending.isEmpty)
+        XCTAssertEqual(a.game.balls, 1); XCTAssertTrue(ca.state.pending.isEmpty)
+        let dirty = try XCTUnwrap(a.activeStoredGame)
+        let operationID = UUID()
+        disk.state.pending = [PendingMatchOperation(id: operationID, localID: localID, teamID: team.teamID, gameID: shared.id,
+            path: TeamServiceClient.matchPath(team.teamID, shared.id), method: "PUT",
+            body: .object(["operationID": .uuid(operationID), "payload": try .encode(dirty)]), kind: "update", sentLocalRevision: dirty.revision, token: nil)]
+        ca = SharedMatchCoordinator(store: a, service: unreliable, storage: disk); a.sharedMatches = ca
+        XCTAssertTrue(ca.state.pending.isEmpty)
+        XCTAssertEqual(ca.state.heldOperations?.first?.id, operationID)
+        XCTAssertEqual(ca.state.conflicts.first?.game.state.balls, 1)
         let b = GameStore(persistenceURL: nil), cb = SharedMatchCoordinator(store: b, service: admin2, storage: V30MatchMemoryStorage()); b.sharedMatches = cb
         await cb.synchronize(teamID: team.teamID)
         let remote = try XCTUnwrap(cb.match(id: shared.id)), device = try XCTUnwrap(cb.state.deviceID)
-        await cb.command(remote, resource: "handoff/force", fields: ["targetDeviceID": .uuid(device), "confirmRisk": .bool(true)])
+        try await legacyHandoff(remote, coordinator: cb, action: "force", fields: ["targetDeviceID": .uuid(device), "confirmRisk": .bool(true)])
         XCTAssertNil(cb.message)
         await unreliable.network(); await ca.synchronize(teamID: team.teamID)
         XCTAssertEqual(ca.state.conflicts.first?.game.state.balls, 1)
@@ -5896,8 +5954,13 @@ extension GameStoreTests {
         let match = try XCTUnwrap(coordinator.match(localID: sharedCopyID))
         XCTAssertEqual(match.accessMode, .closed)
         await coordinator.command(match, resource: "access", fields: ["mode": .string("public")]); XCTAssertNil(coordinator.message)
-        XCTAssertTrue(store.updateCompletedGameDate(id: sharedCopyID, playedAt: Date().addingTimeInterval(-86400), timeZoneID: "Asia/Shanghai", expectedRevision: store.activeStoredGame!.revision ?? 0))
+        let reviewed = try XCTUnwrap(coordinator.match(id: match.id))
+        XCTAssertTrue(store.updateCompletedGameDate(id: sharedCopyID, playedAt: Date().addingTimeInterval(-86400), timeZoneID: "Asia/Shanghai", expectedRevision: store.activeStoredGame!.revision ?? 0), store.actionErrorMessage ?? coordinator.status(sharedCopyID))
         await coordinator.waitForSync()
+        XCTAssertTrue(coordinator.state.pending.isEmpty)
+        let unchanged = try await client.match(teamID: team.teamID, gameID: match.id)
+        XCTAssertEqual(unchanged.payload?.playedAt, local.playedAt)
+        try await writeLegacyMatch(try XCTUnwrap(store.activeStoredGame), match: reviewed, coordinator: coordinator)
         let remote = try await client.match(teamID: team.teamID, gameID: match.id)
         XCTAssertEqual(remote.accessMode, .public); XCTAssertEqual(remote.payload?.playedAt, store.activeStoredGame?.playedAt)
         XCTAssertEqual(remote.payload?.state, local.state)
@@ -5921,23 +5984,28 @@ extension GameStoreTests {
         store.openGame(id: sharedCopyID)
             let match = try XCTUnwrap(coordinator.match(localID: sharedCopyID)), remote = try await client.match(teamID: team.teamID, gameID: match.id)
             XCTAssertEqual(remote.payload?.state, local.state); XCTAssertEqual(remote.payload?.rules, local.rules)
+            store.openGame(id: local.id)
             let draft = try store.makeCorrectionDraft(), preview = store.previewCorrection(draft)
             XCTAssertTrue(preview.canSave, preview.conflict ?? "")
             XCTAssertEqual(preview.game.homeScore, local.state.homeScore); XCTAssertEqual(preview.game.awayScore, local.state.awayScore)
             XCTAssertTrue(store.reopenGame()); store.undo(); await coordinator.waitForSync()
             let revised = try await client.match(teamID: team.teamID, gameID: match.id)
-            XCTAssertGreaterThan(revised.serverRevision, remote.serverRevision)
-            XCTAssertEqual(revised.payload?.state, store.game)
+            XCTAssertEqual(revised.serverRevision, remote.serverRevision, "Reopening or undo is not an upload confirmation")
+            XCTAssertEqual(revised.payload?.state, local.state)
+            XCTAssertTrue(coordinator.state.pending.isEmpty)
+            XCTAssertTrue(store.game.isFinal, "Undoing the reopen operation restores the local final state")
         }
     }
     func testV30SharedBackupRestoreDoesNotPublishAnOldVersionAndQueueIsDeviceBound() async throws {
         let client = try matchClient(); _ = try await client.enroll(deviceName: "备份测试")
         let team = try await client.createTeam(name: "共享备份保护", nickname: "教练", operationID: UUID())
         let store = freshStore(), coordinator = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = coordinator
-        await coordinator.publish(try XCTUnwrap(store.activeStoredGame), teamID: team.teamID)
+        try await seedLegacyMatch(try XCTUnwrap(store.activeStoredGame), teamID: team.teamID, coordinator: coordinator)
         store.openGame(id: try XCTUnwrap(coordinator.state.matches.first?.payload?.id))
         let oldBackup = try LocalBackup.read(store.exportBackup()), localID = try XCTUnwrap(store.activeGameID)
         store.recordPitch(.ball); await coordinator.waitForSync()
+        XCTAssertTrue(coordinator.state.pending.isEmpty)
+        try await writeLegacyMatch(try XCTUnwrap(store.activeStoredGame), match: try XCTUnwrap(coordinator.match(localID: localID)), coordinator: coordinator)
         let match = try XCTUnwrap(coordinator.match(localID: localID)), revision = match.serverRevision
         try store.restoreBackup(oldBackup)
         XCTAssertFalse(coordinator.canEdit(localID)); XCTAssertEqual(coordinator.state.conflicts.count, 1)
@@ -5964,7 +6032,7 @@ extension GameStoreTests {
         let reader = try await matchPartner(admin, team: team.teamID, role: .member)
         let a = freshStore(), ca = SharedMatchCoordinator(store: a, service: publisher, storage: V30MatchMemoryStorage()); a.sharedMatches = ca
         let original = try XCTUnwrap(a.activeStoredGame)
-        await ca.publish(original, teamID: team.teamID)
+        try await seedLegacyMatch(original, teamID: team.teamID, coordinator: ca)
         let sharedCopyID = try XCTUnwrap(ca.state.matches.first?.payload?.id); a.openGame(id: sharedCopyID)
         a.recordPitch(.ball); await ca.waitForSync()
         let b = GameStore(persistenceURL: nil), cb = SharedMatchCoordinator(store: b, service: reader, storage: V30MatchMemoryStorage()); b.sharedMatches = cb
@@ -6061,7 +6129,7 @@ extension GameStoreTests {
         let card = try XCTUnwrap(directory.state.recoveryCards?.first), oldMember = try XCTUnwrap(directory.teams.first?.memberID)
         let game = freshStore(), matchDisk = V30MatchMemoryStorage(), network = V30UnreliableMatchService(client)
         let matches = SharedMatchCoordinator(store: game, service: network, storage: matchDisk); game.sharedMatches = matches
-        await matches.publish(try XCTUnwrap(game.activeStoredGame), teamID: card.teamID)
+        try await seedLegacyMatch(try XCTUnwrap(game.activeStoredGame), teamID: card.teamID, coordinator: matches)
         game.openGame(id: try XCTUnwrap(matches.state.matches.first?.payload?.id))
         let shared = try XCTUnwrap(matches.state.matches.first)
         await network.network(offline: true); game.recordPitch(.ball); await matches.waitForSync()
@@ -6188,9 +6256,13 @@ extension GameStoreTests {
         let report = PlayerStatisticsPDFReport(store: b, player: player, seasonID: original.yearID, teamID: after.id, gameIDs: [sharedCopyID])
         XCTAssertEqual(report.teamName, "年度同步队")
         XCTAssertTrue(historical.players.contains { $0.id == player.id && !$0.isCurrentRoster })
+        a.openGame(id: original.id)
         let stored = try XCTUnwrap(a.activeStoredGame), movedDate = ISO8601DateFormatter().date(from: "2023-12-31T23:30:00Z")!
         XCTAssertTrue(a.updateCompletedGameDate(id: stored.id, playedAt: movedDate, timeZoneID: "UTC", expectedRevision: stored.revision ?? 0))
-        await ca.synchronize(); await cb.synchronize(teamID: created.teamID)
+        await ca.publish(try XCTUnwrap(a.activeStoredGame), teamID: created.teamID,
+                         reviewedServerRevision: ca.publishedMatch(sourceID: original.id, teamID: created.teamID)?.serverRevision)
+        XCTAssertNil(ca.message)
+        await cb.synchronize(teamID: created.teamID)
         XCTAssertEqual(b.games.first?.yearID, "2023")
         XCTAssertEqual(b.seasonStatistics(for: after, seasonID: original.yearID).games.count, 0)
         XCTAssertEqual(b.seasonStatistics(for: after, seasonID: "2023").games.count, 1)
@@ -6492,8 +6564,9 @@ extension GameStoreTests {
         let relaunched = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = relaunched
         XCTAssertEqual(store.seasonStatistics(for: cloud, seasonID: original.yearID).batting, expected.batting)
         await relaunched.refresh(remote)
-        XCTAssertEqual(store.games.first { $0.id == sharedCopyID }?.state.batting[player.id]?.hits, dirty.state.batting[player.id]?.hits, "Refreshing an unchanged official version must not erase a local draft")
-        XCTAssertTrue(relaunched.state.conflicts.isEmpty)
+        XCTAssertEqual(store.games.first { $0.id == sharedCopyID }?.state.batting[player.id]?.hits, original.state.batting[player.id]?.hits)
+        XCTAssertTrue(relaunched.state.conflicts.contains { $0.game.state.batting[player.id]?.hits == dirty.state.batting[player.id]?.hits }, "Old local cache changes must be preserved separately, never automatically uploaded")
+        XCTAssertTrue(relaunched.state.pending.isEmpty)
         _ = try await client.matchCommand(path: TeamServiceClient.matchPath(cloud.id, remote.id) + "/deletion", method: "POST", body: .object([
             "operationID": .uuid(UUID()), "baseRevision": .number(Double(remote.serverRevision)), "writerEpoch": .number(Double(remote.writerEpoch)), "deleted": .bool(true)
         ]))
@@ -6575,7 +6648,7 @@ extension GameStoreTests {
         let store = freshStore(), disk = V30MatchMemoryStorage(), proxy = V30UnreliableMatchService(client)
         let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
         store.startGameClock(); let source = try XCTUnwrap(store.activeStoredGame)
-        await sync.publish(source, teamID: team.teamID)
+        try await seedLegacyMatch(source, teamID: team.teamID, coordinator: sync)
         let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
         store.openGame(id: sharedCopyID)
         let original = try XCTUnwrap(sync.match(localID: sharedCopyID))
@@ -6616,7 +6689,7 @@ extension GameStoreTests {
         let team = try await client.createTeam(name: "飞鹰", nickname: "教练", operationID: UUID())
         let store = freshStore(), disk = V30MatchMemoryStorage(), proxy = V30UnreliableMatchService(client)
         let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
-        let game = try XCTUnwrap(store.activeStoredGame); await sync.publish(game, teamID: team.teamID)
+        let game = try XCTUnwrap(store.activeStoredGame); try await seedLegacyMatch(game, teamID: team.teamID, coordinator: sync)
         let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
         store.openGame(id: sharedCopyID)
         let remote = try XCTUnwrap(sync.state.matches.first)
@@ -6656,7 +6729,7 @@ extension GameStoreTests {
         let team = try await client.createTeam(name: "海浪", nickname: "教练", operationID: UUID())
         let store = freshStore(), proxy = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage()
         let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
-        let source = try XCTUnwrap(store.activeStoredGame); await sync.publish(source, teamID: team.teamID)
+        let source = try XCTUnwrap(store.activeStoredGame); try await seedLegacyMatch(source, teamID: team.teamID, coordinator: sync)
         let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
         store.openGame(id: sharedCopyID)
         let before = await proxy.operations.count
@@ -6677,11 +6750,13 @@ extension GameStoreTests {
         let team = try await client.createTeam(name: "飞鹰", nickname: "教练", operationID: UUID())
         let store = freshStore(), proxy = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage()
         let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
-        let source = try XCTUnwrap(store.activeStoredGame); await sync.publish(source, teamID: team.teamID)
+        let source = try XCTUnwrap(store.activeStoredGame); try await seedLegacyMatch(source, teamID: team.teamID, coordinator: sync)
         let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
         store.openGame(id: sharedCopyID)
         let backup = try LocalBackup(snapshot: store.makeRosterSnapshot())
-        store.openGame(id: sharedCopyID); store.startGameClock(); store.recordPitch(.ball); await sync.waitForSync(); await sync.synchronize()
+        store.openGame(id: sharedCopyID); store.startGameClock(); store.recordPitch(.ball); await sync.waitForSync()
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        try await writeLegacyMatch(try XCTUnwrap(store.activeStoredGame), match: try XCTUnwrap(sync.match(localID: sharedCopyID)), coordinator: sync)
         let current = try XCTUnwrap(sync.match(localID: sharedCopyID)), count = await proxy.operations.count
         try store.restoreBackup(backup)
         XCTAssertTrue(sync.state.requiresRecoveryReview)
@@ -6701,7 +6776,7 @@ extension GameStoreTests {
         let store = freshStore(), source = try XCTUnwrap(store.activeStoredGame)
         let team = try await client.createTeam(name: "海浪档案", nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: source.ourTeam))
         let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
-        await sync.publish(source, teamID: team.teamID)
+        try await seedLegacyMatch(source, teamID: team.teamID, coordinator: sync)
         let url = try await client.exportTeamArchive(teamID: team.teamID)
         defer { try? FileManager.default.removeItem(at: url) }
         let archive = try PortableTeamArchive.validate(url)
@@ -6783,12 +6858,14 @@ extension GameStoreTests {
         let team = try await client.createTeam(name: "App HTTPS 临时验证", nickname: "验证记录员", operationID: UUID(), profile: SharedRosterSeed(team: source.ourTeam))
         do {
             let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
-            await sync.publish(source, teamID: team.teamID)
+            try await seedLegacyMatch(source, teamID: team.teamID, coordinator: sync)
         let sharedCopyID = try XCTUnwrap(sync.state.matches.last?.payload?.id)
         store.openGame(id: sharedCopyID)
             let remote = try XCTUnwrap(sync.match(localID: sharedCopyID), sync.message ?? "Shared match missing")
             XCTAssertEqual(remote.payload?.state, source.state); XCTAssertEqual(remote.accessMode, .closed)
-            store.openGame(id: sharedCopyID); store.startGameClock(); store.recordPitch(.ball); await sync.waitForSync(); await sync.synchronize()
+            store.openGame(id: sharedCopyID); store.startGameClock(); store.recordPitch(.ball); await sync.waitForSync()
+            XCTAssertTrue(sync.state.pending.isEmpty)
+            try await writeLegacyMatch(try XCTUnwrap(store.activeStoredGame), match: remote, coordinator: sync)
             let updated = try await client.match(teamID: team.teamID, gameID: remote.id); XCTAssertEqual(updated.payload?.state.balls, 1)
             let archive = try await client.exportTeamArchive(teamID: team.teamID)
             XCTAssertEqual(try PortableTeamArchive.validate(archive).records.first?.payload?.state.balls, 1); try? FileManager.default.removeItem(at: archive)
@@ -6843,7 +6920,7 @@ extension GameStoreTests {
         let team = try await client.createTeam(name: "独立副本", nickname: "管理员", operationID: UUID())
         let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = sync
         let original = try XCTUnwrap(store.activeStoredGame)
-        await sync.publish(original, teamID: team.teamID)
+        try await seedLegacyMatch(original, teamID: team.teamID, coordinator: sync)
         XCTAssertNil(sync.message)
         let shared = try XCTUnwrap(sync.publishedMatch(sourceID: original.id, teamID: team.teamID))
         XCTAssertNotEqual(shared.payload?.id, original.id); XCTAssertEqual(store.games.first { $0.id == original.id }, original)
@@ -6854,15 +6931,27 @@ extension GameStoreTests {
         await sync.synchronize()
         XCTAssertEqual(sync.match(id: shared.id)?.payload?.state.balls, original.state.balls)
         XCTAssertEqual(sync.match(id: shared.id)?.payload?.playedAt, original.playedAt)
-        store.openGame(id: shared.id); store.recordPitch(.swingingStrike)
-        await sync.waitForSync(); await sync.synchronize()
+        store.openGame(id: shared.id); store.readOnlyPresentation = true
+        let displayedArchive = store.game
+        store.recordPitch(.swingingStrike); store.finishGame()
+        XCTAssertEqual(store.game, displayedArchive, "The shared archive viewing presentation is read-only")
+        store.readOnlyPresentation = false
+        // Simulate data authored by an old release, then write it explicitly through the compatibility protocol.
+        store.recordPitch(.swingingStrike); await sync.waitForSync()
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertEqual(sync.match(id: shared.id)?.payload?.state.strikes, 0)
+        try await writeLegacyMatch(try XCTUnwrap(store.activeStoredGame), match: try XCTUnwrap(sync.match(id: shared.id)), coordinator: sync)
         XCTAssertNil(sync.message)
         XCTAssertEqual(store.games.first { $0.id == original.id }, changedOriginal)
         XCTAssertEqual(sync.match(id: shared.id)?.payload?.state.strikes, 1)
-        store.finishGame(); await sync.waitForSync(); await sync.synchronize()
+        store.finishGame(); await sync.waitForSync()
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        try await writeLegacyMatch(try XCTUnwrap(store.activeStoredGame), match: try XCTUnwrap(sync.match(id: shared.id)), coordinator: sync)
         let finished = try XCTUnwrap(store.activeStoredGame)
         XCTAssertTrue(store.updateCompletedGameDate(id: finished.id, playedAt: Date().addingTimeInterval(-86400), timeZoneID: "Asia/Shanghai", expectedRevision: finished.revision ?? 0))
-        await sync.waitForSync(); await sync.synchronize()
+        await sync.waitForSync()
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        try await writeLegacyMatch(try XCTUnwrap(store.activeStoredGame), match: try XCTUnwrap(sync.match(id: shared.id)), coordinator: sync)
         XCTAssertEqual(store.games.first { $0.id == original.id }, changedOriginal)
         let reader = try await matchPartner(client, team: team.teamID, role: .member), other = GameStore(persistenceURL: nil)
         let reading = SharedMatchCoordinator(store: other, service: reader, storage: V30MatchMemoryStorage()); other.sharedMatches = reading
@@ -6883,7 +6972,10 @@ extension GameStoreTests {
         try await startV21Live(store)
         let source = try XCTUnwrap(store.activeStoredGame)
         let sourceLiveCode = store.liveBroadcasts.binding(for: source.id)?.code
-        await sync.publish(source, teamID: team.teamID); await sync.publish(source, teamID: team.teamID)
+        try await seedLegacyMatch(source, teamID: team.teamID, coordinator: sync)
+        await sync.publish(source, teamID: team.teamID)
+        XCTAssertNotNil(sync.message, "Ongoing originals cannot be uploaded again")
+        XCTAssertTrue(sync.state.pending.isEmpty)
         XCTAssertEqual(sync.state.matches.count, 1)
         let copy = try XCTUnwrap(sync.state.matches.first)
         await sync.command(copy, resource: "deletion", fields: ["deleted": .bool(true)])
@@ -6901,7 +6993,7 @@ extension GameStoreTests {
         let team = try await client.createTeam(name: "旧版迁移", nickname: "管理员", operationID: UUID())
         let source = try XCTUnwrap(store.activeStoredGame)
         let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = sync
-        await sync.publish(source, teamID: team.teamID)
+        try await seedLegacyMatch(source, teamID: team.teamID, coordinator: sync)
         let copy = try XCTUnwrap(sync.state.matches.first)
         var legacy = try await client.match(teamID: team.teamID, gameID: copy.id)
         legacy.payload?.sharedGameID = copy.id; legacy.payload?.sharedTeamID = team.teamID
@@ -6946,7 +7038,7 @@ extension GameStoreTests {
 }
 
 extension GameStoreTests {
-    func testV301ScorerSharesScheduledAndCompletedSnapshotsAndMemberCannot() async throws {
+    func testV301ScorerUploadsOnlyCompletedSnapshotsAndMemberCannot() async throws {
         let admin = try matchClient(); _ = try await admin.enroll(deviceName: "管理员")
         let team = try await admin.createTeam(name: "赛程共享", nickname: "教练", operationID: UUID())
         let scorer = try await matchPartner(admin, team: team.teamID), reader = try await matchPartner(admin, team: team.teamID, role: .member)
@@ -6955,16 +7047,18 @@ extension GameStoreTests {
         await sync.publish(finished, teamID: team.teamID); XCTAssertNil(sync.message)
         let scheduledID = store.scheduleGame(ourTeam: try XCTUnwrap(store.currentTeam), opponent: store.opponentTeams[0], isHome: false, scheduledAt: Date().addingTimeInterval(86400))
         let scheduled = try XCTUnwrap(store.games.first { $0.id == scheduledID })
-        await sync.publish(scheduled, teamID: team.teamID); XCTAssertNil(sync.message)
-        XCTAssertEqual(sync.state.matches.count, 2); XCTAssertEqual(store.games.first { $0.id == scheduled.id }, scheduled)
+        await sync.publish(scheduled, teamID: team.teamID); XCTAssertNotNil(sync.message)
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertEqual(sync.state.matches.count, 1); XCTAssertEqual(store.games.first { $0.id == scheduled.id }, scheduled)
         let other = GameStore(persistenceURL: nil), read = SharedMatchCoordinator(store: other, service: reader, storage: V30MatchMemoryStorage()); other.sharedMatches = read
-        await read.synchronize(); XCTAssertEqual(Set(read.state.matches.compactMap { $0.payload?.status }), [.scheduled, .completed])
+        await read.synchronize(); XCTAssertEqual(Set(read.state.matches.compactMap { $0.payload?.status }), [.completed])
         XCTAssertEqual(store.recentGames.count, 1); XCTAssertEqual(store.scheduledGames.count, 1)
         let forbidden = freshStore(), deny = SharedMatchCoordinator(store: forbidden, service: reader, storage: V30MatchMemoryStorage()); forbidden.sharedMatches = deny
+        forbidden.finishGame()
         await deny.publish(try XCTUnwrap(forbidden.activeStoredGame), teamID: team.teamID)
         XCTAssertNotNil(deny.message)
         let finalPage = try await reader.matchPage(teamID: team.teamID, cursor: 0)
-        XCTAssertEqual(finalPage.games.count, 2)
+        XCTAssertEqual(finalPage.games.count, 1)
     }
 
     func testV301DatabaseReopenAndMigrationFailurePreserveBothCopies() async throws {
@@ -6976,7 +7070,7 @@ extension GameStoreTests {
         let client = try matchClient(); _ = try await client.enroll(deviceName: "QA")
         let team = try await client.createTeam(name: "落盘隔离", nickname: "教练", operationID: UUID())
         let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = sync
-        await sync.publish(source, teamID: team.teamID)
+        try await seedLegacyMatch(source, teamID: team.teamID, coordinator: sync)
         let shared = try XCTUnwrap(sync.state.matches.first)
         let reopened = GameStore(persistenceURL: url)
         XCTAssertEqual(reopened.games.first { $0.id == source.id }, source)
@@ -7014,8 +7108,9 @@ extension GameStoreTests {
         let store = freshStore(), client = try matchClient(); _ = try await client.enroll(deviceName: "QA")
         let team = try await client.createTeam(name: "旧备份隔离", nickname: "教练", operationID: UUID())
         let source = try XCTUnwrap(store.activeStoredGame), disk = V30MatchMemoryStorage()
+        disk.state.originalLocalGames = [source] // Original retained by the release that created this legacy fixture.
         let sync = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = sync
-        await sync.publish(source, teamID: team.teamID)
+        try await seedLegacyMatch(source, teamID: team.teamID, coordinator: sync)
         let shared = try XCTUnwrap(sync.state.matches.first)
         var legacy = source; legacy.sharedGameID = shared.id; legacy.sharedTeamID = team.teamID
         legacy.state.balls = 2; legacy.revision = (legacy.revision ?? 0) + 1
@@ -7189,6 +7284,19 @@ extension GameStoreTests {
         let copyID = try XCTUnwrap(ca.state.matches.first?.payload?.id)
         XCTAssertEqual(a.batterPerformance(playerID: player.id, annual: true).contacts.count, 1)
         XCTAssertEqual(a.batterPerformance(playerID: player.id, annual: true).line.plateAppearances, 1)
+        a.openGame(id: local.id)
+        var correction = try a.makeCorrectionDraft()
+        let hitIndex = try XCTUnwrap(correction.journal.operations.firstIndex { $0.battedBall != nil })
+        correction.journal.operations[hitIndex].battedBall?.selectRegion(.left)
+        correction.journal.operations[hitIndex].edited = true
+        XCTAssertTrue(a.saveCorrection(correction), a.actionErrorMessage ?? "")
+        XCTAssertTrue(ca.state.pending.isEmpty, "A post-game correction alone does not confirm another upload")
+        a.openGame(id: copyID); a.readOnlyPresentation = true
+        let latestLocal = a.batterPerformance(playerID: player.id, annual: true)
+        XCTAssertEqual(latestLocal.contacts.count, 1)
+        XCTAssertEqual(latestLocal.contacts.first?.observation.region, .left, "Annual view prefers the retained local correction over the older uploaded copy")
+        let stillUploaded = try await admin.match(teamID: team.teamID, gameID: copyID)
+        XCTAssertEqual(stillUploaded.payload?.state.scoringEvents?.first { $0.battedBall != nil }?.battedBall?.region, .center)
         let b = GameStore(persistenceURL: nil)
         let db = TeamSharingStore(service: reader, storage: V30DirectoryMemoryStorage()); b.teamSharing = db; await db.connect()
         let cb = SharedMatchCoordinator(store: b, service: reader, storage: V30MatchMemoryStorage()); b.sharedMatches = cb
@@ -7365,17 +7473,20 @@ extension GameStoreTests {
         let partner = try await matchPartner(client, team: team.teamID), b = GameStore(persistenceURL: nil)
         let ca = SharedMatchCoordinator(store: a, service: client, storage: V30MatchMemoryStorage()), cb = SharedMatchCoordinator(store: b, service: partner, storage: V30MatchMemoryStorage())
         a.sharedMatches = ca; b.sharedMatches = cb
-        await ca.publish(original, teamID: team.teamID); XCTAssertNil(ca.message)
+        try await seedLegacyMatch(original, teamID: team.teamID, coordinator: ca); XCTAssertNil(ca.message)
         let match = try XCTUnwrap(ca.state.matches.first), copyID = try XCTUnwrap(match.payload?.id)
         a.openGame(id: copyID)
         await cb.synchronize(teamID: team.teamID); b.openGame(id: copyID)
         XCTAssertEqual(b.game.scoringEvents?.last?.battedBall, expected)
         let device = try await partner.enroll(deviceName: "V4 接手设备")
-        await ca.command(match, resource: "handoff/propose", fields: ["targetDeviceID": .uuid(device)])
+        try await legacyHandoff(match, coordinator: ca, action: "propose", fields: ["targetDeviceID": .uuid(device)])
         await cb.synchronize(teamID: team.teamID)
-        await cb.command(try XCTUnwrap(cb.match(id: match.id)), resource: "handoff/accept")
+        try await legacyHandoff(try XCTUnwrap(cb.match(id: match.id)), coordinator: cb, action: "accept")
         XCTAssertNil(cb.message); XCTAssertTrue(cb.canEdit(copyID))
         b.recordPitch(.ball); await cb.waitForSync(); await ca.synchronize(teamID: team.teamID)
+        XCTAssertTrue(cb.state.pending.isEmpty)
+        let heldAtServer = try await partner.match(teamID: team.teamID, gameID: match.id)
+        XCTAssertEqual(heldAtServer.payload?.state.balls, original.state.balls)
         XCTAssertEqual(a.games.first { $0.id == copyID }?.state.scoringEvents?.first { $0.resolvedOutcome == .single }?.battedBall, expected)
         let archive = try await client.exportTeamArchive(teamID: team.teamID)
         defer { try? FileManager.default.removeItem(at: archive) }
@@ -7401,5 +7512,335 @@ extension GameStoreTests {
         let store = freshStore(), observation = v4Observation(.ground, [], status: .pending)
         XCTAssertTrue(store.applyPlay(.error, observation: observation)); XCTAssertEqual(store.game.homeErrors, 1)
         XCTAssertTrue(store.game.scoringEvents!.last!.needsReview)
+    }
+}
+
+extension GameStoreTests {
+    func testV311LocalTargetNeverUploadsAndSurvivesBackup() async throws {
+        let store = freshStore(), client = try matchClient()
+        let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk)
+        store.sharedMatches = sync
+        let id = try XCTUnwrap(store.activeStoredGame).id, target = UUID()
+        XCTAssertTrue(store.setPostgameUploadTarget(gameID: id, teamID: target))
+        store.recordPitch(.ball)
+        XCTAssertFalse(sync.isShared(id)); XCTAssertTrue(store.canEditCurrentMatch)
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        await sync.publish(try XCTUnwrap(store.activeStoredGame), teamID: target)
+        XCTAssertTrue(sync.state.pending.isEmpty, "An ongoing match must never enter the team upload queue")
+        store.finishGame()
+        XCTAssertTrue(sync.state.pending.isEmpty, "Finishing alone is not consent to upload")
+        let backup = try LocalBackup.read(store.exportBackup())
+        XCTAssertEqual(try backup.snapshot().games.first { $0.id == id }?.postgameUploadTeamID, target)
+        XCTAssertEqual(store.activeStoredGame?.sharedGameID, nil)
+    }
+
+    func testV311ConfirmedUploadLostResponseRetriesSameSnapshotAndKeepsLocal() async throws {
+        let store = freshStore(), client = try matchClient()
+        _ = try await client.enroll(deviceName: "3.1.1 postgame")
+        let team = try await client.createTeam(name: "赛后重试", nickname: "记录员", operationID: UUID())
+        let proxy = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage()
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        store.recordPitch(.ball); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame)
+        await proxy.network(loseNextResponse: true)
+        await sync.publish(original, teamID: team.teamID)
+        XCTAssertEqual(sync.state.pending.count, 1)
+        let pending = try XCTUnwrap(sync.state.pending.first)
+        XCTAssertFalse(sync.isShared(original.id)); XCTAssertTrue(store.canEditCurrentMatch)
+        XCTAssertEqual(store.activeStoredGame, original)
+        // Reopen the durable queue after a response lost after server commit.
+        let reopened = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = reopened
+        await reopened.synchronize()
+        XCTAssertTrue(reopened.state.pending.isEmpty, reopened.message ?? "")
+        let remote = try XCTUnwrap(reopened.publishedMatch(sourceID: original.id, teamID: team.teamID))
+        XCTAssertEqual(remote.payload?.status, .completed); XCTAssertTrue(remote.payload?.state.isFinal == true)
+        XCTAssertEqual(remote.wireLocalID, original.id)
+        XCTAssertEqual(store.games.first { $0.id == original.id }, original)
+        XCTAssertEqual(reopened.state.acknowledgedRevisions["postgame:\(team.teamID):\(original.id)"], original.revision ?? 0)
+        let operations = await proxy.operations
+        XCTAssertGreaterThanOrEqual(operations.count, 2)
+        func requestDigest(_ text: String) throws -> Data {
+            let object = try JSONSerialization.jsonObject(with: Data(text.utf8))
+            return Data(SHA256.hash(data: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])))
+        }
+        XCTAssertEqual(try requestDigest(operations[0]), try requestDigest(operations[1]), "Retry must reuse the operation ID and immutable semantic body; JSON object key order is irrelevant")
+        await reopened.publish(original, teamID: team.teamID)
+        XCTAssertTrue(reopened.state.pending.isEmpty)
+        let page = try await client.matchPage(teamID: team.teamID, cursor: 0)
+        XCTAssertEqual(page.games.count, 1)
+        XCTAssertEqual(pending.localID, original.id)
+    }
+
+    func testV311UploadFailureDoesNotBlockLiveOrLocalEdits() async throws {
+        let store = freshStore(), client = try matchClient()
+        let proxy = V30UnreliableMatchService(client), disk = V30MatchMemoryStorage()
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        let vault = LiveTestVault(), transport = LiveTestTransport()
+        store.liveBroadcasts = LiveBroadcastManager(store: store, vault: vault, transport: transport, enabled: true)
+        let id = try XCTUnwrap(store.activeStoredGame).id
+        XCTAssertTrue(store.setPostgameUploadTarget(gameID: id, teamID: UUID()))
+        store.liveBroadcasts.start(id); await store.liveBroadcasts.waitForPendingSync()
+        let binding = try XCTUnwrap(store.liveBroadcasts.binding(for: id))
+        store.recordPitch(.ball); await store.liveBroadcasts.waitForPendingSync()
+        XCTAssertFalse(transport.calls.isEmpty)
+        store.finishGame()
+        await proxy.network(offline: true)
+        await sync.publish(try XCTUnwrap(store.activeStoredGame), teamID: UUID())
+        XCTAssertEqual(sync.state.pending.count, 1)
+        XCTAssertFalse(sync.isShared(id)); XCTAssertTrue(store.canEditCurrentMatch)
+        XCTAssertEqual(store.liveBroadcasts.binding(for: id)?.token, binding.token)
+        XCTAssertEqual(store.liveBroadcasts.binding(for: id)?.code, binding.code)
+        XCTAssertEqual(store.activeStoredGame?.id, id)
+        XCTAssertNil(store.activeStoredGame?.sharedGameID)
+        store.undo()
+        XCTAssertFalse(store.game.isFinal)
+        XCTAssertEqual(sync.state.pending.count, 1, "Already confirmed final snapshot must not change when the local original changes")
+    }
+
+    func testV311ExistingScheduledCloudUpdatedInPlaceAndConcurrentUpdateRejected() async throws {
+        let store = freshStore(), client = try matchClient()
+        _ = try await client.enroll(deviceName: "3.1.1 legacy")
+        let team = try await client.createTeam(name: "旧零比零", nickname: "记录员", operationID: UUID())
+        var scheduled = try XCTUnwrap(store.activeStoredGame); scheduled.status = .scheduled
+        let old = try await client.matchCommand(path: "teams/\(team.teamID.uuidString.lowercased())/games", method: "POST", body: .object([
+            "operationID": .uuid(UUID()), "formatVersion": .number(2), "payload": try .encode(scheduled),
+            "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(scheduled).data())]))
+        let oldID = try JSONDecoder().decode(SharedMatch.self, from: JSONEncoder().encode(old)).id
+        let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
+        await sync.synchronize()
+        store.recordPitch(.ball); store.finishGame()
+        let final = try XCTUnwrap(store.activeStoredGame)
+        let reviewedRevision = try XCTUnwrap(sync.match(id: oldID)).serverRevision
+        await sync.publish(final, teamID: team.teamID, reviewedServerRevision: reviewedRevision)
+        XCTAssertTrue(sync.state.pending.isEmpty, sync.message ?? "")
+        XCTAssertEqual(sync.publishedMatch(sourceID: final.id, teamID: team.teamID)?.id, oldID)
+        let uploaded = try await client.match(teamID: team.teamID, gameID: oldID)
+        XCTAssertEqual(uploaded.payload?.status, .completed)
+        XCTAssertEqual(store.games.first { $0.id == final.id }, final)
+        let remote = try XCTUnwrap(sync.match(id: oldID))
+        var competing = try XCTUnwrap(remote.payload)
+        competing.id = try XCTUnwrap(remote.wireLocalID)
+        competing.state.balls = 2
+        _ = try await client.matchCommand(path: TeamServiceClient.matchPath(team.teamID, oldID), method: "PUT", body: .object([
+            "operationID": .uuid(UUID()), "formatVersion": .number(2), "baseRevision": .number(Double(remote.serverRevision)),
+            "writerEpoch": .number(Double(remote.writerEpoch)), "payload": try .encode(competing),
+            "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(competing).data())]))
+        let changed = try await client.match(teamID: team.teamID, gameID: oldID)
+        XCTAssertGreaterThan(changed.serverRevision, remote.serverRevision)
+        store.undo(); store.recordPitch(.calledStrike); store.finishGame()
+        await sync.publish(try XCTUnwrap(store.activeStoredGame), teamID: team.teamID, reviewedServerRevision: remote.serverRevision)
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertNotNil(sync.message, "An independently changed official revision needs explicit reconciliation")
+        XCTAssertTrue(sync.state.heldOperations?.contains { $0.localID == final.id && $0.kind == "postgameUpdate" } == true)
+        let retained = try await client.match(teamID: team.teamID, gameID: oldID)
+        XCTAssertEqual(retained.payload?.state, competing.state)
+    }
+}
+
+extension GameStoreTests {
+    func testV311SharedRosterLocalStatisticsAndCloudScopeStaySeparate() async throws {
+        let store = freshStore(), client = try matchClient()
+        _ = try await client.enroll(deviceName: "3.1.1 statistics")
+        let seed = try XCTUnwrap(store.currentTeam)
+        let team = try await client.createTeam(name: "共享名单统计", nickname: "记录员", operationID: UUID(), profile: SharedRosterSeed(team: seed))
+        let directory = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage()); store.teamSharing = directory
+        await directory.connect(); store.setCurrentTeam(id: team.teamID)
+        let roster = try XCTUnwrap(store.currentTeam)
+        store.startNewGame(opponent: store.opponentTeams[0], isHome: false, innings: 6, lineup: Array(roster.players.prefix(9)))
+        let sync = SharedMatchCoordinator(store: store, service: client, storage: V30MatchMemoryStorage()); store.sharedMatches = sync
+        store.recordPitch(.ball); store.finishGame()
+        let local = try XCTUnwrap(store.activeStoredGame)
+        let scope = store.localStatisticsScope(team.teamID)
+        XCTAssertNotEqual(scope, team.teamID)
+        XCTAssertTrue(store.statisticsTeams.contains { $0.id == scope && $0.name.contains("本机记录") })
+        XCTAssertEqual(store.completedStatisticsGames(teamID: scope, seasonID: local.yearID).map(\.id), [local.id])
+        XCTAssertTrue(store.completedStatisticsGames(teamID: team.teamID, seasonID: local.yearID).isEmpty)
+        await sync.publish(local, teamID: team.teamID)
+        XCTAssertNil(sync.message)
+        XCTAssertEqual(store.completedStatisticsGames(teamID: scope, seasonID: local.yearID).count, 1)
+        XCTAssertEqual(store.completedStatisticsGames(teamID: team.teamID, seasonID: local.yearID).count, 1)
+        XCTAssertEqual(store.completedStatisticsGames(seasonID: local.yearID).filter { $0.id == local.id || $0.sharedTeamID == team.teamID }.count, 1)
+        XCTAssertEqual(store.games.first { $0.id == local.id }, local)
+        XCTAssertTrue(store.setPostgameUploadTarget(gameID: local.id, teamID: nil))
+        XCTAssertTrue(store.activeStoredGame?.postgameTargetConfigured == true)
+        XCTAssertNil(store.activeStoredGame?.postgameUploadTeamID)
+    }
+
+    func testV311QueueSaveFailureCannotSendOrMutateLocalOriginal() async throws {
+        let store = freshStore(), disk = V30MatchMemoryStorage()
+        let proxy = V30UnreliableMatchService(try matchClient())
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        store.finishGame(); let local = try XCTUnwrap(store.activeStoredGame)
+        disk.failSave = true
+        await sync.publish(local, teamID: UUID())
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertNotNil(sync.message)
+        XCTAssertEqual(store.activeStoredGame, local)
+        let operations = await proxy.operations
+        XCTAssertTrue(operations.isEmpty)
+    }
+}
+
+/// Counts the read loop and fails a fourth enrollment so a broken retry loop
+/// becomes an assertion failure rather than hanging the test process forever.
+private actor V311BoundedDirectoryService: MatchService {
+    let client: TeamServiceClient
+    private(set) var enrollments = 0
+    private(set) var commandCount = 0
+    init(_ client: TeamServiceClient) { self.client = client }
+    func enroll(deviceName: String) async throws -> UUID {
+        enrollments += 1
+        guard enrollments <= 3 else { throw TeamServiceError.message("测试保护：重复刷新超过上限") }
+        return try await client.enroll(deviceName: deviceName)
+    }
+    func teams() async throws -> SharedTeamList { try await client.teams() }
+    func matchPage(teamID: UUID, cursor: Int) async throws -> SharedMatchPage { try await client.matchPage(teamID: teamID, cursor: cursor) }
+    func match(teamID: UUID, gameID: UUID) async throws -> SharedMatch { try await client.match(teamID: teamID, gameID: gameID) }
+    func matchCommand(path: String, method: String, body: MatchJSON) async throws -> MatchJSON {
+        commandCount += 1
+        return try await client.matchCommand(path: path, method: method, body: body)
+    }
+    func matchDevices(teamID: UUID, gameID: UUID) async throws -> [MatchDevice] { try await client.matchDevices(teamID: teamID, gameID: gameID) }
+    func matchViewers(teamID: UUID, gameID: UUID) async throws -> MatchViewers { try await client.matchViewers(teamID: teamID, gameID: gameID) }
+}
+
+extension GameStoreTests {
+    private func v311RetainedOperation(_ game: StoredGame, teamID: UUID, kind: String, gameID: UUID? = nil) throws -> PendingMatchOperation {
+        let operationID = UUID()
+        return PendingMatchOperation(id: operationID, localID: game.id, teamID: teamID, gameID: gameID,
+            path: gameID.map { TeamServiceClient.matchPath(teamID, $0) } ?? "teams/\(teamID.uuidString.lowercased())/games",
+            method: gameID == nil ? "POST" : "PUT",
+            body: .object(["operationID": .uuid(operationID), "formatVersion": .number(2),
+                           "payload": try .encode(game),
+                           "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(game).data())]),
+            kind: kind, sentLocalRevision: game.revision ?? 0, token: nil)
+    }
+
+    private func v311CanonicalRequest(_ operation: PendingMatchOperation) throws -> Data {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(operation)
+    }
+
+    func testV311AlreadyMigratedColdStartHoldsLegacyRequestsWithoutReserializingSnapshots() async throws {
+        let store = freshStore(), original = try XCTUnwrap(store.activeStoredGame)
+        let disk = V30MatchMemoryStorage(), teamID = UUID()
+        let proxy = V30UnreliableMatchService(try matchClient())
+        let legacy = try ["create", "update", "live", "live-heartbeat", "handoff/propose"].map {
+            try v311RetainedOperation(original, teamID: teamID, kind: $0)
+        }
+        disk.state.isolatedCopiesVersion = 1 // Previously migrated devices must not bypass the new quarantine.
+        disk.state.pending = legacy
+        let expected = try Dictionary(uniqueKeysWithValues: legacy.map { ($0.id, try v311CanonicalRequest($0)) })
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertEqual(Set(sync.state.heldOperations?.map(\.id) ?? []), Set(legacy.map(\.id)))
+        for retained in sync.state.heldOperations ?? [] { XCTAssertEqual(try v311CanonicalRequest(retained), expected[retained.id]) }
+        XCTAssertEqual(store.activeStoredGame, original)
+        store.recordPitch(.ball)
+        XCTAssertTrue(sync.state.pending.isEmpty, "Ordinary saves must not recreate the removed update queue")
+        let changed = try XCTUnwrap(store.activeStoredGame)
+        let reopened = SharedMatchCoordinator(store: store, service: proxy, storage: disk)
+        XCTAssertTrue(reopened.state.pending.isEmpty)
+        XCTAssertEqual(reopened.state.heldOperations?.count, legacy.count, "Repeated cold starts must not duplicate retained operations")
+        for retained in reopened.state.heldOperations ?? [] { XCTAssertEqual(try v311CanonicalRequest(retained), expected[retained.id]) }
+        XCTAssertEqual(store.activeStoredGame, changed)
+        let operations = await proxy.operations
+        XCTAssertTrue(operations.isEmpty)
+    }
+
+    func testV311LegacyUpdateHeldWhileExplicitArchiveManagementStillExecutes() async throws {
+        let store = freshStore(), client = try matchClient()
+        let device = try await client.enroll(deviceName: "3.1.1 管理兼容")
+        let team = try await client.createTeam(name: "旧请求管理", nickname: "管理员", operationID: UUID())
+        store.finishGame(); let original = try XCTUnwrap(store.activeStoredGame)
+        let fixture = try v311RetainedOperation(original, teamID: team.teamID, kind: "create")
+        let receipt = try await client.matchCommand(path: fixture.path, method: fixture.method, body: fixture.body)
+        let created = try JSONDecoder().decode(SharedMatch.self, from: JSONEncoder().encode(receipt))
+        let remote = try await client.match(teamID: team.teamID, gameID: created.id)
+        let oldWrite = try v311RetainedOperation(original, teamID: team.teamID, kind: "update", gameID: remote.id)
+        let managementID = UUID()
+        let access = PendingMatchOperation(id: managementID, localID: remote.id, teamID: team.teamID, gameID: remote.id,
+            path: TeamServiceClient.matchPath(team.teamID, remote.id) + "/access", method: "POST",
+            body: .object(["operationID": .uuid(managementID), "mode": .string("public"),
+                           "baseRevision": .number(Double(remote.serverRevision)), "writerEpoch": .number(Double(remote.writerEpoch)),
+                           "baseAccessVersion": .number(Double(remote.accessVersion))]),
+            kind: "access", sentLocalRevision: nil, token: nil)
+        let disk = V30MatchMemoryStorage(); disk.state.isolatedCopiesVersion = 1
+        disk.state.deviceID = device; disk.state.matches = [remote.isolated]
+        disk.state.acknowledgedRevisions[remote.id.uuidString] = remote.payload?.revision ?? 0
+        disk.state.pending = [oldWrite, access]
+        let proxy = V30UnreliableMatchService(client)
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        XCTAssertEqual(sync.state.pending.map(\.id), [managementID])
+        await sync.synchronize()
+        XCTAssertTrue(sync.state.pending.isEmpty, sync.message ?? "")
+        XCTAssertEqual(sync.state.heldOperations?.map(\.id), [oldWrite.id])
+        XCTAssertEqual(try v311CanonicalRequest(try XCTUnwrap(sync.state.heldOperations?.first)), try v311CanonicalRequest(oldWrite))
+        let updated = try await client.match(teamID: team.teamID, gameID: remote.id)
+        XCTAssertEqual(updated.accessMode, .public)
+        XCTAssertEqual(updated.payload?.state, original.state)
+        XCTAssertEqual(store.games.first { $0.id == original.id }, original)
+        let operations = await proxy.operations
+        XCTAssertEqual(operations.count, 1, "Only the explicit management request may reach the service")
+    }
+
+    func testV311InaccessiblePostgameCreateIsHeldAndWorkerStopsWithoutSending() async throws {
+        let store = freshStore(); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame), disk = V30MatchMemoryStorage()
+        let pending = try v311RetainedOperation(original, teamID: UUID(), kind: "postgameCreate")
+        disk.state.isolatedCopiesVersion = 1; disk.state.pending = [pending]
+        // A fresh real service identity has no teams; the old target is inaccessible.
+        let service = V311BoundedDirectoryService(try matchClient())
+        let sync = SharedMatchCoordinator(store: store, service: service, storage: disk); store.sharedMatches = sync
+        sync.requestSync(); await sync.waitForSync()
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertEqual(sync.state.heldOperations?.map(\.id), [pending.id])
+        XCTAssertEqual(try v311CanonicalRequest(try XCTUnwrap(sync.state.heldOperations?.first)), try v311CanonicalRequest(pending))
+        let enrollments = await service.enrollments, commands = await service.commandCount
+        XCTAssertEqual(enrollments, 1, "An inaccessible upload must not trigger a tight retry/read loop")
+        XCTAssertEqual(commands, 0)
+        XCTAssertEqual(store.activeStoredGame, original)
+        XCTAssertFalse(sync.isShared(original.id)); XCTAssertTrue(store.canEditCurrentMatch)
+        XCTAssertFalse(sync.busy)
+    }
+
+    func testV311RestoreHoldsCompleteConfirmedRequestsWithoutAutomaticallyReplaying() async throws {
+        let store = freshStore(); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame), disk = V30MatchMemoryStorage()
+        let pending = try v311RetainedOperation(original, teamID: UUID(), kind: "postgameCreate")
+        disk.state.isolatedCopiesVersion = 1; disk.state.pending = [pending]
+        let proxy = V30UnreliableMatchService(try matchClient())
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        sync.detachAfterRestore()
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertEqual(sync.state.heldOperations?.map(\.id), [pending.id])
+        XCTAssertEqual(try v311CanonicalRequest(try XCTUnwrap(sync.state.heldOperations?.first)), try v311CanonicalRequest(pending))
+        sync.detachAfterRestore()
+        let reopened = SharedMatchCoordinator(store: store, service: proxy, storage: disk)
+        XCTAssertEqual(reopened.state.heldOperations?.count, 1)
+        XCTAssertTrue(reopened.state.pending.isEmpty)
+        XCTAssertEqual(store.activeStoredGame, original)
+        let operations = await proxy.operations
+        XCTAssertTrue(operations.isEmpty)
+    }
+
+    func testV311ServiceRecoveryReviewPreservesRequestAndNeverRequeuesIt() async throws {
+        let store = freshStore(); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame), disk = V30MatchMemoryStorage()
+        let pending = try v311RetainedOperation(original, teamID: UUID(), kind: "postgameCreate")
+        disk.state.isolatedCopiesVersion = 1; disk.state.pending = [pending]; disk.state.requiresRecoveryReview = true
+        let proxy = V30UnreliableMatchService(try matchClient())
+        let sync = SharedMatchCoordinator(store: store, service: proxy, storage: disk); store.sharedMatches = sync
+        let reviewed = await sync.reconcileAfterRecovery()
+        XCTAssertTrue(reviewed, sync.message ?? "")
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertEqual(sync.state.heldOperations?.map(\.id), [pending.id])
+        XCTAssertEqual(try v311CanonicalRequest(try XCTUnwrap(sync.state.heldOperations?.first)), try v311CanonicalRequest(pending))
+        try sync.finishRecoveryReview()
+        await sync.synchronize()
+        XCTAssertTrue(sync.state.pending.isEmpty)
+        XCTAssertEqual(store.activeStoredGame, original)
+        let operations = await proxy.operations
+        XCTAssertTrue(operations.isEmpty, "Completing recovery review does not grant upload consent")
     }
 }

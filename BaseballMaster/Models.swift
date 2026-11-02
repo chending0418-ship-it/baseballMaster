@@ -430,6 +430,9 @@ struct StoredGame: Identifiable, Equatable, Codable {
     var sharedPlayerLinks: [MatchPlayerLink]? = nil
     var historySourceID: UUID? = nil
     var minimumWriterFormat: Int? = nil
+    /// A suggestion only; uploading always requires a separate post-game confirmation.
+    var postgameUploadTeamID: UUID? = nil
+    var postgameTargetConfigured: Bool? = nil
 
     init(
         id: UUID = UUID(),
