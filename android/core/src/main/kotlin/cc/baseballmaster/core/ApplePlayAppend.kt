@@ -14,16 +14,19 @@ internal object ApplePlayAppend {
         val id=appleUUID(operationID)
         val source=AppleSourceBackup.prepare(bytes)
         val game=source.games().single {it.id==appleUUID(gameID)}
+        val firstStart=!game.clockHasStarted && game.journal.isEmpty() && game.inning==1 && game.isTop && game.outs==0 &&
+            game.bases.all {it==null} && game.batting.isEmpty() && game.pitching.isEmpty() &&
+            game.balls==game.rules.initialBalls && game.strikes==game.rules.initialStrikes
         require(!game.incompletePrefix && !game.isFinal && game.pendingDecision==null &&
-            !game.halfEndedAwaitingDecision && game.clockRunningSince!=null && game.journal.isNotEmpty()) { "此来源比赛暂不能写入击球" }
+            !game.halfEndedAwaitingDecision && (firstStart || game.clockRunningSince!=null && game.journal.isNotEmpty())) { "此来源比赛暂不能写入击球" }
         val inspection=AppleBackupEnvelope.inspect(bytes)
         val stored=inspection.snapshot.getValue("games").jsonArray.map {it.jsonObject}.single {appleUUID(it.getValue("id").jsonPrimitive.content)==game.id}
         val state=stored.getValue("state").jsonObject
         val journal=state.getValue("historyJournal").jsonObject
         val date=AppleLifecycleAppend.date(command.at)
-        val reserved=(listOf(id)+ (0..1).flatMap {listOf(AppleLifecycleAppend.stable(id,"event$it").lowercase(),AppleLifecycleAppend.stable(id,"log$it").lowercase())}+
+        val reserved=(listOf(id)+ (0..(if(firstStart) 2 else 1)).flatMap {listOf(AppleLifecycleAppend.stable(id,"event$it").lowercase(),AppleLifecycleAppend.stable(id,"log$it").lowercase())}+
             AppleLifecycleAppend.stable(id,"nextAppearance").lowercase()).toSet()
-        require(reserved.size==6)
+        require(reserved.size==if(firstStart) 8 else 6)
         fun check(value:JsonElement,dates:Boolean) {
             when(value) {
                 is JsonObject -> {
@@ -56,6 +59,10 @@ internal object ApplePlayAppend {
         fun remove(vararg keys:String) {updated=JsonObject(updated-keys.toSet())}
         fun ids(values:Iterable<String>)=JsonArray(values.map {JsonPrimitive(it.uppercase())})
         fun ownerPairs(values:Map<String,String>)=buildJsonArray {values.toSortedMap().forEach {(runner,pitcher)->add(runner.uppercase());add(pitcher.uppercase())}}
+        if(firstStart) {
+            setState("clockRunningSince",date);setState("clockElapsedSeconds",JsonPrimitive(0))
+            setState("clockDisplayMode",JsonPrimitive(if(game.rules.timed) "remaining" else "elapsed"))
+        }
         for((key,value) in listOf("inning" to next.inning,"balls" to next.balls,"strikes" to next.strikes,"outs" to next.outs,
             "homeBatterIndex" to next.homeBatterIndex,"awayBatterIndex" to next.awayBatterIndex,"homeHits" to next.homeHits,"awayHits" to next.awayHits,
             "homeErrors" to next.homeErrors,"awayErrors" to next.awayErrors,"plateAppearancePitchCount" to next.appearancePitches)) setState(key,JsonPrimitive(value))
@@ -101,9 +108,10 @@ internal object ApplePlayAppend {
         val title="${game.batter.name}：${outcome.title}"+if(summary.isEmpty()) "" else "；$summary"
         val halfTitle="三出局，攻守交换，本半局结束（实际 3 出局）"
         val incomplete=outcome in setOf(Outcome.other,Outcome.pendingOut,Outcome.pending)
-        fun log(index:Int,text:String)=buildJsonObject {put("id",AppleLifecycleAppend.stable(id,"log$index"));put("inning",game.inning);put("isTop",game.isTop);put("timestamp",date);put("text",text);put("isIncomplete",if(index==0) incomplete else false)}
+        fun log(index:Int,text:String)=buildJsonObject {put("id",AppleLifecycleAppend.stable(id,"log$index"));put("inning",game.inning);put("isTop",game.isTop);put("timestamp",date);put("text",text);put("isIncomplete",if(index==(if(firstStart) 1 else 0)) incomplete else false)}
+        val playIndex=if(firstStart) 1 else 0
         val event=buildJsonObject {
-            put("id",AppleLifecycleAppend.stable(id,"event0"));put("logEntryID",AppleLifecycleAppend.stable(id,"log0"));put("inning",game.inning);put("isTop",game.isTop);put("timestamp",date)
+            put("id",AppleLifecycleAppend.stable(id,"event$playIndex"));put("logEntryID",AppleLifecycleAppend.stable(id,"log$playIndex"));put("inning",game.inning);put("isTop",game.isTop);put("timestamp",date)
             put("category","battedBall");put("title",title);put("notation",outcome.notation);put("primaryPlayerID",game.batter.id.uppercase())
             if(game.rules.mode!=GameMode.coachPitch) put("secondaryPlayerID",game.pitcher.id.uppercase())
             put("plateAppearanceBatterID",game.batter.id.uppercase());put("plateAppearanceID",oldAppearance);put("effectiveScorerIDs",ids(scorers))
@@ -111,12 +119,17 @@ internal object ApplePlayAppend {
             put("needsReview",incomplete);put("resolvedOutcome",outcome.title);put("automaticRunnerRuns",moves.filter {it.destination==4}.take(game.remainingRuns).count {it.playerID in game.automaticRunnerIDs})
             put("beforeSituation",AppleLifecycleAppend.situation(state));put("afterSituation",AppleLifecycleAppend.situation(if(halfChanged) intermediate else updated))
         }
-        val events=listOf(event)+if(halfChanged) listOf(buildJsonObject {
-            put("id",AppleLifecycleAppend.stable(id,"event1"));put("logEntryID",AppleLifecycleAppend.stable(id,"log1"));put("inning",game.inning);put("isTop",game.isTop);put("timestamp",date)
+        val clockEvents=if(firstStart) listOf(buildJsonObject {
+            put("id",AppleLifecycleAppend.stable(id,"event0"));put("logEntryID",AppleLifecycleAppend.stable(id,"log0"));put("inning",game.inning);put("isTop",game.isTop);put("timestamp",date)
+            put("category","clock");put("title","Play Ball，比赛计时开始");put("notation","PLAY");put("runnerMovements",JsonArray(emptyList()));put("needsReview",false)
+            put("beforeSituation",AppleLifecycleAppend.situation(state));put("afterSituation",AppleLifecycleAppend.situation(state))
+        }) else emptyList()
+        val events=clockEvents+listOf(event)+if(halfChanged) listOf(buildJsonObject {
+            put("id",AppleLifecycleAppend.stable(id,"event${playIndex+1}"));put("logEntryID",AppleLifecycleAppend.stable(id,"log${playIndex+1}"));put("inning",game.inning);put("isTop",game.isTop);put("timestamp",date)
             put("category","game");put("title",halfTitle);put("notation","HALF-END");put("runnerMovements",JsonArray(emptyList()));put("needsReview",false)
             put("beforeSituation",AppleLifecycleAppend.situation(intermediate));put("afterSituation",AppleLifecycleAppend.situation(updated))
         }) else emptyList()
-        val logs=listOf(log(0,title))+if(halfChanged) listOf(log(1,halfTitle)) else emptyList()
+        val logs=(if(firstStart) listOf(log(0,"Play Ball，比赛计时开始")) else emptyList())+listOf(log(playIndex,title))+if(halfChanged) listOf(log(playIndex+1,halfTitle)) else emptyList()
         val operation=buildJsonObject {
             put("id",id.uppercase());put("command",AppleHistoryCommandCodec.encodeForJournal(command,game,next,moves));put("context",AppleLifecycleAppend.context(state));put("timestamp",date)
             put("title",if(halfChanged) halfTitle else title);put("eventIDs",JsonArray(events.map {it.getValue("id")}));put("logIDs",JsonArray(logs.map {it.getValue("id")}));put("nextAppearanceID",newAppearance)
@@ -124,7 +137,8 @@ internal object ApplePlayAppend {
         }
         setState("playLog",JsonArray(state.getValue("playLog").jsonArray+logs));setState("scoringEvents",JsonArray(state.getValue("scoringEvents").jsonArray+events))
         setState("historyJournal",JsonObject(journal+("operations" to JsonArray(journal.getValue("operations").jsonArray+operation))))
-        val record=JsonObject(stored+mapOf("state" to updated,"updatedAt" to date,"revision" to JsonPrimitive(next.revision),"openingPitchRecorded" to JsonPrimitive(true)))
+        val record=JsonObject(stored+mapOf("state" to updated,"updatedAt" to date,"revision" to JsonPrimitive(next.revision),"openingPitchRecorded" to JsonPrimitive(true))+
+            if(firstStart) mapOf("startedAt" to date) else emptyMap())
         AppleStoredGameValidation.validate(record)
         val replay=AppleReplayPrototype.replay(record)
         val scoreKeys=setOf("inning","isTop","balls","strikes","outs","bases","homeBatterIndex","awayBatterIndex","homeRunsByInning","awayRunsByInning","homeHits","awayHits","homeErrors","awayErrors","batting","pitching","fielding","runnerPitcherIDs","unearnedRunnerIDs","automaticRunnerIDs","appearancePitches")

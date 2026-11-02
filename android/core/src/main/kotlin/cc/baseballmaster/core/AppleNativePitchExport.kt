@@ -22,12 +22,17 @@ internal object AppleNativePitchExport {
         require(game.cursor==game.journal.size && game.entries.size==game.cursor && game.cursor>0 && game.revision==game.cursor.toLong()) { "撤销分支或历史不完整" }
         require(game.journal.all {!it.inserted && !it.edited && !it.acceptContext && it.additionalErrors.isEmpty() && it.statisticsRuling==null}) { "此比赛含尚未支持的历史审计" }
         val tailIndex=game.journal.indexOfFirst {it.command.kind!="pitch"}.let {if(it<0) game.cursor else it}
-        require(tailIndex>0) { "首个击球、开赛操作仍须完整图写入" }
         val checked=History.run(game,game.journal,tailIndex,strict=true)
         require(checked.canSave) {checked.conflict ?: "原生历史不能严格重放"}
-        val prefix=requireNotNull(checked.game).copy(journal=game.journal.take(tailIndex),cursor=tailIndex,
-            revision=game.revision-(game.cursor-tailIndex))
-        var bytes=encode(prefix)
+        var bytes=if(tailIndex==0) {
+            require(game.journal.first().command.kind=="play") { "首次开赛操作尚未支持完整导出" }
+            val first=MatchEngine.apply(requireNotNull(checked.game).copy(journal=emptyList(),cursor=0,revision=0),game.journal.first().command,game.journal.first().id)
+            openingPlaySeed(first)
+        } else {
+            val prefix=requireNotNull(checked.game).copy(journal=game.journal.take(tailIndex),cursor=tailIndex,
+                revision=game.revision-(game.cursor-tailIndex))
+            encode(prefix)
+        }
         for(record in game.journal.drop(tailIndex)) bytes=AppleSourceBackup.prepare(bytes).appendCommand(game.id,record.command,record.id).export()
         val result=AppleSourceBackup.prepare(bytes).games().single()
         val keys=setOf("inning","isTop","balls","strikes","outs","bases","homeBatterIndex","awayBatterIndex","homeRunsByInning","awayRunsByInning",
@@ -36,6 +41,27 @@ internal object AppleNativePitchExport {
         require(GameJson.encodeToJsonElement(result).jsonObject.filterKeys {it in keys}==GameJson.encodeToJsonElement(game).jsonObject.filterKeys {it in keys} &&
             result.journal.map {it.id}==game.journal.map {it.id}) { "原生终场图与完整比赛不一致，未导出部分比赛" }
         return bytes
+    }
+
+    private fun openingPlaySeed(first:Game):ByteArray {
+        // Reuse only Codable scalars/rosters from the old encoder. No prototype
+        // event or log is admitted into the seed or final native graph.
+        val template=AppleBackupEnvelope.inspect(AppleExportPrototype.encode(first))
+        val stored=template.snapshot.getValue("games").jsonArray.single().jsonObject
+        val journal=stored.getValue("state").jsonObject.getValue("historyJournal").jsonObject
+        val checkpoint=AppleWireJson.parse(Base64.getDecoder().decode(journal.getValue("checkpoint").jsonPrimitive.content)).jsonObject
+        require(checkpoint.getValue("scoringEvents").jsonArray.isEmpty() && checkpoint.getValue("playLog").jsonArray.isEmpty())
+        val state=JsonObject(checkpoint+("recordsLineupSnapshots" to JsonPrimitive(true)))
+        val history=JsonObject(journal+mapOf("checkpoint" to JsonPrimitive(Base64.getEncoder().encodeToString(canonicalCheckpoint(state).toString().toByteArray())),"operations" to JsonArray(emptyList())))
+        val seed=JsonObject((stored-"startedAt")+mapOf("state" to JsonObject(state+("historyJournal" to history)),"revision" to JsonPrimitive(0),
+            "updatedAt" to stored.getValue("createdAt"),"openingPitchRecorded" to JsonPrimitive(false)))
+        val payload=JsonObject(template.snapshot+("games" to JsonArray(listOf(seed)))).toString().toByteArray()
+        val result=buildJsonObject {
+            put("format","BaseballMaster Backup");put("version",7);put("createdAt",stored.getValue("createdAt"))
+            put("payload",Base64.getEncoder().encodeToString(payload));put("checksum",AppleLifecycleAppend.hash(payload))
+        }.toString().toByteArray()
+        AppleSourceBackup.prepare(result)
+        return result
     }
 
     fun encode(game: Game): ByteArray {

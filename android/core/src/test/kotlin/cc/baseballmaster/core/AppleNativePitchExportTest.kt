@@ -37,6 +37,19 @@ class AppleNativePitchExportTest {
         assertEquals(listOf(2,1,1,1,1,2,1,1),state.getValue("historyJournal").jsonObject.getValue("operations").jsonArray.map {it.jsonObject.getValue("eventIDs").jsonArray.size})
         save("native-finished-game",bytes)
     }
+    @Test fun firstActionCanBeAHitWithoutInventingAnOpeningPitch() {
+        var game=initial()
+        val commands=listOf(Command("play",outcome=Outcome.homeRun),Command("pitch",pitch=PitchAction.ball),
+            Command("play",outcome=Outcome.single),Command("finish",text="weather"))
+        commands.forEachIndexed {index,c->game=MatchEngine.apply(game,c.copy(at=time+(index+1)*1000),"dd000000-0000-0000-0000-${(index+200).toString().padStart(12,'0')}")}
+        val bytes=AppleNativePitchExport.encodeStandardHistory(game)
+        val replay=AppleSourceBackup.prepare(bytes).games().single()
+        assertEquals(NativeScoreSnapshot.from(game),NativeScoreSnapshot.from(replay));assertEquals(3,replay.totalPitches)
+        val state=AppleBackupEnvelope.inspect(bytes).snapshot.getValue("games").jsonArray.single().jsonObject.getValue("state").jsonObject
+        assertEquals(listOf("PLAY","HR","B","1B","END"),state.getValue("scoringEvents").jsonArray.map {it.jsonObject.getValue("notation").jsonPrimitive.content})
+        assertEquals(listOf(2,1,1,1),state.getValue("historyJournal").jsonObject.getValue("operations").jsonArray.map {it.jsonObject.getValue("eventIDs").jsonArray.size})
+        save("native-first-play-finished",bytes)
+    }
     @Test fun openingAndTerminalPitchesHaveTheirFullOwnedGraphAndStableIdentities() {
         val actions=List(4) {PitchAction.ball} + List(3) {PitchAction.swingingStrike} + listOf(PitchAction.foul)
         val game=play(actions)
