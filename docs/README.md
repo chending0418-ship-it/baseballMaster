@@ -11,6 +11,7 @@
 | 目录／文件 | 用途 |
 | --- | --- |
 | [PROJECT-STRUCTURE.md](PROJECT-STRUCTURE.md) | 项目目录、命名和输出位置约定 |
+| [球队比赛同步核查与流程优化](plans/TEAM-MATCH-SYNC-FLOW.md) | 2026-11-02 三项反馈核查、统一归属与入口提案、旧记录补传设计及待验收清单；仅记录设计，版本待定 |
 | [BRANCHES.md](BRANCHES.md) | 当前分支、唯一项目目录及后续版本的开发约定 |
 | [历史 PR 索引](maintenance/2026-10-22-pr-history.md) | 全部历史提交的补录 PR 与覆盖关系；后续改动均通过 PR 合入 main |
 | [releases/2.1/](releases/2.1/) | 已上线 2.1 的功能、验证、截图、宣传材料及审核准备记录 |
