@@ -23,14 +23,21 @@ internal object AppleHistoryCommandCodec {
         put("destination",when(d.destination) {-1->tagged("out");0->tagged("hold");4->tagged("score");in 1..3->tagged("base",buildJsonObject {put("_0",d.destination)});else->error("跑者去向无效")})
     }
     private fun moves(values: List<Decision>,people: Map<String,Player>)=buildJsonArray {values.forEach {add(decision(it,people))}}
-    private fun defensive(c: Command,moves: List<Decision>): JsonObject? {
-        val f=c.fielding ?: c.observation?.fielding ?: return null
+    internal fun defensive(c: Command,moves: List<Decision>): JsonObject? {
+        val observed=c.observation?.fielding
+        val f=observed ?: c.fielding ?: return null
+        if(observed?.status=="noFielding") return null
         val outs=moves.count {it.destination==-1}
         val caught=c.outcome in setOf(Outcome.flyOut,Outcome.lineOut,Outcome.foulFlyOut,Outcome.sacrificeFly,Outcome.infieldFly)
-        val putouts=f.putouts.ifEmpty {if(f.status=="recorded" && outs>0) if(caught) f.route.take(1) else f.route.takeLast(outs) else emptyList()}
-        val assists=f.assists.ifEmpty {if(f.status=="recorded" && outs>0 && !caught) f.route.dropLast(1) else emptyList()}
+        val extras=if(observed!=null && f.status=="recorded") moves.filter {it.destination==-1 && it.fielding?.status=="recorded"} else emptyList()
+        val mainOuts=(outs-extras.size).coerceAtLeast(0)
+        val putouts=if(observed!=null) (if(f.status=="recorded" && mainOuts>0) if(caught) f.route.take(1) else f.route.takeLast(mainOuts) else emptyList())+extras.mapNotNull {it.fielding?.route?.lastOrNull()}
+            else f.putouts.ifEmpty {if(f.status=="recorded" && outs>0) if(caught) f.route.take(1) else f.route.takeLast(outs) else emptyList()}
+        val assists=if(observed!=null) ((if(f.status=="recorded" && mainOuts>0 && !caught) f.route.dropLast(1) else emptyList())+extras.flatMap {it.fielding!!.route.dropLast(1)}).distinct().sorted()
+            else f.assists.ifEmpty {if(f.status=="recorded" && outs>0 && !caught) f.route.dropLast(1) else emptyList()}
         return buildJsonObject {
-            put("id","ANDROID");put("title","本球守备");put("notation",f.route.joinToString("-").ifEmpty {f.errorPosition?.let {"E$it"} ?: "待补"})
+            put("id",if(observed!=null) "SITUATION" else "ANDROID");put("title","本球守备")
+            put("notation",if(observed!=null && (c.outcome?.isHit==true || f.route.isEmpty())) requireNotNull(c.outcome).notation else f.route.joinToString("-").ifEmpty {f.errorPosition?.let {"E$it"} ?: "待补"})
             put("routePositions",GameJson.encodeToJsonElement(f.route));put("assistPositions",GameJson.encodeToJsonElement(assists));put("putoutPositions",GameJson.encodeToJsonElement(putouts));f.errorPosition?.let {put("errorPosition",it)}
         }
     }
@@ -48,7 +55,9 @@ internal object AppleHistoryCommandCodec {
             put("participants",buildJsonArray {event.participants.forEach {p -> add(buildJsonObject {put("position",p.position);put("playerID",uid(p.playerID));put("name",p.name);put("number",p.number)})}})
         }
         o.fielding?.let {put("fielding",route(it))}
-        val detailed=event.decisions.filter {it.cause!="hit" || it.fielding!=null || it.route.isNotEmpty() || it.errorPosition!=null}
+        // Swift requires a supplied runnerDetails array to cover every decision,
+        // including ordinary hit advances alongside one error/tag/award detail.
+        val detailed=if(event.decisions.any {it.cause!="hit" || it.fielding!=null || it.route.isNotEmpty() || it.errorPosition!=null}) event.decisions else emptyList()
         if(detailed.isNotEmpty()) put("runnerDetails",buildJsonArray {detailed.forEach {d -> add(buildJsonObject {
             put("playerID",uid(d.playerID));put("cause",d.cause)
             val f=d.fielding ?: if(d.route.isNotEmpty() || d.errorPosition!=null) Fielding(route=d.route,errorPosition=d.errorPosition,status=if(d.route.isEmpty()) "pending" else "recorded") else null
