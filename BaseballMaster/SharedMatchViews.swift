@@ -273,30 +273,7 @@ struct SharedMatchDetailView: View {
     @State private var conflict: MatchConflict?
     private var match: SharedMatch? { coordinator.match(id: matchID) }
     var body: some View {
-        List {
-            if let message = coordinator.message ?? error { Text(message).foregroundStyle(BMTheme.orange) }
-            if let match, let game = match.payload {
-                summaryContent(match, game)
-                if game.status == .completed && !game.isObservation {
-                    Section("球员对应") {
-                        NavigationLink {
-                            SharedPlayerLinksView(coordinator: coordinator, matchID: match.id)
-                        } label: { Text("核对当场球员与球队名单") }
-                        .accessibilityIdentifier("open-match-player-links")
-                    }
-                }
-                conflictContent(match, game)
-                if store.teamSharing.teams.first(where: { $0.id == match.teamID })?.role == .admin {
-                    Section("比赛记录核对") {
-                        NavigationLink("查看各设备提交的记录") {
-                            SharedConflictReviewView(coordinator: coordinator, matchID: match.id)
-                        }.accessibilityIdentifier("open-team-conflicts")
-                    }
-                }
-                historyContent(match, game)
-                deleteContent(match, game)
-            } else { Text("比赛暂不可用，请刷新后再试。") }
-        }.disabled(coordinator.busy)
+        detailList.disabled(coordinator.busy)
         .navigationTitle("共享比赛").navigationBarTitleDisplayMode(.inline)
         .toolbar { Button("刷新") { Task { if let match { await coordinator.refresh(match) }; await reload() } } }
         .task { if let match { await coordinator.refresh(match) }; await reload() }
@@ -322,6 +299,38 @@ struct SharedMatchDetailView: View {
             Button("使用球队记录") { do { try coordinator.useOfficialVersion(draft) } catch { self.error = error.localizedDescription } }
             Button("取消", role: .cancel) { }
         } message: { _ in Text("确认后，这台设备会显示球队已保存的记录。尚未同步的内容会另外保留，供以后核对和补录，不会自动覆盖球队比赛。") }
+    }
+
+    private var detailList: some View {
+        List {
+            if let message = coordinator.message ?? error { Text(message).foregroundStyle(BMTheme.orange) }
+            if let match, let game = match.payload {
+                summaryContent(match, game)
+                if game.status == .completed && !game.isObservation {
+                    Section("球员对应") {
+                        NavigationLink {
+                            SharedPlayerLinksView(coordinator: coordinator, matchID: match.id)
+                        } label: { Text("核对当场球员与球队名单") }
+                        .accessibilityIdentifier("open-match-player-links")
+                    }
+                }
+                conflictContent(match, game)
+                recordReviewContent(match)
+                historyContent(match, game)
+                deleteContent(match, game)
+            } else { Text("比赛暂不可用，请刷新后再试。") }
+        }
+    }
+
+    @ViewBuilder private func recordReviewContent(_ match: SharedMatch) -> some View {
+        let role: SharedTeamRole? = store.teamSharing.teams.first { $0.id == match.teamID }?.role
+        if role == .admin {
+            Section("比赛记录核对") {
+                NavigationLink("查看各设备提交的记录") {
+                    SharedConflictReviewView(coordinator: coordinator, matchID: match.id)
+                }.accessibilityIdentifier("open-team-conflicts")
+            }
+        }
     }
     @ViewBuilder private func summaryContent(_ match: SharedMatch, _ game: StoredGame) -> some View {
                 Section {

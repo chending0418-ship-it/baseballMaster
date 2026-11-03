@@ -533,3 +533,60 @@ func statText(_ value: Double) -> String {
     let formatted = String(format: "%.3f", value)
     return value < 1 ? String(formatted.dropFirst()) : formatted
 }
+
+/// A live score strip that fills a workbench and scrolls only for extra innings.
+struct WorkbenchLineScore: View {
+    let game: GameState
+    private let teamWidth: CGFloat = 88
+    private let totalWidth: CGFloat = 36
+
+    var body: some View {
+        GeometryReader { proxy in
+            let innings = max(1, game.scoreInningCount)
+            let cellWidth = max(30, (proxy.size.width - teamWidth - totalWidth * 3) / CGFloat(innings))
+            ScrollView(.horizontal, showsIndicators: true) {
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        Text("分局比分").frame(width: teamWidth, alignment: .leading)
+                        ForEach(1...innings, id: \.self) { inning in
+                            Text("\(inning)").frame(width: cellWidth)
+                        }
+                        ForEach(["R", "H", "E"], id: \.self) { Text($0).frame(width: totalWidth) }
+                    }
+                    .font(.caption2.bold()).foregroundStyle(BMTheme.secondaryText)
+                    .frame(height: 28).background(BMTheme.background)
+                    workbenchScoreRow(home: false, innings: innings, cellWidth: cellWidth)
+                    Divider()
+                    workbenchScoreRow(home: true, innings: innings, cellWidth: cellWidth)
+                }
+            }
+        }
+        .frame(height: 101)
+        .background(BMTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: BMTheme.smallRadius))
+        .accessibilityIdentifier("workbench-line-score")
+    }
+
+    private func workbenchScoreRow(home: Bool, innings: Int, cellWidth: CGFloat) -> some View {
+        let runs = home ? game.homeRunsByInning : game.awayRunsByInning
+        let team = home ? game.homeTeam : game.awayTeam
+        return HStack(spacing: 0) {
+            Text(team.shortName).lineLimit(1)
+                .frame(width: teamWidth, alignment: .leading)
+            ForEach(1...innings, id: \.self) { inning in
+                let started = inning < game.inning || (inning == game.inning && (!home || !game.isTop))
+                Text(started ? String(runs.indices.contains(inning - 1) ? runs[inning - 1] : 0) : "—")
+                    .foregroundStyle(started ? BMTheme.navy : BMTheme.secondaryText)
+                    .frame(width: cellWidth, height: 36)
+                    .background(inning == game.inning && (home != game.isTop) && !game.isFinal ? BMTheme.greenSoft : .clear)
+            }
+            Text("\(home ? game.homeScore : game.awayScore)")
+                .foregroundStyle(BMTheme.green).frame(width: totalWidth)
+            Text("\(home ? game.homeHits : game.awayHits)").frame(width: totalWidth)
+            Text("\(home ? game.homeErrors : game.awayErrors)").frame(width: totalWidth)
+        }
+        .font(.caption.bold()).monospacedDigit().foregroundStyle(BMTheme.navy)
+        .frame(height: 36)
+        .accessibilityElement(children: .combine)
+    }
+}

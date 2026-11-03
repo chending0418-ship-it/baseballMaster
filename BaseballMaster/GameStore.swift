@@ -968,6 +968,51 @@ final class GameStore: ObservableObject {
         return player.id
     }
 
+    /// Validate the entire paste and commit one transaction before publishing any new roster.
+    /// The caller retains the input string on failure, so the same batch can be corrected or retried.
+    @discardableResult
+    func bulkAddPlayers(to teamID: UUID, input: String, isOpponent: Bool = false) -> [UUID]? {
+        guard !requiresDataRecovery else {
+            actionErrorMessage = "本机资料需要先恢复或核对，尚未导入队员。"; return nil
+        }
+        let parsed = BulkRosterParser.parse(input)
+        guard parsed.canImport else {
+            actionErrorMessage = parsed.issues.map { "第 \($0.lineNumber) 行：\($0.message)" }.joined(separator: "\n")
+            return nil
+        }
+        let source = isOpponent ? opponentTeams : teams
+        guard let index = source.firstIndex(where: { $0.id == teamID }) else {
+            actionErrorMessage = "找不到这支本机球队，请返回名单后重试。"; return nil
+        }
+        var updated = source[index]
+        let players = parsed.rows.enumerated().map { offset, row in
+            var player = Player(chineseName: row.chineseName, englishName: row.englishName,
+                                numbers: row.numberText.isEmpty ? [] : [Int(row.numberText)!],
+                                primaryPosition: FieldPosition.allCases[(updated.players.count + offset) % FieldPosition.allCases.count])
+            // The nil legacy representation permits an empty number; explicit labels preserve 00.
+            player.jerseyNumbers = row.numberText.isEmpty ? nil : [row.numberText]
+            return player
+        }
+        updated.players.append(contentsOf: players)
+        var nextTeams = teams, nextOpponents = opponentTeams
+        if isOpponent { nextOpponents[index] = updated } else { nextTeams[index] = updated }
+        let before = makeRosterSnapshot()
+        let next = RosterSnapshot(teams: nextTeams, opponentTeams: nextOpponents, currentTeamID: before.currentTeamID,
+                                  seasons: before.seasons, playerGameRecords: before.playerGameRecords,
+                                  games: before.games, archivedTeams: before.archivedTeams)
+        do { try persistenceStore.replaceAll(with: next) }
+        catch {
+            storageErrorMessage = "批量队员未能保存，名单没有改变。输入内容已保留，请检查存储空间后重试。"
+            actionErrorMessage = storageErrorMessage
+            return nil
+        }
+        if isOpponent { opponentTeams = nextOpponents }
+        else { teams = nextTeams; syncCurrentTeamIfNeeded(teamID) }
+        actionErrorMessage = nil
+        storageErrorMessage = nil
+        return players.map(\.id)
+    }
+
     func updatePlayer(
         in teamID: UUID,
         playerID: UUID,

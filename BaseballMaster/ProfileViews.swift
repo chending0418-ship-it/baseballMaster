@@ -847,6 +847,7 @@ struct PracticeScorekeepingView: View {
     @StateObject private var practiceStore: GameStore
     @AppStorage("showPracticeGuidance") private var showPracticeGuidance = true
     @State private var showResetConfirmation = false
+    @State private var recordingWorkspaceActive = false
 
     init(method: RecordingMethod = .traditional) {
         let store = GameStore(persistenceURL: nil)
@@ -857,6 +858,7 @@ struct PracticeScorekeepingView: View {
     var body: some View {
         ScorekeepingView()
             .environmentObject(practiceStore)
+            .onPreferenceChange(RecordingWorkspaceActiveKey.self) { recordingWorkspaceActive = $0 }
             .safeAreaInset(edge: .top, spacing: 0) {
                 if showPracticeGuidance {
                     practiceBanner
@@ -869,6 +871,7 @@ struct PracticeScorekeepingView: View {
                     } label: {
                         Label("重新练习", systemImage: "arrow.counterclockwise")
                     }
+                    .disabled(recordingWorkspaceActive)
                     .accessibilityIdentifier("reset-practice-inning")
                 }
             }

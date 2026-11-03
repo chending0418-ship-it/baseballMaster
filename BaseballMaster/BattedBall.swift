@@ -150,6 +150,7 @@ struct RecordingMethodPicker: View {
 
 /// Compact field for performance plots and legacy observation editing. No position labels.
 struct BattedBallField: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     var observation: BattedBallObservation?
     var marks: [BatterContact] = []
     var onPoint: ((CGPoint) -> Void)?
@@ -180,7 +181,10 @@ struct BattedBallField: View {
                     marker(observation, color: BMTheme.orange).position(point(location, size)).allowsHitTesting(false)
                 }
             }
-        }.frame(height: 265)
+        }
+        .frame(height: horizontalSizeClass == .regular ? 360 : 265)
+        .frame(maxWidth: 640)
+        .frame(maxWidth: .infinity)
     }
     private func point(_ value: CGPoint, _ size: CGSize) -> CGPoint { BaseballFieldLayout.contactPoint(value, in: size) }
     private func trajectory(_ value: CGPoint, size: CGSize, color: Color) -> some View {

@@ -101,6 +101,19 @@ struct PendingMatchOperation: Codable {
 struct MatchConflict: Codable, Identifiable {
     let id: UUID; var localID: UUID; let savedAt: Date; var game: StoredGame; let reason: String
 }
+struct PostgameDocumentBaseline: Codable {
+    let gameID: UUID
+    let digest: String
+    let writerEpoch: Int
+
+    init(_ match: SharedMatch) {
+        gameID = match.id; digest = match.digest; writerEpoch = match.writerEpoch
+    }
+
+    func matches(_ match: SharedMatch) -> Bool {
+        gameID == match.id && digest == match.digest && writerEpoch == match.writerEpoch
+    }
+}
 struct SharedMatchLocalState: Codable {
     var matches: [SharedMatch] = []
     var pending: [PendingMatchOperation] = []
@@ -120,6 +133,7 @@ struct SharedMatchLocalState: Codable {
     var legacyRestoreSourceIDs: [UUID]? = nil
     var publishedSources: [String: UUID]? = nil
     var postgameServerRevisions: [String: Int]? = nil
+    var postgameDocumentBaselines: [String: PostgameDocumentBaseline]? = nil
     var heldOperations: [PendingMatchOperation]? = nil
 }
 protocol SharedMatchStorage { func load() throws -> SharedMatchLocalState; func save(_ state: SharedMatchLocalState) throws }
@@ -192,6 +206,17 @@ struct SharedMatchFile: SharedMatchStorage {
     private func migrateIndependentCopies() throws {
         // This must also run for devices which completed the earlier ID migration.
         try holdLegacyWrites()
+        // Older clients only remembered a revision. Upgrade from an exact acknowledged
+        // cached document, never from a newer document whose content was not confirmed.
+        var baselines = state
+        for (key, gameID) in state.publishedSources ?? [:] {
+            guard baselines.postgameDocumentBaselines?[key] == nil,
+                  let remote = state.matches.first(where: { $0.id == gameID && !$0.deleted }),
+                  state.postgameServerRevisions?[key] == remote.serverRevision else { continue }
+            if baselines.postgameDocumentBaselines == nil { baselines.postgameDocumentBaselines = [:] }
+            baselines.postgameDocumentBaselines?[key] = PostgameDocumentBaseline(remote)
+        }
+        if baselines.postgameDocumentBaselines?.count != state.postgameDocumentBaselines?.count { try persist(baselines) }
         guard state.isolatedCopiesVersion != 1 else { isolationReady = true; return }
         var next = state
         var replacements: [UUID: UUID] = [:]
@@ -340,7 +365,7 @@ struct SharedMatchFile: SharedMatchStorage {
                 guard reviewedServerRevision == remote.serverRevision,
                       !remote.deleted, remote.canWrite, remote.handoff == nil,
                       remote.writerDeviceID == state.deviceID,
-                      remote.payload?.status == .scheduled || state.postgameServerRevisions?[key] == remote.serverRevision,
+                      remote.payload?.status == .scheduled || state.postgameDocumentBaselines?[key]?.matches(remote) == true,
                       !state.pending.contains(where: { $0.gameID == remote.id }),
                       !state.conflicts.contains(where: { $0.localID == remote.id }) else {
                     throw TeamServiceError.message("球队记录或权限已有变化，请先核对；本机原件不会覆盖它。")
@@ -421,8 +446,10 @@ struct SharedMatchFile: SharedMatchStorage {
                         let key = "\(pending.teamID):\(pending.localID)"
                         if completed.publishedSources == nil { completed.publishedSources = [:] }
                         if completed.postgameServerRevisions == nil { completed.postgameServerRevisions = [:] }
+                        if completed.postgameDocumentBaselines == nil { completed.postgameDocumentBaselines = [:] }
                         completed.publishedSources?[key] = remote.id
                         completed.postgameServerRevisions?[key] = remote.serverRevision
+                        completed.postgameDocumentBaselines?[key] = PostgameDocumentBaseline(remote)
                         completed.acknowledgedRevisions["postgame:" + key] = pending.sentLocalRevision
                     }
                     if pending.kind == "create", let sourceID = remote.wireLocalID {

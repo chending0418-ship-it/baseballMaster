@@ -5,7 +5,7 @@ struct TeamAuditEvent: Decodable, Identifiable {
     let id: Int; let action: String; let objectID: String; let occurredAt: Double
     let nickname: String; let deviceName: String
     static func title(_ action: String) -> String {
-        ["teamCreated": "创建球队", "teamProfileUpdated": "修改球队资料", "playerUpdated": "修改球员资料", "playerArchived": "停用球员",
+        ["playersImported": "批量新增球员", "teamCreated": "创建球队", "teamProfileUpdated": "修改球队资料", "playerUpdated": "修改球员资料", "playerArchived": "停用球员",
          "invitationCreated": "邀请成员", "invitationRedeemed": "加入球队", "invitationRevoked": "撤销邀请",
          "memberLeft": "退出球队", "memberRemoved": "移除成员", "memberRoleChanged": "调整成员角色",
          "devicePairingApproved": "确认设备配对", "devicePaired": "完成设备配对", "devicePairingCancelled": "取消设备配对", "teamDeviceRemoved": "移除设备",

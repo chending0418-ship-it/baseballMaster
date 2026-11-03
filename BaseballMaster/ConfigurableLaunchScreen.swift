@@ -249,6 +249,14 @@ struct ConfigurableLaunchScreenView: View {
     var body: some View {
         GeometryReader { geometry in
             let fullHeight = geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom
+            // Size from this window so short iPad windows keep the fixed brand and footer separate.
+            let iconY = max(90, geometry.size.height - 103)
+            let identityScale = min(1, max(0.1, min(
+                (geometry.size.width - 48) / 260,
+                max(24, iconY - 106) / 223
+            )))
+            let identityY = min(fullHeight * 0.46968 - geometry.safeAreaInsets.top,
+                                iconY - 46 - 223 * identityScale / 2)
             ZStack {
                 Group {
                     if let image = presentation.image { Image(uiImage: image).resizable() }
@@ -258,16 +266,16 @@ struct ConfigurableLaunchScreenView: View {
                 .overlay { if presentation.image != nil { Color.black.opacity(0.66) } }
                 .position(x: geometry.size.width / 2, y: fullHeight / 2 - geometry.safeAreaInsets.top)
                 .accessibilityHidden(true)
-                Image("LaunchIdentity").resizable().frame(width: 260, height: 223)
-                    .position(x: geometry.size.width / 2, y: fullHeight * 0.46968 - geometry.safeAreaInsets.top)
+                Image("LaunchIdentity").resizable().frame(width: 260 * identityScale, height: 223 * identityScale)
+                    .position(x: geometry.size.width / 2, y: identityY)
                     .accessibilityLabel("BaseballMaster 棒球比赛记录大师").accessibilityIdentifier("launch-fixed-bm")
                 Image("LaunchAppIcon").resizable().frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 10))
-                    .position(x: geometry.size.width / 2, y: geometry.size.height - 103)
+                    .position(x: geometry.size.width / 2, y: iconY)
                     .accessibilityLabel("棒球比赛记录大师 App 图标").accessibilityIdentifier("launch-fixed-app-icon")
                 if !presentation.configuration.message.isEmpty {
                     Text(presentation.configuration.message).font(.system(size: 11, weight: .medium)).tracking(2.42)
                         .lineSpacing(4).multilineTextAlignment(.center).lineLimit(2).foregroundStyle(ink)
-                        .frame(width: min(280, geometry.size.width - 48), height: 38, alignment: .top)
+                        .frame(width: max(0, min(280, geometry.size.width - 48)), height: 38, alignment: .top)
                         .position(x: geometry.size.width / 2, y: geometry.size.height - 48)
                         .accessibilityIdentifier("launch-message")
                 }

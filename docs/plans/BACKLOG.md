@@ -20,11 +20,15 @@
 
 <a id="adaptive-device-support"></a>
 
-## iPad 与 iPhone Duo 适配（版本待定）
+## iPad 与 iPhone Duo 适配（iPad 纳入 3.1.2，Duo 暂缓）
+
+2026-11-03 后续要求：先不处理 Duo，当前聚焦 iPhone 与 iPad；Duo 恢复等待用户另行安排。
 
 2026-10-09 用户确认先完成 [3.0 既定内容](3.0-TEAM-COLLABORATION.md)，本版不增加 iPad 或 iPhone Duo 适配。这里的 Duo 指折叠屏 iPhone 的界面适配；需求已初步评估，尚未开发，不指定后续版本或实施时间。
 
 后续评估范围包括：iPad 大屏记分布局、横竖屏与窗口缩放，Duo 内外屏及折叠状态切换，以及尺寸变化时保留记分草稿、导航和弹窗状态。两者优先复用同一套宽窄布局；正式安排时再按届时工程基线与验证环境确定任务和工期。
+
+2026-11-03 用户后续明确纳入 3.1.2，先做 iPad，正式实现与验收见 [3.1.2 开发清单](../releases/3.1.2/DEVELOPMENT.md)。以下为此前研究：已按当前 3.1.1 工程和 Apple 正式产品／开发文档重新评估，详见 [iPad 与 iPhone Duo 兼容评估](ADAPTIVE-DEVICE-SUPPORT.md)。区分现有 SDK 的兼容运行与原生宽屏适配；本轮只研究和验证，不自动安排开发版本。
 
 <a id="widget-todo"></a>
 

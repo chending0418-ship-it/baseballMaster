@@ -8086,3 +8086,413 @@ extension GameStoreTests {
         XCTAssertTrue(coordinator.canEdit(id), "The queued team upload still must not lock the local original")
     }
 }
+
+
+extension GameStoreTests {
+    private func v312UploadedMatch() async throws -> (GameStore, TeamServiceClient, V30MatchMemoryStorage, SharedMatchCoordinator, StoredGame, SharedMatch, Player) {
+        let store = freshStore(), temporary = store.currentBatter
+        XCTAssertTrue(store.applyPlay(.single)); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame)
+        let official = Player(chineseName: "正式球员", englishName: "", numbers: [0])
+        let roster = Team(name: "赛后映射", shortName: "映射", city: "", players: [official])
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "3.1.2")
+        let team = try await client.createTeam(name: roster.name, nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: roster))
+        store.teamSharing = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage()); await store.teamSharing.connect()
+        let disk = V30MatchMemoryStorage(), sync = SharedMatchCoordinator(store: store, service: client, storage: disk)
+        store.sharedMatches = sync
+        await sync.publish(original, teamID: team.teamID); XCTAssertNil(sync.message)
+        let remote = try XCTUnwrap(sync.publishedMatch(sourceID: original.id, teamID: team.teamID))
+        XCTAssertTrue(original.ourTeam.players.contains { $0.id == temporary.id })
+        return (store, client, disk, sync, original, remote, official)
+    }
+
+    private func v312Correct(_ store: GameStore, source: StoredGame) throws -> StoredGame {
+        store.openGame(id: source.id); XCTAssertTrue(store.reopenGame())
+        store.recordPitch(.ball); store.finishGame()
+        let corrected = try XCTUnwrap(store.activeStoredGame)
+        XCTAssertNotEqual(corrected, source)
+        return corrected
+    }
+
+    func testV312PlayerMappingThenCorrectionSurvivesUpgradeAndRestart() async throws {
+        let (store, client, disk, _, original, before, official) = try await v312UploadedMatch()
+        // Emulate a 3.1.1 cache: the exact acknowledged document safely seeds a baseline.
+        disk.state.postgameDocumentBaselines = nil
+        let upgraded = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = upgraded
+        let key = "\(before.teamID):\(original.id)"
+        XCTAssertEqual(upgraded.state.postgameDocumentBaselines?[key]?.digest, before.digest)
+        let source = try XCTUnwrap(original.ourTeam.players.first)
+        let links = [MatchPlayerLink(sourceID: source.id, targetID: official.id)]
+        await upgraded.command(before, resource: "player-links", fields: ["playerLinks": try .encode(links), "baseRosterRevision": .number(1)])
+        XCTAssertNil(upgraded.message)
+        let linked = try XCTUnwrap(upgraded.match(id: before.id))
+        XCTAssertEqual(linked.serverRevision, before.serverRevision + 1)
+        XCTAssertEqual(linked.payload, before.payload); XCTAssertEqual(linked.digest, before.digest)
+        XCTAssertEqual(linked.writerEpoch, before.writerEpoch); XCTAssertTrue(linked.canWrite)
+        let restarted = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = restarted
+        let corrected = try v312Correct(store, source: original)
+        // Metadata changes still require review of the current revision.
+        await restarted.publish(corrected, teamID: before.teamID, reviewedServerRevision: before.serverRevision)
+        XCTAssertNotNil(restarted.message); XCTAssertTrue(restarted.state.pending.isEmpty)
+        await restarted.publish(corrected, teamID: before.teamID, reviewedServerRevision: linked.serverRevision)
+        XCTAssertNil(restarted.message); XCTAssertTrue(restarted.state.pending.isEmpty)
+        let saved = try XCTUnwrap(restarted.match(id: before.id))
+        XCTAssertEqual(saved.serverRevision, linked.serverRevision + 1); XCTAssertEqual(saved.playerLinks, links)
+        XCTAssertEqual(saved.payload?.state, corrected.state)
+        XCTAssertEqual(store.games.first { $0.id == original.id }, corrected)
+        XCTAssertEqual(restarted.state.postgameDocumentBaselines?[key]?.digest, saved.digest)
+        let page = try await client.matchPage(teamID: before.teamID, cursor: 0)
+        XCTAssertEqual(page.games.count, 1)
+    }
+
+    func testV312ReviewedConcurrentBodyStillCannotOverwriteTeamRecord() async throws {
+        let (store, client, _, sync, original, before, _) = try await v312UploadedMatch()
+        var competing = try XCTUnwrap(before.payload)
+        competing.id = try XCTUnwrap(before.wireLocalID); competing.state.balls = 2
+        _ = try await client.matchCommand(path: TeamServiceClient.matchPath(before.teamID, before.id), method: "PUT", body: .object([
+            "operationID": .uuid(UUID()), "formatVersion": .number(2), "baseRevision": .number(Double(before.serverRevision)),
+            "writerEpoch": .number(Double(before.writerEpoch)), "payload": try .encode(competing),
+            "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(competing).data())]))
+        await sync.synchronize(teamID: before.teamID)
+        let changed = try XCTUnwrap(sync.match(id: before.id))
+        XCTAssertNotEqual(changed.digest, before.digest)
+        let corrected = try v312Correct(store, source: original)
+        await sync.publish(corrected, teamID: before.teamID, reviewedServerRevision: changed.serverRevision)
+        XCTAssertNotNil(sync.message); XCTAssertTrue(sync.state.pending.isEmpty)
+        let kept = try await client.match(teamID: before.teamID, gameID: before.id)
+        XCTAssertEqual(kept.payload?.state, competing.state)
+        XCTAssertEqual(store.games.first { $0.id == original.id }, corrected)
+    }
+
+    func testV312UnprovenLegacyBaselineDoesNotTrustNewerDocument() async throws {
+        let (store, client, disk, sync, original, before, official) = try await v312UploadedMatch()
+        let source = try XCTUnwrap(original.ourTeam.players.first)
+        await sync.command(before, resource: "player-links", fields: ["playerLinks": try .encode([MatchPlayerLink(sourceID: source.id, targetID: official.id)]), "baseRosterRevision": .number(1)])
+        XCTAssertNil(sync.message)
+        disk.state.postgameDocumentBaselines = nil // 3.1.1 already cached a newer revision; its old digest is unknowable.
+        let upgraded = SharedMatchCoordinator(store: store, service: client, storage: disk); store.sharedMatches = upgraded
+        XCTAssertNil(upgraded.state.postgameDocumentBaselines)
+        let corrected = try v312Correct(store, source: original), linked = try XCTUnwrap(upgraded.match(id: before.id))
+        await upgraded.publish(corrected, teamID: before.teamID, reviewedServerRevision: linked.serverRevision)
+        XCTAssertNotNil(upgraded.message); XCTAssertTrue(upgraded.state.pending.isEmpty)
+    }
+
+    func testV312WriterEpochChangeStillBlocksIdenticalBodyAfterReturn() async throws {
+        let (store, client, _, sync, original, before, _) = try await v312UploadedMatch()
+        let partner = try await matchPartner(client, team: before.teamID)
+        let otherDevice = try await partner.enroll(deviceName: "另一设备")
+        let ownDevice = try XCTUnwrap(sync.state.deviceID)
+        let corrected = try v312Correct(store, source: original)
+        try await legacyHandoff(before, coordinator: sync, action: "propose", fields: ["targetDeviceID": .uuid(otherDevice)])
+        let proposed = try XCTUnwrap(sync.match(id: before.id))
+        XCTAssertNotNil(proposed.handoff)
+        await sync.publish(corrected, teamID: before.teamID, reviewedServerRevision: proposed.serverRevision)
+        XCTAssertNotNil(sync.message); XCTAssertTrue(sync.state.pending.isEmpty)
+        try await legacyHandoff(before, coordinator: sync, action: "force", fields: ["targetDeviceID": .uuid(otherDevice), "confirmRisk": .bool(true)])
+        let handed = try XCTUnwrap(sync.match(id: before.id))
+        XCTAssertFalse(handed.canWrite)
+        await sync.publish(corrected, teamID: before.teamID, reviewedServerRevision: handed.serverRevision)
+        XCTAssertNotNil(sync.message); XCTAssertTrue(sync.state.pending.isEmpty)
+        try await legacyHandoff(handed, coordinator: sync, action: "force", fields: ["targetDeviceID": .uuid(ownDevice), "confirmRisk": .bool(true)])
+        let returned = try XCTUnwrap(sync.match(id: before.id))
+        XCTAssertEqual(returned.digest, before.digest); XCTAssertEqual(returned.writerDeviceID, ownDevice)
+        XCTAssertTrue(returned.canWrite); XCTAssertGreaterThan(returned.writerEpoch, before.writerEpoch)
+        await sync.publish(corrected, teamID: before.teamID, reviewedServerRevision: returned.serverRevision)
+        XCTAssertNotNil(sync.message); XCTAssertTrue(sync.state.pending.isEmpty)
+        let kept = try await client.match(teamID: before.teamID, gameID: before.id)
+        XCTAssertEqual(kept.payload?.state, original.state)
+    }
+}
+
+
+extension GameStoreTests {
+    func testV312BulkRosterParserKeepsPhysicalLinesEmptyFieldsAndDoubleZero() {
+        let input = "\u{FEFF}\r\n 姓名，英文名，背号 \r\n 张三 ， Jason ， 00 \r\n\r\n 李四,, \r\n,Alex,0"
+        let parsed = BulkRosterParser.parse(input)
+        XCTAssertTrue(parsed.canImport); XCTAssertTrue(parsed.warnings.isEmpty)
+        XCTAssertEqual(parsed.rows.map(\.lineNumber), [3, 5, 6])
+        XCTAssertEqual(parsed.rows.map(\.chineseName), ["张三", "李四", ""])
+        XCTAssertEqual(parsed.rows.map(\.englishName), ["Jason", "", "Alex"])
+        XCTAssertEqual(parsed.rows.map(\.numberText), ["00", "", "0"])
+    }
+
+    func testV312BulkRosterParserRejectsMalformedRowsWithPhysicalLineNumbers() {
+        let parsed = BulkRosterParser.parse("\n张三,,9\n少一列,4\n,,7\n多一列,Name,7,extra\n零开头,,07\n越界,,100\n负数,,-1")
+        XCTAssertFalse(parsed.canImport)
+        XCTAssertEqual(parsed.rows.count, 1)
+        XCTAssertEqual(parsed.issues.map(\.lineNumber), [3, 4, 5, 6, 7, 8])
+        for number in ["0", "00", "1", "99", "", "01", "+1", "1.0", "100", "-1", "０"] {
+            XCTAssertEqual(BulkRosterParser.parse("队员,," + number).canImport,
+                           number.isEmpty || Player.validNumberTexts([number]), number)
+        }
+        XCTAssertFalse(BulkRosterParser.parse("姓名,英文名,背号\n\n").canImport)
+        XCTAssertFalse(BulkRosterParser.parse(" \n").canImport)
+    }
+
+    func testV312BulkRosterParserRejectsExactDuplicatesAndWarnsAmbiguousLabels() {
+        let duplicated = BulkRosterParser.parse("张三,Jason,00\n 张三 ， Jason ， 00 ")
+        XCTAssertFalse(duplicated.canImport)
+        XCTAssertEqual(duplicated.issues.first?.lineNumber, 2)
+        XCTAssertTrue(duplicated.issues.first?.message.contains("第 1 行") == true)
+        let distinct = BulkRosterParser.parse("张三,Jason,00\n张三,Alex,00\n张三,Jason,0")
+        XCTAssertTrue(distinct.canImport); XCTAssertEqual(distinct.rows.count, 3)
+        XCTAssertEqual(distinct.warnings.map(\.lineNumber), [2])
+    }
+
+    func testV312BulkRosterParserAccepts200AndRejectsTheEntireOversizedBatch() {
+        let rows = (1...200).map { "队员\($0),,\($0 % 100)" }
+        XCTAssertTrue(BulkRosterParser.parse(rows.joined(separator: "\n")).canImport)
+        let oversized = BulkRosterParser.parse("姓名,英文名,背号\n\n" + (rows + ["多余队员,,00"]).joined(separator: "\n"))
+        XCTAssertFalse(oversized.canImport); XCTAssertEqual(oversized.rows.count, 200)
+        XCTAssertEqual(oversized.issues.last?.lineNumber, 203)
+    }
+
+    func testV312BulkRosterLocalCommitPreservesHistoryAndIndependentIdentities() throws {
+        let store = freshStore(), team = try XCTUnwrap(store.currentTeam), existing = try XCTUnwrap(team.players.first)
+        store.recordPitch(.ball); store.finishGame()
+        let games = store.games, game = store.game, beforePlayers = team.players
+        let input = "\(existing.chineseName),\(existing.englishName),\(existing.numberText)\n新增队员,,00\n无号队员,,"
+        var writes = 0
+        CoreDataRosterStore.writeFault = { writes += 1 }
+        defer { CoreDataRosterStore.writeFault = nil }
+        let ids = try XCTUnwrap(store.bulkAddPlayers(to: team.id, input: input))
+        XCTAssertEqual(writes, 1, "A batch is one atomic storage transaction")
+        XCTAssertEqual(ids.count, 3); XCTAssertEqual(Set(ids).count, 3)
+        XCTAssertFalse(ids.contains(existing.id), "Matching a roster label must not merge player identities")
+        let saved = try XCTUnwrap(store.teams.first { $0.id == team.id })
+        XCTAssertEqual(Array(saved.players.prefix(beforePlayers.count)), beforePlayers)
+        XCTAssertEqual(saved.players.suffix(2).map(\.numberText), ["00", "—"])
+        XCTAssertEqual(saved.players.last?.numbers, [])
+        XCTAssertEqual(store.currentTeam, saved)
+        XCTAssertEqual(store.game, game); XCTAssertEqual(store.games, games)
+        XCTAssertEqual(try store.persistenceStore.loadSnapshot(), store.makeRosterSnapshot())
+    }
+
+    func testV312BulkRosterOpponentCommitDoesNotChangeLocalRosterOrHistory() throws {
+        let store = freshStore(), before = store.makeRosterSnapshot(), game = store.game
+        let opponent = try XCTUnwrap(store.opponentTeams.first)
+        let ids = try XCTUnwrap(store.bulkAddPlayers(to: opponent.id, input: "对手甲,,0\n,Opponent B,00", isOpponent: true))
+        XCTAssertEqual(ids.count, 2)
+        XCTAssertEqual(store.teams, before.teams); XCTAssertEqual(store.games, before.games); XCTAssertEqual(store.game, game)
+        XCTAssertEqual(store.opponentTeams.first { $0.id == opponent.id }?.players.suffix(2).map(\.numberText), ["0", "00"])
+        XCTAssertEqual(try store.persistenceStore.loadSnapshot(), store.makeRosterSnapshot())
+    }
+
+    func testV312BulkRosterInvalidBatchAndSaveFailureLeaveNoPartialPlayersAndCanRetry() throws {
+        let store = freshStore(), before = store.makeRosterSnapshot(), current = store.currentTeam, game = store.game
+        let teamID = try XCTUnwrap(current).id
+        var writes = 0
+        CoreDataRosterStore.writeFault = { writes += 1; throw CocoaError(.fileWriteOutOfSpace) }
+        defer { CoreDataRosterStore.writeFault = nil }
+        XCTAssertNil(store.bulkAddPlayers(to: teamID, input: "有效队员,,8\n无效队员,,100"))
+        XCTAssertNil(store.bulkAddPlayers(to: UUID(), input: "有效队员,,8"))
+        XCTAssertEqual(writes, 0, "Validation must complete before storage begins")
+        let input = "可重试甲,,00\n可重试乙,Retry B,"
+        XCTAssertNil(store.bulkAddPlayers(to: teamID, input: input))
+        XCTAssertEqual(writes, 1)
+        XCTAssertEqual(store.makeRosterSnapshot(), before); XCTAssertEqual(store.currentTeam, current); XCTAssertEqual(store.game, game)
+        XCTAssertEqual(try store.persistenceStore.loadSnapshot(), before, "A failed save cannot leave partially inserted players")
+        XCTAssertNotNil(store.storageErrorMessage)
+        XCTAssertEqual(store.actionErrorMessage, store.storageErrorMessage,
+                       "A save failure must not show the earlier invalid-team validation error")
+        CoreDataRosterStore.writeFault = nil
+        let ids = try XCTUnwrap(store.bulkAddPlayers(to: teamID, input: input))
+        XCTAssertEqual(ids.count, 2); XCTAssertNil(store.storageErrorMessage)
+        XCTAssertEqual(store.teams.first { $0.id == teamID }?.players.count, current!.players.count + 2)
+        XCTAssertEqual(try store.persistenceStore.loadSnapshot(), store.makeRosterSnapshot())
+    }
+}
+
+private actor V312BulkRosterClient: TeamDirectoryService, TeamRosterService {
+    struct Call { let operationID: UUID; let body: Data }
+    let client: TeamServiceClient
+    var calls: [Call] = []
+    var loseResponse = false
+    var rejection: Int?
+    init(_ client: TeamServiceClient) { self.client = client }
+    func loseNextResponse() { loseResponse = true }
+    func rejectNext(_ status: Int) { rejection = status }
+    func updateRoster(_ change: SharedRosterChange, operationID: UUID) async throws -> SharedTeamDetail {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        calls.append(Call(operationID: operationID, body: try encoder.encode(change)))
+        if let status = rejection { rejection = nil; throw TeamServiceError.response(status, "测试权限已失效") }
+        let result = try await client.updateRoster(change, operationID: operationID)
+        if loseResponse { loseResponse = false; throw TeamServiceError.message("测试整批响应丢失") }
+        return result
+    }
+    func enroll(deviceName: String) async throws -> UUID { try await client.enroll(deviceName: deviceName) }
+    func teams() async throws -> SharedTeamList { try await client.teams() }
+    func createTeam(name: String, nickname: String, operationID: UUID, profile: SharedRosterSeed?, recoveryToken: String?) async throws -> SharedTeamMembership { try await client.createTeam(name: name, nickname: nickname, operationID: operationID, profile: profile, recoveryToken: recoveryToken) }
+    func detail(teamID: UUID) async throws -> SharedTeamDetail { try await client.detail(teamID: teamID) }
+    func preview(token: String) async throws -> SharedInvitationPreview { try await client.preview(token: token) }
+    func invite(teamID: UUID, role: SharedTeamRole, token: String, operationID: UUID) async throws -> SharedTeamInvitation { try await client.invite(teamID: teamID, role: role, token: token, operationID: operationID) }
+    func join(token: String, nickname: String, operationID: UUID) async throws -> SharedTeamMembership { try await client.join(token: token, nickname: nickname, operationID: operationID) }
+    func invitations(teamID: UUID) async throws -> [SharedTeamInvitation] { try await client.invitations(teamID: teamID) }
+    func revoke(teamID: UUID, invitationID: UUID, operationID: UUID) async throws { try await client.revoke(teamID: teamID, invitationID: invitationID, operationID: operationID) }
+    func members(teamID: UUID) async throws -> [SharedTeamMember] { try await client.members(teamID: teamID) }
+    func changeMember(teamID: UUID, member: SharedTeamMember, role: SharedTeamRole, remove: Bool, operationID: UUID) async throws { try await client.changeMember(teamID: teamID, member: member, role: role, remove: remove, operationID: operationID) }
+    func leave(teamID: UUID, operationID: UUID) async throws { try await client.leave(teamID: teamID, operationID: operationID) }
+}
+
+extension GameStoreTests {
+    private func v312SharedBulkSetup() async throws -> (TeamServiceClient, V312BulkRosterClient, V30DirectoryMemoryStorage, TeamSharingStore, UUID) {
+        let client = try matchClient(); _ = try await client.enroll(deviceName: "批量客户端回归")
+        let team = try await client.createTeam(name: "批量客户端", nickname: "管理员", operationID: UUID())
+        let proxy = V312BulkRosterClient(client), disk = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: proxy, storage: disk); await directory.connect()
+        XCTAssertNil(directory.errorMessage)
+        return (client, proxy, disk, directory, team.teamID)
+    }
+
+    private func v312BulkCount(_ outcome: BulkRosterImportOutcome) -> Int? {
+        if case .success(let count) = outcome { return count }
+        return nil
+    }
+
+    func testV312SharedBulkLostResponseRestartReusesEntireImmutableRequest() async throws {
+        let (client, proxy, disk, directory, teamID) = try await v312SharedBulkSetup()
+        let input = "甲,First,00\n乙,,0\n,Third,"
+        await proxy.loseNextResponse()
+        let result = await directory.importRoster(teamID: teamID, input: input, reviewedRevision: 1)
+        XCTAssertNil(v312BulkCount(result))
+        let pending = try XCTUnwrap(directory.state.pending)
+        guard case .roster(let queued) = pending.command else { return XCTFail("Expected one durable roster batch") }
+        XCTAssertEqual(queued.bulkInput, input); XCTAssertEqual(queued.players?.count, 3)
+        let serverCommitted = try await client.detail(teamID: teamID)
+        XCTAssertEqual(serverCommitted.team.players.count, 3); XCTAssertEqual(serverCommitted.team.revision, 2)
+        let reopened = TeamSharingStore(service: proxy, storage: disk); await reopened.connect()
+        XCTAssertEqual(reopened.state.pending?.id, pending.id)
+        let retry = await reopened.importRoster(teamID: teamID, input: input, reviewedRevision: 2)
+        XCTAssertEqual(v312BulkCount(retry), 3); XCTAssertNil(reopened.state.pending)
+        let calls = await proxy.calls
+        XCTAssertEqual(calls.count, 2); XCTAssertEqual(calls[0].operationID, calls[1].operationID)
+        XCTAssertEqual(calls[0].body, calls[1].body, "Retry must preserve every player ID, label, input, and original base revision")
+        let after = try await client.detail(teamID: teamID)
+        XCTAssertEqual(after.team.revision, 2); XCTAssertEqual(after.team.players, queued.players)
+    }
+
+    func testV312SharedBulkInvalidRowsNeverSendAndConflictNeedsReviewedRefresh() async throws {
+        let (client, proxy, disk, directory, teamID) = try await v312SharedBulkSetup()
+        let invalid = await directory.importRoster(teamID: teamID, input: "有效,,1\n无效,,100", reviewedRevision: 1)
+        XCTAssertNil(v312BulkCount(invalid)); XCTAssertNil(directory.state.pending)
+        let initialCalls = await proxy.calls; XCTAssertTrue(initialCalls.isEmpty)
+        let other = SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: "另一设备新增", englishName: "", numbers: ["7"], archived: false)
+        _ = try await client.updateRoster(SharedRosterChange(teamID: teamID, baseRevision: 1, kind: "player", player: other), operationID: UUID())
+        let input = "本批甲,,00\n本批乙,Batch B,"
+        let stale = await directory.importRoster(teamID: teamID, input: input, reviewedRevision: 1)
+        XCTAssertNil(v312BulkCount(stale)); XCTAssertNil(directory.state.pending)
+        let draft = try XCTUnwrap(directory.preservedBulkRosterDrafts.first)
+        XCTAssertEqual(draft.bulkInput, input); XCTAssertEqual(draft.players?.count, 2)
+        let reopened = TeamSharingStore(service: proxy, storage: disk); await reopened.connect()
+        XCTAssertEqual(reopened.preservedBulkRosterDrafts.first?.players, draft.players)
+        let stillStale = await reopened.importRoster(teamID: teamID, input: input, reviewedRevision: 1)
+        XCTAssertNil(v312BulkCount(stillStale))
+        let current = try XCTUnwrap(reopened.state.profiles?.first { $0.id == teamID })
+        XCTAssertEqual(current.revision, 2)
+        let reviewed = await reopened.importRoster(teamID: teamID, input: input, reviewedRevision: current.revision)
+        XCTAssertEqual(v312BulkCount(reviewed), 2); XCTAssertNil(reopened.preservedBulkRosterDrafts.first)
+        let after = try await client.detail(teamID: teamID)
+        XCTAssertEqual(after.team.revision, 3); XCTAssertEqual(after.team.players.count, 3)
+        XCTAssertTrue(after.team.players.contains(other))
+        XCTAssertEqual(Set(after.team.players.filter { $0.id != other.id }.map(\.id)), Set(draft.players!.map(\.id)))
+    }
+
+    func testV312SharedBulkAccessFailureKeepsCompleteDraftIdentitiesForReview() async throws {
+        let (client, proxy, disk, directory, teamID) = try await v312SharedBulkSetup()
+        let input = "失权甲,,00\n失权乙,Return B,0"
+        await proxy.rejectNext(403)
+        let denied = await directory.importRoster(teamID: teamID, input: input, reviewedRevision: 1)
+        XCTAssertNil(v312BulkCount(denied)); XCTAssertNil(directory.state.pending)
+        let held = try XCTUnwrap(directory.preservedBulkRosterDrafts.first)
+        XCTAssertEqual(held.bulkInput, input); XCTAssertEqual(held.players?.count, 2)
+        XCTAssertTrue(directory.teams.isEmpty)
+        let unchanged = try await client.detail(teamID: teamID)
+        XCTAssertTrue(unchanged.team.players.isEmpty)
+        let reopened = TeamSharingStore(service: proxy, storage: disk); await reopened.connect()
+        XCTAssertEqual(reopened.preservedBulkRosterDrafts.first?.players, held.players)
+        let accepted = await reopened.importRoster(teamID: teamID, input: input, reviewedRevision: 1)
+        XCTAssertEqual(v312BulkCount(accepted), 2)
+        let saved = try await client.detail(teamID: teamID)
+        XCTAssertEqual(saved.team.players, held.players, "Explicit retry after access review must reuse both identity namespaces")
+    }
+
+    func testV312SharedBulkOldCapabilitiesRejectWithoutPerPlayerFallback() async throws {
+        // The isolated old-service fixture has all normal routes but omits bulkRosterImport.
+        let client = try TeamServiceClient(baseURL: URL(string: "http://127.0.0.1:18789/api/v3")!, vault: V30MemoryTeamCredential(value: TeamDeviceKeychain.randomSecret()))
+        _ = try await client.enroll(deviceName: "旧服务客户端")
+        let team = try await client.createTeam(name: "旧服务批量", nickname: "管理员", operationID: UUID())
+        let disk = V30DirectoryMemoryStorage(), directory = TeamSharingStore(service: client, storage: disk)
+        await directory.connect()
+        let input = "不能拆批甲,,00\n不能拆批乙,,0"
+        let outcome = await directory.importRoster(teamID: team.teamID, input: input, reviewedRevision: 1)
+        XCTAssertNil(v312BulkCount(outcome)); XCTAssertNil(directory.state.pending)
+        XCTAssertTrue(directory.errorMessage?.contains("尚未支持") == true)
+        XCTAssertEqual(directory.preservedBulkRosterDrafts.first?.bulkInput, input)
+        XCTAssertEqual(directory.preservedBulkRosterDrafts.first?.players?.count, 2)
+        let after = try await client.detail(teamID: team.teamID)
+        XCTAssertEqual(after.team.revision, 1); XCTAssertTrue(after.team.players.isEmpty)
+        // The unsupported batch must not lock existing single-player roster functionality.
+        let retained = try XCTUnwrap(directory.preservedBulkRosterDrafts.first)
+        let player = SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: "旧服务仍可单个新增", englishName: "", numbers: ["8"], archived: false)
+        let single = await directory.submit(.roster(SharedRosterChange(teamID: team.teamID, baseRevision: 1, kind: "player", player: player)))
+        XCTAssertTrue(single)
+        XCTAssertEqual(directory.preservedBulkRosterDrafts.first?.players, retained.players)
+        XCTAssertEqual(directory.preservedBulkRosterDrafts.first?.bulkInput, input)
+        let singleSaved = try await client.detail(teamID: team.teamID)
+        XCTAssertEqual(singleSaved.team.revision, 2); XCTAssertEqual(singleSaved.team.players, [player])
+    }
+}
+
+extension GameStoreTests {
+    func testV312SharedBulkRejectedBatchesStayIndependentOfOtherRosterEditsAndExplicitRetry() async throws {
+        let (client, _, disk, directory, firstTeamID) = try await v312SharedBulkSetup()
+        let second = try await client.createTeam(name: "另一支球队", nickname: "管理员", operationID: UUID())
+        await directory.connect()
+        for teamID in [firstTeamID, second.teamID] {
+            _ = try await client.updateRoster(SharedRosterChange(teamID: teamID, baseRevision: 1, kind: "profile", name: "并发球队", shortName: "并发", city: ""), operationID: UUID())
+        }
+        let firstInput = "保留批次甲,,00", secondInput = "保留批次乙,,0"
+        let first = await directory.importRoster(teamID: firstTeamID, input: firstInput, reviewedRevision: 1)
+        let other = await directory.importRoster(teamID: second.teamID, input: secondInput, reviewedRevision: 1)
+        XCTAssertNil(v312BulkCount(first)); XCTAssertNil(v312BulkCount(other))
+        XCTAssertNil(directory.state.rosterDraft); XCTAssertEqual(directory.preservedBulkRosterDrafts.count, 2)
+        let firstDraft = try XCTUnwrap(directory.preservedBulkRosterDrafts.first { $0.teamID == firstTeamID })
+        let secondDraft = try XCTUnwrap(directory.preservedBulkRosterDrafts.first { $0.teamID == second.teamID })
+        let profileSaved = await directory.submit(.roster(SharedRosterChange(teamID: second.teamID, baseRevision: 2, kind: "profile", name: "正常编辑仍可保存", shortName: "正常", city: "")))
+        XCTAssertTrue(profileSaved)
+        let player = SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: "单个新增", englishName: "", numbers: ["9"], archived: false)
+        let singleSaved = await directory.submit(.roster(SharedRosterChange(teamID: firstTeamID, baseRevision: 2, kind: "player", player: player)))
+        XCTAssertTrue(singleSaved)
+        let reopened = TeamSharingStore(service: client, storage: disk); await reopened.connect()
+        XCTAssertEqual(reopened.preservedBulkRosterDrafts.count, 2)
+        XCTAssertEqual(reopened.preservedBulkRosterDrafts.first { $0.teamID == firstTeamID }?.players, firstDraft.players)
+        XCTAssertEqual(reopened.preservedBulkRosterDrafts.first { $0.teamID == second.teamID }?.players, secondDraft.players)
+        let draftID = try XCTUnwrap(firstDraft.players?.first?.id)
+        let retried = await reopened.importRoster(teamID: firstTeamID, input: firstInput, reviewedRevision: 3, preservedDraftID: draftID)
+        XCTAssertEqual(v312BulkCount(retried), 1)
+        XCTAssertEqual(reopened.preservedBulkRosterDrafts.count, 1)
+        XCTAssertEqual(reopened.preservedBulkRosterDrafts.first?.players, secondDraft.players)
+        let duplicate = await reopened.importRoster(teamID: firstTeamID, input: firstInput, reviewedRevision: 4, preservedDraftID: draftID)
+        XCTAssertNil(v312BulkCount(duplicate), "A stale restored editor cannot silently become a new batch after acknowledgement")
+        let firstSaved = try await client.detail(teamID: firstTeamID)
+        XCTAssertEqual(firstSaved.team.revision, 4)
+        XCTAssertEqual(Set(firstSaved.team.players.map(\.id)), Set([player.id] + firstDraft.players!.map(\.id)))
+    }
+
+    func testV312SharedBulkLegacyRejectedDraftMigratesWithoutLockingOrLosingIDs() async throws {
+        let (client, _, disk, _, teamID) = try await v312SharedBulkSetup()
+        let player = SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: "旧保留批次", englishName: "", numbers: ["00"], archived: false)
+        disk.state.rosterDraft = SharedRosterChange(teamID: teamID, baseRevision: 1, kind: "players", players: [player], bulkInput: "旧保留批次,,00")
+        disk.state.preservedBulkRosterDrafts = nil
+        let migrated = TeamSharingStore(service: client, storage: disk); migrated.loadCachedDirectory()
+        XCTAssertNil(migrated.state.rosterDraft)
+        XCTAssertEqual(migrated.preservedBulkRosterDrafts.first?.players, [player])
+        XCTAssertEqual(migrated.preservedBulkRosterDrafts.first?.bulkInput, "旧保留批次,,00")
+        XCTAssertTrue(migrated.canMutate)
+        let saved = await migrated.submit(.roster(SharedRosterChange(teamID: teamID, baseRevision: 1, kind: "profile", name: "仍可修改球队", shortName: "正常", city: "")))
+        XCTAssertTrue(saved)
+        let restarted = TeamSharingStore(service: client, storage: disk); restarted.loadCachedDirectory()
+        XCTAssertEqual(restarted.preservedBulkRosterDrafts.count, 1)
+        XCTAssertEqual(restarted.preservedBulkRosterDrafts.first?.players, [player])
+    }
+}

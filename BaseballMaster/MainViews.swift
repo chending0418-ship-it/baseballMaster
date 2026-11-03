@@ -159,6 +159,8 @@ struct GameHomeView: View {
             }
             .padding(.horizontal, BMTheme.horizontalPadding)
             .padding(.vertical, 18)
+            .frame(maxWidth: 900)
+            .frame(maxWidth: .infinity)
         }
         .bmScreenBackground()
         .navigationTitle("比赛")

@@ -66,6 +66,7 @@ enum SituationFieldMode: String, CaseIterable, Identifiable {
 }
 
 struct SituationFieldView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let game: GameState
     var observation: BattedBallObservation?
     @Binding var fielding: BattedBallFielding
@@ -136,7 +137,12 @@ struct SituationFieldView: View {
                         .allowsHitTesting(false)
                 }
             }.clipShape(RoundedRectangle(cornerRadius: 15))
-        }.frame(height: game.rulesSnapshot?.isSlowPitch == true ? 330 : 260)
+        }
+        .frame(height: horizontalSizeClass == .regular
+               ? (game.rulesSnapshot?.isSlowPitch == true ? 400 : 360)
+               : (game.rulesSnapshot?.isSlowPitch == true ? 330 : 260))
+        .frame(maxWidth: 640)
+        .frame(maxWidth: .infinity)
     }
     private func scaled(_ position: FieldPosition, _ size: CGSize) -> CGPoint {
         BaseballFieldLayout.fielderPosition(position, in: size)
@@ -150,7 +156,12 @@ struct SituationPlayFlowSheet: View {
     let illegalPitch: Bool
     var initial: SituationExistingPlay? = nil
     var onSave: ((PlayOutcome, DefensivePlay?, [RunnerDecision], Bool?, BattedBallObservation) -> Bool)? = nil
+    var embedded = false
+    var onClose: (() -> Void)? = nil
     @State private var initialized = false
+    @State private var sourceGame: GameState?
+    @State private var sourceGameID: UUID?
+    @State private var sourcePracticeID: UUID?
     private enum Stage { case entry, catalog, process, processResult, contact, review, timing }
     @State private var stage: Stage = .entry
     @State private var catalogReturnStage: Stage = .entry
@@ -185,48 +196,89 @@ struct SituationPlayFlowSheet: View {
         return nil
     }
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if [.entry, .catalog, .process, .processResult].contains(stage) { context }
-                    switch stage {
-                    case .entry: entry
-                    case .catalog: catalog
-                    case .process: typeGrid(isProcess: true)
-                    case .processResult:
-                        outcomeGrid(processOutcomes.filter { $0 != .other })
-                        Button("其他结果／全部结果") { catalogReturnStage = .processResult; stage = .catalog }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("process-all-outcomes")
-                        Button("结果待确认") { choose(.other) }.buttonStyle(SecondaryButtonStyle())
-                    case .contact: contact
-                    case .review: review
-                    case .timing: timingOptions
+        Group {
+            if embedded {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        if stage != .entry { Button("返回") { goBack() } }
+                        Text(title).font(.headline)
+                        Spacer(minLength: 0)
+                        if stage == .entry {
+                            Button("全部击球") { catalogReturnStage = .entry; stage = .catalog }
+                                .accessibilityIdentifier("all-batted-outcomes")
+                        }
+                        Button(action: close) { Image(systemName: "xmark") }
+                            .frame(width: 44, height: 44)
+                            .accessibilityLabel("取消本球").accessibilityIdentifier("cancel-situation-play")
                     }
-                    if let issue { Text(issue).font(.callout).foregroundStyle(BMTheme.red).accessibilityIdentifier("situation-issue") }
-                }.padding(16)
-            }.bmScreenBackground()
-                .safeAreaInset(edge: .bottom) { footer }
-                .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { if stage != .entry { Button("返回") { goBack() } } }
-                    ToolbarItem(placement: .confirmationAction) {
-                        if stage == .entry { Button("全部击球") { catalogReturnStage = .entry; stage = .catalog }.accessibilityIdentifier("all-batted-outcomes") }
-                        Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("取消本球").accessibilityIdentifier("cancel-situation-play")
-                    }
+                    .padding(.horizontal, 16)
+                    Divider()
+                    flowContent
                 }
-                .gameActionErrorAlert(store)
-                .onAppear {
-                    guard !initialized else { return }; initialized = true
-                    if let initial {
-                        outcome = initial.outcome; observation = initial.observation
-                        selectedType = initial.observation.type; fielding = initial.observation.fielding ?? BattedBallFielding(status: .pending)
-                        decisions = initial.decisions; runnerDetails = initial.observation.runnerDetails ?? initial.decisions.map { BattedBallRunnerDetail(playerID: $0.id) }
-                        timing = initial.timing; stage = .review
-                    }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("docked-situation-editor")
+            } else {
+                NavigationStack {
+                    flowContent
+                        .gameActionErrorAlert(store)
+                        .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                if stage != .entry { Button("返回") { goBack() } }
+                            }
+                            ToolbarItem(placement: .confirmationAction) {
+                                if stage == .entry {
+                                    Button("全部击球") { catalogReturnStage = .entry; stage = .catalog }
+                                        .accessibilityIdentifier("all-batted-outcomes")
+                                }
+                                Button(action: close) { Image(systemName: "xmark") }
+                                    .accessibilityLabel("取消本球").accessibilityIdentifier("cancel-situation-play")
+                            }
+                        }
                 }
-                .sheet(item: Binding(get: { extraRunner.map(RunnerRouteSelection.init) }, set: { extraRunner = $0?.id })) { selection in
-                    extraRouteSheet(selection.id)
-                }
+            }
         }
+    }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
+    }
+
+    private var flowContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if [.entry, .catalog, .process, .processResult].contains(stage) { context }
+                switch stage {
+                case .entry: entry
+                case .catalog: catalog
+                case .process: typeGrid(isProcess: true)
+                case .processResult:
+                    outcomeGrid(processOutcomes.filter { $0 != .other })
+                    Button("其他结果／全部结果") { catalogReturnStage = .processResult; stage = .catalog }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("process-all-outcomes")
+                    Button("结果待确认") { choose(.other) }.buttonStyle(SecondaryButtonStyle())
+                case .contact: contact
+                case .review: review
+                case .timing: timingOptions
+                }
+                if let issue { Text(issue).font(.callout).foregroundStyle(BMTheme.red).accessibilityIdentifier("situation-issue") }
+            }.padding(16)
+        }.bmScreenBackground()
+            .safeAreaInset(edge: .bottom) { footer }
+            .onAppear {
+                guard !initialized else { return }; initialized = true
+                sourceGame = store.game
+                sourceGameID = store.activeGameID
+                sourcePracticeID = store.transientCorrectionID
+                if let initial {
+                    outcome = initial.outcome; observation = initial.observation
+                    selectedType = initial.observation.type; fielding = initial.observation.fielding ?? BattedBallFielding(status: .pending)
+                    decisions = initial.decisions; runnerDetails = initial.observation.runnerDetails ?? initial.decisions.map { BattedBallRunnerDetail(playerID: $0.id) }
+                    timing = initial.timing; stage = .review
+                }
+            }
+            .sheet(item: Binding(get: { extraRunner.map(RunnerRouteSelection.init) }, set: { extraRunner = $0?.id })) { selection in
+                extraRouteSheet(selection.id)
+            }
     }
     private var title: String {
         switch stage {
@@ -522,6 +574,12 @@ struct SituationPlayFlowSheet: View {
         else { submit() }
     }
     private func submit() {
+        guard sourceGame == store.game, sourceGameID == store.activeGameID,
+              sourcePracticeID == store.transientCorrectionID else {
+            store.actionErrorMessage = "比赛局面已变化，本球草稿未写入。请按当前局面重新记录。"
+            close()
+            return
+        }
         guard fieldIssue == nil else { issue = fieldIssue; stage = .contact; return }
         let outs = decisions.filter { $0.destination == .out }.count
         if outcome == .doublePlay && outs != 2 || outcome == .triplePlay && outs != 3 { issue = "请明确本次\(outcome.rawValue)的实际出局者"; stage = .review; return }
@@ -536,14 +594,14 @@ struct SituationPlayFlowSheet: View {
         fielding.capture(in: store.game); observation.fielding = fielding; observation.runnerDetails = runnerDetails
         let defense = situationDefensivePlay(outcome: outcome, observation: observation, decisions: decisions)
         if let onSave {
-            if onSave(outcome, defense, decisions, timing, observation) { dismiss() }
+            if onSave(outcome, defense, decisions, timing, observation) { close() }
             else { issue = "修改未保存，请核对比赛是否已变化。" }
             return
         }
         let result = illegalPitch
             ? store.recordIllegalPitch(nil, wasThrown: true, outcome: outcome, defensivePlay: defense, decisions: decisions, timingRunCounts: timing, observation: observation)
             : store.applyPlay(outcome, defensivePlay: defense, decisions: decisions, timingRunCounts: timing, observation: observation)
-        if result { dismiss() }
+        if result { close() }
     }
     private func goBack() {
         issue = nil

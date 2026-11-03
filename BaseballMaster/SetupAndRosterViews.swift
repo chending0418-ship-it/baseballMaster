@@ -157,6 +157,7 @@ struct TeamDetailView: View {
     @State private var playerEditorContext: PlayerEditorContext?
     @State private var teamEditorContext: TeamEditorContext?
     @State private var playerPendingDeletion: Player?
+    @State private var showBulkImport = false
 
     var body: some View {
         Group {
@@ -177,6 +178,7 @@ struct TeamDetailView: View {
                                 Spacer()
                                 VStack(spacing: 2) {
                                     Text("\(team.players.count)")
+                                        .accessibilityIdentifier("roster-player-count")
                                         .font(.system(size: 28, weight: .black, design: .rounded))
                                         .foregroundStyle(BMTheme.green)
                                     Text("球员")
@@ -196,6 +198,9 @@ struct TeamDetailView: View {
                             }
                             .foregroundStyle(BMTheme.green)
                             .accessibilityIdentifier("add-player")
+                            Button("批量输入") { showBulkImport = true }
+                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(BMTheme.green)
+                                .accessibilityIdentifier("bulk-add-players")
                         }
 
                         if team.players.isEmpty {
@@ -286,6 +291,9 @@ struct TeamDetailView: View {
         .sheet(item: $playerEditorContext) { context in
             PlayerEditorSheet(teamID: context.teamID, player: context.player)
                 .environmentObject(store)
+        }
+        .sheet(isPresented: $showBulkImport) {
+            LocalBulkRosterImportSheet(teamID: teamID).environmentObject(store)
         }
         .sheet(item: $teamEditorContext) { context in
             TeamEditorSheet(team: context.team)
@@ -394,6 +402,7 @@ struct PlayerEditorSheet: View {
 
     @State private var chineseName: String
     @State private var englishName: String
+    @State private var showBulkImport = false
     @State private var numberInputs: [JerseyNumberInput]
 
     init(teamID: UUID, player: Player?, isOpponent: Bool = false) {
@@ -414,6 +423,13 @@ struct PlayerEditorSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if player == nil {
+                    Section {
+                        Button { showBulkImport = true } label: {
+                            Label("批量输入名单", systemImage: "person.3.sequence")
+                        }.accessibilityIdentifier("open-bulk-roster")
+                    }
+                }
                 Section("姓名") {
                     TextField("中文名", text: $chineseName)
                     TextField("英文名", text: $englishName)
@@ -478,6 +494,9 @@ struct PlayerEditorSheet: View {
                     .disabled(!isValid)
                 }
             }
+        }
+        .sheet(isPresented: $showBulkImport) {
+            LocalBulkRosterImportSheet(teamID: teamID, isOpponent: isOpponent).environmentObject(store)
         }
     }
 
@@ -1206,6 +1225,7 @@ struct OpponentTeamDetailView: View {
     let teamID: UUID
     @State private var playerEditorContext: PlayerEditorContext?
     @State private var playerPendingDeletion: Player?
+    @State private var showBulkImport = false
 
     var body: some View {
         Group {
@@ -1224,6 +1244,12 @@ struct OpponentTeamDetailView: View {
                                         .foregroundStyle(BMTheme.secondaryText)
                                 }
                                 Spacer()
+                                VStack(spacing: 2) {
+                                    Text("\(team.players.count)")
+                                        .font(.title2.bold()).foregroundStyle(BMTheme.green)
+                                        .accessibilityIdentifier("roster-player-count")
+                                    Text("球员").font(.caption)
+                                }
                             }
                         }
 
@@ -1237,6 +1263,9 @@ struct OpponentTeamDetailView: View {
                             }
                             .foregroundStyle(BMTheme.green)
                             .accessibilityIdentifier("add-opponent-player")
+                            Button("批量输入") { showBulkImport = true }
+                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(BMTheme.green)
+                                .accessibilityIdentifier("bulk-add-players")
                         }
 
                         if team.players.count < 9 {
@@ -1299,6 +1328,9 @@ struct OpponentTeamDetailView: View {
         .bmScreenBackground()
         .navigationTitle("对手名单")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showBulkImport) {
+            LocalBulkRosterImportSheet(teamID: teamID, isOpponent: true).environmentObject(store)
+        }
         .sheet(item: $playerEditorContext) { context in
             PlayerEditorSheet(teamID: context.teamID, player: context.player, isOpponent: true)
                 .environmentObject(store)

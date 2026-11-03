@@ -33,12 +33,36 @@ struct SharedTeamsView: View {
     @State private var showCreate = false
     @State private var showJoin = false
     @State private var resetCredential = false
+    @State private var preservedBulkEditor: RosterEditorContext?
+    private var preservedBulkDrafts: [PreservedBulkDraftItem] { bulkDraftItems(directory) }
+    private func preservedBatchButton(_ item: PreservedBulkDraftItem) -> some View {
+        Button {
+            let draft = item.draft
+            let profile = directory.state.profiles?.first { $0.id == draft.teamID }
+                ?? SharedTeamProfile(id: draft.teamID, name: "原共享球队", revision: draft.baseRevision,
+                                     shortName: "", city: "", players: [])
+            preservedBulkEditor = RosterEditorContext(profile: profile, kind: "players", draft: draft)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("核对保留的批量名单")
+                Text(item.summary(teamName: directory.state.profiles?.first { $0.id == item.draft.teamID }?.name))
+                    .font(.caption).foregroundStyle(BMTheme.secondaryText)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-preserved-bulk-roster")
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("仅受邀成员可访问。无需注册账号；本机球队可继续独立使用。")
                     .foregroundStyle(BMTheme.secondaryText)
                 SharedTeamStatusView(directory: directory)
+                if !preservedBulkDrafts.isEmpty {
+                    SectionHeader(title: "保留的批量名单", subtitle: "\(preservedBulkDrafts.count) 个批次")
+                    ForEach(preservedBulkDrafts) { item in preservedBatchButton(item) }
+                    Text("每个批次的完整输入分别保存在本机；无球队权限时可查看，恢复权限并核对后才能新增。等待确认结果的批次仍须原样重试。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                }
                 if directory.credentialExpired {
                     Button("重新接入本机") { resetCredential = true }.buttonStyle(SecondaryButtonStyle())
                     Text("设备授权已失效。重新接入后，需要原设备配对、管理员邀请或管理恢复卡来重新获得球队权限。")
@@ -90,6 +114,7 @@ struct SharedTeamsView: View {
         }.bmScreenBackground().navigationTitle("球队共享").navigationBarTitleDisplayMode(.inline)
         .toolbar { Button("刷新") { Task { await directory.connect() } }.disabled(directory.isBusy) }
         .task(id: directory.foregroundGeneration) { await directory.connectOnce() }
+        .sheet(item: $preservedBulkEditor) { context in SharedBulkRosterEditor(directory: directory, context: context) }
         .sheet(isPresented: $showCreate) { NavigationStack { CreateSharedTeamView(directory: directory) } }
         .sheet(isPresented: $showJoin) { NavigationStack { JoinSharedTeamView(directory: directory) } }
         .alert("重新接入这台设备？", isPresented: $resetCredential) {
@@ -263,165 +288,304 @@ struct SharedTeamDetailView: View {
     @State private var change: MemberChange?
     @State private var leave = false
     @State private var loading = false
-    var body: some View {
+    var body: some View { membershipAlerts }
+
+    private var page: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 SharedTeamStatusView(directory: directory)
                 if loading { ProgressView("正在刷新球队资料…") }
                 if let detail, directory.teams.contains(where: { $0.id == teamID }) {
-                    BMCard {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(detail.team.name).font(.title2.bold())
-                            Text("队内共享 · \(detail.role.title)").foregroundStyle(BMTheme.green)
-                            Text(detail.role.explanation).font(.subheadline).foregroundStyle(BMTheme.secondaryText)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    NavigationLink { SharedMatchesListView(coordinator: store.sharedMatches, teamID: teamID) } label: { Label("球队比赛与历史", systemImage: "baseball") }
-                        .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-shared-matches")
-                    NavigationLink { StatsOverviewView(initialTeamID: teamID) } label: { Label("球队年度统计", systemImage: "chart.bar") }
-                        .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("shared-annual-statistics")
-                    Text("创建、设置和记分请从首页的比赛入口进入。比赛始终保存在本机，结束后确认上传，球队成员才能查看完整档案。")
-                        .font(.caption).foregroundStyle(BMTheme.secondaryText)
-                    SectionHeader(title: "共享名单", subtitle: "\(detail.team.players.filter { !$0.isArchived }.count) 名现役球员")
-                    if detail.role.canEditPlayers {
-                        HStack {
-                            if detail.role == .admin {
-                            Button("编辑球队") { rosterEditor = RosterEditorContext(profile: detail.team, kind: "profile") }
-                                .accessibilityIdentifier("edit-shared-profile")
-                            }
-                            Spacer()
-                            Button("添加球员") { rosterEditor = RosterEditorContext(profile: detail.team, kind: "player") }
-                                .accessibilityIdentifier("add-shared-player")
-                        }.disabled(!directory.canMutate)
-                        if let draft = directory.state.rosterDraft, draft.teamID == teamID, draft.kind == "player" || detail.role == .admin {
-                            Button("继续核对未保存的名单") { rosterEditor = RosterEditorContext(profile: detail.team, kind: draft.kind, player: draft.player, draft: draft) }
-                                .accessibilityIdentifier("resume-roster-draft")
-                        }
-                    }
-                    if detail.team.players.isEmpty { Text("这支球队还没有共享球员名单。").foregroundStyle(BMTheme.secondaryText) }
-                    ForEach([false, true], id: \.self) { archived in
-                        if archived && detail.team.players.contains(where: \.isArchived) { SectionHeader(title: "已停用球员", subtitle: "历史成绩保留，可恢复到现役名单") }
-                        ForEach(detail.team.players.filter { $0.isArchived == archived }) { player in
-                            BMCard {
-                                HStack {
-                                    VStack(alignment: .leading) { Text(player.name).font(.headline); Text(player.numberText).foregroundStyle(BMTheme.green) }
-                                    Spacer()
-                                    if detail.role.canEditPlayers {
-                                        Menu {
-                                            Button("编辑资料") { rosterEditor = RosterEditorContext(profile: detail.team, kind: "player", player: player) }
-                                            if detail.role == .admin {
-                                            Button(player.isArchived ? "恢复现役" : "停用球员") { archivePlayer = player }
-                                            }
-                                        } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }
-                                            .disabled(!directory.canMutate).accessibilityIdentifier("edit-shared-player-\(player.name)")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if detail.role == .admin {
-                        Button("邀请成员") { openedInvitationID = directory.state.fixedInvitations?.first { $0.teamID == teamID }?.invitation.id; showInvite = true }.buttonStyle(PrimaryButtonStyle())
-                            .disabled(!directory.canMutate).accessibilityIdentifier("invite-team-member")
-                        SectionHeader(title: "成员管理", subtitle: "\(members.count) 人")
-                        Text("管理员 \(members.filter { $0.role == .admin }.count) / 3 · 每支球队最多三名管理员")
-                            .font(.footnote).foregroundStyle(BMTheme.secondaryText).accessibilityIdentifier("team-admin-limit")
-                        ForEach(members) { member in
-                            BMCard {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(member.nickname + (member.id == detail.memberID ? "（你）" : "")).font(.headline)
-                                        Text(member.role.title).font(.subheadline).foregroundStyle(BMTheme.secondaryText)
-                                    }
-                                    Spacer()
-                                    Menu {
-                                        ForEach(SharedTeamRole.allCases.filter { $0 != member.role }, id: \.rawValue) { role in
-                                            Button("设为\(role.title)") { change = MemberChange(member: member, role: role, remove: false) }
-                                                .disabled(role == .admin && members.filter { $0.role == .admin }.count >= 3)
-                                        }
-                                        if member.id != detail.memberID {
-                                            Button("移除成员", role: .destructive) { change = MemberChange(member: member, role: member.role, remove: true) }
-                                        }
-                                    } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }
-                                        .disabled(!directory.canMutate).accessibilityIdentifier("manage-member-\(member.nickname)")
-                                }
-                            }
-                        }
-                        if !invitations.isEmpty {
-                            SectionHeader(title: "邀请链接")
-                            ForEach(invitations) { invitation in
-                                BMCard {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("邀请\(invitation.role.title)")
-                                            Text(invitation.expiresAt > 8e15 ? "固定链接 · 可供多人加入" : Date(timeIntervalSince1970: invitation.expiresAt / 1000).formatted(date: .abbreviated, time: .shortened))
-                                                .font(.footnote).foregroundStyle(BMTheme.secondaryText)
-                                        }
-                                        Spacer()
-                                        Button("撤销", role: .destructive) { Task { _ = await directory.submit(.revoke(teamID: teamID, invitationID: invitation.id)); await reload() } }
-                                            .disabled(!directory.canMutate).accessibilityIdentifier("revoke-team-invitation")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    NavigationLink("球队设备与配对") { TeamDevicesView(directory: directory, teamID: teamID) }
-                        .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-team-devices")
-                    if detail.role == .admin {
-                        NavigationLink("导出球队完整档案") { TeamArchiveExportView(teamID: teamID, directory: directory) }
-                            .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-team-archive")
-                        NavigationLink("球队操作记录") { TeamAuditView(directory: directory, teamID: teamID) }
-                            .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-team-audit")
-                        NavigationLink {
-                            TeamRecoveryCardView(directory: directory, teamID: teamID)
-                        } label: {
-                            Label(directory.state.recoveryCards?.first(where: { $0.teamID == teamID })?.confirmedSaved == true ? "管理恢复卡" : "管理恢复卡 · 请确认已保存", systemImage: "key.fill")
-                        }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-team-recovery-card")
-                    }
-                    Button("退出这支球队", role: .destructive) { leave = true }
-                        .frame(minHeight: 44).disabled(!directory.canMutate).accessibilityIdentifier("leave-shared-team")
-                    if detail.role == .admin {
-                        NavigationLink("解散球队") { DissolveTeamView(directory: directory, team: detail.team) }
-                            .foregroundStyle(BMTheme.red).frame(minHeight: 44).accessibilityIdentifier("open-dissolve-team")
-                    }
+                    teamContent(detail)
                 } else if !loading {
-                    Text("请联网刷新后查看球队资料。").foregroundStyle(BMTheme.secondaryText)
+                    unavailableContent
                 }
             }.padding(BMTheme.horizontalPadding)
-        }.bmScreenBackground().navigationTitle("共享球队").navigationBarTitleDisplayMode(.inline)
-        .toolbar { Button("刷新") { Task { await directory.connect(); await reload() } }.disabled(directory.isBusy || loading) }
-        .task(id: directory.foregroundGeneration) {
-            if let cached = directory.detailCache[teamID] { detail = cached.0; members = cached.1; invitations = cached.2 }
-            if directory.needsRefresh("detail-\(teamID)") { await reload() }
         }
+        .bmScreenBackground().navigationTitle("共享球队").navigationBarTitleDisplayMode(.inline)
+        .toolbar { Button("刷新", action: refreshTeam).disabled(directory.isBusy || loading) }
+        .task(id: directory.foregroundGeneration) { await refreshIfNeeded() }
         .navigationDestination(isPresented: $showNewGame) { NewGameSetupView() }
-        .sheet(item: $rosterEditor, onDismiss: { if directory.cachedDetail(teamID: teamID)?.team.revision != detail?.team.revision { Task { await reload() } } }) { context in
-            NavigationStack { SharedRosterEditor(directory: directory, context: context) }
+    }
+
+    private var rosterPresentation: some View {
+        page
+            .sheet(item: $rosterEditor, onDismiss: rosterEditorDidDismiss) { context in
+                rosterEditorView(context)
+            }
+            .alert(archiveTitle, isPresented: archivePresented, presenting: archivePlayer) { player in
+                Button("确认") { toggleArchive(player) }
+                Button("取消", role: .cancel) { }
+            } message: { player in Text(archiveExplanation(player)) }
+            .sheet(isPresented: $showInvite, onDismiss: invitationDidDismiss) {
+                NavigationStack { InviteSharedTeamView(directory: directory, teamID: teamID) }
+            }
+    }
+
+    private var membershipAlerts: some View {
+        rosterPresentation
+            .alert(memberChangeTitle, isPresented: memberChangePresented, presenting: change) { value in
+                Button("确认调整", role: value.remove ? .destructive : nil) { applyMemberChange(value) }
+                    .accessibilityIdentifier("confirm-member-change")
+                Button("取消", role: .cancel) { }
+            } message: { value in Text(memberChangeExplanation(value)) }
+            .alert("退出这支球队？", isPresented: $leave) {
+                Button("确认退出", role: .destructive, action: leaveTeam)
+                Button("取消", role: .cancel) { }
+            } message: {
+                Text("退出后，你将无法查看这支共享球队的资料。球队资料仍会保留，本机球队和比赛也不会删除。如果只有你一名管理员，请先设置另一名管理员。")
+            }
+    }
+
+    @ViewBuilder
+    private func teamContent(_ detail: SharedTeamDetail) -> some View {
+        teamIntroduction(detail)
+        sharedRosterSection(detail)
+        if detail.role == .admin { administrationSection(detail) }
+        teamNavigation(detail)
+    }
+
+    @ViewBuilder
+    private func teamIntroduction(_ detail: SharedTeamDetail) -> some View {
+        BMCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(detail.team.name).font(.title2.bold())
+                Text("队内共享 · \(detail.role.title)").foregroundStyle(BMTheme.green)
+                Text(detail.role.explanation).font(.subheadline).foregroundStyle(BMTheme.secondaryText)
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }
-        .alert(archivePlayer?.isArchived == true ? "恢复这位球员？" : "停用这位球员？", isPresented: Binding(get: { archivePlayer != nil }, set: { if !$0 { archivePlayer = nil } }), presenting: archivePlayer) { player in
-            Button("确认") {
-                Task {
-                    guard let detail else { return }
-                    var changed = player; changed.archived = !player.isArchived
-                    _ = await directory.submit(.roster(SharedRosterChange(teamID: teamID, baseRevision: detail.team.revision, kind: "player", player: changed)))
-                    await reload()
+        NavigationLink { SharedMatchesListView(coordinator: store.sharedMatches, teamID: teamID) } label: {
+            Label("球队比赛与历史", systemImage: "baseball")
+        }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-shared-matches")
+        NavigationLink { StatsOverviewView(initialTeamID: teamID) } label: {
+            Label("球队年度统计", systemImage: "chart.bar")
+        }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("shared-annual-statistics")
+        Text("创建、设置和记分请从首页的比赛入口进入。比赛始终保存在本机，结束后确认上传，球队成员才能查看完整档案。")
+            .font(.caption).foregroundStyle(BMTheme.secondaryText)
+    }
+
+    @ViewBuilder
+    private func administrationSection(_ detail: SharedTeamDetail) -> some View {
+        Button("邀请成员", action: openInvitation).buttonStyle(PrimaryButtonStyle())
+            .disabled(!directory.canMutate).accessibilityIdentifier("invite-team-member")
+        SectionHeader(title: "成员管理", subtitle: "\(members.count) 人")
+        Text("管理员 \(administratorCount) / 3 · 每支球队最多三名管理员")
+            .font(.footnote).foregroundStyle(BMTheme.secondaryText).accessibilityIdentifier("team-admin-limit")
+        ForEach(members) { member in memberCard(member, detail: detail) }
+        if !invitations.isEmpty {
+            SectionHeader(title: "邀请链接")
+            ForEach(invitations) { invitation in invitationCard(invitation) }
+        }
+    }
+
+    private func memberCard(_ member: SharedTeamMember, detail: SharedTeamDetail) -> some View {
+        BMCard {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(memberDisplayName(member, detail: detail)).font(.headline)
+                    Text(member.role.title).font(.subheadline).foregroundStyle(BMTheme.secondaryText)
+                }
+                Spacer()
+                memberMenu(member, detail: detail)
+            }
+        }
+    }
+
+    private func memberMenu(_ member: SharedTeamMember, detail: SharedTeamDetail) -> some View {
+        Menu {
+            ForEach(SharedTeamRole.allCases.filter { $0 != member.role }, id: \.rawValue) { role in
+                Button("设为\(role.title)") { change = MemberChange(member: member, role: role, remove: false) }
+                    .disabled(role == .admin && administratorCount >= 3)
+            }
+            if member.id != detail.memberID {
+                Button("移除成员", role: .destructive) { change = MemberChange(member: member, role: member.role, remove: true) }
+            }
+        } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }
+            .disabled(!directory.canMutate).accessibilityIdentifier("manage-member-" + member.nickname)
+    }
+
+    private func invitationCard(_ invitation: SharedTeamInvitation) -> some View {
+        BMCard {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("邀请\(invitation.role.title)")
+                    Text(invitationExpiry(invitation)).font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                }
+                Spacer()
+                Button("撤销", role: .destructive) { revokeInvitation(invitation) }
+                    .disabled(!directory.canMutate).accessibilityIdentifier("revoke-team-invitation")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func teamNavigation(_ detail: SharedTeamDetail) -> some View {
+        NavigationLink("球队设备与配对") { TeamDevicesView(directory: directory, teamID: teamID) }
+            .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-team-devices")
+        if detail.role == .admin { administratorNavigation }
+        Button("退出这支球队", role: .destructive) { leave = true }
+            .frame(minHeight: 44).disabled(!directory.canMutate).accessibilityIdentifier("leave-shared-team")
+        if detail.role == .admin {
+            NavigationLink("解散球队") { DissolveTeamView(directory: directory, team: detail.team) }
+                .foregroundStyle(BMTheme.red).frame(minHeight: 44).accessibilityIdentifier("open-dissolve-team")
+        }
+    }
+
+    @ViewBuilder
+    private var administratorNavigation: some View {
+        NavigationLink("导出球队完整档案") { TeamArchiveExportView(teamID: teamID, directory: directory) }
+            .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-team-archive")
+        NavigationLink("球队操作记录") { TeamAuditView(directory: directory, teamID: teamID) }
+            .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-team-audit")
+        NavigationLink { TeamRecoveryCardView(directory: directory, teamID: teamID) } label: {
+            Label(recoveryCardTitle, systemImage: "key.fill")
+        }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-team-recovery-card")
+    }
+
+    @ViewBuilder
+    private var unavailableContent: some View {
+        Text("请联网刷新后查看球队资料。").foregroundStyle(BMTheme.secondaryText)
+        preservedBatchButtons
+    }
+
+    @ViewBuilder
+    private var preservedBatchButtons: some View {
+        let items = bulkDraftItems(directory, teamID: teamID)
+        if !items.isEmpty {
+            SectionHeader(title: "保留的批量输入", subtitle: "\(items.count) 个批次")
+            ForEach(items) { item in
+                Button { openPreservedBulkDraft(item.draft) } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("查看并核对这一批名单")
+                        Text(item.summary()).font(.caption).foregroundStyle(BMTheme.secondaryText)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.accessibilityIdentifier("resume-bulk-roster-draft")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rosterEditorView(_ context: RosterEditorContext) -> some View {
+        if context.kind == "players" { SharedBulkRosterEditor(directory: directory, context: context) }
+        else { NavigationStack { SharedRosterEditor(directory: directory, context: context) } }
+    }
+
+    private var administratorCount: Int { members.filter { $0.role == .admin }.count }
+    private var recoveryCardTitle: String {
+        directory.state.recoveryCards?.first(where: { $0.teamID == teamID })?.confirmedSaved == true
+            ? "管理恢复卡" : "管理恢复卡 · 请确认已保存"
+    }
+    private var archiveTitle: String { archivePlayer?.isArchived == true ? "恢复这位球员？" : "停用这位球员？" }
+    private var archivePresented: Binding<Bool> {
+        Binding(get: { archivePlayer != nil }, set: { if !$0 { archivePlayer = nil } })
+    }
+    private var memberChangeTitle: String { change?.remove == true ? "移除这位成员？" : "调整成员角色？" }
+    private var memberChangePresented: Binding<Bool> {
+        Binding(get: { change != nil }, set: { if !$0 { change = nil } })
+    }
+    private func memberDisplayName(_ member: SharedTeamMember, detail: SharedTeamDetail) -> String {
+        member.nickname + (member.id == detail.memberID ? "（你）" : "")
+    }
+    private func invitationExpiry(_ invitation: SharedTeamInvitation) -> String {
+        invitation.expiresAt > 8e15 ? "固定链接 · 可供多人加入"
+            : Date(timeIntervalSince1970: invitation.expiresAt / 1000).formatted(date: .abbreviated, time: .shortened)
+    }
+    private func archiveExplanation(_ player: SharedRosterPlayer) -> String {
+        player.isArchived ? "恢复后，新比赛可再次选择这位球员。" : "从新比赛可选名单移除；已开始和已结束比赛的阵容、成绩都保留。"
+    }
+    private func memberChangeExplanation(_ value: MemberChange) -> String {
+        value.remove ? "\(value.member.nickname) 将无法继续访问球队资料。球队记录保留。"
+            : "将“\(value.member.nickname)”设为\(value.role.title)。\(value.role.explanation)"
+    }
+    private func openPreservedBulkDraft(_ draft: SharedRosterChange) {
+        let profile = detail?.team ?? directory.state.profiles?.first { $0.id == draft.teamID }
+            ?? SharedTeamProfile(id: teamID, name: "原共享球队", revision: draft.baseRevision, shortName: "", city: "", players: [])
+        rosterEditor = RosterEditorContext(profile: profile, kind: "players", draft: draft)
+    }
+    private func openInvitation() {
+        openedInvitationID = directory.state.fixedInvitations?.first { $0.teamID == teamID }?.invitation.id
+        showInvite = true
+    }
+    private func refreshTeam() { Task { await directory.connect(); await reload() } }
+    private func revokeInvitation(_ invitation: SharedTeamInvitation) {
+        Task { _ = await directory.submit(.revoke(teamID: teamID, invitationID: invitation.id)); await reload() }
+    }
+    private func applyMemberChange(_ value: MemberChange) {
+        Task { _ = await directory.submit(.member(teamID: teamID, member: value.member, role: value.role, remove: value.remove)); await reload() }
+    }
+    private func leaveTeam() { Task { if await directory.submit(.leave(teamID: teamID)) { dismiss() } } }
+    private func toggleArchive(_ player: SharedRosterPlayer) {
+        Task {
+            guard let detail else { return }
+            var changed = player; changed.archived = !player.isArchived
+            let request = SharedRosterChange(teamID: teamID, baseRevision: detail.team.revision, kind: "player", player: changed)
+            _ = await directory.submit(.roster(request))
+            await reload()
+        }
+    }
+    private func rosterEditorDidDismiss() {
+        if directory.cachedDetail(teamID: teamID)?.team.revision != detail?.team.revision { Task { await reload() } }
+    }
+    private func invitationDidDismiss() {
+        if directory.state.fixedInvitations?.first(where: { $0.teamID == teamID })?.invitation.id != openedInvitationID { Task { await reload() } }
+    }
+    @MainActor private func refreshIfNeeded() async {
+        if let cached = directory.detailCache[teamID] { detail = cached.0; members = cached.1; invitations = cached.2 }
+        if directory.needsRefresh("detail-\(teamID)") { await reload() }
+    }
+
+    @ViewBuilder
+    private func sharedRosterSection(_ detail: SharedTeamDetail) -> some View {
+        SectionHeader(title: "共享名单", subtitle: "\(detail.team.players.filter { !$0.isArchived }.count) 名现役球员")
+        if detail.role.canEditPlayers {
+            HStack {
+                if detail.role == .admin {
+                Button("编辑球队") { rosterEditor = RosterEditorContext(profile: detail.team, kind: "profile") }
+                    .accessibilityIdentifier("edit-shared-profile")
+                }
+                Spacer()
+                Button("批量输入") { rosterEditor = RosterEditorContext(profile: detail.team, kind: "players") }
+                    .accessibilityIdentifier("open-shared-bulk-roster")
+                Button("添加球员") { rosterEditor = RosterEditorContext(profile: detail.team, kind: "player") }
+                    .accessibilityIdentifier("add-shared-player")
+            }.disabled(!directory.canMutate)
+            if let draft = directory.state.rosterDraft, draft.teamID == teamID, draft.kind != "players" && (draft.kind == "player" || detail.role == .admin) {
+                Button("继续核对未保存的名单") { rosterEditor = RosterEditorContext(profile: detail.team, kind: draft.kind, player: draft.player, draft: draft) }
+                    .accessibilityIdentifier("resume-roster-draft")
+            }
+        }
+        preservedBatchButtons
+        if detail.team.players.isEmpty { Text("这支球队还没有共享球员名单。").foregroundStyle(BMTheme.secondaryText) }
+        ForEach([false, true], id: \.self) { archived in
+            if archived && detail.team.players.contains(where: \.isArchived) { SectionHeader(title: "已停用球员", subtitle: "历史成绩保留，可恢复到现役名单") }
+            ForEach(detail.team.players.filter { $0.isArchived == archived }) { player in
+                sharedPlayerCard(player, detail: detail)
+            }
+        }
+    }
+
+    private func sharedPlayerCard(_ player: SharedRosterPlayer, detail: SharedTeamDetail) -> some View {
+        BMCard {
+            HStack {
+                VStack(alignment: .leading) { Text(player.name).font(.headline); Text(player.numberText).foregroundStyle(BMTheme.green) }
+                Spacer()
+                if detail.role.canEditPlayers {
+                    Menu {
+                        Button("编辑资料") { rosterEditor = RosterEditorContext(profile: detail.team, kind: "player", player: player) }
+                        if detail.role == .admin {
+                        Button(player.isArchived ? "恢复现役" : "停用球员") { archivePlayer = player }
+                        }
+                    } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }
+                        .disabled(!directory.canMutate).accessibilityIdentifier(playerActionIdentifier(player))
                 }
             }
-            Button("取消", role: .cancel) { }
-        } message: { player in Text(player.isArchived ? "恢复后，新比赛可再次选择这位球员。" : "从新比赛可选名单移除；已开始和已结束比赛的阵容、成绩都保留。") }
-        .sheet(isPresented: $showInvite, onDismiss: { if directory.state.fixedInvitations?.first(where: { $0.teamID == teamID })?.invitation.id != openedInvitationID { Task { await reload() } } }) {
-            NavigationStack { InviteSharedTeamView(directory: directory, teamID: teamID) }
         }
-        .alert(change?.remove == true ? "移除这位成员？" : "调整成员角色？", isPresented: Binding(get: { change != nil }, set: { if !$0 { change = nil } }), presenting: change) { value in
-            Button("确认调整", role: value.remove ? .destructive : nil) {
-                Task { _ = await directory.submit(.member(teamID: teamID, member: value.member, role: value.role, remove: value.remove)); await reload() }
-            }.accessibilityIdentifier("confirm-member-change")
-            Button("取消", role: .cancel) { }
-        } message: { value in Text(value.remove ? "\(value.member.nickname) 将无法继续访问球队资料。球队记录保留。" : "将“\(value.member.nickname)”设为\(value.role.title)。\(value.role.explanation)") }
-        .alert("退出这支球队？", isPresented: $leave) {
-            Button("确认退出", role: .destructive) { Task { if await directory.submit(.leave(teamID: teamID)) { dismiss() } } }
-            Button("取消", role: .cancel) { }
-        } message: { Text("退出后，你将无法查看这支共享球队的资料。球队资料仍会保留，本机球队和比赛也不会删除。如果只有你一名管理员，请先设置另一名管理员。") }
     }
+
+    private func playerActionIdentifier(_ player: SharedRosterPlayer) -> String {
+        "edit-shared-player-" + player.name
+    }
+
     @MainActor private func reload() async {
         guard !loading else { return }
         loading = true; detail = directory.cachedDetail(teamID: teamID); members = []; invitations = []
@@ -477,6 +641,27 @@ private struct InviteSharedTeamView: View {
     }
 }
 
+private struct PreservedBulkDraftItem: Identifiable {
+    let draft: SharedRosterChange
+    var id: UUID { draft.players?.first?.id ?? draft.teamID }
+    func summary(teamName: String? = nil) -> String {
+        let count = draft.players?.count ?? 0
+        let firstName = draft.players?.first?.name ?? "待核对名单"
+        let batch = "\(count) 名 · \(firstName)" + (count > 1 ? " 等" : "")
+        return teamName.map { $0 + " · " + batch } ?? batch
+    }
+}
+
+@MainActor
+private func bulkDraftItems(_ directory: TeamSharingStore, teamID: UUID? = nil) -> [PreservedBulkDraftItem] {
+    var drafts = directory.preservedBulkRosterDrafts
+    if case .roster(let pending) = directory.state.pending?.command, pending.kind == "players",
+       !drafts.contains(where: { $0.players?.first?.id == pending.players?.first?.id }) {
+        drafts.append(pending)
+    }
+    return drafts.filter { teamID == nil || $0.teamID == teamID }.map { PreservedBulkDraftItem(draft: $0) }
+}
+
 private struct RosterEditorContext: Identifiable {
     let id = UUID()
     let sourceID = UUID()
@@ -485,11 +670,46 @@ private struct RosterEditorContext: Identifiable {
     var player: SharedRosterPlayer? = nil
     var draft: SharedRosterChange? = nil
 }
+private struct SharedBulkRosterEditor: View {
+    @ObservedObject var directory: TeamSharingStore
+    let context: RosterEditorContext
+    @State private var reviewedProfile: SharedTeamProfile
+    @State private var reviewMessage = "整批新增会同步给全队；发生冲突时请刷新名单、重新预览并确认，原名单和历史比赛不变。"
+
+    init(directory: TeamSharingStore, context: RosterEditorContext) {
+        self.directory = directory; self.context = context
+        _reviewedProfile = State(initialValue: context.profile)
+    }
+
+    var body: some View {
+        BulkRosterImportSheet(teamName: reviewedProfile.name,
+                              existingPlayers: reviewedProfile.players.filter { !$0.isArchived }.map(\.localPlayer),
+                              initialInput: context.draft?.bulkInput ?? "",
+                              reviewMessage: reviewMessage,
+                              refreshReview: {
+            if let result = await directory.details(teamID: context.profile.id) {
+                reviewedProfile = result.0.team
+                reviewMessage = "已刷新至名单第 \(reviewedProfile.revision) 版。请重新预览整批输入后确认新增。"
+            } else {
+                reviewMessage = directory.errorMessage ?? "暂未能刷新名单；输入已保留，请恢复访问后重新核对。"
+            }
+        }, importPlayers: { input in
+            let outcome = await directory.importRoster(teamID: context.profile.id, input: input,
+                                                       reviewedRevision: reviewedProfile.revision,
+                                                       preservedDraftID: context.draft?.players?.first?.id)
+            if case .failure(let message) = outcome { reviewMessage = message }
+            return outcome
+        })
+        .interactiveDismissDisabled(directory.isBusy)
+    }
+}
+
 private struct SharedRosterEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var directory: TeamSharingStore
     let context: RosterEditorContext
     @FocusState private var fieldFocused: Bool
+    @State private var showBulk = false
     @State private var name: String
     @State private var english: String
     @State private var numbers: String
@@ -530,6 +750,12 @@ private struct SharedRosterEditor: View {
                     Text("核对后点保存，仅提交当前这项修改。")
                 }
             }
+            if context.kind == "player" && context.player == nil {
+                Section {
+                    Button("批量输入多位球员") { showBulk = true }
+                        .disabled(!directory.canMutate).accessibilityIdentifier("open-bulk-roster")
+                }
+            }
             Section(context.kind == "profile" ? "球队资料" : "球员资料") {
                 TextField(context.kind == "profile" ? "球队名称" : "中文姓名", text: $name).focused($fieldFocused).accessibilityIdentifier("roster-name")
                 TextField(context.kind == "profile" ? "球队简称" : "英文姓名（可选）", text: $english).focused($fieldFocused).accessibilityIdentifier("roster-english")
@@ -552,5 +778,8 @@ private struct SharedRosterEditor: View {
             ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("收起键盘") { fieldFocused = false } }
         }
         .interactiveDismissDisabled(directory.isBusy)
+        .sheet(isPresented: $showBulk) {
+            SharedBulkRosterEditor(directory: directory, context: RosterEditorContext(profile: latest, kind: "players"))
+        }
     }
 }
