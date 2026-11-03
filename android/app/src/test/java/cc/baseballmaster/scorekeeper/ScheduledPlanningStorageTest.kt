@@ -34,6 +34,10 @@ class ScheduledPlanningStorageTest {
             assertEquals(5, db.dao().game(planned.id)!!.payloadVersion)
             val prepared = MatchFactory.create(planned.id, home, away, Rules(recordingMethod = "situation"), own.id)
             val configured = repo.configureScheduledGame(prepared, rescheduled.revision)
+            val savedName = configured.away.players.first().name
+            prepared.away.players.first().name = "外部草稿变化"
+            assertEquals(savedName, configured.away.players.first().name)
+            assertEquals(savedName, GameRepository.decode(db.dao().game(planned.id)!!).away.players.first().name)
             assertFalse(configured.isScheduled); assertFalse(configured.scheduledSetupPending); assertFalse(configured.openingPitchRecorded)
             assertEquals(rescheduled.scheduledAt, configured.scheduledAt); assertEquals(planned.createdAt, configured.createdAt)
             assertEquals(away.players.map { it.id }, configured.away.players.map { it.id }); assertEquals(4, db.dao().game(planned.id)!!.payloadVersion)

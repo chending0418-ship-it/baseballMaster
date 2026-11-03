@@ -463,8 +463,10 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         g
     }
 
-    suspend fun configureScheduledGame(prepared: Game, baseRevision: Long, operationID: String = UUID.randomUUID().toString()): Game =
-        mutate(prepared.id, baseRevision, operationID, "schedule-setup:" + GameJson.encodeToString(prepared)) { original ->
+    suspend fun configureScheduledGame(candidate: Game, baseRevision: Long, operationID: String = UUID.randomUUID().toString()): Game {
+        val payload = GameJson.encodeToString(candidate)
+        val prepared = GameJson.decodeFromString<Game>(payload)
+        return mutate(prepared.id, baseRevision, operationID, "schedule-setup:" + payload) { original ->
             require(original.scheduledSetupPending && original.isScheduled && !prepared.scheduledSetupPending)
             require(prepared.ourTeamID == original.ourTeamID && setOf(prepared.home.id, prepared.away.id) == setOf(original.home.id, original.away.id)) { "请保留预告的双方球队身份" }
             require(prepared.appleSourceID == null && !prepared.practice && !prepared.isFinal && prepared.totalPitches == 0 && !prepared.openingPitchRecorded && !prepared.clockHasStarted)
@@ -494,6 +496,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             next.validate()
             next
         }
+    }
 
     suspend fun updateRoster(team: Team) = db.withTransaction {
         require(db.dao().allAppleBackups().none { source -> AppleSourceBackup.prepare(source.current).teams().any { it.id == team.id } }) { "iOS 导入球队的名单编辑尚未支持，原始备份及名单未修改" }
