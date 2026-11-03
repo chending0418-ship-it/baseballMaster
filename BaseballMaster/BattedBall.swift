@@ -289,6 +289,46 @@ extension GameStore {
         if let id = event.logEntryID, let log = game.playLog.firstIndex(where: { $0.id == id }) { game.playLog[log].text = text }
     }
 
+    /// The statistics detail page supplies its exact selected game IDs, including an empty selection.
+    /// Never read the open scorekeeping draft or infer identities from names/numbers.
+    func statisticsBatterContacts(for player: Player, seasonID: String, teamID: UUID?, gameIDs: Set<UUID>) -> BatterPerformance {
+        let eligible = completedStatisticsGames(teamID: teamID, seasonID: seasonID, gameIDs: gameIDs)
+            .filter { !$0.statisticsSources(for: player.id).isEmpty }
+        func sourceKey(_ stored: StoredGame) -> UUID {
+            if let source = stored.historySourceID { return source }
+            if let sharedID = stored.sharedGameID, let remote = sharedMatches.match(id: sharedID) {
+                return remote.historySourceID ?? remote.wireLocalID ?? stored.id
+            }
+            return stored.id
+        }
+        // A source may have several selected imported/shared copies. Keep one saved document;
+        // local/team scope and access have already been decided by the statistics layer above.
+        var seen = Set<UUID>()
+        let sources = eligible.sorted {
+            if ($0.sharedGameID == nil) != ($1.sharedGameID == nil) { return $0.sharedGameID == nil }
+            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+            return $0.id.uuidString < $1.id.uuidString
+        }.filter { seen.insert(sourceKey($0)).inserted }
+        var result = BatterPerformance()
+        for stored in sources {
+            let ids = stored.statisticsSources(for: player.id)
+            let line = stored.statisticsBatting(for: player.id)
+            result.gameCount += 1
+            result.line = .aggregate([result.line, line])
+            result.completedAppearances += line.plateAppearances
+            for event in stored.state.scoringEvents ?? [] where event.category == .battedBall
+                && event.isTop == !stored.isHome
+                && (event.primaryPlayerID ?? event.plateAppearanceBatterID).map(ids.contains) == true {
+                if let observation = event.battedBall, observation.hasLocation {
+                    let date = stored.displayDate.formatted(date: .numeric, time: .omitted)
+                    result.contacts.append(BatterContact(id: stored.id.uuidString + event.id.uuidString, observation: observation,
+                        outcome: event.resolvedOutcome, detail: "\(date) · 第\(event.inning)局\(event.isTop ? "上" : "下") · \(observation.summary) · \(event.resolvedOutcome?.rawValue ?? event.title)"))
+                } else { result.missingLocations += 1 }
+            }
+        }
+        return result
+    }
+
     func batterPerformance(playerID: UUID, annual: Bool) -> BatterPerformance {
         let current = activeStoredGame
         let mode = activeRules?.gameMode ?? game.rulesSnapshot?.gameMode ?? .standard

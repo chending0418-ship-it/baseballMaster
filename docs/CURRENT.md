@@ -5,8 +5,8 @@
 | 项目 | 当前依据 |
 | --- | --- |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.2（Build 1） |
-| 当前开发 | `codex/dev-3.1.2`，3.1.2（Build 1）；专注 iPhone／iPad 与批量名单；Duo 按用户最新要求暂停；3.1.1 未完成项全部纳入，见 [3.1.2 开发与发布待办](releases/3.1.2/DEVELOPMENT.md) |
-| 继承问题与验收 | P2 已修复；91 项 iOS 数据、iPhone 6 项 UI 分批通过，iPad Pro 8 项、mini 2 项 UI 通过；Debug／未签名 Release 成功。批量名单覆盖本机／对手／共享，共享后端 107 项通过但未部署；旧记录、备案及迁移仍待办，见 [3.1.2 开发记录](releases/3.1.2/DEVELOPMENT.md) |
+| 当前开发 | `codex/dev-3.1.2`，3.1.2（Build 1）；专注 iPhone／iPad、批量名单与统计页球员落点；Duo 按用户最新要求暂停；3.1.1 未完成项全部纳入，见 [3.1.2 开发与发布待办](releases/3.1.2/DEVELOPMENT.md) |
+| 继承问题与验收 | P2 已修复；91 项 iOS 数据、iPhone 6 项 UI 分批通过，iPad Pro 8 项、mini 2 项 UI 通过；Debug／未签名 Release 成功。批量名单覆盖本机／对手／共享，共享后端 107 项通过但未部署；统计页球员落点已接入统一球场，新增专项验证通过；旧记录、备案及迁移仍待办，见 [3.1.2 开发记录](releases/3.1.2/DEVELOPMENT.md) |
 | 设备兼容 | 当前优先 iPhone／iPad，Duo 已按用户要求暂停；原研究保留为 [兼容评估](plans/ADAPTIVE-DEVICE-SUPPORT.md)，实际进度及 Duo 下载入口见 [3.1.2](releases/3.1.2/DEVELOPMENT.md) |
 | 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
 | 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |

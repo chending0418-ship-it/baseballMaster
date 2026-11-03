@@ -3586,3 +3586,45 @@ extension BaseballMasterUITests {
         captureHistory(app, name: "3.1.2-bulk-shared-confirmed-local-http")
     }
 }
+
+extension BaseballMasterUITests {
+    func testV312StatisticsPlayerContactsUseSelectedGamesAndCanReadEachContact() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v312-player-contacts-preview"]
+        app.launch()
+        let player = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "stats-player-")).firstMatch
+        revealStatisticsControl(player, in: app)
+        XCTAssertTrue(player.isHittable); player.tap()
+        XCTAssertTrue(app.navigationBars["球员数据"].waitForExistence(timeout: 5))
+        let coverage = app.staticTexts["player-contact-coverage"]
+        revealStatisticsControl(coverage, in: app)
+        XCTAssertEqual(coverage.label, "有去向 2 球 · 缺少去向 1 球")
+        XCTAssertTrue(app.descendants(matching: .any)["player-contact-field"].firstMatch.exists)
+        let disclosure = app.buttons["逐球查看（含重叠位置）"]
+        revealStatisticsControl(disclosure, in: app); disclosure.tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "player-contact-row-")).firstMatch
+        revealStatisticsControl(row, in: app)
+        XCTAssertTrue(row.isHittable); row.tap()
+        let detail = app.staticTexts["player-selected-contact-detail"]
+        revealStatisticsControl(detail, in: app)
+        XCTAssertTrue(detail.label.contains("一垒安打"))
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            rotateV312(app, landscape: true)
+            revealStatisticsControl(detail, in: app)
+            XCTAssertTrue(detail.exists)
+        }
+        captureHistory(app, name: "3.1.2-statistics-player-contact-field")
+        let filter = app.buttons["open-game-filter"]
+        revealStatisticsControl(filter, in: app); filter.tap()
+        app.buttons["清空"].tap(); app.buttons["应用"].tap()
+        revealStatisticsControl(coverage, in: app)
+        XCTAssertEqual(coverage.label, "有去向 0 球 · 缺少去向 0 球")
+        XCTAssertTrue(app.staticTexts["player-contact-empty"].exists)
+        XCTAssertFalse(detail.exists, "Changing the selected games must clear the previous contact detail")
+        revealStatisticsControl(filter, in: app); filter.tap()
+        app.buttons["全选"].tap(); app.buttons["应用"].tap()
+        revealStatisticsControl(coverage, in: app)
+        XCTAssertEqual(coverage.label, "有去向 2 球 · 缺少去向 1 球")
+        if UIDevice.current.userInterfaceIdiom == .pad { rotateV312(app, landscape: false) }
+    }
+}

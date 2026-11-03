@@ -8496,3 +8496,110 @@ extension GameStoreTests {
         XCTAssertEqual(restarted.preservedBulkRosterDrafts.first?.players, [player])
     }
 }
+
+extension GameStoreTests {
+    private func v312StatisticsContactEvent(playerID: UUID, isTop: Bool, observation: BattedBallObservation?) -> ScoringEventRecord {
+        var event = ScoringEventRecord(inning: 1, isTop: isTop, category: .battedBall, title: "测试已记录击球", primaryPlayerID: playerID, resolvedOutcome: .single)
+        event.battedBall = observation
+        return event
+    }
+
+    func testV312StatisticsContactsFollowExplicitScopeAndKeepMissingSeparateWithoutMutatingDraft() throws {
+        let store = freshStore(), player = store.currentBatter
+        var point = BattedBallObservation(type: .line); point.selectPoint(CGPoint(x: 0.23, y: 0.31))
+        XCTAssertTrue(store.applyPlay(.single, observation: point)); store.finishGame()
+        var saved = try XCTUnwrap(store.activeStoredGame)
+        saved.playedAt = ISO8601DateFormatter().date(from: "2026-05-01T04:00:00Z")!
+        saved.playedTimeZoneID = "UTC"
+        let impostor = Player(chineseName: player.chineseName, englishName: player.englishName, numbers: player.numbers)
+        if saved.isHome { saved.state.homeTeam.players.append(impostor) }
+        else { saved.state.awayTeam.players.append(impostor) }
+        var batting = saved.state.batting[player.id] ?? BattingLine(); batting.plateAppearances = 3
+        saved.state.batting[player.id] = batting
+        saved.state.batting[impostor.id] = batting
+        saved.state.scoringEvents = [
+            v312StatisticsContactEvent(playerID: player.id, isTop: !saved.isHome, observation: point),
+            v312StatisticsContactEvent(playerID: player.id, isTop: !saved.isHome, observation: nil),
+            v312StatisticsContactEvent(playerID: player.id, isTop: !saved.isHome, observation: BattedBallObservation(type: .unknown)),
+            v312StatisticsContactEvent(playerID: impostor.id, isTop: !saved.isHome, observation: point),
+            v312StatisticsContactEvent(playerID: player.id, isTop: saved.isHome, observation: point)
+        ]
+        var older = saved; older.id = UUID(); older.playedAt = ISO8601DateFormatter().date(from: "2025-05-01T04:00:00Z")!
+        var otherMode = saved; otherMode.id = UUID(); otherMode.rules.mode = .coachPitch
+        var ongoing = saved; ongoing.id = UUID(); ongoing.status = .ongoing; ongoing.state.isFinal = false
+        var scheduled = saved; scheduled.id = UUID(); scheduled.status = .scheduled
+        let observed = StoredGame(seasonID: "2026", ourTeamID: saved.ourTeamID, opponentTeamID: saved.opponentTeamID,
+                                  isHome: saved.isHome, isSpectator: true, rules: saved.rules, lineup: saved.lineup,
+                                  status: .completed, state: saved.state)
+        let foreignID = UUID()
+        let foreign = StoredGame(playedAt: saved.playedAt, playedTimeZoneID: "UTC", seasonID: "2026", ourTeamID: foreignID,
+                                 opponentTeamID: saved.opponentTeamID, isHome: saved.isHome, rules: saved.rules,
+                                 lineup: saved.lineup, status: .completed, state: saved.state)
+        store.games = [saved, older, otherMode, ongoing, scheduled, observed, foreign]
+        let snapshot = store.makeRosterSnapshot(), active = store.game
+        let eligible = store.completedStatisticsGames(teamID: saved.ourTeamID, seasonID: "2026", mode: .standard)
+        let ids = Set(eligible.map(\.id))
+        XCTAssertEqual(ids, [saved.id])
+        let result = store.statisticsBatterContacts(for: player, seasonID: "2026", teamID: saved.ourTeamID, gameIDs: ids)
+        XCTAssertEqual(result.contacts.count, 1); XCTAssertEqual(result.contacts.first?.observation, point)
+        XCTAssertEqual(result.missingLocations, 2); XCTAssertEqual(result.gameCount, 1)
+        XCTAssertEqual(result.line.plateAppearances, 3)
+        let empty = store.statisticsBatterContacts(for: player, seasonID: "2026", teamID: saved.ourTeamID, gameIDs: [])
+        XCTAssertTrue(empty.contacts.isEmpty); XCTAssertEqual(empty.missingLocations, 0); XCTAssertEqual(empty.gameCount, 0)
+        let wrongYear = store.statisticsBatterContacts(for: player, seasonID: "2024", teamID: saved.ourTeamID, gameIDs: Set(store.games.map(\.id)))
+        XCTAssertTrue(wrongYear.contacts.isEmpty); XCTAssertEqual(wrongYear.missingLocations, 0)
+        let stranger = Player(chineseName: player.chineseName, englishName: player.englishName, numbers: player.numbers)
+        XCTAssertTrue(store.statisticsBatterContacts(for: stranger, seasonID: "2026", teamID: saved.ourTeamID, gameIDs: ids).contacts.isEmpty)
+        XCTAssertEqual(store.makeRosterSnapshot(), snapshot); XCTAssertEqual(store.game, active)
+    }
+
+    func testV312StatisticsContactsUseSharedIdentityOfficialScopeAndDeduplicateCopies() throws {
+        let store = freshStore(), originalPlayer = store.currentBatter
+        var localPoint = BattedBallObservation(type: .ground); localPoint.selectRegion(.left)
+        XCTAssertTrue(store.applyPlay(.single, observation: localPoint)); store.finishGame()
+        let original = try XCTUnwrap(store.activeStoredGame), official = Player(chineseName: originalPlayer.chineseName, englishName: "Official", numbers: originalPlayer.numbers)
+        let sharedTeamID = UUID(), directoryDisk = V30DirectoryMemoryStorage()
+        directoryDisk.state.teams = [SharedTeamSummary(id: sharedTeamID, name: "共享击球图", revision: 1, role: .member, memberID: UUID())]
+        store.teamSharing = TeamSharingStore(service: V30DirectoryService(), storage: directoryDisk); store.teamSharing.loadCachedDirectory()
+        let matchDisk = V30MatchMemoryStorage(); matchDisk.state.isolatedCopiesVersion = 1
+        let links = [MatchPlayerLink(sourceID: originalPlayer.id, targetID: official.id)]
+        func remote(region: BattedBallRegion, updatedAt: Date) -> SharedMatch {
+            var copy = original
+            copy.updatedAt = updatedAt
+            var observation = BattedBallObservation(type: .line); observation.selectRegion(region)
+            copy.state.scoringEvents = [v312StatisticsContactEvent(playerID: originalPlayer.id, isTop: !copy.isHome, observation: observation)]
+            return SharedMatch(id: UUID(), teamID: sharedTeamID, serverRevision: 1, writerEpoch: 1,
+                               writerDeviceID: UUID(), responsibleMemberID: UUID(), updatedAt: updatedAt.timeIntervalSince1970 * 1000,
+                               deleted: false, digest: "contact-fixture", accessMode: .closed, accessVersion: 1, viewCode: "fixture",
+                               liveEnabled: false, liveCode: nil, liveExpiresAt: nil, canWrite: false, writerActive: false,
+                               canManageAccess: false, handoff: nil, payload: copy, playerLinks: links).isolated
+        }
+        let old = remote(region: .right, updatedAt: original.updatedAt)
+        let latest = remote(region: .center, updatedAt: original.updatedAt.addingTimeInterval(10))
+        matchDisk.state.matches = [old, latest]
+        store.sharedMatches = SharedMatchCoordinator(store: store, service: try matchClient(), storage: matchDisk)
+        let cloudIDs: Set<UUID> = [old.id, latest.id]
+        let cloud = store.statisticsBatterContacts(for: official, seasonID: original.yearID, teamID: sharedTeamID, gameIDs: cloudIDs)
+        XCTAssertEqual(cloud.contacts.count, 1); XCTAssertEqual(cloud.gameCount, 1)
+        XCTAssertEqual(cloud.contacts.first?.observation.region, .center)
+        XCTAssertEqual(cloud.contacts.first?.observation.precision, .region, "A coarse region must not become an observed point")
+        XCTAssertTrue(store.statisticsBatterContacts(for: originalPlayer, seasonID: original.yearID, teamID: sharedTeamID, gameIDs: cloudIDs).contacts.isEmpty,
+                      "Mapped source identity cannot also count as the official player")
+        let local = store.statisticsBatterContacts(for: originalPlayer, seasonID: original.yearID, teamID: original.ourTeamID, gameIDs: [original.id])
+        XCTAssertEqual(local.contacts.count, 1); XCTAssertEqual(local.contacts.first?.observation.region, .left)
+        let all = store.statisticsBatterContacts(for: originalPlayer, seasonID: original.yearID, teamID: nil, gameIDs: cloudIDs.union([original.id]))
+        XCTAssertEqual(all.contacts.count, 1); XCTAssertEqual(all.contacts.first?.observation.region, .left)
+        let inaccessible = TeamSharingStore(service: V30DirectoryService(), storage: V30DirectoryMemoryStorage())
+        inaccessible.loadCachedDirectory(); store.teamSharing = inaccessible
+        XCTAssertTrue(store.statisticsBatterContacts(for: official, seasonID: original.yearID, teamID: sharedTeamID, gameIDs: cloudIDs).contacts.isEmpty)
+    }
+
+    func testV312StatisticsContactsDoNotInventLocationsForLegacyBattingOnlyRecords() throws {
+        let store = freshStore(), player = store.currentBatter
+        let record = PlayerGameRecord(playerID: player.id, seasonID: "2026", date: ISO8601DateFormatter().date(from: "2026-03-01T04:00:00Z")!,
+                                      opponent: "旧资料", result: "胜", batting: BattingLine())
+        store.playerGameRecords = [record]
+        let result = store.statisticsBatterContacts(for: player, seasonID: "2026", teamID: nil, gameIDs: [record.id])
+        XCTAssertEqual(result.gameCount, 0); XCTAssertTrue(result.contacts.isEmpty); XCTAssertEqual(result.missingLocations, 0)
+    }
+}
