@@ -1139,14 +1139,12 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
         text = { Text("${game.away.name} 与 ${game.home.name}的先发阵容确认后开始计时。开赛后仍可调整阵容。") },
         confirmButton = { TextButton({ val action = PitchAction.valueOf(openingPitch!!); openingPitch = null; model.pitch(action) }, modifier = Modifier.testTag("confirm-opening-pitch")) { Text("确认开赛") } },
         dismissButton = { TextButton({ openingPitch = null; requestedPanel = "lineup" }) { Text("继续设置阵容") } })
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize()) {
     val largeFont = LocalDensity.current.fontScale > 1.2f
-    val compactViewport = maxHeight < 620.dp || largeFont || game.practice || game.requiresTiebreakPlacement
-    val showsField = !compactViewport
-    val compactTitle = largeFont && maxWidth < 390.dp
+    val scrollContent = largeFont || game.practice || game.requiresTiebreakPlacement
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
     Column(
-        Modifier.fillMaxSize().then(if(compactViewport) Modifier.verticalScroll(rememberScrollState()) else Modifier).padding(horizontal = 12.dp),
+        Modifier.fillMaxSize().then(if(scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier).padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Box(Modifier.fillMaxWidth().height(44.dp)) {
@@ -1161,7 +1159,7 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                 )
             }
             Text(
-                if(compactTitle) { if(game.isObservation) "观赛" else "记分" } else if(game.isObservation) "观赛记分" else "现场记分",
+                if(game.isObservation) "观赛记分" else "现场记分",
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.CenterStart).padding(start = 48.dp),
@@ -1276,16 +1274,13 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
             if (showNotices) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { showNotices = false }, title = { Text("规则提醒") }, text = { Text(notices.joinToString("\n\n")) }, confirmButton = { TextButton({ showNotices = false }) { Text("完成") } })
         }
         Surface(
-            Modifier.fillMaxWidth().then(if(showsField) Modifier.weight(1f) else Modifier),
+            Modifier.fillMaxWidth().then(if(scrollContent) Modifier else Modifier.weight(1f)),
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
             Column {
-                if (showsField) Field(game, Modifier.weight(1f))
-                else Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    game.bases.forEachIndexed { index, id -> Text("${index+1}垒 " + (id?.let { pid -> (if(game.isTop) game.away else game.home).players.firstOrNull { it.id == pid }?.name } ?: "无人"), fontSize = 11.sp) }
-                }
+                Field(game, if(scrollContent) Modifier.height(300.dp) else Modifier.weight(1f))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(
                     Modifier.fillMaxWidth().padding(12.dp),
@@ -1322,7 +1317,6 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                 }
             }
         }
-        if (!showsField && !compactViewport) Spacer(Modifier.weight(1f))
         if (game.rules.mode == GameMode.coachPitch) Text("教练投手 · 本打席 ${game.appearancePitches} 球", fontSize = 12.sp)
         if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             PitchAction.entries.forEach { action ->
