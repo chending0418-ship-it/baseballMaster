@@ -6,7 +6,7 @@
 | --- | --- |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.1（Build 1） |
 | iOS 开发基线 | `codex/dev-3.1.1`；固定 BM／App 图标、后台配置背景与文案的开屏已接入，见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)、[配置说明](releases/3.1.1/CONFIGURABLE-LAUNCH.md) |
-| Android 迁移 | 本地 **0.8.0（8）测试候选**已构建，按 iOS 3.1.1 对照并保留批量名单录入；核心 183 项、App JVM 83 项及 API 31 标准视口 19 项设备流程通过（含两阶段预告），已知差异见 [0.8.0 本地交接](releases/android/0.8.0-TEST-HANDOFF.md)；上一测试版已交付 **0.1.0（Build 7）测试 APK**，官网保留 App Store 并新增标记“测试中”的 Android 下载；见 [0.1 测试交付](releases/android/0.1.0-TEST-HANDOFF.md)。用户明确暂缓完整互导，正式赛后云端归档／旧关联更新仍待后续；不合并 main，完整迁移未标完成 |
+| Android 迁移 | **0.8.0（Build 8）测试 APK 已更新官网下载**，保留“测试中”及 App Store 入口；按 iOS 3.1.1 对照并保留批量名单录入，核心 183 项、App JVM 83 项及 API 31 标准视口 19 项设备流程通过。见 [0.8.0 交接](releases/android/0.8.0-TEST-HANDOFF.md)、[官网下载](https://baseballmaster.cc/scorekeeper.html#download)。分支 `codex/android-0.8.0` 已推送，[PR #36](https://github.com/chending0418-ship-it/baseballMaster/pull/36) 为 Draft，不合并 main。完整互导暂缓，正式赛后云端归档／旧关联更新仍待后续，完整迁移未标完成 |
 | 界面与文案 | 用户要求两端统一精简：数据与操作优先，删重复解释，公式／图例按需查看；见 [页面密度与文案](plans/ANDROID-APK.md#17-页面密度与文案2026-11-02-用户反馈)。本轮先修改 Android，iOS 界面未改；用户 2026-11-03 明确两端不用考虑小屏，Android 按标准尺寸布局对照，不保留小屏专用简化版 |
 | 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
 | 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
