@@ -4,7 +4,7 @@
 
 [文档索引](docs/README.md) · [项目目录说明](docs/PROJECT-STRUCTURE.md) · [输出文件入口](output/README.md)
 
-**Android 开发（2026-10-27）：** 独立分支 `codex/android-migration` 已完成 AN01／AN02：功能及三模式样本固定，Android 环境、原生工程和首个开发预览 APK 0.1.0-preview.2（2）完成，最低 Android 12 与 Android 17 模拟验证通过，详见 [阶段交接](docs/releases/android/AN01-AN02.md)。全功能迁移、iOS↔Android 共享球队互通及官网 APK 分发继续按 [单份计划](docs/plans/ANDROID-APK.md) 推进；下载沿用现有产品页 `/scorekeeper.html#download`，本轮未公开分发。
+**Android 本地测试（2026-11-03）：** `codex/android-0.8.0` 按 iOS 3.1.1 逐页核对界面、主操作与比赛流程，保留单对话框批量填写名单，当前本地测试版本为 0.8.0（8）；见 [本地验收交接](docs/releases/android/0.8.0-TEST-HANDOFF.md)。官网下载仍为 0.1.0（Build 7），本轮不部署官网或业务后端、不合并 main。完整互导延续此前暂缓的决定；其余差异以交接为准，完整迁移未标为完成。
 
 **Git 协作约定（2026-10-22）：所有改动通过 PR 合入 main，不再直接推送 main，包括文档和发布材料。** 见 [流程](docs/BRANCHES.md#main-合入流程) 与 [完整历史 PR 索引](docs/maintenance/2026-10-22-pr-history.md)。
 

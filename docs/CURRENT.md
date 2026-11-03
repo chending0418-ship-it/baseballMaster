@@ -1,13 +1,13 @@
 # 棒球比赛记录大师当前入口
 
-更新日期：2026-11-02。本文件是当前状态与资料的唯一导航入口，旧文档内的日期记录保留为历史。
+更新日期：2026-11-03。本文件是当前状态与资料的唯一导航入口，旧文档内的日期记录保留为历史。
 
 | 项目 | 当前依据 |
 | --- | --- |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.1（Build 1） |
 | iOS 开发基线 | `codex/dev-3.1.1`；固定 BM／App 图标、后台配置背景与文案的开屏已接入，见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)、[配置说明](releases/3.1.1/CONFIGURABLE-LAUNCH.md) |
-| Android 迁移 | 正在开发 **0.8.0（8）**，按用户要求逐页对齐 iOS 3.1.1 并保留批量名单录入，见 [0.8.0 开发与对照](releases/android/0.8.0-DEVELOPMENT.md)；上一测试版已交付 **0.1.0（Build 7）测试 APK**，官网保留 App Store 并新增标记“测试中”的 Android 下载；见 [0.1 测试交付](releases/android/0.1.0-TEST-HANDOFF.md)。用户明确暂缓完整互导，正式赛后云端归档／旧关联更新仍待后续；不合并 main，完整迁移未标完成 |
-| 界面与文案 | 用户要求两端统一精简：数据与操作优先，删重复解释，公式／图例按需查看；见 [页面密度与文案](plans/ANDROID-APK.md#17-页面密度与文案2026-11-02-用户反馈)。本轮先修改 Android，iOS 界面未改 |
+| Android 迁移 | 本地 **0.8.0（8）测试候选**已构建，按 iOS 3.1.1 对照并保留批量名单录入；App JVM 80 项及 API 31 标准视口 17 项设备回归通过，已知差异见 [0.8.0 本地交接](releases/android/0.8.0-TEST-HANDOFF.md)；上一测试版已交付 **0.1.0（Build 7）测试 APK**，官网保留 App Store 并新增标记“测试中”的 Android 下载；见 [0.1 测试交付](releases/android/0.1.0-TEST-HANDOFF.md)。用户明确暂缓完整互导，正式赛后云端归档／旧关联更新仍待后续；不合并 main，完整迁移未标完成 |
+| 界面与文案 | 用户要求两端统一精简：数据与操作优先，删重复解释，公式／图例按需查看；见 [页面密度与文案](plans/ANDROID-APK.md#17-页面密度与文案2026-11-02-用户反馈)。本轮先修改 Android，iOS 界面未改；用户 2026-11-03 明确两端不用考虑小屏，Android 按标准尺寸布局对照，不保留小屏专用简化版 |
 | 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
 | 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
 | 发布材料 | [3.1.0 发布交接](releases/3.1.0/REVIEW-HANDOFF.md)、`output/releases/3.1.0/` |
