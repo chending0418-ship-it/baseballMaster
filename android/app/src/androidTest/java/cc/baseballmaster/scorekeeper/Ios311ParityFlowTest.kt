@@ -293,10 +293,29 @@ class Ios311ParityFlowTest {
             click("configure-pending-schedule"); click("start-game")
             NativeUi.find(device, By.textContains("双方至少需要"))
             assertEquals(plan, stored(plan.id)); device.pressBack()
-            click("pending-manage-rosters"); click("roster-${away.id}"); screenControl("add-player"); device.pressBack(); click("close-scheduled-rosters")
+            click("pending-manage-rosters"); click("roster-${away.id}"); screenControl("add-player"); device.pressBack()
             val roster = (1..12).joinToString("\n") { "真实名单$it,$it" }
-            db { _, repo -> repo.updateRoster(away.copy(players = Roster.parse(roster))); repo.updateRoster(home.copy(players = Roster.parse(roster))) }
-            device.waitForIdle(500)
+            // Use the same observable repository path as the roster editor. A second
+            // Room instance is only a fixture reader, not a cross-process change feed.
+            for(team in listOf(away, home)) {
+                val saved = java.util.concurrent.CountDownLatch(1)
+                val model = java.util.concurrent.atomic.AtomicReference<ScorekeeperViewModel>()
+                inst.runOnMainSync {
+                    val activity = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                        .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single()
+                    val currentModel = androidx.lifecycle.ViewModelProvider(activity as MainActivity)[ScorekeeperViewModel::class.java]
+                    model.set(currentModel)
+                    currentModel.updateRoster(team.copy(players = Roster.parse(roster))) { saved.countDown() }
+                }
+                assertTrue("Roster was not saved", saved.await(15, java.util.concurrent.TimeUnit.SECONDS))
+                var ready = false
+                repeat(100) {
+                    inst.runOnMainSync { ready = model.get().rosters.firstOrNull { it.id == team.id }?.players?.size == 12 }
+                    if(!ready) Thread.sleep(100)
+                }
+                assertTrue("Roster changes did not reach setup", ready)
+            }
+            click("close-scheduled-rosters")
             click("configure-pending-schedule"); assertTrue(screenControl("choice-记分方式-situation").isChecked)
             click("start-game"); screenControl("start-confirmed-game")
             assertEquals(plan, stored(plan.id))
