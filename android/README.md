@@ -18,7 +18,7 @@ scripts/android/gradle.sh :core:test :app:assembleDebug :app:assembleRelease :ap
 
 当前 AN03 原生验收使用下方脚本，新增合成比赛且不清空现有资料。AN02 的旧基线按其交接及对应提交复现；不把旧 APK 与当前仪器测试 APK 混用。脚本检查仪器测试正文，不能只看 adb 返回码。Android 17 使用 UiAutomator，避开旧 Espresso 的 InputManager 反射问题。
 
-初始 Room schema 1→2 只增加比赛 payloadVersion，2→3 新增独立纠错草稿表；两步都保留原比赛 JSON。当前本机 payloadVersion 为 4，旧 1／2／3 可读取且仅在实际修改时升级。未来 schema 或未知 payload 拒绝读取／编辑并保留原库；不使用 destructive migration。操作 ID 和比赛修订在同一事务落盘，失败回滚，重试不能多记一球。
+初始 Room schema 1→2 只增加比赛 payloadVersion，2→3 新增独立纠错草稿表；两步都保留原比赛 JSON。普通比赛继续使用 payloadVersion 4；0.8.0 未配置名单的预告使用独立的 payloadVersion 5，只保存双方队伍及时间，配置完整阵容后转为普通比赛格式。Room 表结构不变；旧 1／2／3／4 仍可读取，高于 5 的未来格式继续拒绝并保留原库。未来 schema 或未知 payload 拒绝读取／编辑并保留原库；不使用 destructive migration。操作 ID 和比赛修订在同一事务落盘，失败回滚，重试不能多记一球。
 
 App 运行依赖 AndroidX、Kotlin／kotlinx、OkHttp 4.12.0／传递依赖 Okio 及二维码 ZXing Core 3.5.3 均采用 Apache-2.0 许可；工具链和测试依赖按各自许可使用，Android SDK 许可由本机 SDK 管理器记录。本轮未加入分析、广告、登录或商业服务 SDK。详细阶段交接见 [AN01／AN02](../docs/releases/android/AN01-AN02.md)。
 
