@@ -269,7 +269,25 @@ class Ios311ParityFlowTest {
             assertFalse(device.hasObject(By.res("pitch-ball"))); assertFalse(device.hasObject(By.res("start-confirmed-game")))
             shot("basic-schedule-${if(observation) "observation" else "owned"}")
             click("pending-edit-time"); assertFalse(device.hasObject(By.res("choice-时间用途-played")))
-            input("match-time", "2030-06-01 11:30"); input("match-zone", "Asia/Shanghai"); click("save-match-time")
+            input("match-time", "2030-06-01 11:30"); input("match-zone", "Asia/Shanghai")
+            if(!observation) {
+                val resumed = java.util.concurrent.CountDownLatch(1)
+                var previousActivity: android.app.Activity? = null
+                val monitor = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                val callback = androidx.test.runner.lifecycle.ActivityLifecycleCallback { activity, stage ->
+                    if(activity !== previousActivity && stage == androidx.test.runner.lifecycle.Stage.RESUMED) resumed.countDown()
+                }
+                try {
+                    inst.runOnMainSync {
+                        previousActivity = monitor.getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single()
+                        monitor.addLifecycleCallback(callback)
+                        previousActivity!!.recreate()
+                    }
+                    assertTrue("Activity did not recreate", resumed.await(15, java.util.concurrent.TimeUnit.SECONDS))
+                    assertEquals("2030-06-01 11:30", NativeUi.find(device, By.res("match-time")).text)
+                } finally { inst.runOnMainSync { monitor.removeLifecycleCallback(callback) } }
+            }
+            click("save-match-time")
             await(plan.id) { it.scheduledAt == parseMatchDate("2030-06-01 11:30", "Asia/Shanghai") && it.scheduledSetupPending }
             plan = stored(plan.id)
             click("configure-pending-schedule"); click("start-game")

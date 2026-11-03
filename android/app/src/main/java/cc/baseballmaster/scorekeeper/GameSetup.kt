@@ -364,7 +364,6 @@ internal fun PendingScheduleScreen(game: Game, model: ScorekeeperViewModel, quic
     var managing by rememberSaveable(game.id) { mutableStateOf(false) }
     var editingTime by rememberSaveable(game.id) { mutableStateOf(false) }
     var dateRevision by rememberSaveable(game.id) { mutableLongStateOf(game.revision) }
-    if(editingTime) MatchTimeEditor(game, model.busy, { editingTime = false }) { model.command(it, dateRevision) { editingTime = false } }
     if (configuring) NewGameDialog(model.teams, model.rosters, model.sharing, model.busy,
         dismiss = { configuring = false }, manageOpponents = { managing = true }, initialSchedule = game,
         save = { prepared -> model.configureScheduledGame(prepared, game.revision) { configuring = false } })
@@ -382,4 +381,5 @@ internal fun PendingScheduleScreen(game: Game, model: ScorekeeperViewModel, quic
     if(managing) FormPage("管理球队和名单", model.busy, true, "close-scheduled-rosters", "完成", { managing = false }, { managing = false }) {
         RosterScreen(model, initialFilter = if(game.isObservation) "opponent" else "own", quickAdd = quickAdd)
     }
+    if(editingTime) MatchTimeEditor(game, model.busy, { editingTime = false }) { model.command(it, dateRevision) { editingTime = false } }
 }
