@@ -36,6 +36,8 @@ class CompletionFlowTest {
             }
         }
 
+    @org.junit.Before fun configure() { Configurator.getInstance().setWaitForIdleTimeout(500).setWaitForSelectorTimeout(3000) }
+
     private fun launch() {
         context.startActivity(
             context.packageManager
@@ -71,6 +73,10 @@ class CompletionFlowTest {
             try {
                 find(By.res(tag)).click()
                 device.waitForIdle(500)
+                if(tag == "scoring-more") {
+                    NativeUi.find(device, By.text("报告与更多操作")).click()
+                    device.waitForIdle(500)
+                }
                 return
             } catch (_: StaleObjectException) { }
         }
@@ -194,8 +200,10 @@ class CompletionFlowTest {
             val before = db { d, _ -> d.dao().allGames().map { it.id }.toSet() }
             click("new-game")
             click("setup-own-team")
+            input("roster-picker-search", own.name)
             click("choose-roster-${own.id}")
             click("setup-opponent")
+            input("roster-picker-search", opponent.name)
             click("choose-roster-${opponent.id}")
             click("choice-模式-${mode.name}")
             click("start-game")
@@ -333,6 +341,7 @@ class CompletionFlowTest {
         launch()
         click("game-${g.id}")
         click("record-play")
+        click("confirm-opening-play")
         click("pro-outcome-single")
         click("choice-球型-line")
         click("choice-落点精度-point")
@@ -383,7 +392,7 @@ class CompletionFlowTest {
             }
         launch()
         click("game-${g.id}")
-        assertFalse(find(By.res("pitch-ball")).isEnabled)
+        assertFalse(device.hasObject(By.res("pitch-ball")))
         shot("13-scheduled")
         click("activate-scheduled")
         await(g.id) { !it.isScheduled }
@@ -422,7 +431,7 @@ class CompletionFlowTest {
         shot("16-final-navigation")
         click("back-home")
         click("tab-1")
-        assertNotNull(text("本机球队"))
+        assertNotNull(text("本机球队管理"))
         click("tab-2")
         assertNotNull(find(By.res("stats-open-game-filter")))
         click("tab-0")

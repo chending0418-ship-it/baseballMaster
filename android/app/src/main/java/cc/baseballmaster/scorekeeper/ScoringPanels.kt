@@ -1,6 +1,14 @@
 package cc.baseballmaster.scorekeeper
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,61 +24,64 @@ import cc.baseballmaster.core.*
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
+internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPanel: String = "", handled: () -> Unit = {}) {
     var panel by rememberSaveable(game.id) { mutableStateOf("") }
+    var returnPanel by rememberSaveable(game.id) { mutableStateOf("") }
     var sourceRevision by rememberSaveable(game.id) { mutableLongStateOf(game.revision) }
     var source by remember(game.id) { mutableStateOf(game) }
     fun open(name: String) {
-        source = game
-        sourceRevision = game.revision
+        returnPanel = ""
+        source = model.openedGame ?: game
+        sourceRevision = source.revision
         panel = name
     }
     val enabled = !model.busy && !game.isFinal && !game.isScheduled && game.pendingDecision == null
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(
-            { open("play") },
-            Modifier.weight(1f).testTag("record-play"),
-            enabled = enabled,
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text("击球／上垒")
+    LaunchedEffect(requestedPanel) {
+        if (requestedPanel.isNotEmpty()) { open(requestedPanel); handled() }
+    }
+    var openingPlay by rememberSaveable(game.id) { mutableStateOf(false) }
+    var confirmEndHalf by rememberSaveable(game.id) { mutableStateOf(false) }
+    if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
+        ScoreControl("击球进入场内", "record-play", Modifier.fillMaxWidth(), enabled, filled = true) {
+            if (!game.openingPitchRecorded && !game.practice) openingPlay = true else open("play")
         }
-        OutlinedButton(
-            { open("runner") },
-            Modifier.weight(1f).testTag("record-runner"),
-            enabled = enabled && game.bases.any { it != null },
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text("跑者")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ScoreControl("跑者 / 出局", "record-runner", Modifier.weight(1f), enabled) { open("runner") }
+            ScoreControl("特殊 / 判罚", "record-special", Modifier.weight(1f), enabled, color = Color(0xFF9F4C0D)) { open("special") }
         }
-        OutlinedButton(
-            { open("more") },
-            Modifier.weight(.75f).testTag("scoring-more"),
-            enabled = !model.busy,
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text("更多")
+        if (game.rules.mode == GameMode.slowPitch) {
+            ScoreControl("Illegal／非法投球", "record-illegal-pitch", Modifier.fillMaxWidth(), enabled,
+                color = Color(0xFF9F4C0D)) { open("illegal") }
         }
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        TextButton(
-            model::undo,
-            enabled = !model.busy && game.canUndo,
-            modifier = Modifier.testTag("undo"),
-        ) {
-            Text("撤销")
-        }
-        TextButton(
-            model::redo,
-            enabled = !model.busy && game.cursor < game.journal.size,
-            modifier = Modifier.testTag("redo"),
-        ) {
-            Text("重做")
-        }
-        TextButton({ open("history") }, modifier = Modifier.testTag("game-history")) {
-            Text("完整记录 · ${game.entries.size}")
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        ScoreControl("撤销", "undo", Modifier.weight(1f), !model.busy && game.canUndo, compact = true) { model.undo() }
+        ScoreControl("恢复", "redo", Modifier.weight(1f), !model.busy && game.cursor < game.journal.size, compact = true) { model.redo() }
+        if (game.isFinal) {
+            ScoreControl("返回首页", "return-final-game-home", Modifier.weight(2f), !model.busy, filled = true, compact = true) { model.open(null) }
+        } else {
+            ScoreControl("修正", "open-state-correction", Modifier.weight(1f), enabled, color = Color(0xFF9F4C0D), compact = true) { open("correction") }
+            ScoreControl("阵容", "open-substitutions", Modifier.weight(1f), enabled, compact = true) { open("substitution") }
         }
     }
+    if (!game.isFinal && game.rules.recordingMethod == "situation" && game.journal.take(game.cursor).any { it.command.kind == "play" })
+        TextButton({ open("amend-observation") }, Modifier.fillMaxWidth().heightIn(min = 30.dp).testTag("amend-situation-play"), enabled = enabled) { Text("补充这球", fontSize = 12.sp) }
+    if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton({ confirmEndHalf = true }, enabled = enabled, modifier = Modifier.testTag("end-half")) { Text("结束半局", fontSize = 13.sp) }
+            if (game.strikes == 2 && game.rules.mode != GameMode.slowPitch)
+                TextButton({ model.command(Command("foulBunt")) }, enabled = enabled, modifier = Modifier.testTag("foul-bunt-strikeout")) { Text("触击界外出局", fontSize = 12.sp) }
+            TextButton({ open("finish") }, enabled = enabled, modifier = Modifier.testTag("finish-game")) { Text("结束比赛", fontSize = 13.sp) }
+        }
+    }
+    if (confirmEndHalf) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { confirmEndHalf = false }, title = { Text("结束本半局？") },
+        text = { Text("请按现场情况确认交换攻守，保留当前比分和记录。") },
+        confirmButton = { TextButton({ confirmEndHalf = false; model.command(Command("endHalf")) }, modifier = Modifier.testTag("confirm-end-half")) { Text("确认交换攻守") } },
+        dismissButton = { TextButton({ confirmEndHalf = false }) { Text("取消") } })
+    if (openingPlay) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { openingPlay = false }, title = { Text("确认双方先发阵容") },
+        text = { Text("${game.away.name} 与 ${game.home.name}的先发阵容确认后开始计时。开赛后仍可调整阵容。") },
+        confirmButton = { TextButton({ openingPlay = false; open("play") }, modifier = Modifier.testTag("confirm-opening-play")) { Text("确认开赛") } },
+        dismissButton = { TextButton({ openingPlay = false; open("lineup") }) { Text("继续设置阵容") } })
     if (game.practice)
         Row {
             Text("练习记分 · 不保存为正式比赛", Modifier.weight(1f), fontSize = 12.sp)
@@ -103,7 +114,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
         CardBlock {
             Text("预告比赛", fontWeight = FontWeight.Bold)
             Text(game.scheduledAt?.let { formatMatchDate(it, game.playedTimeZoneID) } ?: "")
-            Button({ model.command(Command("activate")) },Modifier.testTag("activate-scheduled")) { Text("进入比赛") }
+            Button({ model.command(Command("activate")) },Modifier.testTag("activate-scheduled"), shape = RoundedCornerShape(15.dp)) { Text("进入比赛") }
         }
     if (game.isFinal)
         CardBlock {
@@ -155,11 +166,42 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
         )
     if (panel.isNotEmpty()) {
         val snapshot = source.copy(revision = sourceRevision)
-        val close = { panel = "" }
+        val close = {
+            source = model.openedGame ?: game
+            sourceRevision = source.revision
+            panel = returnPanel
+            returnPanel = ""
+        }
         val save: (Command) -> Unit = { model.command(it, snapshot.revision, close) }
         when (panel) {
             "play" -> PlayEditor(snapshot, model.busy, close, save = save)
             "runner" -> RunnerEditor(snapshot, model.busy, close, save = save)
+            "amend-observation" -> {
+                val index = snapshot.journal.take(snapshot.cursor).indexOfLast { it.command.kind == "play" }
+                if (index >= 0) {
+                    val record = snapshot.journal[index]
+                    val before = remember(snapshot.id, snapshot.revision) { History.stateBefore(snapshot, History.draft(snapshot), index) }
+                    var observationJSON by rememberSaveable(snapshot.id, snapshot.revision) { mutableStateOf(GameJson.encodeToString(record.command.observation ?: Observation())) }
+                    val observation = remember(observationJSON) { GameJson.decodeFromString<Observation>(observationJSON) }
+                    val valid = runCatching { observation.validate(snapshot.rules) }.isSuccess
+                    FormPage("补充这球", model.busy, valid, "save-situation-amendment", "保存", close, {
+                        model.correct(index, record.command.copy(observation = observation), "补充击球观察", baseRevision = snapshot.revision, done = close)
+                    }) {
+                        Text("仅补充本球观察，保留原击球结果与跑者去向。", fontSize = 12.sp)
+                        ObservationEditor(before, observation, record.command.outcome ?: Outcome.other) { change -> observationJSON = GameJson.encodeToString(change(observation)) }
+                    }
+                }
+            }
+            "correction" -> ManualSituationEditor(snapshot, model.busy, close, save)
+            "special" -> FormPage("特殊 / 判罚", model.busy, false, "unused", "", close, {}) {
+                TextButton({ save(Command("hitByPitch")) }, enabled = enabled, modifier = Modifier.testTag("special-hitByPitch")) { Text("触身球") }
+                if (game.rules.mode != GameMode.coachPitch)
+                    TextButton({ save(Command("intentionalWalk")) }, enabled = enabled, modifier = Modifier.testTag("special-intentionalWalk")) { Text("故意保送") }
+                if (game.rules.mode == GameMode.standard)
+                    TextButton({ panel = "dropped" }, enabled = enabled && (game.outs == 2 || game.bases[0] == null), modifier = Modifier.testTag("special-droppedThirdStrike")) { Text("三振未接住") }
+                TextButton({ panel = "violation" }, enabled = enabled, modifier = Modifier.testTag("special-violation")) { Text("裁判判罚") }
+                TextButton({ panel = "advanced" }, modifier = Modifier.testTag("advanced-tools")) { Text("局面／复核／延长赛") }
+            }
             "more" ->
                 FormPage("比赛操作", model.busy, false, "unused", "", close, {}) {
                     Text(
@@ -235,6 +277,12 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                         Text("首球前互换先攻／后攻")
                     }
                 }
+            "results" -> GameResultsScreen(game, model, close) {
+                source = model.openedGame ?: game
+                sourceRevision = source.revision
+                returnPanel = "results"
+                panel = it
+            }
             "live" -> StandaloneLiveScreen(game,model.live,close)
             "time" -> MatchTimeEditor(snapshot, model.busy, close, save)
             "rules" -> {
@@ -297,6 +345,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel) {
                         }
                 }
             "clock" -> ClockEditor(game, model.busy, close) { model.command(it, done = close) }
+            "review" -> AdvancedPanel(game, model, close, initialPage = "review")
             "advanced" -> AdvancedPanel(game, model, close)
             "poster" -> GamePosterScreen(game, close)
             "appearance-exports" -> FormPage("选择打席", false, true, "close-appearance-exports", "完成", close, close) {
@@ -332,19 +381,31 @@ internal fun Choices(
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
+    if (values.size <= 4) {
+        val columns = if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f && values.size > 2) 2 else values.size
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = .06f))) {
+            values.entries.toList().chunked(columns).forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(3.dp)) {
+                    row.forEach { (key, title) ->
+                        Box(Modifier.weight(1f).heightIn(min = 38.dp).clip(RoundedCornerShape(7.dp))
+                            .background(if(selected == key) MaterialTheme.colorScheme.surface else Color.Transparent)
+                            .toggleable(value = selected == key, role = Role.RadioButton, onValueChange = { onSelect(key) }).testTag("choice-$label-$key"), contentAlignment = Alignment.Center) {
+                            Text(title, fontSize = 12.sp, fontWeight = if(selected == key) FontWeight.SemiBold else FontWeight.Normal,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                color = if(selected == key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 6.dp))
+                        }
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    } else FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         values.forEach { (key, title) ->
-            FilterChip(
-                selected == key,
-                { onSelect(key) },
-                modifier = Modifier.testTag("choice-$label-$key"),
-                label = { Text(title, fontSize = 12.sp) },
-            )
+            FilterChip(selected == key, { onSelect(key) }, modifier = Modifier.testTag("choice-$label-$key"), label = { Text(title, fontSize = 12.sp) })
         }
     }
+
 }
 
 private val CommandDraftSaver =
@@ -380,7 +441,7 @@ private fun RunnerEditor(
     FormPage(
         "跑者记录",
         busy,
-        true,
+        runCatching { MatchEngine.apply(game, cmd) }.isSuccess,
         "save-runner",
         "记录",
         dismiss,
@@ -394,6 +455,7 @@ private fun RunnerEditor(
             )
         },
     ) {
+        if (game.bases.all { it == null }) Text("当前垒上没有跑者。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Choices("跑垒事件", options, cmd.runnerKind!!) { kind ->
             update {
                 it.copy(
@@ -670,7 +732,7 @@ internal fun PlayerChoice(
                 { expanded = true },
                 modifier = Modifier.testTag("player-choice-$label"),
                 enabled = players.isNotEmpty(),
-            ) {
+             shape = RoundedCornerShape(14.dp)) {
                 val p = players.firstOrNull { it.id == selected }
                 Text(
                     p?.let { "#${it.number} ${it.name}" }
@@ -986,13 +1048,13 @@ private fun ClockEditor(game: Game, busy: Boolean, dismiss: () -> Unit, save: (C
         Button(
             { save(Command("clock", text = if (game.clockHasStarted) "resume" else "start")) },
             enabled = !game.isFinal && !game.isScheduled && game.clockRunningSince == null && !busy,
-        ) {
+         shape = RoundedCornerShape(15.dp)) {
             Text(if (game.clockHasStarted) "继续计时" else "Play Ball")
         }
         OutlinedButton(
             { save(Command("clock", text = "pause")) },
             enabled = game.clockRunningSince != null && !busy,
-        ) {
+         shape = RoundedCornerShape(14.dp)) {
             Text("暂停计时")
         }
     }
@@ -1056,7 +1118,7 @@ private fun IllegalEditor(game: Game, busy: Boolean, dismiss: () -> Unit, save: 
             ) {
                 result = it
             }
-            if (result == "play") Button({ editingPlay = true }) { Text("记录击球与跑者") }
+            if (result == "play") Button({ editingPlay = true }, shape = RoundedCornerShape(15.dp)) { Text("记录击球与跑者") }
         }
 }
 
@@ -1134,7 +1196,7 @@ private fun ViolationEditor(
         },
     ) {
         Choices("判罚", options, kind) { kind = it }
-        OutlinedButton({ save(Command("violation", runnerKind = kind)) }) { Text("记录默认判罚") }
+        OutlinedButton({ save(Command("violation", runnerKind = kind)) }, shape = RoundedCornerShape(14.dp)) { Text("记录默认判罚") }
         HorizontalDivider()
         Text("最终宣判", fontWeight = FontWeight.Bold)
         Choices(
@@ -1656,5 +1718,22 @@ private fun HistoryResponsibilityEditor(
                 }
             Text("数值会按本事件实际有效得分和各投手失分校验。", fontSize = 12.sp)
         }
+    }
+}
+
+/** Same hierarchy, colors and corner treatment as iOS ScoreActionButtonStyle. */
+@Composable
+internal fun ScoreControl(label: String, tag: String, modifier: Modifier = Modifier, enabled: Boolean = true,
+    color: Color = Accent, filled: Boolean = false, compact: Boolean = false, action: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    val sizing = modifier.heightIn(min = if (compact) 38.dp else 44.dp).testTag(tag)
+    val padding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
+    if (filled) Button(action, sizing, enabled = enabled, shape = shape, contentPadding = padding,
+        colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color.White)) {
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    } else OutlinedButton(action, sizing, enabled = enabled, shape = shape, contentPadding = padding,
+        border = BorderStroke(1.dp, color.copy(alpha = if(enabled) .25f else .12f)),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = color, containerColor = MaterialTheme.colorScheme.surface)) {
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }

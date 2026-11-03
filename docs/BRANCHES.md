@@ -96,3 +96,7 @@
 ## 历史基线
 
 2026-09-29 建立 2.1／2.2 工作区；9 月 30 日完成 2.1 文字直播部署和审核准备，用户于 10 月 1 日确认 2.1 已上线。2.2 从 main 的 `8b7c99d` 继承 2.1。10 月 2 日用户将慢垒及小组件整体延期至单份 2.3 计划，并明确顺序开发及单目录要求。10 月 3 日直播 UI、正式服务与发布准备完成，随后收拢目录。历史归档和验证内容不改写成新的发布结论。
+
+## Android 0.8.0 对齐开发（2026-11-03）
+
+从 `codex/android-migration` 的 Build 7 交付基线 `ebdc157` 建立 `codex/android-0.8.0`，继续在现有工作现场 `/Users/JasonChan/.codex/worktrees/android-remaining/baseball-scorekeeper` 开发。iOS 3.1.1 对照固定为 `315580d`；主目录的 3.1.2 未提交工作不混入、不回退。版本 0.8.0（8）仅调整 Android，沿用预览包名及签名。验收与剩余边界见 [0.8.0](releases/android/0.8.0-DEVELOPMENT.md)。本地开发、APK 准备与模拟器验证不代表官网发布或 main 合并。

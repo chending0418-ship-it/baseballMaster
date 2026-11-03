@@ -44,6 +44,9 @@ internal object StatisticsUi {
         // by UiObject2.scroll; its false result is not proof of an endpoint.
         // Use a slow bounded gesture and inspect the target again after settling.
         val bounds = container.visibleBounds
+        fun visibleText(): List<Pair<String, android.graphics.Rect>> = container.findObjects(By.text(java.util.regex.Pattern.compile(".+")))
+            .mapNotNull { node -> val box = node.visibleBounds; if(box.height() > 10 && bounds.contains(box.centerX(), box.centerY())) node.text to box else null }
+        val before = visibleText()
         val top = bounds.top + bounds.height() / 4
         val bottom = bounds.bottom - bounds.height() / 4
         if (bottom <= top) return false
@@ -51,7 +54,10 @@ internal object StatisticsUi {
             bounds.centerX(), if (direction == Direction.DOWN) top else bottom, 40)
         SystemClock.sleep(250)
         settle(device)
-        return true
+        // The actual visible content is a reliable endpoint signal even when
+        // API 31 omits the framework scroll event.
+        val after = visibleText()
+        return before.isEmpty() || before != after
     }
 
     fun <T:Any> use(device: UiDevice, selector: BySelector, scroll: Boolean=true, block:(UiObject2)->T): T {
@@ -65,7 +71,9 @@ internal object StatisticsUi {
                     // Search top-to-bottom once. Alternating blind swipes can repeatedly skip a
                     // small metric above the current viewport without ever observing it.
                     var steps=0
-                    while(steps++<10 && SystemClock.uptimeMillis()<end && scrollStep(device,Direction.UP)) { }
+                    while(steps++<10 && SystemClock.uptimeMillis()<end && scrollStep(device,Direction.UP)) {
+                        stableNode(device,selector,true)?.let { return block(it) }
+                    }
                     reset=true
                     continue
                 }

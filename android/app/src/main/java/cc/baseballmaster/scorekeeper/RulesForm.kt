@@ -82,7 +82,7 @@ internal data class RuleDraft(
 }
 
 @Composable
-internal fun RulesForm(initial: Rules, change: (Rules?) -> Unit) {
+internal fun RulesForm(initial: Rules, showRecordingMethod: Boolean = true, change: (Rules?) -> Unit) {
     var json by
         rememberSaveable(initial.mode) {
             mutableStateOf(GameJson.encodeToString(RuleDraft.from(initial)))
@@ -98,7 +98,7 @@ internal fun RulesForm(initial: Rules, change: (Rules?) -> Unit) {
         json = GameJson.encodeToString(f(GameJson.decodeFromString(json)))
     }
     fun value(v: String) = v.filter { it.isDigit() }.take(4)
-    Choices("记分方式", mapOf("traditional" to "基础版", "situation" to "Pro 版"), draft.method) { v ->
+    if (showRecordingMethod) Choices("记分方式", mapOf("traditional" to "基础版", "situation" to "Pro 版"), draft.method) { v ->
         update { it.copy(method = v) }
     }
     Choices(

@@ -1,5 +1,6 @@
 package cc.baseballmaster.scorekeeper
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
@@ -23,7 +24,7 @@ import cc.baseballmaster.core.*
         live.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
         live.messages[game.id]?.let {Text(it)}
         if(binding==null) {
-            Button(onClick={live.start(game)},enabled=!live.busy && live.error==null && !game.isFinal && !game.isScheduled && !game.practice) {Text("开启文字直播")}
+            Button(onClick={live.start(game)},enabled=!live.busy && live.error==null && !game.isFinal && !game.isScheduled && !game.practice, shape = RoundedCornerShape(15.dp)) {Text("开启文字直播")}
             if(game.isFinal || game.isScheduled) Text("进行中的正式比赛可以开启直播。")
         } else {
             binding.lastSync?.let {Text("最近同步：${java.text.DateFormat.getTimeInstance().format(java.util.Date(it))}")}
@@ -33,7 +34,7 @@ import cc.baseballmaster.core.*
                 Text(url)
                 Button(onClick={runCatching {context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                     type="text/plain";putExtra(Intent.EXTRA_TEXT,"${game.away.name} vs ${game.home.name}｜文字直播\n$url")
-                },"分享观赛链接"))}.onFailure {SharingClipboard.copy(context,"观赛链接",url)}}) {Text("分享观赛链接")}
+                },"分享观赛链接"))}.onFailure {SharingClipboard.copy(context,"观赛链接",url)}}, shape = RoundedCornerShape(15.dp)) {Text("分享观赛链接")}
             }
             if(!binding.blocked && !binding.closing) TextButton(onClick={live.retry(game.id)},enabled=!live.busy) {Text("立即重试同步")}
             TextButton(onClick={confirmClose=true},enabled=!live.busy) {Text(if(binding.closing) "重试关闭直播" else "关闭直播并删除云端资料")}

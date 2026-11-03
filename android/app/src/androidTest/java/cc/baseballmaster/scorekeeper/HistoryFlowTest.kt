@@ -212,7 +212,6 @@ class HistoryFlowTest {
         device.pressBack()
         device.waitForIdle()
         assertFalse(find(By.res("undo")).isEnabled)
-        click("scoring-more")
         click("finish-game")
         click("finish-suspended")
         val suspended = waitFor { g, _ -> g.entries.lastOrNull()?.notation == "SUSP" }.first

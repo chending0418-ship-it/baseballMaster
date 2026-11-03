@@ -68,7 +68,7 @@ internal fun BackupInspection(model: ScorekeeperViewModel) {
         confirmButton = { TextButton(onClick = { rosters?.let { list -> model.importRosters(list) { confirmRosters = false; clear(); notice = "本次仅导入名单，比赛及权限未导入。" } } }, enabled = !model.busy, modifier = Modifier.testTag("confirm-import-rosters")) { Text("确认导入名单") } },
         dismissButton = { TextButton(onClick = { confirmRosters = false; clear() }, enabled = !model.busy) { Text("取消") } })
     if (confirmGames) AlertDialog(onDismissRequest = { if (!model.busy) { confirmGames = false; clear() } }, title = { Text("导入比赛及原始来源？") },
-        text = { Text("将导入 $gameCount 场已核对的比赛及球队，并保留完整原始备份。任一冲突或写入失败都会整批回滚。终场和旧格式比赛仅供查看；只有符合条件的格式 7 进行中比赛可续记投球、保送（含挤分）和三振（含普通第三出局换边）；终场或规则确认仍会拒绝。旧式个人记录、共享或无法重放的复杂比赛会整批拒绝，不部分导入。正式完整互导仍未验收。") },
+        text = { Text("将导入 $gameCount 场比赛及球队，并保留原备份。旧版和已结束比赛仅供查看，完整跨平台编辑暂未开放。遇到冲突或无法读取的内容时，不会改动现有资料。") },
         confirmButton = { TextButton(onClick = { source?.let { bytes -> model.importAppleBackup(bytes) { receipt -> confirmGames = false; clear(); notice = if (receipt.alreadyPresent) "相同来源已导入；保留现有续记，没有重新覆盖。" else "已导入 ${receipt.gameCount} 场比赛及原始来源。可在“已导入的 iOS 来源备份”中另存原始文件或含续记的文件。" } } }, enabled = !model.busy, modifier = Modifier.testTag("confirm-import-ios-games")) { Text("确认导入") } },
         dismissButton = { TextButton(onClick = { confirmGames = false; clear() }, enabled = !model.busy) { Text("取消") } })
     notice?.let { text -> AlertDialog(onDismissRequest = { notice = null }, title = { Text("导入结果") }, text = { Text(text) }, confirmButton = { TextButton(onClick = { notice = null }) { Text("完成") } }) }

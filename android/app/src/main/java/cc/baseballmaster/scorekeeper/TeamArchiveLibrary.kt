@@ -109,7 +109,7 @@ private fun TeamArchiveLibrary(dismiss: () -> Unit) {
 
     FormPage("球队完整档案", blocked, true, "", "", dismiss, {}) {
         Text("保存共享球队导出的原始档案，离线查看名单与比分。不会替换当前球队，也不会恢复管理、记录或观看权限。")
-        Text("当前为只读快照，不可续记；完整比赛互导仍在开发。校验通过的档案原文纳入 Android 本机备份，恢复时与比赛一起提交；不恢复共享授权。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("这份档案不可续记，原文件会纳入安卓本机备份。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextButton(onClick = { picker = "import"; open.launch(arrayOf("application/octet-stream", "application/json", "*/*")) }, enabled = !blocked && pending == null, modifier = Modifier.testTag("import-team-archive")) {
             Text(if (busy) "正在处理档案…" else "选择 .bmteam 档案（不超过 100 MB）")
         }
@@ -160,7 +160,7 @@ private fun TeamArchiveReader(archive: AppleTeamArchive, busy: Boolean, dismiss:
     fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
     FormPage("本机球队档案", busy, true, "", "", dismiss, {}) {
         Text(archive.summary.teamName, fontWeight = FontWeight.Bold)
-        Text("导出时的只读快照；共享球队后续修改不会更新这份档案。可查看原始逐球、打席与更正审计；仅供阅读，不可编辑或撤回更正。")
+        Text("这份只读档案保留导出时的比赛、逐球和更正记录。球队后续修改不会自动更新这份文件。")
         TextButton(onClick = export, enabled = !busy, modifier = Modifier.testTag("export-team-archive")) { Text("保存原始 .bmteam 文件") }
         Text("球队名单（${players.size} 人）", fontWeight = FontWeight.Bold)
         players.drop(playerPage * 20).take(20).forEach { raw ->
@@ -256,7 +256,7 @@ internal fun ArchiveGameHistory(stored: JsonObject, secure: Boolean = false, dis
                     4 -> {
                         row["summary"]?.jsonArray?.forEach { Text(it.jsonPrimitive.content) }
                         val previous = row["previousJournal"]?.jsonObject
-                        Text("保留更正前操作 ${previous?.get("operations")?.jsonArray?.size ?: 0} 条及原始检查点")
+                        Text("保留更正前记录 ${previous?.get("operations")?.jsonArray?.size ?: 0} 条")
                     }
                 }
 

@@ -11,9 +11,9 @@ import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
 
 @Composable
-internal fun AdvancedPanel(game: Game, model: ScorekeeperViewModel, close: () -> Unit) {
-    var page by rememberSaveable { mutableStateOf("menu") }
-    val save: (Command) -> Unit = { model.command(it, game.revision) { page = "menu" } }
+internal fun AdvancedPanel(game: Game, model: ScorekeeperViewModel, close: () -> Unit, initialPage: String = "menu") {
+    var page by rememberSaveable { mutableStateOf(initialPage) }
+    val save: (Command) -> Unit = { model.command(it, game.revision) { if(initialPage == "review") close() else page = "menu" } }
     when (page) {
         "note" -> {
             var text by rememberSaveable{mutableStateOf("")}
@@ -22,7 +22,7 @@ internal fun AdvancedPanel(game: Game, model: ScorekeeperViewModel, close: () ->
 
         "situation" -> ManualSituationEditor(game, model.busy, { page = "menu" }, save)
         "double" -> DoubleSwitchEditor(game, model.busy, { page = "menu" }, save)
-        "review" -> ReviewEditor(game, model.busy, { page = "menu" }, save)
+        "review" -> ReviewEditor(game, model.busy, { if(initialPage == "review") close() else page = "menu" }, save)
         else ->
             FormPage("局面与比赛决定", model.busy, false, "unused", "", close, {}) {
                 if (!game.isFinal) {

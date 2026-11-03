@@ -264,20 +264,17 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
     CardBlock {
         val teamLabels=teams.associate {it.id to (it.name+if(it.archived) " · 已归档" else if(it.source=="sharedSnapshot") " · 本机共享名单记录" else " · 本机")}
         val yearLabels=SeasonStatisticsCalculator.years(model.games).associate {it.toString() to "${it} 年"}
-        if(androidx.compose.ui.platform.LocalDensity.current.fontScale>1.2f) {
-            StatsPicker("球队",team.id,teamLabels,"stats-team-picker") {teamID=it;selected=null}
-            StatsPicker("年度",year.toString(),yearLabels,"stats-season-picker") {year=it.toInt();selected=null}
-        } else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            StatsPicker("球队",team.id,teamLabels,"stats-team-picker",Modifier.weight(2.1f)) {teamID=it;selected=null}
-            StatsPicker("年度",year.toString(),yearLabels,"stats-season-picker",Modifier.weight(1f)) {year=it.toInt();selected=null}
-        }
+        StatsPicker("球队",team.id,teamLabels,"stats-team-picker") {teamID=it;selected=null}
+        HorizontalDivider()
+        StatsPicker("年度",year.toString(),yearLabels,"stats-season-picker") {year=it.toInt();selected=null}
+        Text("按比赛日期自动归入年度，无需创建或划分赛季。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if(team.source=="sharedSnapshot") Text("本机统计 · 未计入球队正式档案", Modifier.testTag("stats-shared-snapshot-note"), fontSize=12.sp)
         HorizontalDivider()
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("已选 ${selectedValid?.size ?: eligible.games.size} / ${eligible.games.size} 场", Modifier.testTag("stats-game-scope"), fontSize = 12.sp, color=MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton({ filterOpen = true }, Modifier.testTag("stats-open-game-filter"), contentPadding=PaddingValues(horizontal=4.dp)) { Text("筛选比赛",fontSize=13.sp) }
         }
-        if (selected != null) TextButton({ selected = null }) { Text("恢复全部比赛") }
+        if (selected != null) TextButton({ selected = null }, Modifier.testTag("stats-reset-games")) { Text("恢复全部比赛") }
     }
     StatisticsSegmented("比赛模式", mapOf("all" to "全部模式", *GameMode.entries.map { it.name to it.title }.toTypedArray()), modeKey) { modeKey = it; selected = null }
     CardBlock {

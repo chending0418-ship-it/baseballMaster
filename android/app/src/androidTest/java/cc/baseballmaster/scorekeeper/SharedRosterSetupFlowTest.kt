@@ -51,17 +51,10 @@ class SharedRosterSetupFlowTest {
         try {
             inst.runOnMainSync {
                 activity.activity.setContent {
-                    MaterialTheme { NewGameDialog(emptyList(), emptyList(), api, false, {}, { chosen.set(it) }) }
+                    MaterialTheme { NewGameDialog(emptyList(), emptyList(), api, false, {}, save = { chosen.set(it) }) }
                 }
             }
-            fun find(selector: BySelector): UiObject2 {
-                repeat(30) {
-                    device.findObject(selector)?.takeIf { it.visibleBounds.height() > 8 }?.let { return it }
-                    device.findObject(By.scrollable(true))?.scroll(Direction.DOWN, .7f)
-                    device.waitForIdle()
-                }
-                return device.wait(Until.findObject(selector), 5000) ?: error("Missing $selector")
-            }
+            fun find(selector: BySelector): UiObject2 = NativeUi.find(device, selector)
             find(By.res("setup-refresh-shared")).click()
             find(By.res("setup-shared-${profile.id}")).click()
             assertTrue(device.wait(Until.hasObject(By.res("setup-shared-source")), 10000))

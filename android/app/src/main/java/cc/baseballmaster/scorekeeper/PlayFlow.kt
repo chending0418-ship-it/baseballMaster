@@ -180,7 +180,7 @@ internal fun PlayEditor(
                                     Modifier.weight(1f)
                                         .heightIn(min = 62.dp)
                                         .testTag("arrival-$dest"),
-                                ) {
+                                 shape = RoundedCornerShape(14.dp)) {
                                     Text(label, fontWeight = FontWeight.Bold)
                                 }
                             }
@@ -208,7 +208,7 @@ internal fun PlayEditor(
                                         .heightIn(min = 58.dp)
                                         .testTag("pro-outcome-${o.name}"),
                                     enabled=reason==null,
-                                ) {
+                                 shape = RoundedCornerShape(14.dp)) {
                                     Text(o.title)
                                 }
                                 reason?.let {Text(it,Modifier.testTag("outcome-unavailable-${o.name}"),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)}
@@ -267,7 +267,7 @@ internal fun PlayEditor(
                 OutlinedButton(
                     { choose(outcome) },
                     Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("cause-${outcome.name}"),
-                ) {
+                 shape = RoundedCornerShape(14.dp)) {
                     Column {
                         Text(label, fontWeight = FontWeight.Bold)
                         Text(outcome.title, fontSize = 12.sp)

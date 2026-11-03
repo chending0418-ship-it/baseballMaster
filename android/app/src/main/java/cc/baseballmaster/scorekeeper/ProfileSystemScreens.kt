@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
         }
         CardBlock {
             Text("备份与恢复",fontWeight=FontWeight.Bold)
-            Text("可核验 iOS 备份、导入名单或受来源保护的比赛。校验通过的只读球队档案原文纳入 Android 本机备份；共享授权不随备份恢复。完整可编辑互导仍未完成。")
+            Text("导入名单、查看 iOS 比赛和只读球队档案。原文件会保留，球队共享权限不会随文件恢复。")
             DeviceBackupControls(model);BackupInspection(model);TeamArchiveControls()
         }
     }

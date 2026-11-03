@@ -94,6 +94,11 @@ interface LocalDao {
 
     @Query("SELECT * FROM games ORDER BY updatedAt DESC") fun games(): Flow<List<GameEntity>>
 
+    @Query("DELETE FROM operations WHERE gameID = :id") suspend fun deleteGameOperations(id: String)
+    @Query("DELETE FROM apple_original_operations WHERE gameID = :id") suspend fun deleteGameOriginalOperations(id: String)
+    @Query("DELETE FROM apple_game_sources WHERE gameID = :id") suspend fun deleteGameSource(id: String)
+    @Query("DELETE FROM games WHERE id = :id") suspend fun deleteGameRow(id: String)
+
     @Query("SELECT * FROM games WHERE id = :id") suspend fun game(id: String): GameEntity?
 
     @Query("SELECT * FROM operations") suspend fun allOperations(): List<OperationEntity>
@@ -330,11 +335,24 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
     val games
         get() = db.dao().games()
 
-    suspend fun createTeam(name: String, roster: String): Team {
+    /** Delete one local record atomically; retained imported backup files stay intact. */
+    suspend fun deleteGame(id: String, revision: Long) = db.withTransaction {
+        val row = requireNotNull(db.dao().game(id)) { "比赛已不存在" }
+        check(row.revision == revision) { "比赛已更新，请重新核对后删除" }
+        require(db.dao().appleGameSource(id) == null) { "这场比赛属于完整导入档案，暂不能单独删除；原档案和备份已保留。" }
+        db.dao().deleteCorrectionDraft(id)
+        db.dao().deleteGameOriginalOperations(id)
+        db.dao().deleteGameSource(id)
+        db.dao().deleteGameOperations(id)
+        db.dao().deleteGameRow(id)
+        beforeCommit()
+    }
+
+    suspend fun createTeam(name: String, roster: String, isOpponent: Boolean = false): Team {
         require(name.trim().isNotEmpty()) { "请填写球队名称" }
         val players = parseRoster(roster)
-        val team = Team(UUID.randomUUID().toString(), name.trim(), players)
-        db.dao().insertTeam(TeamEntity(team.id, team.name, GameJson.encodeToString(team), false))
+        val team = Team(UUID.randomUUID().toString(), name.trim(), players, isOpponent)
+        db.dao().insertTeam(TeamEntity(team.id, team.name, GameJson.encodeToString(team), isOpponent))
         return team
     }
 
@@ -392,7 +410,9 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
 
     suspend fun createSharedRosterGame(prepared: Game): Game = createPreparedGameTransaction(prepared, true)
 
-    private suspend fun createPreparedGameTransaction(prepared: Game, sharedSnapshot: Boolean): Game = db.withTransaction {
+    suspend fun createObservationGame(prepared: Game): Game = createPreparedGameTransaction(prepared, false, observation = true)
+
+    private suspend fun createPreparedGameTransaction(prepared: Game, sharedSnapshot: Boolean, observation: Boolean = false): Game = db.withTransaction {
         require(prepared.appleSourceID == null) { "带来源标记的比赛必须通过来源导入事务保存" }
         val g = GameJson.decodeFromString<Game>(GameJson.encodeToString(prepared))
         g.validate()
@@ -400,9 +420,18 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             g.totalPitches == 0 &&
                 !g.openingPitchRecorded &&
                 !g.clockHasStarted &&
-                g.ourTeamID != null
+                (g.ourTeamID != null || observation)
         )
-        val own = if (sharedSnapshot) {
+        val own = if (observation) {
+            require(!sharedSnapshot && g.ourTeamID == null && g.sharedRosterOrigin == null && g.postgameSharingChoice == null) { "观赛记录不能绑定本队或共享上传目标" }
+            listOf(g.home, g.away).forEach { snapshot ->
+                val local = db.dao().team(snapshot.id)?.let { GameJson.decodeFromString<Team>(it.payload) }
+                    ?: error("观赛球队已不存在，请重新选择")
+                require(local.isOpponent && !local.archived && local.source == "local" && snapshot.isOpponent) { "观赛请选择两支有效对手球队" }
+                require(local.players.filter { !it.archived }.map { it.id }.toSet() == snapshot.players.map { it.id }.toSet()) { "观赛名单已变化，请重新核对" }
+            }
+            null
+        } else if (sharedSnapshot) {
             requireNotNull(g.sharedRosterOrigin) { "共享名单来源缺失" }.validate(g)
             require(db.dao().team(g.ourTeamID!!) == null) { "共享名单身份与已有本机球队冲突，请核对；原资料已保留" }
             listOf(g.home, g.away).single { it.id == g.ourTeamID }
@@ -415,12 +444,11 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         }
         Participation.validate(g.rules, g.homeOrder!!, g.homePositions!!, g.homeDesignatedHitterID)
         Participation.validate(g.rules, g.awayOrder!!, g.awayPositions!!, g.awayDesignatedHitterID)
-        val opponent = if (g.home.id == own.id) g.away else g.home
-        if (db.dao().team(opponent.id) == null)
-            db.dao()
-                .insertTeam(
-                    TeamEntity(opponent.id, opponent.name, GameJson.encodeToString(opponent), true)
-                )
+        if (own != null) {
+            val opponent = if (g.home.id == own.id) g.away else g.home
+            if (db.dao().team(opponent.id) == null)
+                db.dao().insertTeam(TeamEntity(opponent.id, opponent.name, GameJson.encodeToString(opponent), true))
+        }
         g.revision = 0
         g.journal = emptyList()
         g.cursor = 0

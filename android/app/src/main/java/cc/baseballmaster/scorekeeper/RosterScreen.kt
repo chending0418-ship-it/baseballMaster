@@ -1,33 +1,44 @@
 package cc.baseballmaster.scorekeeper
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
 import java.util.UUID
 
 @Composable
-internal fun RosterScreen(model: ScorekeeperViewModel, quickAdd: () -> Unit) {
+internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "own", quickAdd: (Boolean) -> Unit) {
     var showSharing by rememberSaveable { mutableStateOf(false) }
     var teamID by rememberSaveable { mutableStateOf("") }
-    var filter by rememberSaveable { mutableStateOf("own") }
+    var filter by rememberSaveable { mutableStateOf(initialFilter) }
     var editingTeam by rememberSaveable { mutableStateOf(false) }
     var editingPlayer by rememberSaveable { mutableStateOf<String?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
     val team = model.rosters.firstOrNull { it.id == teamID }
     if (showSharing) TeamSharingScreen(model.sharing, model.teams) { showSharing = false }
-    CardBlock {
+    if (filter == "own") CardBlock {
         Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
             Text("球队共享",Modifier.weight(1f),fontWeight=FontWeight.Bold)
             TextButton(onClick = { showSharing = true }, modifier = Modifier.testTag("open-team-sharing")) { Text("管理") }
         }
     }
-    Text("本机球队", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+    val visibleTeams = model.rosters.filter {
+        if (filter == "archived") it.archived
+        else !it.archived && it.isOpponent == (filter == "opponent")
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(if (filter == "opponent") "对手球队管理" else if (filter == "archived") "已移除球队" else "本机球队管理",
+            Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text("${visibleTeams.size} 支球队", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     Choices("名单", mapOf("own" to "我的球队", "opponent" to "对手", "archived" to "已移除"), filter) {
         filter = it
     }
@@ -35,38 +46,30 @@ internal fun RosterScreen(model: ScorekeeperViewModel, quickAdd: () -> Unit) {
         TextButton({ adding = true }, Modifier.weight(1f).testTag("add-roster")) {
             Text(if (filter == "opponent") "添加对手" else "添加球队")
         }
-        TextButton(quickAdd, Modifier.weight(1f).testTag("add-team")) { Text("批量创建") }
+        TextButton({ quickAdd(filter == "opponent") }, Modifier.weight(1f).testTag("add-team")) { Text("批量创建") }
     }
-    model.rosters
-        .filter {
-            if (filter == "archived") it.archived
-            else !it.archived && it.isOpponent == (filter == "opponent")
-        }
-        .forEach { t ->
-            CardBlock {
-                Text(
-                    t.name +
-                        if (t.id == model.currentTeam?.id && !t.isOpponent && !t.archived) " · 当前"
-                        else "",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "${t.city} · ${t.players.count{!it.archived}} 名球员",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(Modifier.fillMaxWidth()) {
-                    if (!t.isOpponent && !t.archived && t.source == "local" && t.id != model.currentTeam?.id)
-                        TextButton({ model.selectCurrentTeam(t.id) }, Modifier.weight(1f).testTag("select-current-team-${t.id}")) {
-                            Text("设为当前球队")
-                        }
-                    TextButton({ teamID = t.id }, Modifier.weight(1f).testTag("roster-${t.id}")) {
-                        Text("资料与名单")
-                    }
+    if (visibleTeams.isEmpty()) CardBlock {
+        Text(if (filter == "opponent") "还没有对手球队" else if (filter == "archived") "没有已移除球队" else "还没有球队，历史比赛和统计仍可查看。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    visibleTeams.forEach { t ->
+        CardBlock {
+            Row(Modifier.fillMaxWidth().clickable { teamID = t.id }.testTag("roster-${t.id}"),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                TeamMark(t.shortName.ifBlank { t.name }, 52)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(t.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(listOf(t.city.takeIf { it.isNotBlank() }, "${t.players.count { !it.archived }} 名球员").filterNotNull().joinToString(" · "),
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (t.id == model.currentTeam?.id && !t.isOpponent && !t.archived)
+                        Text("当前球队", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 }
+                Text("›", fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (!t.isOpponent && !t.archived && t.source == "local" && t.id != model.currentTeam?.id)
+                TextButton({ model.selectCurrentTeam(t.id) }, Modifier.testTag("select-current-team-${t.id}")) { Text("设为当前球队") }
         }
+    }
     if (adding || editingTeam && team != null) {
         val original = if (adding) null else team
         key(original?.id) {

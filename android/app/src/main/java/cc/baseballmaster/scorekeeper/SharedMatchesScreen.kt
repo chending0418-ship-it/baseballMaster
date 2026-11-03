@@ -1,5 +1,6 @@
 package cc.baseballmaster.scorekeeper
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
@@ -131,7 +132,7 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
     shownLink?.let {url -> FormPage("观赛链接",false,false,"unused","",{shownLink=null},{},secure=true,dismissLabel="完成") {
         val bitmap=remember(url) {val qr=watchViewQr(url);Bitmap.createBitmap(qr.pixels,qr.width,qr.height,Bitmap.Config.ARGB_8888).asImageBitmap()}
         Image(bitmap,"观赛链接二维码",Modifier.size(208.dp),filterQuality=FilterQuality.None);Text(url)
-        Button(onClick={runCatching {context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {type="text/plain";putExtra(Intent.EXTRA_TEXT,"${document?.matchTitle() ?: "球队比赛"}｜文字直播\n$url")},"分享观赛链接"))}.onFailure {SharingClipboard.copy(context,"观赛链接",url)}}) {Text("分享链接")}
+        Button(onClick={runCatching {context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {type="text/plain";putExtra(Intent.EXTRA_TEXT,"${document?.matchTitle() ?: "球队比赛"}｜文字直播\n$url")},"分享观赛链接"))}.onFailure {SharingClipboard.copy(context,"观赛链接",url)}}, shape = RoundedCornerShape(15.dp)) {Text("分享链接")}
         TextButton(onClick={SharingClipboard.copy(context,"观赛链接",url)}) {Text("复制链接")}
         TextButton(onClick={runCatching {context.startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(url)))}.onFailure {SharingClipboard.copy(context,"观赛链接",url)}}) {Text("用浏览器打开")}
     }}

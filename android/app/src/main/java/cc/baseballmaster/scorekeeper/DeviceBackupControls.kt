@@ -53,7 +53,7 @@ internal fun DeviceBackupControls(model: ScorekeeperViewModel) {
         TextButton(onClick = { save.launch("BaseballMaster-Android.bmandroid") }, enabled = !busy, modifier = Modifier.testTag("device-backup-save")) { Text("备份本机") }
         TextButton(onClick = { open.launch(arrayOf("application/octet-stream", "*/*")) }, enabled = !busy, modifier = Modifier.testTag("device-backup-restore")) { Text("恢复本机") }
     }
-    Text("本机备份用于 Android 设备恢复；iOS 格式互导仍在开发。")
+    Text("用于恢复安卓本机球队和比赛；完整跨平台编辑暂未开放。")
     if (pending != null) AlertDialog(onDismissRequest = { pending = null }, title = { Text("恢复 Android 本机备份？") }, text = { Text("将恢复备份中的球队、比赛、操作记录、纠错草稿、iOS 来源备份与只读球队档案原文。为保护原有资料，只有当前本机没有资料时才能恢复。") },
         confirmButton = { TextButton(onClick = {
             val bytes = pending ?: return@TextButton

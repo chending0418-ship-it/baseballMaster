@@ -28,6 +28,7 @@ class ProCatalogFlowTest {
         val database=LocalDatabase.open(context)
         try {block(GameRepository(database),database)} finally {database.close()}
     }
+    @org.junit.Before fun configure() { Configurator.getInstance().setWaitForIdleTimeout(500).setWaitForSelectorTimeout(3000) }
     private fun seed(mode:GameMode=GameMode.standard,runner:Boolean=false):Game=db {repo,_->
         val roster=(1..12).joinToString("\n") {"球员$it,$it"}
         val team=repo.createTeam("Pro311 ${UUID.randomUUID().toString().take(5)}",roster)
@@ -48,6 +49,7 @@ class ProCatalogFlowTest {
         context.startActivity(context.packageManager.getLaunchIntentForPackage(context.packageName)!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
         assertTrue(device.wait(Until.hasObject(By.res("tab-0")),30_000))
         click("game-${game.id}");click("record-play")
+        if(!game.openingPitchRecorded) click("confirm-opening-play")
     }
     private fun process(type:String) {
         click("situation-by-process");click("choice-球型-$type")
