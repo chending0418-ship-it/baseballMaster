@@ -486,6 +486,12 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
             done()
         }
 
+    fun configureScheduledGame(game: Game, baseRevision: Long, done: () -> Unit) = commit {
+        val configured = repository.configureScheduledGame(game, baseRevision)
+        accept(configured)
+        done()
+    }
+
     fun createPreparedGame(game: Game, done: () -> Unit) = commit {
         val created = when {
             game.sharedRosterOrigin != null -> repository.createSharedRosterGame(game)
@@ -627,8 +633,10 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                     Text("资料需要恢复", style = MaterialTheme.typography.headlineMedium)
                     Text(model.error ?: "原始数据已保留，请联系支持。")
                 }
-            else if (game != null)
-                GameScreen(game, model)
+            else if (game != null) {
+                if(game.scheduledSetupPending) PendingScheduleScreen(game, model) { opponent -> createOpponent = opponent; createTeam = true }
+                else GameScreen(game, model)
+            }
             else
                 Column(
                     Modifier.fillMaxSize()

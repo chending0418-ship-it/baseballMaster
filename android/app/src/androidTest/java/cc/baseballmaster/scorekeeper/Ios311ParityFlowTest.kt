@@ -235,7 +235,7 @@ class Ios311ParityFlowTest {
             val (own, opponent) = db { _, repo -> repo.createTeam("预告本队 ${UUID.randomUUID().toString().take(5)}", roster) to repo.createTeam("预告对手 ${UUID.randomUUID().toString().take(5)}", roster, true) }
             launch(); click("new-game")
             chooseRoster("setup-own-team", own); chooseRoster("setup-opponent", opponent)
-            click("setup-scheduled-toggle"); click("start-game"); click("start-confirmed-game")
+            click("setup-scheduled-toggle"); click("configure-schedule-now"); click("start-game"); click("start-confirmed-game")
             val game = db { d, _ -> d.dao().allGames().map(GameRepository::decode).single { it.ourTeamID == own.id } }
             assertTrue(game.isScheduled); assertFalse(game.openingPitchRecorded)
             assertFalse(device.hasObject(By.res("pitch-ball")))
@@ -245,6 +245,51 @@ class Ios311ParityFlowTest {
             shot("scheduled-match-entered")
             click("finish-game"); click("finish-scorerDecision"); await(game.id) { it.isFinal }
             click("return-final-game-home")
+        } finally { settings.edit().apply { if(previous == null) remove("current_team_id") else putString("current_team_id", previous) }.commit() }
+    }
+
+    @Test fun basicOwnedScheduleWaitsForRealRosterConfiguration() = verifyBasicSchedule(false)
+    @Test fun basicObservationScheduleWaitsForRealRosterConfiguration() = verifyBasicSchedule(true)
+    private fun verifyBasicSchedule(observation: Boolean) {
+        val settings = context.getSharedPreferences("baseballmaster-settings", 0)
+        val previous = settings.getString("current_team_id", null)
+        try {
+            val suffix = UUID.randomUUID().toString().take(5)
+            val (away, home) = db { _, repo ->
+                repo.createRoster("!0.8 预告留空客 $suffix", "客队", "", observation) to repo.createRoster("!0.8 预告留空主 $suffix", "主队", "", true)
+            }
+            launch(); click("new-game"); click("choice-记分方式-situation")
+            if(observation) {
+                click("choice-记录类型-spectator"); chooseRoster("setup-spectator-away", away); chooseRoster("setup-spectator-home", home)
+            } else { chooseRoster("setup-own-team", away); chooseRoster("setup-opponent", home) }
+            click("setup-scheduled-toggle"); click("start-game")
+            var plan = db { d, _ -> d.dao().allGames().map(GameRepository::decode).single { it.away.id == away.id && it.home.id == home.id } }
+            assertTrue(plan.scheduledSetupPending); assertTrue(plan.isScheduled); assertTrue(plan.away.players.isEmpty())
+            assertEquals(5, db { d, _ -> d.dao().game(plan.id)!!.payloadVersion })
+            assertFalse(device.hasObject(By.res("pitch-ball"))); assertFalse(device.hasObject(By.res("start-confirmed-game")))
+            shot("basic-schedule-${if(observation) "observation" else "owned"}")
+            click("pending-edit-time"); assertFalse(device.hasObject(By.res("choice-时间用途-played")))
+            input("match-time", "2030-06-01 11:30"); input("match-zone", "Asia/Shanghai"); click("save-match-time")
+            await(plan.id) { it.scheduledAt == parseMatchDate("2030-06-01 11:30", "Asia/Shanghai") && it.scheduledSetupPending }
+            plan = stored(plan.id)
+            click("configure-pending-schedule"); click("start-game")
+            NativeUi.find(device, By.textContains("双方至少需要"))
+            assertEquals(plan, stored(plan.id)); device.pressBack()
+            click("pending-manage-rosters"); click("roster-${away.id}"); screenControl("add-player"); device.pressBack(); click("close-scheduled-rosters")
+            val roster = (1..12).joinToString("\n") { "真实名单$it,$it" }
+            db { _, repo -> repo.updateRoster(away.copy(players = Roster.parse(roster))); repo.updateRoster(home.copy(players = Roster.parse(roster))) }
+            device.waitForIdle(500)
+            click("configure-pending-schedule"); assertTrue(screenControl("choice-记分方式-situation").isChecked)
+            click("start-game"); screenControl("start-confirmed-game")
+            assertEquals(plan, stored(plan.id))
+            click("start-confirmed-game"); await(plan.id) { !it.scheduledSetupPending && !it.isScheduled }
+            val configured = stored(plan.id)
+            assertEquals(plan.id, configured.id); assertEquals(plan.scheduledAt, configured.scheduledAt)
+            assertEquals(12, configured.away.players.size); assertEquals(if(observation) null else away.id, configured.ourTeamID)
+            assertFalse(configured.openingPitchRecorded); assertEquals(0, configured.totalPitches)
+            assertEquals(4, db { d, _ -> d.dao().game(plan.id)!!.payloadVersion })
+            click("pitch-ball"); click("confirm-opening-pitch"); await(plan.id) { it.openingPitchRecorded && it.balls == 1 }
+            click("finish-game"); click("finish-scorerDecision"); await(plan.id) { it.isFinal }; click("return-final-game-home")
         } finally { settings.edit().apply { if(previous == null) remove("current_team_id") else putString("current_team_id", previous) }.commit() }
     }
 

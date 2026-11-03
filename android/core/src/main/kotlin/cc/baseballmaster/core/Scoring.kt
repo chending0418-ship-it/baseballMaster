@@ -437,6 +437,9 @@ data class Game(
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     var appleSourceID: String? = null,
     var isScheduled: Boolean = false,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var scheduledSetupPending: Boolean = false,
     var startedAt: Long? = null,
     var ourTeamID: String? = null,
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
@@ -579,6 +582,23 @@ data class Game(
         clockElapsedMs + (clockRunningSince?.let { (at - it).coerceAtLeast(0) } ?: 0)
 
     fun validate() {
+        if (scheduledSetupPending) {
+            require(id.isNotBlank() && isScheduled && scheduledAt?.let { it > 0 } == true && !practice && appleSourceID == null)
+            java.time.ZoneId.of(playedTimeZoneID)
+            require(home.id.isNotBlank() && away.id.isNotBlank() && home.id != away.id)
+            require(home.name.isNotBlank() && away.name.isNotBlank() && !home.archived && !away.archived)
+            val players = home.players + away.players
+            require(players.map { it.id }.distinct().size == players.size)
+            players.forEach(Roster::validate)
+            sharedRosterOrigin?.validate(this)
+            val planned = Game(id, home, away, rules, revision = revision,
+                scheduledAt = scheduledAt, playedTimeZoneID = playedTimeZoneID,
+                isScheduled = true, scheduledSetupPending = true, ourTeamID = ourTeamID,
+                sharedRosterOrigin = sharedRosterOrigin, postgameSharingChoice = postgameSharingChoice,
+                createdAt = createdAt, updatedAt = updatedAt)
+            require(this == planned) { "未配置的预告不能包含记分、计时或比赛历史" }
+            return
+        }
         sharedRosterOrigin?.validate(this)
         require(appleSourceID == null || Regex("[a-f0-9]{64}").matches(appleSourceID!!)) { "iOS 来源编号无效" }
         require(home.players.isNotEmpty() && away.players.isNotEmpty() && home.id != away.id)

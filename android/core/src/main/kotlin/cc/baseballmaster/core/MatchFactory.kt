@@ -1,6 +1,11 @@
 package cc.baseballmaster.core
 
 object MatchFactory {
+    fun schedule(id: String, home: Team, away: Team, rules: Rules, at: Long, ourTeamID: String? = null): Game =
+        Game(id, home, away, rules, scheduledAt = at, isScheduled = true,
+            scheduledSetupPending = true, ourTeamID = ourTeamID, createdAt = System.currentTimeMillis())
+            .also { it.validate() }
+
     /** Same default batting/defensive participation as iOS configuredParticipation. */
     fun create(
         id: String,

@@ -20,6 +20,7 @@ object MatchEngine {
         )
 
     fun apply(input: Game, command: Command, id: String = UUID.randomUUID().toString()): Game {
+        require(!input.scheduledSetupPending) { "请先完成预告比赛的名单、规则和阵容设置" }
         require(
             id.isNotBlank() &&
                 input.journal.none { it.id == id } &&

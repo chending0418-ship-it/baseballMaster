@@ -270,7 +270,7 @@ internal fun MatchTimeEditor(
             )
         },
     ) {
-        if (!game.openingPitchRecorded)
+        if (!game.openingPitchRecorded && !game.scheduledSetupPending)
             Choices(
                 "时间用途",
                 mapOf("played" to "比赛实际时间", "schedule" to "预告赛程"),

@@ -442,8 +442,10 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             require(!local.archived && local.source == "local" && local.id in listOf(g.home.id, g.away.id))
             local
         }
-        Participation.validate(g.rules, g.homeOrder!!, g.homePositions!!, g.homeDesignatedHitterID)
-        Participation.validate(g.rules, g.awayOrder!!, g.awayPositions!!, g.awayDesignatedHitterID)
+        if (!g.scheduledSetupPending) {
+            Participation.validate(g.rules, g.homeOrder!!, g.homePositions!!, g.homeDesignatedHitterID)
+            Participation.validate(g.rules, g.awayOrder!!, g.awayPositions!!, g.awayDesignatedHitterID)
+        }
         if (own != null) {
             val opponent = if (g.home.id == own.id) g.away else g.home
             if (db.dao().team(opponent.id) == null)
@@ -455,11 +457,43 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         g.checkpoint = null
         db.dao()
             .insertGame(
-                GameEntity(g.id, GameJson.encodeToString(g), 0, System.currentTimeMillis(), 4)
+                GameEntity(g.id, GameJson.encodeToString(g), 0, System.currentTimeMillis(), if(g.scheduledSetupPending) 5 else 4)
             )
         beforeCommit()
         g
     }
+
+    suspend fun configureScheduledGame(prepared: Game, baseRevision: Long, operationID: String = UUID.randomUUID().toString()): Game =
+        mutate(prepared.id, baseRevision, operationID, "schedule-setup:" + GameJson.encodeToString(prepared)) { original ->
+            require(original.scheduledSetupPending && original.isScheduled && !prepared.scheduledSetupPending)
+            require(prepared.ourTeamID == original.ourTeamID && setOf(prepared.home.id, prepared.away.id) == setOf(original.home.id, original.away.id)) { "请保留预告的双方球队身份" }
+            require(prepared.appleSourceID == null && !prepared.practice && !prepared.isFinal && prepared.totalPitches == 0 && !prepared.openingPitchRecorded && !prepared.clockHasStarted)
+            require((prepared.sharedRosterOrigin == null) == (original.sharedRosterOrigin == null))
+            if(original.ourTeamID == null) require(prepared.sharedRosterOrigin == null && prepared.postgameSharingChoice == null && prepared.home.isOpponent && prepared.away.isOpponent)
+            listOf(prepared.home, prepared.away).forEach { snapshot ->
+                if (snapshot.source == "sharedSnapshot") {
+                    require(snapshot.id == prepared.ourTeamID && db.dao().team(snapshot.id) == null)
+                    requireNotNull(prepared.sharedRosterOrigin).validate(prepared)
+                } else {
+                    val local = db.dao().team(snapshot.id)?.let { GameJson.decodeFromString<Team>(it.payload) } ?: error("球队已不存在")
+                    require(!local.archived && local.source == "local" && snapshot.isOpponent == local.isOpponent)
+                    require(local.players.filter { !it.archived }.map { it.id }.toSet() == snapshot.players.map { it.id }.toSet()) { "名单已变化，请重新核对赛前设置" }
+                }
+            }
+            val next = MatchFactory.create(original.id, prepared.home, prepared.away, prepared.rules, original.ourTeamID).apply {
+                homeOrder = prepared.homeOrder; awayOrder = prepared.awayOrder
+                homePositions = prepared.homePositions; awayPositions = prepared.awayPositions
+                homePitcherID = prepared.homePitcherID; awayPitcherID = prepared.awayPitcherID
+                homeDesignatedHitterID = prepared.homeDesignatedHitterID; awayDesignatedHitterID = prepared.awayDesignatedHitterID
+                sharedRosterOrigin = prepared.sharedRosterOrigin; postgameSharingChoice = prepared.postgameSharingChoice
+                scheduledAt = original.scheduledAt; playedTimeZoneID = prepared.playedTimeZoneID
+                createdAt = original.createdAt; revision = original.revision + 1; updatedAt = System.currentTimeMillis()
+            }
+            Participation.validate(next.rules, next.homeOrder!!, next.homePositions!!, next.homeDesignatedHitterID)
+            Participation.validate(next.rules, next.awayOrder!!, next.awayPositions!!, next.awayDesignatedHitterID)
+            next.validate()
+            next
+        }
 
     suspend fun updateRoster(team: Team) = db.withTransaction {
         require(db.dao().allAppleBackups().none { source -> AppleSourceBackup.prepare(source.current).teams().any { it.id == team.id } }) { "iOS 导入球队的名单编辑尚未支持，原始备份及名单未修改" }
@@ -528,7 +562,13 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         operationID: String = UUID.randomUUID().toString(),
     ): Game =
         mutate(gameID, baseRevision, operationID, GameJson.encodeToString(command), appleCommand = command) {
-            MatchEngine.apply(it, command, operationID)
+            if(it.scheduledSetupPending) {
+                require(command.kind == "schedule") { "请先完成比赛赛前设置" }
+                val date = requireNotNull(command.dateMillis) { "请填写预告时间" }
+                require(date > 0)
+                java.time.ZoneId.of(command.timeZoneID)
+                it.copy(scheduledAt = date, playedTimeZoneID = command.timeZoneID, revision = it.revision + 1, updatedAt = System.currentTimeMillis()).also { next -> next.validate() }
+            } else MatchEngine.apply(it, command, operationID)
         }
 
     suspend fun undo(
@@ -606,7 +646,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         signature: String,
         clearDraft: Boolean = false,
         appleCommand: Command? = null,
-        reduce: (Game) -> Game,
+        reduce: suspend (Game) -> Game,
     ): Game = db.withTransaction {
         require(operationID.isNotBlank())
         val current = db.dao().game(gameID) ?: error("比赛不存在，原资料未修改")
@@ -654,7 +694,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                     GameJson.encodeToString(next),
                     next.revision,
                     System.currentTimeMillis(),
-                    4,
+                    if(next.scheduledSetupPending) 5 else 4,
                 )
             )
         if (clearDraft) db.dao().deleteCorrectionDraft(gameID)
@@ -672,8 +712,9 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
 
     companion object {
         fun decode(entity: GameEntity): Game {
-            check(entity.payloadVersion in 1..4) { "比赛格式较新，原资料已保留，请使用兼容版本" }
+            check(entity.payloadVersion in 1..5) { "比赛格式较新，原资料已保留，请使用兼容版本" }
             return GameJson.decodeFromString<Game>(entity.payload).also {
+                check(it.scheduledSetupPending == (entity.payloadVersion == 5))
                 check(it.revision == entity.revision)
                 it.validate()
             }
