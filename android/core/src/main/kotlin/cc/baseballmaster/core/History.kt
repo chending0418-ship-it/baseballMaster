@@ -276,6 +276,7 @@ object History {
         var state = GameJson.decodeFromString<Game>(input.checkpoint ?: error("缺少可重放的检查点"))
         val aliases = mutableMapOf<String, String>()
         val normalized = mutableListOf<RecordedCommand>()
+        val committedCommands = if (strict) input.journal.associate { it.id to it.command } else emptyMap()
         var previousBefore: Game? = null
         fun replacement(old: String, new: String) {
             aliases.keys.toList().filter { aliases[it] == old }.forEach { aliases[it] = new }
@@ -412,7 +413,11 @@ object History {
                         "pitcher" -> oldPitcher
                         else -> null
                     }
-                state = Session(state, command, record.id).run()
+                // Old journals may lack replacement metadata. Replay their exact old semantics;
+                // enforce the new boundary only for commands newly authored in this correction.
+                // edited/inserted flags persist after commit, so flags alone cannot identify new work.
+                val newlyAuthoredLineup = strict && committedCommands[record.id] != record.command
+                state = Session(state, command, record.id, validateNewLineupReplacements = newlyAuthoredLineup).run()
                 if (original.kind == "doubleSwitch") {
                     replacement(command.playerID!!, command.replacementID!!)
                     replacement(command.secondPlayerID!!, command.secondReplacementID!!)

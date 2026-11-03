@@ -57,7 +57,10 @@ class StatisticsFlowTest {
                 error("统计页未打开")
             }
             openStatistics()
-            assertTrue(device.hasObject(By.textContains(name)))
+            useVisibleNode(device, By.res("stats-team-picker"), scroll = false) { picker ->
+                assertTrue("The current team remains visible in the product row picker",
+                    picker.text.orEmpty().contains(name) || picker.findObject(By.textContains(name)) != null)
+            }
             fun text(selector: BySelector) = useVisibleNode(device, selector) { it.text }
             fun click(selector: BySelector, scroll: Boolean = true) =
                 useVisibleNode(device, selector, scroll) { it.click() }
@@ -65,7 +68,7 @@ class StatisticsFlowTest {
                 assertEquals("1 场比赛 · 1胜0负0平", text(By.res("stats-team-record")))
             }
             assertTeamRecord()
-            device.takeScreenshot(File(context.getExternalFilesDir(null), "an04-statistics-summary.png"))
+            device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-statistics-summary.png"))
             fun chooseCategory(tag: String) {
                 StatisticsUi.setChecked(device,tag,true)
             }
@@ -73,7 +76,7 @@ class StatisticsFlowTest {
             useVisibleNode(device, By.res("stats-summary-PITCHING")) { Unit }
             chooseCategory("choice-统计分类-FIELDING")
             useVisibleNode(device, By.res("stats-summary-FIELDING")) { Unit }
-            device.takeScreenshot(File(context.getExternalFilesDir(null), "an04-statistics-fielding.png"))
+            device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-statistics-fielding.png"))
             chooseCategory("choice-统计分类-BATTING")
             fun assertPlayerTotals(selected: Boolean) {
                 val count = if (selected) 1 else 0
@@ -94,7 +97,7 @@ class StatisticsFlowTest {
             }
             openPlayer()
             selectPlayerGame(false)
-            device.takeScreenshot(File(context.getExternalFilesDir(null), "an04-statistics-player-filter.png"))
+            device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-statistics-player-filter.png"))
             selectPlayerGame(true)
             selectPlayerGame(false)
             // Back discards this detail-page selection without changing the team's scope.
@@ -106,9 +109,9 @@ class StatisticsFlowTest {
             click(By.res("stats-player-close"), scroll = false)
             assertTrue(device.wait(Until.gone(By.res("stats-player-close")), 5_000))
             assertTeamRecord()
-            // Reopening after Done starts from all eligible games, just like reopening after Back.
+            // Reopening after the labelled return control starts from all eligible games, just like system Back.
             openPlayer()
-            click(By.text("取消"), scroll = false)
+            click(By.res("stats-player-close"), scroll = false)
             assertTrue(device.wait(Until.gone(By.res("stats-player-close")), 5_000))
             assertTeamRecord()
         } finally {

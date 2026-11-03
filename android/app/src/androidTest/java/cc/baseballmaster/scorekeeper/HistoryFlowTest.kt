@@ -53,28 +53,7 @@ class HistoryFlowTest {
         assertTrue(device.wait(Until.hasObject(By.pkg(context.packageName)), 20000))
     }
 
-    private fun find(selector: BySelector): UiObject2 {
-        repeat(22) { i ->
-            try {
-                if (android.os.Build.VERSION.SDK_INT >= 34)
-                    instrumentation.uiAutomation.clearCache()
-                device
-                    .findObject(selector)
-                    ?.takeIf { it.visibleBounds.height() > 8 }
-                    ?.let {
-                        return it
-                    }
-                device
-                    .findObject(By.scrollable(true))
-                    ?.scroll(if (i < 11) Direction.DOWN else Direction.UP, .5f)
-            } catch (_: StaleObjectException) {
-                // A modal may replace its scroll node between lookup and scroll. Re-query it;
-                // scoring actions themselves are never retried by this read/scroll helper.
-            }
-            device.waitForIdle()
-        }
-        return device.wait(Until.findObject(selector), 5000) ?: error("Missing $selector")
-    }
+    private fun find(selector: BySelector): UiObject2 = NativeUi.find(device, selector)
 
     private fun click(tag: String) {
         find(By.res(tag)).click()
@@ -162,9 +141,10 @@ class HistoryFlowTest {
         hideKeyboard()
         click("insert-before")
         click("insert-substitution")
-        text("选择球员").click()
-        text("#12 球员12").click()
+        click("substitution-pitcher")
+        click("substitution-player-${snapshot().first.home.players[11].id}")
         click("save-substitution")
+        text("确认保存").click()
         waitFor { _, d -> d?.records?.size == 4 && d.reason == "补记换投" }
         assertEquals(originalHash.readText(), sha(rawGame()))
         assertEquals("更正后 2:0", find(By.res("history-preview-score")).text)
@@ -214,6 +194,7 @@ class HistoryFlowTest {
         assertFalse(find(By.res("undo")).isEnabled)
         click("finish-game")
         click("finish-suspended")
+        click("confirm-finish-game")
         val suspended = waitFor { g, _ -> g.entries.lastOrNull()?.notation == "SUSP" }.first
         assertFalse(suspended.isFinal)
         assertNull(suspended.clockRunningSince)

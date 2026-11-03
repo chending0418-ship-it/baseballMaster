@@ -76,6 +76,7 @@ internal object AppleHistoryCommandCodec {
      * deliberately distinct: iOS commits them into its next checkpoint.
      */
     fun encodeAction(c: Command,before: Game,after: Game,effectiveMoves: List<Decision>,reviewEvent: JsonObject?=null): JsonObject {
+        require(c.playerUpdates.isNullOrEmpty() && c.lineupReplacements.isNullOrEmpty()) { "球员资料更正／阵容替补尚未完成 iOS 历史转换，不能忽略后导出" }
         val people=(before.home.players+before.away.players).associateBy {it.id}
         fun args(block: JsonObjectBuilder.()->Unit)=buildJsonObject(block)
         val f=when(c.kind) {

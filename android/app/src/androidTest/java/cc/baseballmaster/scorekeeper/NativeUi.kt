@@ -5,15 +5,12 @@ import androidx.test.uiautomator.*
 
 /** Finds actionable controls in the phone's real scroll containers. */
 internal object NativeUi {
-    private fun refresh() {
-        val automation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
-        if(android.os.Build.VERSION.SDK_INT>=34) automation.clearCache()
-        else automation.serviceInfo=automation.serviceInfo
-    }
+    private fun refresh() { UiTreeCache.refresh() }
     fun find(device: UiDevice, selector: BySelector): UiObject2 {
         val deadline = SystemClock.uptimeMillis() + 45_000
         var attempt = 0
         var down = true
+        var previousViewport: String? = null
         while (SystemClock.uptimeMillis() < deadline) {
             try {
                 refresh()
@@ -29,14 +26,30 @@ internal object NativeUi {
                     }
                 }
                 val pkg = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.packageName
-                val viewport = device.findObject(By.pkg(pkg).scrollable(true))?.visibleBounds
+                val embeddedTask = device.findObject(By.res("embedded-product-task"))
+                val scrollOwner = embeddedTask?.findObject(By.res("product-page-scroll"))
+                    ?: device.findObject(By.res("product-page-scroll"))
+                    ?: device.findObjects(By.pkg(pkg).scrollable(true))
+                        .maxByOrNull { it.visibleBounds.height() }
+                val viewport = scrollOwner?.visibleBounds
                 if (viewport != null && viewport.height() > 100) {
                     val top = maxOf(viewport.top + 40, device.displayHeight / 6)
                     val bottom = minOf(viewport.bottom - 40, device.displayHeight * 8 / 10)
                     if (bottom > top) {
+                        val visibleContent = scrollOwner?.findObjects(By.text(java.util.regex.Pattern.compile(".+"))).orEmpty()
+                            .mapNotNull { node ->
+                                val box = node.visibleBounds
+                                if (box.height() > 10 && viewport.contains(box.centerX(), box.centerY())) "${node.text}@$box" else null
+                            }.joinToString("|")
                         val marker = device.findObject(selector)?.visibleBounds
                         if (marker != null && !marker.isEmpty) down = marker.centerY() > device.displayHeight / 2
-                        else if (attempt++ % 12 == 11) down = !down
+                        else if (visibleContent.isNotEmpty() && visibleContent == previousViewport) {
+                            // Reverse at a real content endpoint instead of wasting the
+                            // entire deadline swiping against it before looking above.
+                            down = !down
+                            attempt = 0
+                        } else if (attempt++ % 8 == 7) down = !down
+                        previousViewport = visibleContent
                         device.swipe(viewport.centerX(), if (down) bottom else top,
                             viewport.centerX(), if (down) top else bottom, 25)
                     }

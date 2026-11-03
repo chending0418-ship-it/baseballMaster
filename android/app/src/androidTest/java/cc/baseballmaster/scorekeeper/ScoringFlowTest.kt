@@ -51,16 +51,14 @@ class ScoringFlowTest {
         }
         check(frame.await(3, java.util.concurrent.TimeUnit.SECONDS))
         instrumentation.waitForIdleSync()
-        if (android.os.Build.VERSION.SDK_INT >= 34) instrumentation.uiAutomation.clearCache()
-        else instrumentation.uiAutomation.serviceInfo=instrumentation.uiAutomation.serviceInfo
+        UiTreeCache.refresh()
     }
 
     private fun stable(selector: BySelector): UiObject2 {
         var previous: android.graphics.Rect? = null
         var same = 0
         repeat(80) {
-            if (android.os.Build.VERSION.SDK_INT >= 34) instrumentation.uiAutomation.clearCache()
-            else instrumentation.uiAutomation.serviceInfo=instrumentation.uiAutomation.serviceInfo
+            UiTreeCache.refresh()
             val node = device.findObject(selector)
             val bounds = node?.visibleBounds
             if (bounds != null && bounds == previous) same++ else same = 0
@@ -103,7 +101,7 @@ class ScoringFlowTest {
                 // Only repeat a read/scroll, never a scoring action.
             }
             device.waitForIdle()
-            if (android.os.Build.VERSION.SDK_INT >= 34) instrumentation.uiAutomation.clearCache()
+            UiTreeCache.refresh()
         }
         return device.wait(Until.findObject(selector), 5_000) ?: error("Missing control $selector")
     }

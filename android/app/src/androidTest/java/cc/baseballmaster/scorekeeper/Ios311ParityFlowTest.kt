@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
 
-/** Product parity: controls must be on screen, and actions must persist the intended state. */
+/** Existing 0.8.0 data regressions, exercised through the actual 0.8.1 product paths. */
 @RunWith(AndroidJUnit4::class)
 class Ios311ParityFlowTest {
     private val inst = InstrumentationRegistry.getInstrumentation()
@@ -21,11 +21,13 @@ class Ios311ParityFlowTest {
     @org.junit.Before fun configure() {
         Configurator.getInstance().setWaitForIdleTimeout(500).setWaitForSelectorTimeout(3000)
     }
-    private fun refresh() {
-        if (android.os.Build.VERSION.SDK_INT >= 34) inst.uiAutomation.clearCache()
-        else inst.uiAutomation.serviceInfo = inst.uiAutomation.serviceInfo
-    }
+    private fun refresh() { UiTreeCache.refresh() }
     private fun click(tag: String) { NativeUi.find(device, By.res(tag)).click(); device.waitForIdle(500) }
+    private fun confirmLineups() {
+        click("start-confirmed-game")
+        assertTrue(device.wait(Until.hasObject(By.res("confirm-create-lineups")), 10_000))
+        click("confirm-create-lineups")
+    }
     private fun input(tag: String, value: String) {
         val field = NativeUi.find(device, By.res(tag)); field.click(); field.text = value
         inst.runOnMainSync {
@@ -44,6 +46,11 @@ class Ios311ParityFlowTest {
         assertTrue("$tag must be visible without scrolling: $b", b.height() > 24 && b.bottom <= device.displayHeight - 16)
         return node
     }
+    private fun assertResultsBack() {
+        val back = screenControl("close-game-results")
+        val label = back.contentDescription ?: back.findObject(By.desc("返回"))?.contentDescription
+        assertEquals("The result page returns through its labelled back control", "返回", label)
+    }
     private fun <T> db(action: suspend (LocalDatabase, GameRepository) -> T): T = runBlocking {
         val database = LocalDatabase.open(context)
         try { action(database, GameRepository(database)) } finally { database.close() }
@@ -52,6 +59,18 @@ class Ios311ParityFlowTest {
     private fun await(id: String, predicate: (Game) -> Boolean) {
         repeat(100) { if (predicate(stored(id))) return; Thread.sleep(100) }
         error("Game state did not persist")
+    }
+    private fun awaitCreatedGame(matching: (Game) -> Boolean): Game {
+        val deadline = android.os.SystemClock.uptimeMillis() + 15_000
+        while (android.os.SystemClock.uptimeMillis() < deadline) {
+            val created = db { database, _ -> database.dao().allGames().map(GameRepository::decode).filter(matching) }
+            if (created.isNotEmpty()) {
+                assertEquals("One accepted setup must create exactly one match", 1, created.size)
+                return created.single()
+            }
+            android.os.SystemClock.sleep(100)
+        }
+        error("The accepted setup did not persist its one expected match")
     }
     private fun launch() {
         context.startActivity(context.packageManager.getLaunchIntentForPackage(context.packageName)!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
@@ -73,8 +92,8 @@ class Ios311ParityFlowTest {
         val frame = java.util.concurrent.CountDownLatch(1)
         inst.runOnMainSync { android.view.Choreographer.getInstance().postFrameCallback { android.view.Choreographer.getInstance().postFrameCallback { frame.countDown() } } }
         assertTrue(frame.await(3, java.util.concurrent.TimeUnit.SECONDS))
-        device.takeScreenshot(File(context.getExternalFilesDir(null), "ios311-$name.png"))
-        device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "ios311-$name.xml"))
+        device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-$name.png"))
+        device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "081-regression-$name.xml"))
     }
     @Test fun mainScoringControlsAndSpecialActionsMatchIosHierarchy() {
         val game = seed()
@@ -97,7 +116,7 @@ class Ios311ParityFlowTest {
         assertTrue(device.wait(Until.gone(By.res("confirm-end-half")), 10000))
         assertTrue(stored(game.id).isTop)
         click("end-half"); click("confirm-end-half"); await(game.id) { !it.isTop }
-        click("finish-game"); NativeUi.find(device, By.text("记录员结束记录")).click()
+        click("finish-game"); NativeUi.find(device, By.text("记录员结束记录")).click(); click("confirm-finish-game")
         await(game.id) { it.isFinal }
         screenControl("return-final-game-home").click(); screenControl("tab-1")
         shot("home")
@@ -144,12 +163,13 @@ class Ios311ParityFlowTest {
         click("choice-数据-records"); assertTrue(device.wait(Until.hasObject(By.textContains("中文比赛记录")), 10000)); shot("game-results-records")
         click("result-history-correction")
         assertTrue(device.wait(Until.hasObject(By.text("完整记录")), 10000))
-        NativeUi.find(device, By.text("取消")).click()
-        screenControl("close-game-results")
+        device.pressBack()
+        assertResultsBack()
+        shot("game-results-returned-after-history")
         click("edit-game-date")
         screenControl("save-match-time")
         NativeUi.find(device, By.text("取消")).click()
-        screenControl("close-game-results")
+        assertResultsBack()
         device.pressBack(); click("back-home")
     }
     @Test fun largeTextKeepsScoringAndNavigationReachable() {
@@ -197,11 +217,11 @@ class Ios311ParityFlowTest {
         chooseRoster("setup-spectator-home", away)
         assertFalse(screenControl("start-game").isEnabled)
         chooseRoster("setup-spectator-home", home)
-        click("start-game"); shot("observation-lineups"); click("start-confirmed-game")
-        val game = db { d, _ -> d.dao().allGames().map(GameRepository::decode).single { it.away.id == away.id && it.home.id == home.id } }
+        click("start-game"); shot("observation-lineups"); confirmLineups()
+        val game = awaitCreatedGame { it.away.id == away.id && it.home.id == home.id }
         assertNull(game.ourTeamID)
         click("pitch-ball"); click("confirm-opening-pitch"); await(game.id) { it.balls == 1 }
-        click("finish-game"); click("finish-scorerDecision"); await(game.id) { it.isFinal }
+        click("finish-game"); click("finish-scorerDecision"); click("confirm-finish-game"); await(game.id) { it.isFinal }
         click("return-final-game-home")
         assertEquals(priorRecord, NativeUi.find(device, By.res("home-team-record")).text)
     }
@@ -215,13 +235,13 @@ class Ios311ParityFlowTest {
             chooseRoster("setup-own-team", own)
             chooseRoster("setup-opponent", opponent)
             click("backfill-game-toggle"); input("setup-match-date", "2025-06-10 10:00")
-            click("start-game"); shot("backfilled-lineups"); click("start-confirmed-game")
-            val game = db { d, _ -> d.dao().allGames().map(GameRepository::decode).single { it.ourTeamID == own.id } }
+            click("start-game"); shot("backfilled-lineups"); confirmLineups()
+            val game = awaitCreatedGame { it.ourTeamID == own.id }
             click("pitch-ball"); click("confirm-opening-pitch"); await(game.id) { it.balls == 1 }
             assertEquals("2025-06-10 10:00", formatMatchDate(stored(game.id).playedAt!!, stored(game.id).playedTimeZoneID))
-            click("finish-game"); click("finish-scorerDecision"); await(game.id) { it.isFinal }
+            click("finish-game"); click("finish-scorerDecision"); click("confirm-finish-game"); await(game.id) { it.isFinal }
             click("return-final-game-home"); click("tab-2")
-            click("stats-season-picker"); NativeUi.find(device, By.text("2025 年")).click()
+            click("stats-season-picker"); click("stats-season-picker-option-2025")
             assertEquals("1 场比赛 · 0胜0负1平", NativeUi.find(device, By.res("stats-team-record")).text)
             shot("backfilled-year-statistics")
         } finally { settings.edit().apply { if(previous == null) remove("current_team_id") else putString("current_team_id", previous) }.commit() }
@@ -235,15 +255,15 @@ class Ios311ParityFlowTest {
             val (own, opponent) = db { _, repo -> repo.createTeam("预告本队 ${UUID.randomUUID().toString().take(5)}", roster) to repo.createTeam("预告对手 ${UUID.randomUUID().toString().take(5)}", roster, true) }
             launch(); click("new-game")
             chooseRoster("setup-own-team", own); chooseRoster("setup-opponent", opponent)
-            click("setup-scheduled-toggle"); click("configure-schedule-now"); click("start-game"); click("start-confirmed-game")
-            val game = db { d, _ -> d.dao().allGames().map(GameRepository::decode).single { it.ourTeamID == own.id } }
+            click("setup-scheduled-toggle"); click("configure-schedule-now"); click("start-game"); confirmLineups()
+            val game = awaitCreatedGame { it.ourTeamID == own.id }
             assertTrue(game.isScheduled); assertFalse(game.openingPitchRecorded)
             assertFalse(device.hasObject(By.res("pitch-ball")))
             click("activate-scheduled"); await(game.id) { !it.isScheduled }
             click("pitch-ball"); screenControl("confirm-opening-pitch").click()
             await(game.id) { it.balls == 1 && it.openingPitchRecorded }
             shot("scheduled-match-entered")
-            click("finish-game"); click("finish-scorerDecision"); await(game.id) { it.isFinal }
+            click("finish-game"); click("finish-scorerDecision"); click("confirm-finish-game"); await(game.id) { it.isFinal }
             click("return-final-game-home")
         } finally { settings.edit().apply { if(previous == null) remove("current_team_id") else putString("current_team_id", previous) }.commit() }
     }
@@ -263,7 +283,7 @@ class Ios311ParityFlowTest {
                 click("choice-记录类型-spectator"); chooseRoster("setup-spectator-away", away); chooseRoster("setup-spectator-home", home)
             } else { chooseRoster("setup-own-team", away); chooseRoster("setup-opponent", home) }
             click("setup-scheduled-toggle"); click("start-game")
-            var plan = db { d, _ -> d.dao().allGames().map(GameRepository::decode).single { it.away.id == away.id && it.home.id == home.id } }
+            var plan = awaitCreatedGame { it.away.id == away.id && it.home.id == home.id }
             assertTrue(plan.scheduledSetupPending); assertTrue(plan.isScheduled); assertTrue(plan.away.players.isEmpty())
             assertEquals(5, db { d, _ -> d.dao().game(plan.id)!!.payloadVersion })
             assertFalse(device.hasObject(By.res("pitch-ball"))); assertFalse(device.hasObject(By.res("start-confirmed-game")))
@@ -316,17 +336,19 @@ class Ios311ParityFlowTest {
                 assertTrue("Roster changes did not reach setup", ready)
             }
             click("close-scheduled-rosters")
-            click("configure-pending-schedule"); assertTrue(screenControl("choice-记分方式-situation").isChecked)
+            click("configure-pending-schedule")
+            val selectedMethod = screenControl("choice-记分方式-situation")
+            assertTrue("The scheduled match must keep its Pro recording method", selectedMethod.isChecked || selectedMethod.isSelected)
             click("start-game"); screenControl("start-confirmed-game")
             assertEquals(plan, stored(plan.id))
-            click("start-confirmed-game"); await(plan.id) { !it.scheduledSetupPending && !it.isScheduled }
+            confirmLineups(); await(plan.id) { !it.scheduledSetupPending && !it.isScheduled }
             val configured = stored(plan.id)
             assertEquals(plan.id, configured.id); assertEquals(plan.scheduledAt, configured.scheduledAt)
             assertEquals(12, configured.away.players.size); assertEquals(if(observation) null else away.id, configured.ourTeamID)
             assertFalse(configured.openingPitchRecorded); assertEquals(0, configured.totalPitches)
             assertEquals(4, db { d, _ -> d.dao().game(plan.id)!!.payloadVersion })
             click("pitch-ball"); click("confirm-opening-pitch"); await(plan.id) { it.openingPitchRecorded && it.balls == 1 }
-            click("finish-game"); click("finish-scorerDecision"); await(plan.id) { it.isFinal }; click("return-final-game-home")
+            click("finish-game"); click("finish-scorerDecision"); click("confirm-finish-game"); await(plan.id) { it.isFinal }; click("return-final-game-home")
         } finally { settings.edit().apply { if(previous == null) remove("current_team_id") else putString("current_team_id", previous) }.commit() }
     }
 

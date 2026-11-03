@@ -18,8 +18,8 @@ import androidx.compose.ui.unit.dp
         Choices("App 外观",mapOf("system" to "跟随系统","light" to "浅色","dark" to "深色"),model.appAppearance) {model.setAppearance(it)}
         Text("辅助提示",fontWeight=FontWeight.Bold)
         CardBlock {
-            Row {Checkbox(model.showPracticeGuidance,model::setPracticeGuidance,modifier=Modifier.testTag("show-practice-guidance"));Column {Text("显示练习引导");Text("练习记分时显示下一步提示")}}
-            Row {Checkbox(model.showRuleExamples,model::setRuleExamples,modifier=Modifier.testTag("show-rule-examples"));Column {Text("显示规则示例");Text("常用规则条目中显示简短场景")}}
+            ProductToggleRow("显示练习引导", "练习记分时显示下一步提示", model.showPracticeGuidance, "show-practice-guidance", model::setPracticeGuidance)
+            ProductToggleRow("显示规则示例", "常用规则条目中显示简短场景", model.showRuleExamples, "show-rule-examples", model::setRuleExamples)
         }
     }
 }

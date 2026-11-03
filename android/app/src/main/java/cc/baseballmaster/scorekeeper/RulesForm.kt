@@ -94,8 +94,23 @@ internal fun RulesForm(initial: Rules, showRecordingMethod: Boolean = true, chan
     ) }
     val result = remember(json, initial.mode) { runCatching { draft.build(initial.mode) } }
     SideEffect { change(result.getOrNull()) }
+    RuleDraftForm(initial.mode, draft, advanced, showRecordingMethod,
+        onAdvancedChange = { advanced = it }, onDraftChange = { json = GameJson.encodeToString(it) })
+}
+
+/** The setup task owns this draft while its rule fields are temporarily off screen. */
+@Composable
+internal fun RuleDraftForm(
+    mode: GameMode,
+    draft: RuleDraft,
+    advanced: Boolean,
+    showRecordingMethod: Boolean = true,
+    onAdvancedChange: (Boolean) -> Unit,
+    onDraftChange: (RuleDraft) -> Unit,
+) {
+    val result = remember(draft, mode) { runCatching { draft.build(mode) } }
     fun update(f: (RuleDraft) -> RuleDraft) {
-        json = GameJson.encodeToString(f(GameJson.decodeFromString(json)))
+        onDraftChange(f(draft))
     }
     fun value(v: String) = v.filter { it.isDigit() }.take(4)
     if (showRecordingMethod) Choices("记分方式", mapOf("traditional" to "基础版", "situation" to "Pro 版"), draft.method) { v ->
@@ -113,7 +128,7 @@ internal fun RulesForm(initial: Rules, showRecordingMethod: Boolean = true, chan
         { v -> update { it.copy(innings = value(v)) } },
         label = { Text("规定局数") },
         singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().testTag("rule-innings"),
     )
     if (draft.timed) {
         OutlinedTextField(
@@ -121,12 +136,14 @@ internal fun RulesForm(initial: Rules, showRecordingMethod: Boolean = true, chan
             { v -> update { it.copy(timeMinutes = value(v)) } },
             label = { Text("比赛时限（分钟）") },
             singleLine = true,
+            modifier = Modifier.testTag("rule-time-minutes"),
         )
         OutlinedTextField(
             draft.inningLimit,
             { v -> update { it.copy(inningLimit = value(v)) } },
             label = { Text("局数上限（留空不限制）") },
             singleLine = true,
+            modifier = Modifier.testTag("rule-inning-limit"),
         )
     }
     if (draft.timed)
@@ -135,22 +152,23 @@ internal fun RulesForm(initial: Rules, showRecordingMethod: Boolean = true, chan
             { v -> update { it.copy(timeWarning = value(v)) } },
             label = { Text("剩余时间提醒（分钟，留空关闭）") },
             singleLine = true,
+            modifier = Modifier.testTag("rule-time-warning"),
         )
-    if (initial.mode == GameMode.slowPitch) {
+    if (mode == GameMode.slowPitch) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 draft.balls,
                 { v -> update { it.copy(balls = value(v)) } },
                 label = { Text("初始坏球") },
                 singleLine = true,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).testTag("rule-balls"),
             )
             OutlinedTextField(
                 draft.strikes,
                 { v -> update { it.copy(strikes = value(v)) } },
                 label = { Text("初始好球") },
                 singleLine = true,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).testTag("rule-strikes"),
             )
         }
         Choices(
@@ -161,14 +179,15 @@ internal fun RulesForm(initial: Rules, showRecordingMethod: Boolean = true, chan
             update { it.copy(extraFoul = v == "extra") }
         }
     }
-    if (initial.mode == GameMode.coachPitch)
+    if (mode == GameMode.coachPitch)
         OutlinedTextField(
             draft.coachLimit,
             { v -> update { it.copy(coachLimit = value(v)) } },
             label = { Text("每打席规定投球数") },
             singleLine = true,
+            modifier = Modifier.testTag("rule-coach-limit"),
         )
-    TextButton({advanced=!advanced},Modifier.testTag("rule-advanced-toggle")) {
+    TextButton({onAdvancedChange(!advanced)},Modifier.testTag("rule-advanced-toggle")) {
         Text(if(advanced) "收起更多规则" else "更多规则")
     }
     if(advanced) {
@@ -179,32 +198,35 @@ internal fun RulesForm(initial: Rules, showRecordingMethod: Boolean = true, chan
         modifier=Modifier.testTag("rule-run-limit"),
         singleLine = true,
     )
-    if (initial.mode != GameMode.coachPitch) {
+    if (mode != GameMode.coachPitch) {
         OutlinedTextField(
             draft.pitchLimit,
             { v -> update { it.copy(pitchLimit = value(v)) } },
             label = { Text("投手球数上限（留空不限制）") },
             singleLine = true,
+            modifier = Modifier.testTag("rule-pitch-limit"),
         )
         OutlinedTextField(
             draft.pitchWarning,
             { v -> update { it.copy(pitchWarning = value(v)) } },
             label = { Text("剩余球数提醒（留空关闭）") },
             singleLine = true,
+            modifier = Modifier.testTag("rule-pitch-warning"),
         )
         OutlinedTextField(
             draft.pitcherInnings,
             { v -> update { it.copy(pitcherInnings = value(v)) } },
             label = { Text("投手局数上限（留空不限制）") },
             singleLine = true,
+            modifier = Modifier.testTag("rule-pitcher-innings"),
         )
     }
-    if (initial.mode == GameMode.standard)
+    if (mode == GameMode.standard)
         Row {
             Checkbox(draft.dh, { v -> update { it.copy(dh = v) } })
             Text("启用 DH", Modifier.padding(top = 13.dp))
         }
-    if (initial.mode == GameMode.standard && draft.dh)
+    if (mode == GameMode.standard && draft.dh)
         Row {
             Checkbox(draft.twoWay, { v -> update { it.copy(twoWay = v) } })
             Text("允许二刀流投打身份", Modifier.padding(top = 13.dp))
@@ -215,6 +237,7 @@ internal fun RulesForm(initial: Rules, showRecordingMethod: Boolean = true, chan
             result.exceptionOrNull()?.message.orEmpty(),
             color = MaterialTheme.colorScheme.error,
             fontSize = 12.sp,
+            modifier = Modifier.testTag("rule-validation-error"),
         )
 }
 

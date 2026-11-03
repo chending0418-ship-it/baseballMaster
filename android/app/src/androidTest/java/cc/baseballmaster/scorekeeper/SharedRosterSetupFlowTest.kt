@@ -55,6 +55,7 @@ class SharedRosterSetupFlowTest {
                 }
             }
             fun find(selector: BySelector): UiObject2 = NativeUi.find(device, selector)
+            find(By.res("setup-own-team")).click()
             find(By.res("setup-refresh-shared")).click()
             find(By.res("setup-shared-${profile.id}")).click()
             assertTrue(device.wait(Until.hasObject(By.res("setup-shared-source")), 10000))
@@ -64,12 +65,16 @@ class SharedRosterSetupFlowTest {
             find(By.res("rule-run-limit")).text = "5"
             device.pressBack()
             find(By.res("rule-advanced-toggle")).click()
-            find(By.text("填入示例名单")).click()
+            find(By.res("opponent-roster")).text = (1..9).joinToString("\n") { "界面对手球员$it,$it" }
+            device.pressBack()
             find(By.res("start-game")).click()
             assertTrue(device.wait(Until.hasObject(By.res("start-confirmed-game")), 10000))
-            assertTrue(device.takeScreenshot(File(context.getExternalFilesDir(null), "shared-roster-lineup.png")))
+            assertTrue(device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-shared-roster-lineup.png")))
             assertNull(chosen.get())
             find(By.res("start-confirmed-game")).click()
+            assertTrue(device.wait(Until.hasObject(By.res("confirm-create-lineups")), 10_000))
+            assertNull("The review confirmation must not create the match until explicitly accepted", chosen.get())
+            find(By.res("confirm-create-lineups")).click()
             device.waitForIdle()
             val game = requireNotNull(chosen.get())
             assertEquals(profile.id, game.ourTeamID)

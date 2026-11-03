@@ -48,25 +48,7 @@ class CompletionFlowTest {
         device.waitForIdle()
     }
 
-    private fun find(s: BySelector): UiObject2 {
-        repeat(120) { i ->
-            try {
-                if (android.os.Build.VERSION.SDK_INT >= 34) inst.uiAutomation.clearCache()
-                else inst.uiAutomation.serviceInfo = inst.uiAutomation.serviceInfo
-                device
-                    .findObject(s)
-                    ?.takeIf { it.visibleBounds.height() > 10 }
-                    ?.let {
-                        return it
-                    }
-                device
-                    .findObject(By.scrollable(true))
-                    ?.scroll(if (i < 3 || i >= 63) Direction.UP else Direction.DOWN, .75f)
-            } catch (_: StaleObjectException) {}
-            device.waitForIdle(500)
-        }
-        return device.wait(Until.findObject(s), 5000) ?: error("Missing $s")
-    }
+    private fun find(s: BySelector): UiObject2 = NativeUi.find(device, s)
 
     private fun click(tag: String) {
         repeat(3) {
@@ -99,6 +81,13 @@ class CompletionFlowTest {
         device.waitForIdle()
     }
 
+    private fun setSituationValue(tag: String, expected: Int) {
+        val current = find(By.res(tag)).text.toInt()
+        val action = if (expected > current) "$tag-plus" else "$tag-minus"
+        repeat(kotlin.math.abs(expected - current)) { click(action) }
+        assertEquals("The stepper must show the requested situation value", expected.toString(), find(By.res(tag)).text)
+    }
+
     private fun player(label: String, id: String) {
         click("player-choice-$label")
         click("player-option-$id")
@@ -113,7 +102,7 @@ class CompletionFlowTest {
             }
         }
         assertTrue(latch.await(3, java.util.concurrent.TimeUnit.SECONDS))
-        assertTrue(device.takeScreenshot(File(output, "completion-$name.png")))
+        assertTrue(device.takeScreenshot(File(output, "081-regression-completion-$name.png")))
     }
 
     private fun <T> db(block: suspend (LocalDatabase, GameRepository) -> T): T = runBlocking {
@@ -176,6 +165,7 @@ class CompletionFlowTest {
         launch()
         click("tab-1")
         click("roster-${own.id}")
+        click("roster-player-menu-${own.players[0].id}")
         click("edit-player-${own.players[0].id}")
         input("player-chinese", "陈明")
         input("player-english", "Alex Chen")
@@ -205,11 +195,16 @@ class CompletionFlowTest {
             click("setup-opponent")
             input("roster-picker-search", opponent.name)
             click("choose-roster-${opponent.id}")
+            click("setup-game-mode")
             click("choice-模式-${mode.name}")
             click("start-game")
-            assertNotNull(text("确认双方阵容"))
+            assertNotNull(text("双方阵容"))
+            assertNotNull(find(By.res("lineup-row-away-0")))
+            assertNotNull(find(By.res("lineup-row-home-0")))
             shot("02-setup-${mode.name}")
             click("start-confirmed-game")
+            assertTrue(device.wait(Until.hasObject(By.res("confirm-create-lineups")), 10_000))
+            click("confirm-create-lineups")
             var added: Game? = null
             repeat(100) {
                 val next = db { d, _ ->
@@ -250,16 +245,18 @@ class CompletionFlowTest {
         val reviewed = await(g.id) { it.awayHits == 2 }
         assertEquals(1, reviewed.pitching[reviewed.pitcher.id]!!.earnedRuns)
         click("manual-situation")
-        input("situation-0", "2")
-        input("situation-1", "2")
-        input("situation-2", "1")
-        input("situation-3", "1")
-        input("situation-4", "3")
-        input("situation-5", "1")
+        setSituationValue("situation-0", 2)
+        setSituationValue("situation-1", 2)
+        setSituationValue("situation-2", 1)
+        setSituationValue("situation-3", 1)
+        setSituationValue("situation-4", 3)
+        setSituationValue("situation-5", 1)
         shot("05-situation")
         click("save-situation")
         val fixed = await(g.id) { it.inning == 2 }
         assertTrue(fixed.statisticsIncomplete)
+        assertEquals(2, fixed.balls); assertEquals(1, fixed.strikes); assertEquals(1, fixed.outs)
+        assertEquals(3, fixed.awayRuns); assertEquals(1, fixed.homeRuns)
         assertEquals(2, fixed.totalPitches)
         assertEquals(2, fixed.batting.values.sumOf { it.plateAppearances })
         click("enable-tb")
@@ -335,7 +332,7 @@ class CompletionFlowTest {
     }
 
     @Test
-    fun portraitOnlyDraftSurvivesRotationAndCancelWritesNothing() {
+    fun responsiveDraftSurvivesRotationAndCancelWritesNothing() {
         val g = seed(Rules(recordingMethod = "situation"))
         val before = db { d, _ -> d.dao().game(g.id)!!.payload }
         launch()
@@ -344,7 +341,7 @@ class CompletionFlowTest {
         click("confirm-opening-play")
         click("pro-outcome-single")
         click("choice-球型-line")
-        click("choice-落点精度-point")
+        assertFalse("The field is the primary input, not a precision configuration step", device.hasObject(By.text("落点精度")))
         var field = find(By.res("contact-field"))
         repeat(8) {
             if (field.visibleBounds.height() < 250 * context.resources.displayMetrics.density) {
@@ -355,7 +352,9 @@ class CompletionFlowTest {
         }
         val r = field.visibleBounds
         field.click(android.graphics.Point(r.left + r.width() / 3, r.top + r.height() / 3))
-        assertEquals("落点已记录", find(By.res("landing-selection-state")).text)
+        val landing = find(By.res("landing-selection-state")).text
+        assertTrue("The actual point must be retained before changing the window", landing.startsWith("已点选落点"))
+        click("contact-other-actions")
         click("choice-守备处理-pending")
         shot("11-pro-draft")
         val info =
@@ -364,21 +363,31 @@ class CompletionFlowTest {
                 0,
             )
         assertEquals(
-            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
             info.screenOrientation,
         )
         try {
             device.setOrientationLeft()
+            val rotateDeadline = android.os.SystemClock.uptimeMillis() + 10_000
+            while (device.displayWidth <= device.displayHeight && android.os.SystemClock.uptimeMillis() < rotateDeadline) {
+                android.os.SystemClock.sleep(100)
+            }
             device.waitForIdle()
-            val bounds = find(By.res("portrait-form")).visibleBounds
-            assertTrue("Horizontal app layout appeared", bounds.width() <= bounds.height())
-            shot("12-portrait-lock")
+            if (device.displayWidth <= device.displayHeight) shot("12-rotation-dimensions-failure")
+            assertTrue("The application must accept a landscape window; actual ${device.displayWidth}x${device.displayHeight}", device.displayWidth > device.displayHeight)
+            assertFalse("The task must remain usable rather than showing a portrait restriction",
+                device.hasObject(By.res("portrait-required")))
+            assertEquals(landing, find(By.res("landing-selection-state")).text)
+            val selectedType = find(By.res("choice-球型-line"))
+            assertTrue("The ball type must remain selected after rotation", selectedType.isChecked || selectedType.isSelected)
+            assertEquals(before, db { d, _ -> d.dao().game(g.id)!!.payload })
+            shot("12-responsive-draft")
         } finally {
             device.setOrientationNatural()
             device.unfreezeRotation()
             device.waitForIdle()
         }
-        assertEquals("落点已记录", find(By.res("landing-selection-state")).text)
+        assertEquals(landing, find(By.res("landing-selection-state")).text)
         click("cancel-play")
         assertEquals(before, db { d, _ -> d.dao().game(g.id)!!.payload })
         assertEquals(0, stored(g.id).totalPitches)
@@ -427,6 +436,7 @@ class CompletionFlowTest {
         click("scoring-more")
         click("finish-game")
         click("finish-weather")
+        click("confirm-finish-game")
         await(g.id) { it.isFinal }
         shot("16-final-navigation")
         click("back-home")

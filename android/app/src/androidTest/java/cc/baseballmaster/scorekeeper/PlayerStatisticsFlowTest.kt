@@ -69,7 +69,7 @@ class PlayerStatisticsFlowTest {
         }
         fun year(tag: String, selected: Int) {
             click(tag)
-            node(device, By.text("$selected 年"), scroll = false) { it.click() }
+            node(device, By.res("$tag-option-$selected"), scroll = false) { it.click() }
         }
         fun scope(expected: String) = expectText("stats-player-game-scope", expected)
         fun totals(count: Int) = expectText("stats-player-batting-totals", "打席 $count · 打数 $count · 安打 $count · 打点 $count")
@@ -98,6 +98,10 @@ class PlayerStatisticsFlowTest {
             click("stats-open-game-filter")
             val teamChoice = "stats-team-game-${fixture.coach.id}"
             StatisticsUi.setChecked(device,teamChoice,false)
+            device.setOrientationLeft(); device.waitForIdle(1000)
+            node(device, By.res(teamChoice)) { assertFalse("Uncommitted team filter must survive Activity recreation", it.isChecked) }
+            device.setOrientationNatural(); device.waitForIdle(1000)
+            node(device, By.res(teamChoice)) { assertFalse("The restored filter must keep the same selection", it.isChecked) }
             expectText("stats-team-game-date-${fixture.standard.id}", "2026-01-02 00:30 · Asia/Shanghai")
             click("stats-save-filter", scroll = false)
             expectText("stats-team-record", "1 场比赛 · 1胜0负0平")
@@ -138,11 +142,13 @@ class PlayerStatisticsFlowTest {
             click("stats-player-${fixture.team.players.first().id}")
             scope("2026 年 · 已选 1 / 1 场")
             totals(1)
-            device.takeScreenshot(File(context.getExternalFilesDir(null), "an04-personal-statistics.png"))
-            device.pressBack()
+            device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-personal-statistics.png"))
+            click("player-view-game-${fixture.standard.id}")
+            click("back-home", scroll = false)
             assertTrue(device.wait(Until.gone(By.res("stats-player-close")), 10_000))
             expectText("stats-team-record", "1 场比赛 · 1胜0负0平")
         } finally {
+            device.setOrientationNatural(); device.unfreezeRotation()
             preferences.edit().apply { if (previousTeam == null) remove("current_team_id") else putString("current_team_id", previousTeam) }.commit()
         }
     }

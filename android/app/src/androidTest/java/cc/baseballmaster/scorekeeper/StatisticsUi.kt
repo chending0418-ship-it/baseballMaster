@@ -10,14 +10,7 @@ import org.junit.Assert.assertTrue
 internal object StatisticsUi {
     private fun settle(device: UiDevice) {
         device.waitForIdle(500)
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        if (Build.VERSION.SDK_INT >= 34) automation.clearCache()
-        else {
-            // Reapplying the unchanged service configuration invalidates the
-            // framework accessibility cache on API 31, where clearCache is not
-            // public. Refreshing a root alone leaves cached child nodes behind.
-            automation.serviceInfo = automation.serviceInfo
-        }
+        UiTreeCache.refresh()
     }
 
     private fun viewport(device: UiDevice): UiObject2? {

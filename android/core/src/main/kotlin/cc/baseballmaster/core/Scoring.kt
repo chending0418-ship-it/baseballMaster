@@ -317,6 +317,14 @@ data class Command(
     val reviewNote: String? = null,
     /** Historical names captured with a cross-platform fielding observation. */
     val participantSnapshots: List<Participant>? = null,
+    /** Same-identity roster corrections saved with the lineup, never new participants. */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val playerUpdates: List<Player>? = null,
+    /** Explicit outgoing → incoming identities; preserves base and batting responsibility. */
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val lineupReplacements: Map<String, String>? = null,
 )
 
 @Serializable

@@ -422,6 +422,9 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                 !g.clockHasStarted &&
                 (g.ourTeamID != null || observation)
         )
+        require(g.journal.all { it.command.kind == "lineup" } && g.entries.all { it.kind == "lineup" }) {
+            "赛前创建只接受阵容设置，已有比赛记录不能作为新比赛清空"
+        }
         val own = if (observation) {
             require(!sharedSnapshot && g.ourTeamID == null && g.sharedRosterOrigin == null && g.postgameSharingChoice == null) { "观赛记录不能绑定本队或共享上传目标" }
             listOf(g.home, g.away).forEach { snapshot ->
@@ -451,6 +454,13 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             if (db.dao().team(opponent.id) == null)
                 db.dao().insertTeam(TeamEntity(opponent.id, opponent.name, GameJson.encodeToString(opponent), true))
         }
+        // New-game drafts carry only explicit, same-ID profile corrections. Apply
+        // them in the same transaction, then discard the pregame command journal.
+        syncPreparedLineupProfiles(g, g)
+        // These validated entries describe setup, not played events. Leaving
+        // them without their draft journal would trigger the legacy fallback
+        // and falsely mark the first real pitch as incomplete.
+        g.entries = emptyList()
         g.revision = 0
         g.journal = emptyList()
         g.cursor = 0
@@ -494,6 +504,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             Participation.validate(next.rules, next.homeOrder!!, next.homePositions!!, next.homeDesignatedHitterID)
             Participation.validate(next.rules, next.awayOrder!!, next.awayPositions!!, next.awayDesignatedHitterID)
             next.validate()
+            syncPreparedLineupProfiles(next, prepared)
             next
         }
     }
@@ -671,6 +682,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         require((imported == null && marker == null) || imported != null && marker == imported.backupID) { "比赛来源映射缺失或不一致，已停止写入" }
         val next = if (imported == null) reduce(MatchEngine.upgradeLegacy(decode(current))) else {
             require(appleCommand != null) { "这场 iOS 导入比赛的此项历史操作尚不能无损转换，原记录未修改" }
+            require(appleCommand.playerUpdates.isNullOrEmpty() && appleCommand.lineupReplacements.isNullOrEmpty()) { "这场 iOS 导入比赛的球员资料更正／阵容替补尚未支持无损转换，原记录与名单未修改" }
             val source = db.dao().appleBackup(imported.backupID) ?: error("比赛来源缺失，原资料未修改")
             val backup = verifyAppleSource(source)
             val priorGame = backup.games(source.id).single { it.id == gameID }
@@ -700,9 +712,46 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                     if(next.scheduledSetupPending) 5 else 4,
                 )
             )
+        if (appleCommand != null) syncLineupProfiles(next, appleCommand)
         if (clearDraft) db.dao().deleteCorrectionDraft(gameID)
         beforeCommit()
         next
+    }
+
+    private suspend fun syncPreparedLineupProfiles(game: Game, draft: Game) {
+        draft.journal.take(draft.cursor).map { it.command }.filter { it.kind == "lineup" }
+            .groupBy { it.homeSide }.forEach { (home, commands) ->
+                val latest = commands.flatMap { it.playerUpdates.orEmpty() }.associateBy { it.id }.values.toList()
+                if (latest.isNotEmpty()) syncLineupProfiles(game, Command("lineup", homeSide = home, playerUpdates = latest))
+            }
+    }
+
+    /** Called only from a Room transaction. Profile patches never write shared
+     * rosters, create people, replace roster membership, or touch older matches. */
+    private suspend fun syncLineupProfiles(game: Game, command: Command) {
+        val updates = command.playerUpdates.orEmpty()
+        if (updates.isEmpty()) return
+        require(command.kind == "lineup") { "球员资料更正必须随阵容保存" }
+        val home = requireNotNull(command.homeSide)
+        val snapshot = if (home) game.home else game.away
+        require(updates.map { it.id }.distinct().size == updates.size && updates.all { p -> snapshot.players.any { it.id == p.id } }) { "更正球员身份不属于本队" }
+        updates.forEach { patch ->
+            Roster.validate(patch)
+            val saved = snapshot.players.first { it.id == patch.id }
+            require(saved.name == patch.name && saved.chineseName == patch.chineseName && saved.englishName == patch.englishName && saved.number == patch.number && saved.jerseyNumbers == patch.jerseyNumbers) { "球员资料与本场阵容不一致，未写入名单" }
+        }
+        if (snapshot.source != "local") return // Match snapshot only; no remote authority is implied.
+        val row = db.dao().team(snapshot.id) ?: return
+        val local = GameJson.decodeFromString<Team>(row.payload)
+        if (local.source != "local") return
+        require(db.dao().allAppleBackups().none { source -> AppleSourceBackup.prepare(source.current).teams().any { it.id == local.id } }) { "iOS 导入球队的名单更正尚未支持，比赛与名单未修改" }
+        require(updates.all { p -> local.players.any { it.id == p.id } }) { "球队名单已变化，请重新核对球员身份" }
+        val patched = local.copy(players = local.players.map { prior ->
+            val patch = updates.firstOrNull { it.id == prior.id }
+            if (patch == null) prior else prior.copy(name = patch.name, chineseName = patch.chineseName,
+                englishName = patch.englishName, number = patch.number, jerseyNumbers = patch.jerseyNumbers)
+        })
+        db.dao().updateTeam(row.copy(payload = GameJson.encodeToString(patched)))
     }
 
     @kotlinx.serialization.Serializable

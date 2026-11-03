@@ -65,7 +65,14 @@ class CurrentTeamFlowTest {
         fun find(selector: BySelector): UiObject2 = NativeUi.find(device, selector)
         fun choose(team: Team) {
             repeat(3) {
-                try { find(By.res("select-current-team-${team.id}")).click() }
+                try {
+                    if (settings.getString("current_team_id", null) == team.id) return
+                    if (!device.hasObject(By.res("select-current-team-${team.id}"))) {
+                        find(By.res("roster-menu-${team.id}")).click()
+                        device.waitForIdle(500)
+                    }
+                    find(By.res("select-current-team-${team.id}")).click()
+                }
                 catch (_: StaleObjectException) { return@repeat }
                 val deadline = android.os.SystemClock.uptimeMillis() + 3000
                 while (android.os.SystemClock.uptimeMillis() < deadline) {
@@ -88,7 +95,7 @@ class CurrentTeamFlowTest {
             launch()
             step("open-rosters-first")
             find(By.res("tab-1")).click()
-            assertTrue("球队页未打开", device.wait(Until.hasObject(By.res("add-roster")), 10000))
+            assertTrue("球队页未打开", find(By.res("tab-1")).isSelected)
             device.waitForIdle()
             step("select-first")
             choose(pair.first)
@@ -100,7 +107,7 @@ class CurrentTeamFlowTest {
             assertTrue(device.wait(Until.hasObject(By.text(pair.first.name)), 10000))
             assertEquals("暂无战绩", find(By.res("home-team-record")).text)
             find(By.res("tab-1")).click()
-            assertTrue("球队页未打开", device.wait(Until.hasObject(By.res("add-roster")), 10000))
+            assertTrue("球队页未打开", find(By.res("tab-1")).isSelected)
             device.waitForIdle()
             step("select-second")
             choose(pair.second)
@@ -113,7 +120,7 @@ class CurrentTeamFlowTest {
             assertEquals("1胜 0负", find(By.res("home-team-record")).text)
             assertTrue(
                 device.takeScreenshot(
-                    File(context.getExternalFilesDir(null), "current-team-record.png")
+                    File(context.getExternalFilesDir(null), "081-regression-current-team-record.png")
                 )
             )
             assertEquals(pair.second.id, settings.getString("current_team_id", null))

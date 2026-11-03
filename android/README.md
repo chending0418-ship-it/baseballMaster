@@ -1,15 +1,15 @@
 # BaseballMaster Android
 
-当前本地测试包为 0.8.0（versionCode 8），按 iOS 3.1.1 对照开发，见 [本地验收交接](../docs/releases/android/0.8.0-TEST-HANDOFF.md)；官网下载仍为 [0.1.0（Build 7）](../docs/releases/android/0.1.0-TEST-HANDOFF.md)。最低 Android 12／API 31，编译及目标 API 37。功能和发布状态从 [CURRENT](../docs/CURRENT.md) 与 [单份迁移计划](../docs/plans/ANDROID-APK.md) 进入。
+当前开发与本地测试版为 **0.8.1（versionCode 9）**，按实际 iOS 3.1.0／3.1.2 模拟器 App 对齐手机页面与操作，展开内屏采用 iPad 工作台，见 [本版开发与验收](../docs/releases/android/0.8.1-DEVELOPMENT.md)。分支 `codex/android-0.8.1`；本轮未更新官网下载或合并 main，网站仍保留 0.8.0 测试包。最低 Android 12／API 31，编译及目标 API 37。现行产品状态从 [CURRENT](../docs/CURRENT.md) 与 [单份迁移计划](../docs/plans/ANDROID-APK.md) 进入。
 
-源码结构：`core/` 为不依赖 Android 的规则／数据模块；`app/` 为 Compose、ViewModel、Room、Keystore 及平台接入。AN03 离线比赛核心已实现并通过阶段回归：名单、三模式记分、重放／纠错、特殊阵容、练习、表现图、当前球队与年度战绩；Pro 球场采用 iOS V4 设计，手机仅竖屏。48 条全量用例矩阵仍待 AN07 逐项登记；完整互导仍在 AN04，AN05 已启动协作基础层，内部 JSON 快照不直接上传为 iOS 的共享比赛 payload。
+源码结构：`core/` 为规则／数据模块；`app/` 为 Compose、ViewModel、Room 及平台接入。0.8.1 已取消强制竖屏和 480dp 限宽，使用可用窗口与 WindowManager 折叠特征排列工作台；宽窄切换保持同一任务、草稿与修订保护。相同球员身份的资料更正、替补和特殊投手／DH 关系有独立数据与设备回归。完整跨端互导与正式赛后云端归档仍是后续范围，不能用界面对齐代替其完成。下方 AN03–AN06 记录保留其阶段边界，当前状态优先以上述本版交接为准。
 
 本地已安装 Apple Silicon Android Studio Rabbit 1（2026.2.1.8）、JBR 25.0.3、SDK Command-line Tools 22.0、Build Tools 37.0.0、Platform Tools 37.0.1 及 Emulator 37.2.12。Gradle 9.6.0（wrapper SHA-256 固定）、AGP 9.4.0、Kotlin／Compose compiler 2.2.10、Compose BOM 2026.09.00、Room 2.8.5、KSP 2.3.12。构建 JDK 为 25，产物 JVM 目标为 17。
 
 在仓库根目录构建：
 
 ```sh
-scripts/android/gradle.sh :core:test :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest :app:lintDebug -PpreviewVersionCode=8
+scripts/android/gradle.sh :core:test :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest :app:lintDebug
 ```
 
 脚本默认使用 `/Applications/Android Studio.app` 内 JDK 和 `~/Library/Android/sdk`；可通过标准 `JAVA_HOME`／`ANDROID_HOME` 覆盖。构建输出和 Gradle 用户缓存均在 `output/cache/android/`。Room 的 `schemas/` 是迁移契约，应提交；`.gradle`、`.kotlin`、IDE、本机路径与签名文件不提交。

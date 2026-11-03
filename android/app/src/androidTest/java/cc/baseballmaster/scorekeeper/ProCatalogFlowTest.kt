@@ -20,8 +20,8 @@ class ProCatalogFlowTest {
     private val device get()=UiDevice.getInstance(inst)
     @org.junit.Rule @JvmField val evidence=object:org.junit.rules.TestWatcher() {
         override fun failed(e:Throwable,d:org.junit.runner.Description) {
-            device.takeScreenshot(File(context.getExternalFilesDir(null),"pro311-${d.methodName}-failure.png"))
-            device.dumpWindowHierarchy(File(context.getExternalFilesDir(null),"pro311-${d.methodName}-failure.xml"))
+            device.takeScreenshot(File(context.getExternalFilesDir(null),"081-regression-pro-${d.methodName}-failure.png"))
+            device.dumpWindowHierarchy(File(context.getExternalFilesDir(null),"081-regression-pro-${d.methodName}-failure.xml"))
         }
     }
     private fun <T> db(block:suspend (GameRepository,LocalDatabase)->T):T=runBlocking {
@@ -38,11 +38,24 @@ class ProCatalogFlowTest {
     private fun payload(id:String)=db {_,database->database.dao().game(id)!!.payload}
     private fun stored(id:String)=GameJson.decodeFromString<Game>(payload(id))
     private fun click(tag:String) {NativeUi.find(device,By.res(tag)).click();device.waitForIdle(500)}
-    private fun choose(tag:String)=StatisticsUi.setChecked(device,tag,true)
-    private fun reviewAndSave() {
-        StatisticsUi.use(device,By.res("play-next"),scroll=false) {assertTrue("Contact must be valid before review",it.isEnabled);it.click()}
-        assertTrue(device.wait(Until.hasObject(By.res("save-play")),10_000))
-        click("save-play")
+    private fun choose(tag:String) {
+        val choice = NativeUi.find(device, By.res(tag))
+        if (!choice.isChecked && !choice.isSelected) choice.click()
+        device.waitForIdle(500)
+        val selected = NativeUi.find(device, By.res(tag))
+        assertTrue("The product choice must be selected", selected.isChecked || selected.isSelected)
+    }
+    private fun finishContact(requiresReview:Boolean) {
+        val action = if (requiresReview) "play-next" else "save-play"
+        StatisticsUi.use(device, By.res(action), scroll = false) {
+            assertTrue("Contact must be valid before submitting or reviewing", it.isEnabled)
+            it.click()
+        }
+        if (requiresReview) {
+            val review = NativeUi.find(device, By.res("save-play"))
+            assertTrue("The visible review must be valid before its single save", review.isEnabled)
+            click("save-play")
+        }
     }
     private fun text(value:String)=NativeUi.find(device,By.text(value))
     private fun open(game:Game) {
@@ -57,7 +70,7 @@ class ProCatalogFlowTest {
         assertTrue(device.findObject(By.res("process-selected-type")).text.startsWith(ScoringOptions.ballTypes.getValue(type)))
         click("process-all-outcomes")
         assertTrue(device.wait(Until.hasObject(By.res("outcome-catalog-search")),10_000))
-        device.takeScreenshot(File(context.getExternalFilesDir(null),"pro311-full-catalog.png"))
+        device.takeScreenshot(File(context.getExternalFilesDir(null),"081-regression-pro-full-catalog.png"))
     }
     private fun await(id:String,predicate:(Game)->Boolean):Game {
         val end=android.os.SystemClock.uptimeMillis()+10_000
@@ -69,19 +82,20 @@ class ProCatalogFlowTest {
     }
     @Test fun processCatalogBackKeepsBallTypeAndCancelPreservesTheMatch() {
         val game=seed();val before=payload(game.id);open(game);process("ground")
-        text("取消").click()
+        NativeUi.find(device, By.desc("返回")).click()
         assertTrue(device.wait(Until.hasObject(By.res("process-selected-type")),10_000))
         assertTrue(device.findObject(By.res("process-selected-type")).text.startsWith("地滚"))
         click("process-all-outcomes");click("pro-outcome-homeRun")
-        StatisticsUi.use(device,By.res("choice-球型-ground")) {assertTrue(it.isChecked)}
+        NativeUi.find(device,By.res("choice-球型-ground")).let {assertTrue(it.isChecked || it.isSelected)}
         click("cancel-play")
         assertTrue(device.wait(Until.gone(By.res("cancel-play")),10_000))
         assertEquals(before,payload(game.id))
     }
     @Test fun processOtherResultsCanRecordHomeRunExactlyOnceAndUndoRedo() {
         val game=seed();open(game);process("line");click("pro-outcome-homeRun")
-        choose("choice-落点精度-region");choose("choice-区域-left");choose("choice-守备处理-noFielding")
-        reviewAndSave()
+        assertNotNull(device.wait(Until.findObject(By.res("contact-field")), 10_000))
+        click("contact-other-actions");choose("choice-区域-left");click("situation-no-fielding")
+        finishContact(requiresReview = false)
         val result=await(game.id) {it.awayRuns==1}
         assertEquals(1,result.totalPitches);assertEquals(1,result.cursor)
         assertEquals("line",result.entries.single().observation?.type)
@@ -89,17 +103,17 @@ class ProCatalogFlowTest {
         assertEquals(1,result.batting.getValue(game.batter.id).homeRuns)
         click("undo");await(game.id) {it.awayRuns==0 && it.cursor==0}
         click("redo");await(game.id) {it.awayRuns==1 && it.cursor==1}
-        device.takeScreenshot(File(context.getExternalFilesDir(null),"pro311-catalog-home-run.png"))
+        device.takeScreenshot(File(context.getExternalFilesDir(null),"081-regression-pro-catalog-home-run.png"))
     }
     @Test fun sacrificeFlySelectsMatchingTypeAndPreservesAtBatRunAndOutAccounting() {
         val game=seed(runner=true);open(game);process("ground")
         NativeUi.find(device,By.res("outcome-catalog-search")).text="牺牲"
         click("pro-outcome-sacrificeFly")
-        StatisticsUi.use(device,By.res("choice-球型-fly")) {assertTrue(it.isChecked)}
-        choose("choice-球型-ground");choose("choice-落点精度-region");choose("choice-区域-center");choose("choice-守备处理-pending")
+        NativeUi.find(device,By.res("choice-球型-fly")).let {assertTrue(it.isChecked || it.isSelected)}
+        choose("choice-球型-ground");click("contact-other-actions");choose("choice-区域-center");click("choice-守备处理-pending")
         text("牺牲高飞请核对高飞、平飞或内野小飞球型。")
         assertFalse(device.findObject(By.res("play-next")).isEnabled)
-        choose("choice-球型-fly");reviewAndSave()
+        choose("choice-球型-fly");finishContact(requiresReview = true)
         val result=await(game.id) {it.awayRuns==1 && it.outs==1}
         val batter=result.batting.getValue(game.batter.id)
         assertEquals(0,batter.atBats);assertEquals(1,batter.sacrifices);assertEquals(1,batter.runsBattedIn)

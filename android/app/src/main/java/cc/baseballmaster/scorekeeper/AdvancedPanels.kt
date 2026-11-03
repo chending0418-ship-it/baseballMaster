@@ -114,121 +114,68 @@ internal fun AdvancedPanel(game: Game, model: ScorekeeperViewModel, close: () ->
 }
 
 @Composable
-internal fun ManualSituationEditor(
-    game: Game,
-    busy: Boolean,
-    close: () -> Unit,
-    save: (Command) -> Unit,
-) {
-    var inning by rememberSaveable { mutableStateOf(game.inning.toString()) }
-    var top by rememberSaveable { mutableStateOf(game.isTop) }
-    var balls by rememberSaveable { mutableStateOf(game.balls.toString()) }
-    var strikes by rememberSaveable { mutableStateOf(game.strikes.toString()) }
-    var outs by rememberSaveable { mutableStateOf(game.outs.toString()) }
-    var away by rememberSaveable { mutableStateOf(game.awayRuns.toString()) }
-    var home by rememberSaveable { mutableStateOf(game.homeRuns.toString()) }
-    var batter by rememberSaveable { mutableIntStateOf(game.batterIndex) }
-    var runnersJSON by rememberSaveable { mutableStateOf(GameJson.encodeToString(game.bases)) }
+internal fun ManualSituationEditor(game: Game, busy: Boolean, close: () -> Unit, save: (Command) -> Unit) {
+    var inning by rememberSaveable(game.id, game.revision) { mutableIntStateOf(game.inning) }
+    var top by rememberSaveable(game.id, game.revision) { mutableStateOf(game.isTop) }
+    var balls by rememberSaveable(game.id, game.revision) { mutableIntStateOf(game.balls) }
+    var strikes by rememberSaveable(game.id, game.revision) { mutableIntStateOf(game.strikes) }
+    var outs by rememberSaveable(game.id, game.revision) { mutableIntStateOf(game.outs) }
+    var away by rememberSaveable(game.id, game.revision) { mutableIntStateOf(game.awayRuns) }
+    var home by rememberSaveable(game.id, game.revision) { mutableIntStateOf(game.homeRuns) }
+    var batter by rememberSaveable(game.id, game.revision) { mutableIntStateOf(game.batterIndex) }
+    var runnersJSON by rememberSaveable(game.id, game.revision) { mutableStateOf(GameJson.encodeToString(game.bases)) }
     val runners = GameJson.decodeFromString<List<String?>>(runnersJSON)
     val batting = if (top) game.away else game.home
     val order = (if (top) game.awayOrder else game.homeOrder) ?: batting.players.map { it.id }
     val defense = if (top) game.home else game.away
-    val positions =
-        (if (top) game.homePositions else game.awayPositions)
-            ?: defense.players
-                .take(game.rules.fielders)
-                .mapIndexed { i, p -> i + 1 to p.id }
-                .toMap()
-    var pitcher by rememberSaveable { mutableStateOf(game.pitcher.id) }
-    val state = runCatching {
-        Situation(
-            inning.toInt(),
-            top,
-            balls.toInt(),
-            strikes.toInt(),
-            outs.toInt(),
-            away.toInt(),
-            home.toInt(),
-            runners,
-            batter,
-            pitcher,
-        )
-    }.getOrNull()
-    FormPage(
-        "人工局面修正",
-        busy,
-        state != null,
-        "save-situation",
-        "保存",
-        close,
-        { save(Command("situation", situation = state)) },
-    ) {
-        Text("仅补正当前局面，缺失打席、安打和投球不会自动补算。", fontSize = 12.sp)
-        Choices("攻守", mapOf("top" to "上半局", "bottom" to "下半局"), if (top) "top" else "bottom") {
-            top = it == "top"
-            batter = 0
-            runnersJSON = GameJson.encodeToString(listOf<String?>(null, null, null))
-            pitcher =
-                ((if (top) game.homePositions else game.awayPositions)?.get(1)
+    val positions = (if (top) game.homePositions else game.awayPositions)
+        ?: defense.players.take(game.rules.fielders).mapIndexed { i, p -> i + 1 to p.id }.toMap()
+    var pitcher by rememberSaveable(game.id, game.revision) { mutableStateOf(game.pitcher.id) }
+    val state = Situation(inning, top, balls, strikes, outs, away, home, runners, batter, pitcher)
+    val issue = runCatching { MatchEngine.apply(game, Command("situation", situation = state)) }.exceptionOrNull()?.message
+    ProductPage("修正现场", busy, close, backLabel = "取消", actionLabel = "应用", actionTag = "save-situation",
+        actionEnabled = issue == null, onAction = { save(Command("situation", situation = state)) }, modal = true, actionAtTop = true) {
+        Text("局面", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        CardBlock {
+            ProductNumberStepper("第几局", inning, 1, 99, "situation-0") { inning = it }
+            Choices("攻守", mapOf("top" to "上半局", "bottom" to "下半局"), if (top) "top" else "bottom") {
+                top = it == "top"; batter = 0
+                runnersJSON = GameJson.encodeToString(listOf<String?>(null, null, null))
+                pitcher = ((if (top) game.homePositions else game.awayPositions)?.get(1)
                     ?: if (top) game.home.players.first().id else game.away.players.first().id)
-        }
-        listOf(
-                "局数" to inning,
-                "坏球" to balls,
-                "好球" to strikes,
-                "出局" to outs,
-                "客队得分" to away,
-                "主队得分" to home,
-            )
-            .forEachIndexed { i, (label, value) ->
-                OutlinedTextField(
-                    value,
-                    { v ->
-                        when (i) {
-                            0 -> inning = v
-                            1 -> balls = v
-                            2 -> strikes = v
-                            3 -> outs = v
-                            4 -> away = v
-                            5 -> home = v
-                        }
-                    },
-                    label = { Text(label) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("situation-$i"),
-                )
             }
-        Choices(
-            "下一打者",
-            order
-                .mapIndexed { i, id ->
-                    i.toString() to "${i+1} 棒 ${batting.players.first{it.id==id}.name}"
+        }
+        Text("比分", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        CardBlock {
+            ProductNumberStepper(game.away.shortName, away, 0, 9999, "situation-4") { away = it }
+            ProductNumberStepper(game.home.shortName, home, 0, 9999, "situation-5") { home = it }
+        }
+        Text("球数与出局", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        CardBlock {
+            ProductNumberStepper("坏球", balls, 0, 3, "situation-1") { balls = it }
+            ProductNumberStepper("好球", strikes, 0, 2, "situation-2") { strikes = it }
+            ProductNumberStepper("出局", outs, 0, 2, "situation-3") { outs = it }
+        }
+        Text("当前球员", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        CardBlock {
+            ProductMenuPicker("当前打者", batter.toString(), order.mapIndexed { index, id ->
+                index.toString() to batting.players.first { it.id == id }.let { "#${it.number} ${it.name}" }
+            }.toMap(), "situation-batter") { batter = it.toInt() }
+            ProductMenuPicker("当前投手", pitcher, defense.players.filter { it.id in positions.values }.associate { it.id to "#${it.number} ${it.name}" },
+                "situation-pitcher") { pitcher = it }
+        }
+        Text("垒上跑者", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        CardBlock {
+            (0..2).forEach { base ->
+                ProductMenuPicker("${base + 1} 垒", runners[base].orEmpty(), mapOf("" to "无人") + order.filter { it != order[batter] }.associateWith { id ->
+                    batting.players.first { it.id == id }.let { "#${it.number} ${it.name}" }
+                }, "situation-base-${base + 1}") { id ->
+                    runnersJSON = GameJson.encodeToString(runners.toMutableList().apply { set(base, id.takeIf { it.isNotBlank() }) })
                 }
-                .toMap(),
-            batter.toString(),
-        ) {
-            batter = it.toInt()
-        }
-        PlayerChoice("当前投手", defense.players.filter { it.id in positions.values }, pitcher) {
-            pitcher = it
-        }
-        (0..2).forEach { base ->
-            Choices(
-                "${base+1} 垒",
-                mapOf("" to "无人") +
-                    order
-                        .filter { it != order[batter] }
-                        .associateWith { id ->
-                            batting.players.first { it.id == id }.let { "#${it.number} ${it.name}" }
-                        },
-                runners[base].orEmpty(),
-            ) { id ->
-                runnersJSON =
-                    GameJson.encodeToString(
-                        runners.toMutableList().apply { set(base, id.takeIf { it.isNotBlank() }) }
-                    )
             }
         }
+        Text("仅补正当前局面，缺失的打席、安打与投球不会自动补算。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        issue?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
     }
 }
 

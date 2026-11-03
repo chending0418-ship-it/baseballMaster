@@ -16,6 +16,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
@@ -42,10 +44,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.semantics.text
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -91,6 +96,8 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private val database = LocalDatabase.open(application)
     private val repository = GameRepository(database)
     internal val live by lazy {AndroidLive(application,repository,viewModelScope) {recoveryRequired || loading}}
+    /** Recording task snapshots contain the full journal and must never enter the Activity Bundle. */
+    internal var scoringTaskSource by mutableStateOf<Game?>(null)
     private var sharedPresence: kotlinx.coroutines.Job?=null
     internal fun setLiveForeground(active: Boolean) {
         live.setForeground(active);sharedPresence?.cancel();sharedPresence=null
@@ -541,6 +548,16 @@ internal fun BaseballTheme(appearance: String = "system", content: @Composable (
             if (dark)
                 darkColorScheme(
                     primary = Color(0xFF48B889),
+                    onPrimary = Color.White,
+                    primaryContainer = Color(0xFF173D30),
+                    onPrimaryContainer = Color(0xFFC6EEDB),
+                    secondary = Color(0xFF48B889),
+                    onSecondary = Color.White,
+                    onSecondaryContainer = Color(0xFFC6EEDB),
+                    error = Color(0xFFFF8B82),
+                    onError = Color(0xFF4A1513),
+                    errorContainer = Color(0xFF502522),
+                    onErrorContainer = Color(0xFFFFDAD6),
                     background = Color(0xFF111820),
                     surface = Color(0xFF1B2632),
                     surfaceTint = Color.Transparent,
@@ -557,6 +574,16 @@ internal fun BaseballTheme(appearance: String = "system", content: @Composable (
             else
                 lightColorScheme(
                     primary = Accent,
+                    onPrimary = Color.White,
+                    primaryContainer = Color(0xFFE4F2EA),
+                    onPrimaryContainer = Color(0xFF174D38),
+                    secondary = Accent,
+                    onSecondary = Color.White,
+                    onSecondaryContainer = Color(0xFF174D38),
+                    error = Color(0xFFBA3933),
+                    onError = Color.White,
+                    errorContainer = Color(0xFFFFE9E5),
+                    onErrorContainer = Color(0xFF6C211C),
                     background = Color(0xFFF5F2EA),
                     surface = Color(0xFFFFFEFA),
                     surfaceTint = Color.Transparent,
@@ -582,6 +609,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
     var manageOpponents by rememberSaveable { mutableStateOf(false) }
     var newGame by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val game = model.openedGame
+    val tabStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var rulesHelp by rememberSaveable { mutableStateOf(false) }
     if (rulesHelp) RulesScreen(showExamples = model.showRuleExamples) { rulesHelp = false }
     model.incomingTeamLink?.let {link -> key(link.id) {
@@ -595,38 +623,10 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
-            if (game == null)
-                Surface(color = MaterialTheme.colorScheme.surface) {
-                    Row(Modifier.fillMaxWidth().navigationBarsPadding().height(58.dp)) {
-                        val labels = listOf("比赛", "球队", "统计", "我的")
-                        val icons =
-                            listOf(
-                                NavigationSymbols.diamond,
-                                NavigationSymbols.roster,
-                                NavigationSymbols.statistics,
-                                Icons.Outlined.AccountCircle,
-                            )
-                        labels.forEachIndexed { index, label ->
-                            Column(
-                                Modifier.weight(1f)
-                                    .fillMaxHeight()
-                                    .testTag("tab-$index")
-                                    .clickable { tab = index },
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                            ) {
-                                val color =
-                                    if (tab == index) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                Icon(icons[index], null, Modifier.size(23.dp), tint = color)
-                                Text(label, fontSize = 10.sp, color = color)
-                            }
-                        }
-                    }
-                }
+            if (game == null) ProductBottomNavigation(tab) { tab = it }
         },
     ) { insets ->
-        Box(Modifier.fillMaxSize().padding(insets)) {
+        Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
             if (model.loading) CircularProgressIndicator(Modifier.align(Alignment.Center))
             else if (model.recoveryRequired)
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -637,9 +637,9 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                 if(game.scheduledSetupPending) PendingScheduleScreen(game, model) { opponent -> createOpponent = opponent; createTeam = true }
                 else GameScreen(game, model)
             }
-            else
+            else tabStates.SaveableStateProvider(tab) {
                 Column(
-                    Modifier.fillMaxSize()
+                    Modifier.widthIn(max = 1000.dp).fillMaxSize()
                         .verticalScroll(key(tab) { rememberScrollState() })
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(UiSpacing.section),
@@ -660,6 +660,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                         else -> ProfileScreen(model) {tab=1}
                     }
                 }
+            }
             if (model.error != null && !model.recoveryRequired)
                 AlertDialog(
                     onDismissRequest = model::dismissError,
@@ -683,6 +684,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
             model.sharing,
             model.busy,
             { newGame = false },
+            games = model.games,
             manageOpponents = { manageOpponents = true },
         ) { prepared ->
             model.createPreparedGame(prepared) { newGame = false }
@@ -731,144 +733,118 @@ internal fun CardBlock(modifier: Modifier = Modifier, content: @Composable Colum
 }
 
 @Composable
+private fun ProductBottomNavigation(selected: Int, onSelected: (Int) -> Unit) {
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center) {
+        Surface(Modifier.widthIn(max = 540.dp).fillMaxWidth(), color = MaterialTheme.colorScheme.surface.copy(alpha = .97f),
+            shape = RoundedCornerShape(50), shadowElevation = 5.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .7f))) {
+            Row(Modifier.padding(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                val icons = listOf(NavigationSymbols.diamond, NavigationSymbols.roster, NavigationSymbols.statistics, NavigationSymbols.profile)
+                listOf("比赛", "球队", "统计", "我的").forEachIndexed { index, label ->
+                    val active = selected == index
+                    val tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    Column(Modifier.weight(1f).clip(RoundedCornerShape(50))
+                        .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .12f) else Color.Transparent)
+                        .selectable(active, role = Role.Tab, onClick = { onSelected(index) })
+                        .testTag("tab-$index").padding(vertical = 7.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        if (index == 0) Canvas(Modifier.size(26.dp)) {
+                            val unit = size.minDimension / 24f
+                            listOf(12f to 4f, 4f to 12f, 20f to 12f, 12f to 20f).forEach { (x, y) ->
+                                val diamond = Path().apply {
+                                    moveTo(x * unit, (y - 3.6f) * unit); lineTo((x + 4f) * unit, y * unit)
+                                    lineTo(x * unit, (y + 3.6f) * unit); lineTo((x - 4f) * unit, y * unit); close()
+                                }
+                                drawPath(diamond, tint)
+                            }
+                        } else Icon(icons[index], null, Modifier.size(26.dp), tint = tint)
+                        Text(label, fontSize = 11.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, color = tint)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame: () -> Unit) {
     val team = model.currentTeam
     val ongoing = model.games.filter { !it.isFinal && !it.isScheduled }
     val scheduled = model.games.filter { it.isScheduled && !it.isFinal }.sortedBy { it.scheduledAt }
-    val completed =
-        model.games
-            .filter { it.isFinal }
-            .sortedWith(
-                compareByDescending<Game> {
-                        it.playedAt ?: it.startedAt ?: it.scheduledAt ?: it.createdAt
-                    }
-                    .thenBy { it.id }
-            )
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(13.dp),
-    ) {
-        if (team != null) TeamMark(team.name, 56)
+    val completed = model.games.filter { it.isFinal }.sortedWith(compareByDescending<Game> {
+        it.playedAt ?: it.startedAt ?: it.scheduledAt ?: it.createdAt }.thenBy { it.id })
+    Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (team != null) TeamMark(team.name, 48)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                team?.name ?: "尚未创建球队",
-                Modifier.testTag("home-team-name"),
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "${java.time.Year.now()} 年 · ${team?.players?.count { !it.archived } ?: 0} 名球员",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(team?.name ?: "尚未创建球队", Modifier.testTag("home-team-name"), fontSize = 22.sp,
+                fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${java.time.Year.now()} 年 · ${team?.players?.count { !it.archived } ?: 0} 名球员", fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Surface(
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            shape = RoundedCornerShape(50),
-        ) {
-            Text(
-                HomeSummary.record(model.games, team?.id).label,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier =
-                    Modifier.testTag("home-team-record")
-                        .padding(horizontal = 11.dp, vertical = 7.dp),
-            )
+        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = CircleShape) {
+            Text(HomeSummary.record(model.games, team?.id).label, Modifier.testTag("home-team-record")
+                .padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 11.sp,
+                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         }
     }
-    if (team == null)
-        OutlinedButton(
-            onClick = addTeam,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth().height(50.dp).testTag("create-team"),
-        ) {
-            Text("创建球队", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-        }
-    Button(
-        onClick = newGame,
-        shape = RoundedCornerShape(15.dp),
-        modifier = Modifier.fillMaxWidth().height(56.dp).testTag("new-game"),
-    ) {
-        Icon(Icons.Outlined.AddCircle, null, Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(
-            if (ongoing.isEmpty()) "开始新比赛" else "再开始一场比赛",
-            fontSize = 17.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+    if (team == null) OutlinedButton(addTeam, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("create-team"),
+        shape = RoundedCornerShape(14.dp)) { Text("创建球队", fontWeight = FontWeight.SemiBold) }
+    Button(newGame, Modifier.fillMaxWidth().heightIn(min = 50.dp).testTag("new-game"), shape = RoundedCornerShape(15.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = ProductGreen, contentColor = Color.White)) {
+        Icon(Icons.Outlined.AddCircle, null, Modifier.size(18.dp)); Spacer(Modifier.width(7.dp))
+        Text(if (ongoing.isEmpty()) "开始新比赛" else "再开始一场比赛", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
     if (scheduled.isNotEmpty()) {
         SectionTitle("即将进行", "${scheduled.size} 场")
-        scheduled.forEach { game ->
-            CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${game.away.name}  vs  ${game.home.name}", Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                    GameDeleteControl(game, model)
-                }
-                if(game.isObservation) Text("观赛预告", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(game.scheduledAt?.let { formatMatchDate(it, game.playedTimeZoneID) } ?: "时间待定", color = MaterialTheme.colorScheme.primary)
-            }
+        scheduled.forEach { game -> HomeGameRow(game, model) }
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("正在进行", Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        TextButton({ model.practice() }, modifier = Modifier.heightIn(min = 34.dp).testTag("start-practice")) {
+            Text("练习记分", fontSize = 12.sp)
         }
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("正在进行", Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        TextButton({ model.practice() }, modifier = Modifier.testTag("start-practice")) { Text("练习记分", fontSize = 13.sp) }
-    }
-    if (ongoing.isEmpty())
-        EmptyCard("没有进行中的比赛", Icons.Outlined.PlayArrow)
-    ongoing.forEach { game ->
-        CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "${game.away.name}  vs  ${game.home.name}",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        "${game.inning}局${if (game.isTop) "上" else "下"}",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        if(game.isObservation) "继续观赛记录" else "▶ 继续比赛",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.testTag("continue-game"),
-                    )
-                }
-                Text(
-                    "${game.awayRuns} : ${game.homeRuns}",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                )
-                GameDeleteControl(game, model)
-            }
-        }
-    }
+    if (ongoing.isEmpty()) EmptyCard("没有进行中的比赛", Icons.Outlined.PlayArrow)
+    ongoing.forEach { game -> HomeGameRow(game, model) }
     SectionTitle("最近比赛", "按比赛日期排序")
     if (completed.isEmpty()) EmptyCard("还没有已完成的比赛", Icons.Outlined.DateRange)
-    completed.forEach { game ->
-        CardBlock(Modifier.testTag("game-${game.id}").clickable { model.open(game.id) }) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${game.away.name}  vs  ${game.home.name}", Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                GameDeleteControl(game, model)
+    completed.forEach { game -> HomeGameRow(game, model) }
+}
+
+@Composable
+private fun HomeGameRow(game: Game, model: ScorekeeperViewModel) {
+    val outcome = when {
+        game.isScheduled -> "预"
+        !game.isFinal -> "赛"
+        game.isObservation -> "看"
+        game.ourTeamID == game.home.id -> when { game.homeRuns > game.awayRuns -> "胜"; game.homeRuns < game.awayRuns -> "负"; else -> "平" }
+        game.ourTeamID == game.away.id -> when { game.awayRuns > game.homeRuns -> "胜"; game.awayRuns < game.homeRuns -> "负"; else -> "平" }
+        else -> "完"
+    }
+    val badge = when (outcome) { "胜" -> Color(0xFF43A881); "负" -> Color(0xFFD76A60); "平" -> Color(0xFFCF974B); else -> MaterialTheme.colorScheme.primary }
+    Surface(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { model.open(game.id) }
+        .testTag("game-${game.id}"), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))) {
+        Row(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 2.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(31.dp).background(badge, CircleShape), contentAlignment = Alignment.Center) {
+                Text(outcome, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
-            Text(
-                "${game.awayRuns} : ${game.homeRuns}",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Black,
-            )
-            val outcome = when {
-                game.isObservation -> "观赛记录"
-                game.ourTeamID == game.home.id -> when { game.homeRuns > game.awayRuns -> "胜"; game.homeRuns < game.awayRuns -> "负"; else -> "平" }
-                game.ourTeamID == game.away.id -> when { game.awayRuns > game.homeRuns -> "胜"; game.awayRuns < game.homeRuns -> "负"; else -> "平" }
-                else -> "已结束"
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("${game.away.shortName} 对 ${game.home.shortName}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val date = if (game.isScheduled) game.scheduledAt else game.playedAt ?: game.startedAt ?: game.createdAt.takeIf { it > 0 }
+                Text(if (game.isScheduled) date?.let { formatMatchDate(it, game.playedTimeZoneID) } ?: "时间待定"
+                    else if (!game.isFinal) "${game.inning}局${if (game.isTop) "上" else "下"} · ${if (game.isObservation) "继续观赛记录" else "继续比赛"}"
+                    else date?.let { formatMatchDate(it, game.playedTimeZoneID) }.orEmpty(),
+                    Modifier.then(if (!game.isScheduled && !game.isFinal) Modifier.testTag("continue-game") else Modifier),
+                    fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(outcome, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            if (!game.isScheduled) Text("${game.awayRuns} - ${game.homeRuns}", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            GameDeleteControl(game, model)
         }
     }
 }
@@ -878,7 +854,7 @@ private fun GameDeleteControl(game: Game, model: ScorekeeperViewModel) {
     var menu by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
     Box {
-        IconButton({ menu = true }, Modifier.testTag("game-menu-${game.id}")) { Icon(Icons.Outlined.MoreVert, "比赛操作") }
+        IconButton({ menu = true }, Modifier.size(32.dp).testTag("game-menu-${game.id}")) { Icon(Icons.Outlined.MoreVert, "比赛操作", Modifier.size(18.dp)) }
         DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem(text = { Text(if(game.isScheduled) "删除安排" else "删除比赛") }, onClick = { menu = false; confirm = true })
         }
@@ -930,7 +906,9 @@ private fun EmptyCard(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                if (title == "没有进行中的比赛") Text("新比赛创建后会自动保存在这里，可在 App 重启后继续记录。",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -977,10 +955,11 @@ private fun ProfileScreen(model: ScorekeeperViewModel, manageTeams: ()->Unit) {
     if (showRules) RulesScreen(showExamples=model.showRuleExamples) { showRules = false }
     CardBlock {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Image(painterResource(R.drawable.app_icon), null, Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)))
-            Column {
-                Text("棒球比赛记录大师", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text("Android ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(NavigationSymbols.profile, null, Modifier.size(52.dp), tint = MaterialTheme.colorScheme.primary)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("本机记录员", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("当前球队 · ${model.currentTeam?.name ?: "尚未选择球队"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("本机保存", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -1003,13 +982,13 @@ private fun ProfileMenuRow(title: String, subtitle: String, icon: androidx.compo
     CardBlock(Modifier.fillMaxWidth().testTag(tag).clickable(onClick = action)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp)) {
-                Icon(icon, null, Modifier.padding(10.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(icon, null, Modifier.padding(8.dp).size(21.dp), tint = MaterialTheme.colorScheme.primary)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1030,65 +1009,19 @@ internal fun FormPage(
     dismissLabel: String = "取消",
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val dark = MaterialTheme.colorScheme.background.luminance()<.5f
-    Dialog(
-        onDismissRequest = { if (!busy) dismiss() },
-        properties =
-            DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false,securePolicy=if(secure) SecureFlagPolicy.SecureOn else SecureFlagPolicy.Inherit),
-    ) {
-        val dialogView = LocalView.current
-        SideEffect {
-            (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
-                WindowCompat.getInsetsController(window, dialogView).apply {
-                    isAppearanceLightStatusBars = !dark
-                    isAppearanceLightNavigationBars = !dark
-                }
-            }
-        }
-        PortraitViewport("portrait-form") {
-            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
-            Column(
-                Modifier.fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                    .safeDrawingPadding()
-                    .imePadding()
-                    .semantics { testTagsAsResourceId = true }
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = dismiss, enabled = !busy) { Text(dismissLabel, fontSize = 16.sp) }
-                    Text(
-                        title,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (saveLabel.isNotBlank())
-                        TextButton(
-                            onClick = save,
-                            enabled = enabled && !busy,
-                            modifier = Modifier.testTag(saveTag),
-                        ) {
-                            Text(
-                                if (busy) "保存中…" else saveLabel,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    else Spacer(Modifier.width(60.dp))
-                }
-                Column(
-                    Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = UiSpacing.formVerticalInset),
-                    verticalArrangement = Arrangement.spacedBy(UiSpacing.form),
-                    content = content,
-                )
-            }
-            }
-        }
-    }
+    ProductPage(
+        title = title,
+        busy = busy,
+        onBack = dismiss,
+        backLabel = if (saveLabel.isBlank() && dismissLabel == "取消") "返回" else dismissLabel,
+        actionLabel = saveLabel,
+        actionAtTop = saveLabel in setOf("保存", "应用", "完成"),
+        actionEnabled = enabled,
+        actionTag = saveTag,
+        onAction = save,
+        secure = secure,
+        content = content,
+    )
 }
 
 @Composable
@@ -1136,228 +1069,158 @@ private fun TeamDialog(busy: Boolean, opponent: Boolean, dismiss: () -> Unit, sa
 
 @Composable
 private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
-    val busy = model.busy
+    val wide = LocalWorkbenchWide.current
     var requestedPanel by rememberSaveable(game.id) { mutableStateOf("") }
     var openingPitch by rememberSaveable(game.id) { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(game.id) {
+        while (true) { kotlinx.coroutines.delay(1000); now = System.currentTimeMillis() }
+    }
     fun pitch(action: PitchAction) {
         if (!game.openingPitchRecorded && !game.practice) openingPitch = action.name else model.pitch(action)
     }
-    if (openingPitch != null) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { openingPitch = null }, title = { Text("确认双方先发阵容") },
+    if (openingPitch != null) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true },
+        onDismissRequest = { openingPitch = null }, title = { Text("确认双方先发阵容") },
         text = { Text("${game.away.name} 与 ${game.home.name}的先发阵容确认后开始计时。开赛后仍可调整阵容。") },
-        confirmButton = { TextButton({ val action = PitchAction.valueOf(openingPitch!!); openingPitch = null; model.pitch(action) }, modifier = Modifier.testTag("confirm-opening-pitch")) { Text("确认开赛") } },
+        confirmButton = { TextButton({ val action = PitchAction.valueOf(openingPitch!!); openingPitch = null; model.pitch(action) },
+            modifier = Modifier.testTag("confirm-opening-pitch")) { Text("确认开赛") } },
         dismissButton = { TextButton({ openingPitch = null; requestedPanel = "lineup" }) { Text("继续设置阵容") } })
-    Box(Modifier.fillMaxSize()) {
-    val largeFont = LocalDensity.current.fontScale > 1.2f
-    val scrollContent = largeFont || game.practice || game.requiresTiebreakPlacement
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-    Column(
-        Modifier.fillMaxSize().then(if(scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier).padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        Box(Modifier.fillMaxWidth().height(44.dp)) {
-            IconButton(
-                onClick = { model.open(null) },
-                modifier = Modifier.align(Alignment.CenterStart).testTag("back-home"),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.ArrowBack,
-                    "返回比赛",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Text(
-                if(game.isObservation) "观赛记分" else "现场记分",
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.CenterStart).padding(start = 48.dp),
-            )
-            Row(Modifier.align(Alignment.CenterEnd)) {
-                if (!game.practice) {
-                    IconButton({ requestedPanel = "live" }, Modifier.size(36.dp).testTag("open-live-broadcast")) { Icon(Icons.Outlined.Share, "文字直播与分享") }
-                    IconButton({ requestedPanel = "poster" }, Modifier.size(36.dp).testTag("open-game-poster")) { Icon(Icons.Outlined.AddCircle, "比赛宣传海报") }
-                }
-                TextButton({ requestedPanel = "results" }, Modifier.width(68.dp).height(40.dp).testTag("game-results"), contentPadding = PaddingValues(2.dp)) { Text(if(largeFont) "结果" else "比赛结果", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
-                IconButton({ requestedPanel = "history" }, Modifier.size(40.dp).testTag("game-history")) { Icon(Icons.Outlined.Refresh, "纠正记录") }
-                Box {
-                    IconButton({ menu = true }, Modifier.size(40.dp).testTag("scoring-more")) { Icon(Icons.Outlined.MoreVert, "比赛菜单") }
-                    DropdownMenu(menu, { menu = false }) {
-                        listOf("比赛结果" to "results", "文字直播" to "live", "双方阵容与打序" to "lineup", "比赛计时" to "clock", "比赛时间／预告" to "time", "本场比赛规则" to "rules", "完整记录与纠错" to "history", "报告与更多操作" to "more").forEach { (label, target) ->
-                            DropdownMenuItem(text = { Text(label) }, onClick = { menu = false; requestedPanel = target })
+        ScoringPanels(game, model, requestedPanel, { requestedPanel = "" },
+            host = { panelControls, task, inlineTask, locked ->
+                val enabled = !model.busy && !locked && !game.isFinal && !game.isScheduled && game.pendingDecision == null
+                AdaptiveScoreWorkbench(game, inlineTask, locked, game.ruleNotices(now),
+                    toolbar = {
+                        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton({ model.open(null) }, enabled = !locked, modifier = Modifier.size(40.dp).testTag("back-home")) {
+                                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回比赛", tint = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(if (game.isObservation) "观赛记分" else "现场记分", Modifier.weight(1f),
+                                fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (!game.practice) {
+                                IconButton({ requestedPanel = "live" }, enabled = !locked, modifier = Modifier.size(34.dp).testTag("open-live-broadcast")) {
+                                    Icon(Icons.Outlined.Share, "文字直播与分享", Modifier.size(21.dp))
+                                }
+                                IconButton({ requestedPanel = "poster" }, enabled = !locked, modifier = Modifier.size(34.dp).testTag("open-game-poster")) {
+                                    Icon(Icons.Outlined.AddCircle, "比赛宣传海报", Modifier.size(21.dp))
+                                }
+                            }
+                            IconButton({ requestedPanel = "history" }, enabled = !locked, modifier = Modifier.size(34.dp).testTag("game-history")) {
+                                Icon(Icons.Outlined.Refresh, "纠正记录", Modifier.size(21.dp))
+                            }
+                            TextButton({ requestedPanel = "results" }, enabled = !locked,
+                                modifier = Modifier.height(40.dp).testTag("game-results"), contentPadding = PaddingValues(horizontal = 6.dp)) {
+                                Text("比赛结果", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Box {
+                                IconButton({ menu = true }, enabled = !locked, modifier = Modifier.size(30.dp).testTag("scoring-more")) {
+                                    Icon(Icons.Outlined.MoreVert, "比赛菜单", Modifier.size(21.dp))
+                                }
+                                DropdownMenu(menu, { menu = false }) {
+                                    listOf("比赛结果" to "results", "文字直播" to "live", "双方阵容与打序" to "lineup", "比赛计时" to "clock",
+                                        "比赛时间／预告" to "time", "本场比赛规则" to "rules", "完整记录与纠错" to "history", "报告与更多操作" to "more")
+                                        .forEach { (label, target) -> DropdownMenuItem(text = { Text(label) }, enabled = !locked,
+                                            onClick = { menu = false; requestedPanel = target }) }
+                                }
+                            }
                         }
-                    }
-                }
-            }
-        }
-        if (game.canSwapOpeningSides && !game.isFinal && !game.isScheduled)
-            TextButton({ model.command(Command("swap")) }, modifier = Modifier.fillMaxWidth().height(32.dp).testTag("swap-opening-sides")) { Text("互换先攻／后攻", fontSize = 12.sp) }
-        Surface(
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Row(
-                Modifier.fillMaxWidth()
-                    .heightIn(min = 58.dp)
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        "${game.inning}局${if (game.isTop) "上" else "下"}",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Black,
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    ) {
-                        Text(
-                            game.away.name,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            modifier = Modifier.weight(1f, false),
-                        )
-                        Text(
-                            "${game.awayRuns} : ${game.homeRuns}",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Black,
-                        )
-                        Text(
-                            game.home.name,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            modifier = Modifier.weight(1f, false),
-                        )
-                    }
-                }
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        game.rules.mode.title,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        MiniCount("B", game.balls, 3, Accent, "坏球")
-                        MiniCount("S", game.strikes, 2, Color(0xFFA35513), "好球")
-                        MiniCount("O", game.outs, 2, Color(0xFFC7463D), "出局")
-                    }
-                }
-            }
-        }
-        var clockNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
-        LaunchedEffect(game.id) {
-            while (true) {
-                kotlinx.coroutines.delay(1000)
-                clockNow = System.currentTimeMillis()
-            }
-        }
-        if (game.clockHasStarted || game.rules.timed)
-            Row(Modifier.fillMaxWidth().heightIn(min = 28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                val seconds =
-                    (if (game.clockDisplayMode == "remaining")
-                        game.remainingTime(clockNow) ?: game.elapsed(clockNow)
-                    else game.elapsed(clockNow)) / 1000
-                Text(
-                    "${if(game.clockDisplayMode=="remaining")"剩余"else"已用"} ${seconds/60}:${"%02d".format(kotlin.math.abs(seconds%60))} · ${if(game.clockRunningSince!=null)"计时中"else"暂停"}",
-                    modifier = Modifier.weight(1f).clickable { requestedPanel = "clock" }.testTag("game-clock"),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    },
+                    scoreboard = {
+                        val timer: @Composable () -> Unit = {
+                            if (game.clockHasStarted || game.rules.timed) {
+                                val seconds = (if (game.clockDisplayMode == "remaining") game.remainingTime(now) ?: game.elapsed(now) else game.elapsed(now)) / 1000
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("${if (game.clockDisplayMode == "remaining") "倒" else "正"} ${seconds / 60}:${"%02d".format(kotlin.math.abs(seconds % 60))}",
+                                        Modifier.testTag("game-clock").clickable(enabled = !locked) { requestedPanel = "clock" },
+                                        fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                    if (!game.isFinal) TextButton({ model.command(Command("clock", text = if (game.clockRunningSince == null) "resume" else "pause")) },
+                                        enabled = !locked && !model.busy, modifier = Modifier.size(28.dp).testTag("toggle-game-clock"), contentPadding = PaddingValues(0.dp)) {
+                                        Text(if (game.clockRunningSince == null) "▶" else "Ⅱ", fontSize = 10.sp)
+                                    }
+                                }
+                            } else Text(game.rules.mode.title, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                        }
+                        val counts: @Composable () -> Unit = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                MiniCount("B", game.balls, 3, Accent, "坏球")
+                                MiniCount("S", game.strikes, 2, Color(0xFFA35513), "好球")
+                                MiniCount("O", game.outs, 2, Color(0xFFC7463D), "出局")
+                            }
+                        }
+                        if (wide) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp).heightIn(min = 32.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("${game.inning}局${if (game.isTop) "上" else "下"}", fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(game.away.shortName, Modifier.weight(1f, false), fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${game.awayRuns} : ${game.homeRuns}", fontSize = 24.sp, fontWeight = FontWeight.Black)
+                                    Text(game.home.shortName, Modifier.weight(1f, false), fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                timer()
+                                counts()
+                            }
+                        } else Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("${game.inning}局${if (game.isTop) "上" else "下"}", fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(game.away.shortName, Modifier.weight(1f, false), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("${game.awayRuns} : ${game.homeRuns}", fontSize = 22.sp, fontWeight = FontWeight.Black)
+                                        Text(game.home.shortName, Modifier.weight(1f, false), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    timer()
+                                    counts()
+                                }
+                            }
+                        }
+                    },
+                    controls = {
+                        if (game.canSwapOpeningSides && !game.isFinal && !game.isScheduled)
+                            TextButton({ model.command(Command("swap")) }, enabled = enabled,
+                                modifier = Modifier.fillMaxWidth().height(30.dp).testTag("swap-opening-sides")) { Text("互换先攻／后攻", fontSize = 11.sp) }
+                        if (game.rules.mode == GameMode.coachPitch) Text("教练投手 · 本打席 ${game.appearancePitches} 球", fontSize = 11.sp)
+                        if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                PitchAction.entries.forEach { action ->
+                                    val color = when (action) {
+                                        PitchAction.ball -> ProductGreen
+                                        PitchAction.calledStrike, PitchAction.swingingStrike -> Color(0xFF9F4C0D)
+                                        else -> Color(0xFF102A43)
+                                    }
+                                    val title = when (action) {
+                                        PitchAction.calledStrike -> "好球 · 看"
+                                        PitchAction.swingingStrike -> "好球 · 挥空"
+                                        else -> action.title
+                                    }
+                                    Button({ pitch(action) }, enabled = enabled,
+                                        contentPadding = PaddingValues(horizontal = 2.dp), shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color.White),
+                                        modifier = Modifier.weight(1f).height(42.dp).testTag("pitch-${action.name}")) {
+                                        Text(title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                        }
+                        panelControls()
+                        Text("已保存 ${game.totalPitches} 球", Modifier.fillMaxWidth().testTag("save-status"),
+                            textAlign = TextAlign.Center, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    },
+                    task = task,
+                    openPanel = { if (!locked) requestedPanel = it },
                 )
-                if (game.clockHasStarted && !game.isFinal) TextButton({ model.command(Command("clock", text = if(game.clockRunningSince == null) "resume" else "pause")) }, enabled = !busy, modifier = Modifier.height(28.dp).testTag("toggle-game-clock"), contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Text(if(game.clockRunningSince == null) "继续" else "暂停", fontSize = 12.sp)
-                }
-            }
-        val notices = game.ruleNotices(clockNow)
-        var showNotices by remember { mutableStateOf(false) }
-        if (notices.isNotEmpty()) {
-            TextButton({ showNotices = true }, Modifier.heightIn(min = 28.dp).testTag("rule-notices")) { Text("规则提醒 · ${notices.size}", fontSize = 11.sp) }
-            if (showNotices) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { showNotices = false }, title = { Text("规则提醒") }, text = { Text(notices.joinToString("\n\n")) }, confirmButton = { TextButton({ showNotices = false }) { Text("完成") } })
-        }
-        Surface(
-            Modifier.fillMaxWidth().then(if(scrollContent) Modifier else Modifier.weight(1f)),
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column {
-                Field(game, if(scrollContent) Modifier.height(300.dp) else Modifier.weight(1f))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Row(
-                    Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            "投手 · 已投 ${game.pitching[game.pitcher.id]?.pitches?:0} 球",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            "#${game.pitcher.number} ${game.pitcher.name}",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    Column(
-                        Modifier.clickable { requestedPanel = "performance" }.testTag("current-batter"),
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            "第 ${game.batterIndex + 1} 棒",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            "#${game.batter.number} ${game.batter.name}",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            }
-        }
-        if (game.rules.mode == GameMode.coachPitch) Text("教练投手 · 本打席 ${game.appearancePitches} 球", fontSize = 12.sp)
-        if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            PitchAction.entries.forEach { action ->
-                val color =
-                    when (action) {
-                        PitchAction.ball -> Accent
-                        PitchAction.calledStrike,
-                        PitchAction.swingingStrike -> Color(0xFF9F4C0D)
-                        else -> Color(0xFF102A43)
-                    }
-                val title =
-                    when (action) {
-                        PitchAction.calledStrike -> "看好球"
-                        PitchAction.swingingStrike -> "挥空"
-                        else -> action.title
-                    }
-                Button(
-                    onClick = { pitch(action) },
-                    enabled =
-                        !busy && !game.isFinal && !game.isScheduled && game.pendingDecision == null,
-                    contentPadding = PaddingValues(horizontal = 2.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = color),
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("pitch-${action.name}"),
-                ) {
-                    Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
-        ScoringPanels(game, model, requestedPanel) { requestedPanel = "" }
-        Text("已保存 ${game.totalPitches} 球", Modifier.fillMaxWidth().testTag("save-status"), textAlign = TextAlign.Center, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-    }
+            },
+        )
     }
 }
 

@@ -110,7 +110,8 @@ internal fun SituationField(
                     if (mode == SituationFieldMode.error) fielding.errorPosition == position
                     else position in fielding.route
                 Box(
-                    Modifier.offset((at.x - 30).dp, (at.y - 22).dp)
+                    Modifier.offset((at.x - 30).coerceIn(0.0, (width - 60).coerceAtLeast(0f).toDouble()).dp,
+                        (at.y - 22).coerceIn(0.0, 216.0).dp)
                         .size(60.dp, 44.dp)
                         .shadow(3.dp, RoundedCornerShape(12.dp))
                         .background(

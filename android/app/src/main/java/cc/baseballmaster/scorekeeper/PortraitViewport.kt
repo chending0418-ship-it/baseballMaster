@@ -1,36 +1,59 @@
 package cc.baseballmaster.scorekeeper
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
 
-/** One portrait column, including system-forced desktop/tablet windows. No landscape layout. */
+/** Current usable window, rather than a phone/tablet or manufacturer lookup. */
+internal val LocalWorkbenchWide = compositionLocalOf { false }
+internal val LocalSeparatingFold = compositionLocalOf<SeparatingFold?> { null }
+internal data class SeparatingFold(val bounds: Rect, val vertical: Boolean)
+
+private fun Context.activity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.activity()
+    else -> null
+}
+
+/** Retains one content owner through cover-screen, inner-screen and window changes. */
 @Composable
 internal fun PortraitViewport(tag: String, content: @Composable () -> Unit) {
-    val saved = rememberSaveableStateHolder()
-    val landscape=LocalConfiguration.current.orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    BoxWithConstraints(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).semantics { testTagsAsResourceId = true },
-        contentAlignment = Alignment.Center,
-    ) {
-        val height = maxHeight
-        val forcedWide=landscape&&maxWidth>height
-        val width = if(forcedWide)minOf(maxWidth,480.dp,height*.72f)else minOf(maxWidth,480.dp)
-        Box(
-            Modifier.width(width).fillMaxHeight().testTag(tag),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (forcedWide&&height < 500.dp) Text("请竖屏使用", Modifier.testTag("portrait-required"))
-            else saved.SaveableStateProvider("portrait-content") { content() }
+    val context = LocalContext.current
+    val activity = remember(context) { context.activity() }
+    val fold by produceState<SeparatingFold?>(null, activity) {
+        if (activity != null) {
+            WindowInfoTracker.getOrCreate(activity).windowLayoutInfo(activity)
+                .catch { value = null }
+                .collect { info ->
+                    val feature = info.displayFeatures.filterIsInstance<FoldingFeature>()
+                        .firstOrNull { it.isSeparating }
+                    value = feature?.let {
+                        val b = it.bounds
+                        SeparatingFold(Rect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat()),
+                            it.orientation == FoldingFeature.Orientation.VERTICAL)
+                    }
+                }
         }
+    }
+    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        .testTag(tag).semantics { testTagsAsResourceId = true }) {
+        CompositionLocalProvider(LocalWorkbenchWide provides (maxWidth >= 700.dp && maxHeight >= 480.dp),
+            LocalSeparatingFold provides fold) { content() }
     }
 }

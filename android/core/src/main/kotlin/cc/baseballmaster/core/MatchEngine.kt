@@ -37,7 +37,7 @@ object MatchEngine {
             } else if (cmd.kind == "review" && input.checkpoint != null)
                 replay(input, input.journal, input.cursor)
             else clone(input)
-        val result = Session(base, cmd, id).run()
+        val result = Session(base, cmd, id, validateNewLineupReplacements = true).run()
         result.journal =
             input.journal.take(input.cursor) +
                 RecordedCommand(
@@ -268,7 +268,7 @@ object MatchEngine {
     }
 }
 
-internal class Session(val g: Game, val c: Command, val id: String) {
+internal class Session(val g: Game, val c: Command, val id: String, private val validateNewLineupReplacements: Boolean = false) {
     private val before = g.situation()
     private val ownersBefore = g.runnerPitcherIDs.toMap()
     private val unearnedBefore = g.unearnedRunnerIDs.toSet()
@@ -308,6 +308,7 @@ internal class Session(val g: Game, val c: Command, val id: String) {
     }
 
     fun run(): Game {
+        require(c.kind == "lineup" || c.playerUpdates.isNullOrEmpty() && c.lineupReplacements.isNullOrEmpty()) { "球员资料和替补映射只能随阵容保存" }
         c.recordingMethod?.let {
             require(it in listOf("traditional", "situation"))
             g.rules = g.rules.copy(recordingMethod = it)
@@ -1470,12 +1471,12 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             order.distinct() == order &&
                 order.size >= g.rules.fielders &&
                 order.all { id -> team.players.any { it.id == id } }
-        )
+        ) { "打序需要至少 ${g.rules.fielders} 名有效且不重复的球员" }
         require(
             positions.keys == (1..g.rules.fielders).toSet() &&
                 positions.values.distinct().size == g.rules.fielders &&
                 positions.values.all { id -> team.players.any { it.id == id } }
-        )
+        ) { "请完整设置 ${g.rules.fielders} 个守位，每名球员只能占一个守位" }
         val old =
             if (home) g.homeOrder ?: g.home.players.map { it.id }
             else g.awayOrder ?: g.away.players.map { it.id }
@@ -1486,10 +1487,23 @@ internal class Session(val g: Game, val c: Command, val id: String) {
         ) {
             "本场打序人数已固定"
         }
-        val anchor = c.playerID ?: current
+        val replacements = c.lineupReplacements.orEmpty()
+        if (!g.isPregame && validateNewLineupReplacements) {
+            require(old.toSet() - order.toSet() == replacements.keys &&
+                order.toSet() - old.toSet() == replacements.values.toSet()) {
+                "请先保存换人，再调整棒次；每位替补须接替原棒次"
+            }
+        }
+        require(replacements.values.distinct().size == replacements.size) { "替补球员不能重复" }
+        replacements.forEach { (outgoing, incoming) ->
+            require(outgoing in old && outgoing !in order && incoming !in old && incoming in order &&
+                order.indexOf(incoming) == old.indexOf(outgoing)) { "换人须接替原棒次" }
+        }
+        val anchor = if (g.isPregame) order.first() else c.playerID ?: replacements[current] ?: current
         require(anchor in order) { "请保留当前打者或明确接替者" }
+        val resultingBases = if (home != g.isTop) g.bases.map { replacements[it] ?: it } else g.bases
         if (home != g.isTop)
-            require(g.bases.filterNotNull().all { it in order } && anchor !in g.bases) {
+            require(resultingBases.filterNotNull().all { it in order } && anchor !in resultingBases) {
                 "打者或跑者身份发生冲突"
             }
         val dh = c.designatedHitterID
@@ -1503,7 +1517,41 @@ internal class Session(val g: Game, val c: Command, val id: String) {
             }
         if (home) g.homeDesignatedHitterID = dh else g.awayDesignatedHitterID = dh
         Participation.validate(g.rules, order, positions, dh)
-        val newIndex = if (!g.openingPitchRecorded) 0 else order.indexOf(anchor)
+        val updates = c.playerUpdates.orEmpty()
+        require(updates.map { it.id }.distinct().size == updates.size && updates.all { p -> team.players.any { it.id == p.id } }) { "更正球员身份无效" }
+        updates.forEach { p ->
+            Roster.validate(p)
+            val previous = team.players.first { it.id == p.id }
+            require(p.position == previous.position && p.archived == previous.archived) { "资料更正不能改变球员身份" }
+        }
+        if (!g.isPregame) {
+            if (home == g.isTop && positions[1] != g.pitcher.id) {
+                val previouslyExited = g.exitedPlayers
+                changePitcher(requireNotNull(positions[1]))
+                // A slow-pitch extra hitter may take P while the old pitcher
+                // stays in the batting order. Retain earlier exit history; only
+                // undo marks this change just added for retained participants.
+                val retainedNewMarks = (g.exitedPlayers - previouslyExited).filter { it in order || it in positions.values }.toSet()
+                g.exitedPlayers -= retainedNewMarks
+            }
+            replacements.forEach { (outgoing, incoming) ->
+                if (home != g.isTop) {
+                    if (outgoing == current && g.strikes == 2) g.strikeoutResponsibleBatterID = g.strikeoutResponsibleBatterID ?: outgoing
+                    if (outgoing in g.bases) {
+                        g.runnerPitcherIDs[incoming] = g.runnerPitcherIDs[outgoing] ?: g.pitcher.id
+                        if (outgoing in g.unearnedRunnerIDs) g.unearnedRunnerIDs += incoming
+                        if (outgoing in g.automaticRunnerIDs) { g.automaticRunnerIDs -= outgoing; g.automaticRunnerIDs += incoming }
+                    }
+                }
+                g.exitedPlayers += outgoing
+            }
+            if (home != g.isTop) g.bases = resultingBases
+        }
+        if (updates.isNotEmpty()) {
+            val updatedTeam = team.copy(players = team.players.map { p -> updates.firstOrNull { it.id == p.id } ?: p })
+            if (home) g.home = updatedTeam else g.away = updatedTeam
+        }
+        val newIndex = if (g.isPregame) 0 else order.indexOf(anchor)
         if (home) {
             g.homeOrder = order
             g.homePositions = positions
