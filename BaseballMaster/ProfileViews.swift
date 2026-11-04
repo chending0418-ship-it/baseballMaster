@@ -886,6 +886,15 @@ struct PracticeScorekeepingView: View {
     }
 
     private var practiceBanner: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                Image(systemName: "graduationcap.fill").foregroundStyle(BMTheme.green)
+                Text("练习模式 · 不会保存到正式数据")
+                    .font(.system(size: 12, weight: .bold)).foregroundStyle(BMTheme.navy)
+                Text(practicePrompt).font(.system(size: 11)).foregroundStyle(BMTheme.secondaryText)
+                Spacer(minLength: 0)
+            }
+            .fixedSize(horizontal: true, vertical: false)
         HStack(spacing: 10) {
             Image(systemName: "graduationcap.fill")
                 .foregroundStyle(BMTheme.green)
@@ -899,8 +908,10 @@ struct PracticeScorekeepingView: View {
             }
             Spacer()
         }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.vertical, 5)
         .background(BMTheme.greenSoft)
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityIdentifier("practice-mode-banner")

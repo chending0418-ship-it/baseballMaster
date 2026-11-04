@@ -537,48 +537,64 @@ func statText(_ value: Double) -> String {
 /// A live score strip that fills a workbench and scrolls only for extra innings.
 struct WorkbenchLineScore: View {
     let game: GameState
-    private let teamWidth: CGFloat = 88
-    private let totalWidth: CGFloat = 36
+    var compact = false
+    @ScaledMetric(relativeTo: .caption) private var teamWidth: CGFloat = 88
+    @ScaledMetric(relativeTo: .caption) private var totalWidth: CGFloat = 36
+    @ScaledMetric(relativeTo: .caption2) private var headerScale: CGFloat = 1
+    @ScaledMetric(relativeTo: .caption) private var rowScale: CGFloat = 1
+
+    private var headerHeight: CGFloat { (compact ? 18 : 28) * headerScale }
+    private var rowHeight: CGFloat { (compact ? 20 : 36) * rowScale }
 
     var body: some View {
         GeometryReader { proxy in
             let innings = max(1, game.scoreInningCount)
-            let cellWidth = max(30, (proxy.size.width - teamWidth - totalWidth * 3) / CGFloat(innings))
+            // Extra room belongs to the team label, never to a single inning.
+            let cellWidth = 32 * rowScale
+            let nameWidth = max(teamWidth, proxy.size.width - 20 - totalWidth * 3 - cellWidth * CGFloat(innings))
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
-                        Text("分局比分").frame(width: teamWidth, alignment: .leading)
+                        Text("分局比分").frame(width: nameWidth, alignment: .leading)
                         ForEach(1...innings, id: \.self) { inning in
                             Text("\(inning)").frame(width: cellWidth)
+                                .foregroundStyle(inning == game.inning ? BMTheme.green : BMTheme.secondaryText)
                         }
                         ForEach(["R", "H", "E"], id: \.self) { Text($0).frame(width: totalWidth) }
                     }
                     .font(.caption2.bold()).foregroundStyle(BMTheme.secondaryText)
-                    .frame(height: 28).background(BMTheme.background)
-                    workbenchScoreRow(home: false, innings: innings, cellWidth: cellWidth)
-                    Divider()
-                    workbenchScoreRow(home: true, innings: innings, cellWidth: cellWidth)
+                    .frame(height: headerHeight)
+                    workbenchScoreRow(home: false, innings: innings, cellWidth: cellWidth, nameWidth: nameWidth)
+                    Divider().overlay(BMTheme.line.opacity(0.5))
+                    workbenchScoreRow(home: true, innings: innings, cellWidth: cellWidth, nameWidth: nameWidth)
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
         }
-        .frame(height: 101)
+        .frame(height: headerHeight + rowHeight * 2 + 17)
         .background(BMTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: BMTheme.smallRadius))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14).stroke(BMTheme.line.opacity(0.75), lineWidth: 1) }
         .accessibilityIdentifier("workbench-line-score")
     }
 
-    private func workbenchScoreRow(home: Bool, innings: Int, cellWidth: CGFloat) -> some View {
+    private func workbenchScoreRow(home: Bool, innings: Int, cellWidth: CGFloat, nameWidth: CGFloat) -> some View {
         let runs = home ? game.homeRunsByInning : game.awayRunsByInning
         let team = home ? game.homeTeam : game.awayTeam
         return HStack(spacing: 0) {
             Text(team.shortName).lineLimit(1)
-                .frame(width: teamWidth, alignment: .leading)
+                .frame(width: nameWidth, alignment: .leading)
             ForEach(1...innings, id: \.self) { inning in
                 let started = inning < game.inning || (inning == game.inning && (!home || !game.isTop))
                 Text(started ? String(runs.indices.contains(inning - 1) ? runs[inning - 1] : 0) : "—")
                     .foregroundStyle(started ? BMTheme.navy : BMTheme.secondaryText)
-                    .frame(width: cellWidth, height: 36)
-                    .background(inning == game.inning && (home != game.isTop) && !game.isFinal ? BMTheme.greenSoft : .clear)
+                    .frame(width: cellWidth, height: rowHeight)
+                    .background {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(inning == game.inning && (home != game.isTop) && !game.isFinal ? BMTheme.greenSoft : .clear)
+                            .padding(.horizontal, 3).padding(.vertical, 2)
+                    }
             }
             Text("\(home ? game.homeScore : game.awayScore)")
                 .foregroundStyle(BMTheme.green).frame(width: totalWidth)
@@ -586,7 +602,7 @@ struct WorkbenchLineScore: View {
             Text("\(home ? game.homeErrors : game.awayErrors)").frame(width: totalWidth)
         }
         .font(.caption.bold()).monospacedDigit().foregroundStyle(BMTheme.navy)
-        .frame(height: 36)
+        .frame(height: rowHeight)
         .accessibilityElement(children: .combine)
     }
 }

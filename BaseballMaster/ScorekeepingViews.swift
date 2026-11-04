@@ -44,22 +44,37 @@ struct ScorekeepingView: View {
             let showsField = proxy.size.width >= 390 && proxy.size.height >= 620
             Group {
             if wide || (dockedPlayFlow && showPlayFlowSheet) {
+                ScrollViewReader { scroll in
                 ScrollView {
-                    VStack(spacing: 14) {
-                        compactScoreHeader.disabled(isDockedRecording)
+                    VStack(spacing: 10) {
+                        if wide {
+                            HStack(spacing: 12) {
+                                compactScoreHeader(height: 75)
+                                    .frame(width: min(340, (proxy.size.width - 24) * 0.4))
+                                    .disabled(isDockedRecording)
+                                WorkbenchLineScore(game: store.game, compact: true)
+                            }
+                        } else {
+                        compactScoreHeader().disabled(isDockedRecording)
                         WorkbenchLineScore(game: store.game)
+                        }
                         let columns = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16))
                             : AnyLayout(VStackLayout(spacing: 14))
                         columns {
                             VStack(spacing: 14) {
-                                fieldCard(showsField: true, fieldHeight: 350)
+                                // Keep the editor in the same subtree across a fold. On a
+                                // narrow display, hide read-only context while the task is active.
+                                if wide || !isDockedRecording {
+                                fieldCard(showsField: true, fieldHeight: min(320, max(240, proxy.size.height - 170)))
                                     .disabled(isDockedRecording)
                                 workbenchMatchup
                                 workbenchLineups
+                                }
                             }
                             .frame(maxWidth: .infinity)
                             VStack(spacing: 14) {
                                 wideRecordingPanel
+                                    .id("recording-workbench-panel")
                                 workbenchRecentLog
                                 workbenchRecentAppearances
                             }
@@ -67,10 +82,17 @@ struct ScorekeepingView: View {
                         }
                     }
                     .frame(maxWidth: 1280)
-                    .padding(16)
+                    .padding(12)
                     .frame(maxWidth: .infinity)
                 }
                 .accessibilityIdentifier("scorekeeping-wide-layout")
+                .onChange(of: wide) { _ in
+                    if isDockedRecording { scroll.scrollTo("recording-workbench-panel", anchor: .top) }
+                }
+                .onChange(of: isDockedRecording) { active in
+                    if active { scroll.scrollTo("recording-workbench-panel", anchor: .top) }
+                }
+                }
             } else if proxy.size.height < 620 || dynamicTypeSize.isAccessibilitySize {
                 // A short window must keep every action reachable, including slow-pitch extras.
                 ScrollView {
@@ -299,7 +321,7 @@ struct ScorekeepingView: View {
                 if isDockedRecording {
                     SituationPlayFlowSheet(illegalPitch: illegalPlay, embedded: true, onClose: closeDockedPlayFlow)
                         .environmentObject(store)
-                        .frame(height: min(760, max(480, workbenchHeight - 210)))
+                        .frame(height: min(760, max(320, workbenchHeight - 160)))
                         .onAppear { recordingPresentationActive = true }
                 } else {
                     recordingControls
@@ -470,7 +492,7 @@ struct ScorekeepingView: View {
 
     private func compactContent(showsField: Bool) -> some View {
         VStack(spacing: 7) {
-            compactScoreHeader
+            compactScoreHeader()
             fieldCard(showsField: showsField)
                 .frame(maxHeight: showsField ? .infinity : nil)
             if !showsField { Spacer(minLength: 0) }
@@ -615,7 +637,7 @@ struct ScorekeepingView: View {
         }
     }
 
-    private var compactScoreHeader: some View {
+    private func compactScoreHeader(height: CGFloat = 58) -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(store.game.inning)局\(store.game.isTop ? "上" : "下")")
@@ -634,6 +656,8 @@ struct ScorekeepingView: View {
                 }
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(BMTheme.navy)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             }
             Spacer(minLength: 2)
 
@@ -647,7 +671,7 @@ struct ScorekeepingView: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 58)
+        .frame(height: height)
         .background(BMTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {

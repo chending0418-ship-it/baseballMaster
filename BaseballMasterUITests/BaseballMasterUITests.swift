@@ -3628,3 +3628,371 @@ extension BaseballMasterUITests {
         if UIDevice.current.userInterfaceIdiom == .pad { rotateV312(app, landscape: false) }
     }
 }
+
+// These tests require a Duo destination and a host driving the real DeviceHub
+// posture controls. Set BM_DUO_TESTS=1 in the test-runner environment when the
+// simulator does not export its model identifier. No app geometry is simulated.
+extension BaseballMasterUITests {
+    private func requireV312Duo() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let isDuo = environment["SIMULATOR_MODEL_IDENTIFIER"] == "iPhone19,4"
+        try XCTSkipUnless(isDuo || environment["BM_DUO_TESTS"] == "1",
+                          "Requires iPhone Duo and a host operating its real posture controls")
+        let documents = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        for name in ["duo-phase.txt", "duo-host-step.txt"] {
+            let url = documents.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        }
+        print("DUO_RUNNER_DOCUMENTS=\(documents.path)")
+    }
+
+    /// Host reads phase, changes the actual device posture, captures DeviceHub
+    /// evidence, then atomically writes the identical step to duo-host-step.txt.
+    private func awaitDuoHost(_ step: String) throws {
+        let documents = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
+        let phase = documents.appendingPathComponent("duo-phase.txt")
+        let acknowledgement = documents.appendingPathComponent("duo-host-step.txt")
+        try step.write(to: phase, atomically: true, encoding: .utf8)
+        print("DUO_AWAIT_HOST=\(step)")
+        let hostReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (try? String(contentsOf: acknowledgement, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)) == step
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [hostReady], timeout: 90)
+        XCTAssertEqual(result, .completed, "Host did not acknowledge actual Duo posture step: \(step)")
+        guard result == .completed else { throw NSError(domain: "DuoHostCheckpoint", code: 1) }
+    }
+
+    private func captureV312Duo(_ app: XCUIApplication, name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        print("DUO_OBSERVED=\(name), app=\(app.frame), window=\(app.windows.firstMatch.frame), screen=\(screenshot.image.size)")
+    }
+
+    private func revealV312DuoControl(_ element: XCUIElement, in app: XCUIApplication) {
+        for towardTop in [true, false] {
+            for _ in 0..<8 {
+                let viewport = app.windows.firstMatch.frame
+                if element.exists && element.isHittable && viewport.contains(element.frame) { return }
+                let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
+                let identifier = element.exists ? element.identifier : ""
+                let editorContent = identifier.isEmpty || ["quick-outcome-", "contact-", "situation-fielder-", "situation-route", "finish-situation-"]
+                    .contains { identifier.hasPrefix($0) }
+                let editorScroll = editor.scrollViews.firstMatch
+                let workbench = app.scrollViews["scorekeeping-wide-layout"]
+                let scroll: XCUIElement
+                if editorContent && editor.exists && editorScroll.exists && viewport.intersects(editorScroll.frame) {
+                    // Once the inline panel is visible, scroll its flow rather than
+                    // moving the whole workbench away from the active recording.
+                    scroll = editorScroll
+                } else if workbench.exists {
+                    scroll = workbench
+                } else {
+                    scroll = app.scrollViews.firstMatch
+                }
+                let surface = scroll.exists ? scroll : app
+                let start = surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: towardTop ? 0.3 : 0.75))
+                let end = surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: towardTop ? 0.75 : 0.3))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            }
+        }
+        XCTAssertTrue(element.exists && element.isHittable && app.windows.firstMatch.frame.contains(element.frame),
+                      "Duo control must be reachable in its current window: \(element)\n\(app.debugDescription)")
+    }
+
+    private func assertV312DuoLaunch(_ app: XCUIApplication) {
+        let brand = app.images["launch-fixed-bm"]
+        let icon = app.images["launch-fixed-app-icon"]
+        let skip = app.buttons["skip-launch-screen"]
+        XCTAssertTrue(brand.waitForExistence(timeout: 5))
+        XCTAssertTrue(icon.exists)
+        let viewport = app.windows.firstMatch.frame
+        XCTAssertTrue(viewport.contains(brand.frame), "Brand must fit the actual current window")
+        XCTAssertTrue(viewport.contains(icon.frame), "App icon must fit the actual current window")
+        XCTAssertTrue(skip.isHittable, "Skip must remain reachable after changing displays")
+        XCTAssertTrue(app.staticTexts["launch-message"].label.contains("固定品牌 图文保持清晰"))
+    }
+
+    private func selectV312DuoTab(_ title: String, in app: XCUIApplication) {
+        // Duo may expose root navigation in a vertical toolbar instead of tabBars.
+        // Query any AX type: iOS 27.2 reports these controls as tabs, not buttons.
+        let identifiers = ["比赛": "baseball.diamond.bases", "球队": "person.3.fill",
+                           "统计": "chart.bar.fill", "我的": "person.crop.circle"]
+        let button = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@ AND label == %@", identifiers[title] ?? "", title)
+        ).firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(button.isHittable, "Root navigation must be reachable in the current toolbar: \(title)")
+        button.tap()
+        XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    func testV312DuoLaunchAcrossDisplaysKeepsBrandAndNavigationReachable() throws {
+        try requireV312Duo()
+        try awaitDuoHost("launch-01-closed")
+        let app = XCUIApplication()
+        app.launchArguments = ["--launch-screen-custom-preview"]
+        app.launch()
+        assertV312DuoLaunch(app)
+        captureV312Duo(app, name: "3.1.2-duo-launch-closed")
+        for step in ["launch-02-open", "launch-03-partiallyOpen", "launch-04-closed"] {
+            try awaitDuoHost(step)
+            assertV312DuoLaunch(app)
+            captureV312Duo(app, name: "3.1.2-duo-\(step)")
+        }
+        app.buttons["skip-launch-screen"].tap()
+        let create = app.buttons["start-new-game"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        XCTAssertTrue(create.isHittable)
+        create.tap()
+        XCTAssertTrue(app.navigationBars["新比赛"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["new-game-own-team"].isHittable)
+        captureV312Duo(app, name: "3.1.2-duo-new-game-closed")
+        let back = app.descendants(matching: .any)["BackButton"].firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(back.isHittable, "The system back control must be reachable in Duo's vertical toolbar")
+        back.tap()
+        for title in ["球队", "统计", "我的", "比赛"] { selectV312DuoTab(title, in: app) }
+        try awaitDuoHost("launch-05-open-home")
+        XCTAssertFalse(app.images["launch-fixed-bm"].exists, "Unfolding must not replay a dismissed launch screen")
+        for title in ["球队", "统计", "我的", "比赛"] { selectV312DuoTab(title, in: app) }
+        XCTAssertTrue(create.isHittable)
+        captureV312Duo(app, name: "3.1.2-duo-home-open-navigation")
+    }
+
+    private func enterV312DuoContactDraft(in app: XCUIApplication) {
+        let inPlay = app.buttons["ball-in-play"]
+        revealV312DuoControl(inPlay, in: app)
+        inPlay.tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        XCTAssertTrue(app.descendants(matching: .any)["docked-situation-editor"].firstMatch.waitForExistence(timeout: 5))
+        let single = app.buttons["quick-outcome-1B"]
+        revealV312DuoControl(single, in: app)
+        single.tap()
+        let type = app.buttons["contact-type-line"]
+        revealV312DuoControl(type, in: app)
+        type.tap()
+        let field = app.otherElements["contact-field"]
+        revealV312DuoControl(field, in: app)
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).tap()
+        let center = app.buttons["situation-fielder-8"]
+        revealV312DuoControl(center, in: app)
+        center.tap()
+    }
+
+    private func assertV312DuoContactDraft(in app: XCUIApplication, summary: String, route: String) {
+        let type = app.buttons["contact-type-line"]
+        revealV312DuoControl(type, in: app)
+        XCTAssertEqual(type.value as? String, "已选择", "Ball type must survive display and posture changes")
+        let summaryLabel = app.staticTexts["contact-summary"]
+        revealV312DuoControl(summaryLabel, in: app)
+        XCTAssertEqual(summaryLabel.label, summary, "Landing point must survive display and posture changes")
+        XCTAssertEqual(app.staticTexts["situation-route"].label, route, "Fielding route must survive display and posture changes")
+        let finish = app.buttons["finish-situation-field"]
+        revealV312DuoControl(finish, in: app)
+        XCTAssertTrue(finish.isHittable)
+        XCTAssertTrue(finish.isEnabled)
+        XCTAssertFalse(app.buttons["reset-practice-inning"].isEnabled,
+                       "The parent practice reset must stay locked while a draft is open")
+    }
+
+    func testV312DuoProDraftSurvivesFoldingThenCancelAndOnePlayUndoRedo() throws {
+        try requireV312Duo()
+        try awaitDuoHost("draft-01-open")
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealV312DuoControl(start, in: app)
+        start.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        XCTAssertTrue(batter.waitForExistence(timeout: 5))
+        let before = batter.label
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        XCTAssertTrue(app.scrollViews["scorekeeping-wide-layout"].exists, "The real unfolded display must provide the workbench")
+        enterV312DuoContactDraft(in: app)
+        let summaryLabel = app.staticTexts["contact-summary"]
+        revealV312DuoControl(summaryLabel, in: app)
+        let summary = summaryLabel.label
+        let route = app.staticTexts["situation-route"].label
+        XCTAssertFalse(summary.isEmpty)
+        XCTAssertTrue(route.hasPrefix("8"))
+        captureV312Duo(app, name: "3.1.2-duo-draft-before-fold")
+        for step in ["draft-02-closed", "draft-03-partiallyOpen", "draft-04-open"] {
+            try awaitDuoHost(step)
+            assertV312DuoContactDraft(in: app, summary: summary, route: route)
+            captureV312Duo(app, name: "3.1.2-duo-\(step)")
+        }
+        let cancel = app.buttons["cancel-situation-play"]
+        revealV312DuoControl(cancel, in: app)
+        cancel.tap()
+        let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+        revealV312DuoControl(batter, in: app)
+        XCTAssertEqual(batter.label, before, "Cancelling a folded draft must not change the batter")
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"), "Cancelling must not record a pitch")
+        XCTAssertTrue(app.buttons["reset-practice-inning"].isEnabled)
+        enterV312DuoContactDraft(in: app)
+        let finish = app.buttons["finish-situation-field"]
+        revealV312DuoControl(finish, in: app)
+        XCTAssertTrue(finish.isEnabled)
+        finish.tap()
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+        revealV312DuoControl(batter, in: app)
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "One confirmation must add exactly one pitch")
+        let undo = app.buttons["undo-last-play"]
+        revealV312DuoControl(undo, in: app)
+        undo.tap()
+        XCTAssertEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        app.buttons["redo-last-play"].tap()
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "Redo must restore one play without duplication")
+        captureV312Duo(app, name: "3.1.2-duo-pro-one-play-undo-redo")
+    }
+
+    func testV312DuoOpenWorkbenchKeepsCoreControlsInFirstViewport() throws {
+        try requireV312Duo()
+        try awaitDuoHost("layout-01-open")
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-scorekeeping-preview", "-showPracticeGuidance", "YES"]
+        app.launch()
+        let field = app.descendants(matching: .any)["scorekeeping-field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["scorekeeping-wide-layout"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["practice-mode-banner"].firstMatch.exists,
+                      "Verify the real guided-practice screen shown in the user's feedback")
+        // Deliberately do not scroll: core scoring must fit in the initial viewport.
+        let viewport = app.windows.firstMatch.frame
+        XCTAssertTrue(viewport.contains(field.frame), "The complete field must fit the first viewport: \(field.frame), window=\(viewport)")
+        for identifier in ["current-pitcher", "current-batter", "pitch-坏球", "pitch-看振", "pitch-挥空", "pitch-界外",
+                           "ball-in-play", "open-runner-events", "open-special-events", "open-state-correction",
+                           "open-substitutions", "结束半局", "结束比赛"] {
+            let control = app.descendants(matching: .any)[identifier].firstMatch
+            XCTAssertTrue(control.exists, "Core content must exist without scrolling: \(identifier)")
+            XCTAssertTrue(control.isHittable, "Core content must be reachable in the first viewport: \(identifier), frame=\(control.frame)")
+            XCTAssertTrue(viewport.contains(control.frame), "Core content must fully fit: \(identifier), frame=\(control.frame), window=\(viewport)")
+        }
+        captureV312Duo(app, name: "3.1.2-duo-open-workbench-first-viewport-guidance")
+    }
+
+    func testV312DuoCompactProSheetKeepsDraftAcrossDisplaysAndRecordsOnePlay() throws {
+        try requireV312Duo()
+        try awaitDuoHost("sheet-01-closed")
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealV312DuoControl(start, in: app)
+        start.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        XCTAssertTrue(batter.waitForExistence(timeout: 5))
+        let before = batter.label
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        XCTAssertFalse(app.scrollViews["scorekeeping-wide-layout"].exists,
+                       "The real closed display must begin with compact scoring")
+        let inPlay = app.buttons["ball-in-play"]
+        revealV312DuoControl(inPlay, in: app)
+        inPlay.tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        let single = app.buttons["quick-outcome-1B"]
+        XCTAssertTrue(single.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["docked-situation-editor"].firstMatch.exists,
+                       "A draft opened on the outer display must use the compact sheet")
+        revealV312DuoControl(single, in: app)
+        single.tap()
+        let type = app.buttons["contact-type-line"]
+        revealV312DuoControl(type, in: app)
+        type.tap()
+        let field = app.otherElements["contact-field"]
+        revealV312DuoControl(field, in: app)
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).tap()
+        let center = app.buttons["situation-fielder-8"]
+        revealV312DuoControl(center, in: app)
+        center.tap()
+        let summaryLabel = app.staticTexts["contact-summary"]
+        revealV312DuoControl(summaryLabel, in: app)
+        let summary = summaryLabel.label
+        let route = app.staticTexts["situation-route"].label
+        XCTAssertFalse(summary.isEmpty)
+        XCTAssertTrue(route.hasPrefix("8"))
+        captureV312Duo(app, name: "3.1.2-duo-compact-sheet-before-unfold")
+        for step in ["sheet-02-open", "sheet-03-closed"] {
+            try awaitDuoHost(step)
+            XCTAssertFalse(app.descendants(matching: .any)["docked-situation-editor"].firstMatch.exists,
+                           "An active compact sheet must retain its presentation across displays")
+            revealV312DuoControl(type, in: app)
+            XCTAssertEqual(type.value as? String, "已选择")
+            revealV312DuoControl(summaryLabel, in: app)
+            XCTAssertEqual(summaryLabel.label, summary, "The sheet's landing point must survive display changes")
+            XCTAssertEqual(app.staticTexts["situation-route"].label, route,
+                           "The sheet's fielding route must survive display changes")
+            let finish = app.buttons["finish-situation-field"]
+            revealV312DuoControl(finish, in: app)
+            XCTAssertTrue(finish.isHittable)
+            XCTAssertTrue(finish.isEnabled)
+            captureV312Duo(app, name: "3.1.2-duo-\(step)")
+        }
+        let finish = app.buttons["finish-situation-field"]
+        finish.tap()
+        XCTAssertTrue(app.buttons["cancel-situation-play"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(inPlay.waitForExistence(timeout: 5))
+        revealV312DuoControl(batter, in: app)
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"),
+                      "Confirming the retained sheet must add exactly one pitch")
+        let undo = app.buttons["undo-last-play"]
+        revealV312DuoControl(undo, in: app)
+        undo.tap()
+        XCTAssertEqual(batter.label, before, "One undo must reverse the complete sheet submission")
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        app.buttons["redo-last-play"].tap()
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"))
+        captureV312Duo(app, name: "3.1.2-duo-compact-sheet-confirmed-one-play")
+    }
+
+    func testV312DuoPDFSharingSurvivesUnfoldingAndReturnsToResult() throws {
+        try requireV312Duo()
+        try awaitDuoHost("share-01-closed")
+        let app = XCUIApplication()
+        app.launchArguments = ["--boxscore-preview"]
+        app.launch()
+        let export = app.buttons["share-box-score"]
+        revealV312DuoControl(export, in: app)
+        export.tap()
+        XCTAssertTrue(app.navigationBars["比赛战报"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["report-pdf-page-count"].label.contains("A4"))
+        app.buttons["share-report-pdf"].tap()
+        let activity = app.otherElements["ActivityListView"]
+        XCTAssertTrue(activity.waitForExistence(timeout: 5), app.debugDescription)
+        captureV312Duo(app, name: "3.1.2-duo-pdf-share-closed")
+        try awaitDuoHost("share-02-open")
+        XCTAssertTrue(activity.waitForExistence(timeout: 5), "System sharing must remain presented after unfolding")
+        captureV312Duo(app, name: "3.1.2-duo-pdf-share-open")
+        let closeCandidates = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label IN %@ AND identifier != %@", ["Close", "关闭"], "close-report-pdf"))
+            .allElementsBoundByIndex
+        guard let close = closeCandidates.first(where: { $0.isHittable }) else {
+            XCTFail("The system share sheet must expose its own reachable close control:\n\(app.debugDescription)")
+            return
+        }
+        close.tap()
+        XCTAssertTrue(activity.waitForNonExistence(timeout: 5), app.debugDescription)
+        let closePreview = app.buttons["close-report-pdf"]
+        XCTAssertTrue(closePreview.isHittable)
+        closePreview.tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        XCTAssertTrue(export.exists, "Closing sharing and its preview must retain the saved result")
+        captureV312Duo(app, name: "3.1.2-duo-pdf-returned-to-result")
+    }
+}
