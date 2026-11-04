@@ -1,7 +1,7 @@
 {
   "date": "2026-11-04",
   "scope": "release materials and Shanghai static website publication",
-  "appBuildsOrTestsRerun": false,
+  "appBuildsOrTestsRerun": true,
   "pngCount": 41,
   "appStoreSets": 11,
   "appStorePNGs": 34,
@@ -342,5 +342,18 @@
     "keywordUTF8Bytes": 98,
     "nameAndSubtitleUnchanged": true,
     "searchVolumeOrRankDataAvailable": false
-  }
+  },
+  "formalArchive": {
+    "completed": true,
+    "version": "3.1.2",
+    "build": "1",
+    "sourceCommit": "3d3d83a6aaf64be353e0f71c749a3e7e3ad879d6",
+    "releaseArchive": true,
+    "appStoreIPAExported": true,
+    "signatureAndDSYMVerified": true,
+    "getTaskAllow": false,
+    "uploaded": false
+  },
+  "appTestsRerun": false,
+  "releaseArchiveBuilt": true
 }

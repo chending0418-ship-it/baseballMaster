@@ -36,7 +36,7 @@
 
 ## 保留到发布阶段的事项
 
-备案 `沪ICP备2026058730号-2A` 已通过、商店备案配置据用户确认完成，上海已接管正式在线服务。其余 App Store 账户字段、最终签名归档、真实旧比赛核对、迁移收尾与副本清理、上传／审核／上架仍按各自真实流程记录；共享批量服务已在上海上线，九项公网专项已通过；新隐私／支持页及官网更新已完成部署与 HTTPS 哈希核验。App 预览视频未制作，用户列举的视频尺寸已独立记录，不将 PNG 算作视频。
+备案 `沪ICP备2026058730号-2A` 已通过、商店备案配置据用户确认完成，上海已接管正式在线服务。正式 Release 归档及 App Store IPA 导出已完成；其余 App Store 账户字段、真实旧比赛核对、迁移收尾与副本清理、上传／审核／上架仍按各自真实流程记录；共享批量服务已在上海上线，九项公网专项已通过；新隐私／支持页及官网更新已完成部署与 HTTPS 哈希核验。App 预览视频未制作，用户列举的视频尺寸已独立记录，不将 PNG 算作视频。
 
 本轮素材不表示 iOS 已上架新功能；社交稿待相应功能实际可下载后传播。Android 采用当前官网测试包的已验收界面，不把尚未分发的新包写成已发布。两端互导及全部云端能力一致未完成，不作跨平台数据完全同步的宣传承诺。
 
@@ -54,4 +54,12 @@
 
 上海共享批量后台已按用户新增授权部署，批次 `bulk-3.1.2-20261104T131831Z`。仅 `server.mjs`、`roster.mjs` 两文件更新并核对 SHA，部署前加密备份成功；33 张表无 DDL、停服期间未恢复或改写数据库，启动后完整性通过；其他五个服务 PID 未变。协议保持 1、最低 App 版本保持 3.0，`bulkRosterImport` 能力已开启；权限、修订、事务和幂等校验继续保留，旧客户端单人编辑兼容。九项公网合成专项已全部通过，合成球队按正常流程解散、临时凭据删除；部署后日备份和完整状态备份成功，配置备份下载、解密和摘要核验通过。最终回执已冻结，可按用户授权经本 PR 合入 main。
 
-部署证据：[deployment-receipt.json](../../../output/validation/3.1.2/bulk-backend-deploy-2026-11-04/deployment-receipt.json)。 公网证据：[public-verification.json](../../../output/validation/3.1.2/bulk-backend-deploy-2026-11-04/public-verification.json)。后续网站批次 `website-20261104T132137Z` 的 12 文件摘要、92 其他静态文件、18 项公网视口及启动清单刷新均通过。此状态替代前述网站发布时点的批量待部署说明。用户已授权本版通过 PR 合入 main；正式签名归档、App 上传、审核和上架仍分别记录，本轮尚未执行。
+部署证据：[deployment-receipt.json](../../../output/validation/3.1.2/bulk-backend-deploy-2026-11-04/deployment-receipt.json)。 公网证据：[public-verification.json](../../../output/validation/3.1.2/bulk-backend-deploy-2026-11-04/public-verification.json)。后续网站批次 `website-20261104T132137Z` 的 12 文件摘要、92 其他静态文件、18 项公网视口及启动清单刷新均通过。此状态替代前述网站发布时点的批量待部署说明。用户已授权本版通过 PR 合入 main；该后台发布时点尚未正式归档；随后已完成正式 Release 归档与 App Store IPA 导出，见 [ARCHIVE.md](ARCHIVE.md)。App 上传、提交审核及上架仍未执行。
+
+## 2026-11-04 正式 Release 归档与 App Store IPA 导出（当前）
+
+已从干净 main `3d3d83a6aaf64be353e0f71c749a3e7e3ad879d6` 完成 iOS 3.1.2（Build 1）Release generic iOS device（arm64）归档，并以 `app-store-connect`／`destination=export` 导出 App Store 分发 IPA，未使用上传。签名、版本／Build／Bundle ID、设备族、最低 iOS、隐私 plist 与 dSYM 一致性核对通过；导出包 `get-task-allow=false`，无设备白名单。
+
+正式目录：`output/releases/3.1.2/archives/BaseballMaster-3.1.2-build1.xcarchive`；IPA：`output/releases/3.1.2/app-store-export/BaseballMaster.ipa`，14,793,278 bytes，SHA-256 `f3f068b8f9dfe695f1902a2dc73affb1b54ce13d1966f532f69b18cd631cc572`。源归档的自动开发签名与导出后的 App Store 分发重签分别记录；正式二进制／签名不进入 Git 或宣传 ZIP。详见 [ARCHIVE.md](ARCHIVE.md)。
+
+本段替代此前按日期保留的“未正式归档”阶段状态。App 尚未上传、提交审核或上架，归档／导出不代表 Apple 服务端验证通过。本次没有重跑 App 功能测试、修改源码或版本。
