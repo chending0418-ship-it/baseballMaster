@@ -1,36 +1,19 @@
-# 棒球比赛记录大师当前入口
+# 棒球比赛记录大师 · Android 当前入口
 
-更新日期：2026-11-04。本文件是当前状态与资料的唯一导航入口，旧文档内的日期记录保留为历史。
+更新日期：2026-11-04。当前版本与交付从本页进入；iOS 状态只看其独立目录，不在这里维护平行进度。
 
 | 项目 | 当前依据 |
 | --- | --- |
-| 平台工作目录 | 本目录为 iOS；Android 已独立迁至可见目录 [baseball-scorekeeper-android](../../baseball-scorekeeper-android/docs/CURRENT.md)，Gradle 工程位于该目录 `android/`。本次仅整理本机路径，既有版本和 PR 状态不变 |
-| 跨平台计划维护 | iOS、Android 各版本分别维护发布功能计划；Android [0.8.1](https://github.com/chending0418-ship-it/baseballMaster/blob/codex/android-0.8.1/docs/plans/0.8.1%20%E5%8F%91%E5%B8%83%E5%8A%9F%E8%83%BD%E8%AE%A1%E5%88%92.md)／[0.8.2](https://github.com/chending0418-ship-it/baseballMaster/blob/codex/android-0.8.2/docs/plans/0.8.2%20%E5%8F%91%E5%B8%83%E5%8A%9F%E8%83%BD%E8%AE%A1%E5%88%92.md) 由各自分支维护 |
-| Android 当前版本 | `codex/android-0.8.2`，0.8.2（Build 10）；示例名单、折叠跑垒分列与 PDF 对齐已完成，本轮经 PR #39 整合；[单份计划](<plans/0.8.2 发布功能计划.md>)、[开发交接](releases/android/0.8.2-DEVELOPMENT.md) |
-| Android 分发与遗留 | 官网仍为 0.8.1（Build 9）测试包，0.8.2 固定 APK 未重新分发；正式赛后归档／旧关联更新、完整跨端互导及实体厂商设备仍待后续，未上传应用市场 |
-| 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.2（Build 1） |
-| PR 整合授权 | 2026-11-04 用户授权整理并合入 #34、#37，再整合验证 #39；#34 已合并为 `e58ea84`，#37 已合并为 `510021b`；#39 在本分支完成整合验证后通过 PR 合入。整合验证详见 [记录](maintenance/2026-11-04-pr-integration.md)。本轮合并不包含真实迁移、服务部署或商店上传 |
-| 当前开发 | `codex/dev-3.1.2`，3.1.2（Build 1）；iPhone／iPad、批量名单与统计页球员落点保留；Duo 适配及专项模拟器验收已完成；投手额度已修复换局提前计入，30 项专项数据回归通过；3.1.1 未完成项全部纳入，见 [3.1.2 开发与发布待办](releases/3.1.2/DEVELOPMENT.md) |
-| 继承问题与验收 | P2 已修复；91 项 iOS 数据、iPhone 6 项 UI 分批通过，iPad Pro 8 项、mini 2 项 UI 通过；Debug／未签名 Release 成功。批量名单覆盖本机／对手／共享，共享后端 107 项通过但未部署；统计页球员落点已接入统一球场，新增专项验证通过；旧记录、备案及迁移仍待办，见 [3.1.2 开发记录](releases/3.1.2/DEVELOPMENT.md) |
-| 设备兼容 | iPhone／iPad 已有验证，Duo 内外屏及半折叠 5 项专项 UI 场景已通过；默认展开首屏完整显示主要操作，页内 Pro 自然展开；原研究保留为 [兼容评估](plans/ADAPTIVE-DEVICE-SUPPORT.md)，实际进度及 Duo 下载入口见 [3.1.2](releases/3.1.2/DEVELOPMENT.md) |
-| 本版发布功能计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；上版范围与承接见 [3.1.1 发布功能计划](<plans/3.1.1 发布功能计划.md>) |
-| 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
-| 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
-| 发布材料 | [3.1.0 发布交接](releases/3.1.0/REVIEW-HANDOFF.md)、`output/releases/3.1.0/` |
-| 已确认上架 | 既有 README 记录用户确认 3.0 已上架；本轮没有连接 App Store Connect 核验新状态 |
-| 3.1.0 上传与审核 | 现有交接为材料已准备、尚未上传或提交；后续以用户确认或回执更新 |
-| 直播点选提示 | 已部署香港文字直播网页并通过公网哈希与健康检查；隐藏点选操作提示，保留球型与已选区域，刷新原链接生效；见 [部署记录](../live/deploy/2026-11-02-contact-wording.md) |
-| 原设备连接问题 | 2026-11-02 用户确认改动后无需继续排查，已关闭；两场旧比赛原件核对仍保留在 I311-05 |
-| 3.1.1 历史发布边界 | 开屏服务已增量部署到现有香港服务（固定 URL）；App 未正式归档、上传或提交审核，备案与上海迁移仍等待 |
-| 服务实现 | `live/`、`collaboration/` 随本项目维护，原公网 URL 保持 |
-| 上海迁移准备 | 隔离验收、正式证书、上海 COS 备份恢复及正反向迁移演练已通过；正式候选配置已校验但未安装。用户决定等备案通过后再开始真实数据迁移，今晚 23:00 不执行维护；生产数据未复制、域名未切换、香港未操作，见 [迁移方案与阶段记录](plans/ICP-MIGRATION.md#14-真实数据迁移前的准备交接2026-10-23) |
+| 平台工作目录 | 当前 Android 工作根目录为 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper-android/`，工程入口 [android/README](../android/README.md)；iOS 在独立可见目录 [baseball-scorekeeper](../../baseball-scorekeeper/docs/CURRENT.md)。下列 iOS 行仅是本分支继承基线，当前 iOS 状态以该目录为准 |
+| 目录调整交接 | [2026-11-04 平台目录与计划维护](maintenance/2026-11-04-platform-workspaces.md)，含旧路径映射、迁移验收及提交边界 |
+| 本平台版本 | Android 0.8.2（Build 10），配置以 `android/app/build.gradle.kts` 为准；继承的 iOS 工程版本不代表 Android 版本 |
+| Android 发布功能计划 | [0.8.2 发布功能计划](<plans/0.8.2 发布功能计划.md>)、[0.8.1 发布功能计划](<plans/0.8.1 发布功能计划.md>)；每个平台、每个版本各维护单份计划，开发日志不替代版本计划 |
+| Android 0.8.2 开发 | 分支 `codex/android-0.8.2`；恢复新比赛示例名单入口、跑者／出局宽面板三列布局；比赛／逐打席／文字／年度／个人 PDF 按 iOS 统一版式与分页。0.8.2（Build 10）Release 已打包，298 项单元、7 项最终包专项及 13 项 PDF 内容检查通过；已推送 [PR #39](https://github.com/chending0418-ship-it/baseballMaster/pull/39)，已于 2026-11-04 合入 main（`b415236`），无自动合并；完整交付及边界见 [开发记录](releases/android/0.8.2-DEVELOPMENT.md)。官网下载仍为 0.8.1（Build 9） |
+| Android 0.8.1 开发 | 分支 `codex/android-0.8.1`，0.8.1（Build 9）最终包已冻结；296 项单元测试、27 项产品专项、26 项旧回归及恢复／折叠验证通过，手机／展开各 47 场景已实拍并人工审查，125 页 PDF／HTML 与逐项验证报告已完成，见 [开发与验收](releases/android/0.8.1-DEVELOPMENT.md)。已推送 [PR #38](https://github.com/chending0418-ship-it/baseballMaster/pull/38)，已由 #39 承接，2026-11-04 关闭／未单独合并；官网下载已更新至 0.8.1（Build 9）；服务器文件哈希通过，按用户要求停止公网完整取回等待 |
+| Android 迁移既有基线 | 0.8.0（Build 8）为已验证前版，当前官网下载以 0.8.1 为准；保留“测试中”及 App Store 入口；按 iOS 3.1.1 对照并保留批量名单录入，核心 183 项、App JVM 83 项及 API 31 标准视口 19 项设备流程通过。见 [0.8.0 交接](releases/android/0.8.0-TEST-HANDOFF.md)、[官网下载](https://baseballmaster.cc/scorekeeper.html#download)。分支 `codex/android-0.8.0` 已推送，[PR #36](https://github.com/chending0418-ship-it/baseballMaster/pull/36) 随 #39 进入 main，GitHub 已自动标记合并／关闭。完整互导暂缓，正式赛后云端归档／旧关联更新仍待后续，完整迁移未标完成 |
+| 界面与文案 | 用户要求两端统一精简：数据与操作优先，删重复解释，公式／图例按需查看；见 [页面密度与文案](plans/ANDROID-APK.md#17-页面密度与文案2026-11-02-用户反馈)。本轮先修改 Android，iOS 界面未改；用户 2026-11-03 明确两端不用考虑小屏，Android 按标准尺寸布局对照，不保留小屏专用简化版 |
+| 本轮 PR 整合 | #34、iOS #37 与 Android #39 已依次合入；Android 298 项、iOS 46 项及后端 107 项回归通过，见 [记录](maintenance/2026-11-04-pr-integration.md)。本轮未部署／分发／上传商店 |
 | 公共品牌与官网 | [品牌](../../../brand/README.md)、[官网](../../../website/README.md) |
-| 目录整理历史 | [迁移记录](../../../management/MIGRATION.md)，当次未修改业务代码、版本号或部署 |
+| 工作区整理 | [2026-11-04 入口与缓存整理](../../../management/2026-11-04-workspace-tidy.md)，源码、固定 APK 与验证证据保留；文档维护见 [PR #40](https://github.com/chending0418-ship-it/baseballMaster/pull/40)，本次未重新打包或分发 |
 
-需求与后续设计入口：[3.1.1 开机图](design/launch-screen/3.1.1/README.md)、[3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)、[3.1 原始详细规划](plans/3.1-BATTED-BALL.md)、[后续计划](plans/BACKLOG.md)、[产品设计](design)。
-
-App Store 与版本宣传脚本现位于 `scripts/release/`，海报模板位于 `scripts/templates/`。例如在本项目目录运行 `python3 scripts/release/package-release-3.1.0.py`，输出继续使用本项目原有 `output/` 分类。分享卡片部署脚本位于 `scripts/website/`，执行部署需要用户另行授权。
-
-公共品牌与官网分别直接使用工作区 brand/、website/ 的真实目录；App 内不设置目录替身。修改公共资料在总品牌仓库提交。完整资料位置见 [总导航](../../../management/AGENT-GUIDE.md)。
-
-当前微信群宣传源稿：docs/design/marketing/3.1.0/wechat-2026-10-22/source/。在 App 根目录运行 node docs/design/marketing/3.1.0/wechat-2026-10-22/source/render.cjs；导出仍写入本 App 的 output/marketing/3.1.0/wechat-2026-10-22/。历史输出中的可编辑脚本与 SVG 已保存到 docs/archive/output-sources/，按其 manifest 追溯，不能将历史设计当作当前交互基准。
+需求、设计及发布资料见 [文档导航](README.md)。整理前的跨平台混合入口保存在 [原文归档](archive/workspace-2026-11-04/android/CURRENT-before.md)，继承的 iOS 历史不作为本平台当前版本。后续版本计划各在对应分支单份维护，状态随交付更新。
