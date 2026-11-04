@@ -1,0 +1,173 @@
+[
+  {
+    "id": "iphone-01",
+    "name": "球场记分",
+    "line1": "场上每个人",
+    "line2": "一眼看清",
+    "detail": "姓名 背号 垒况　清楚呈现在球场上",
+    "devices": [
+      "iphone"
+    ],
+    "file": "iphone-01.png",
+    "original": "output/validation/3.1.2/release-materials-2026-11-04/iphone-regression/07B8CDBB-17DB-4D9E-9268-B6BC40AD8B39.png",
+    "sourceSHA256": "2caeb10cee6fbc9a45b8ab3c67fe54f4819a606b1b06f737bd3ea65c84b9a687",
+    "provenance": "3.1.2 final iPhone regression XCTest attachment; synthetic practice/setup data; extracted from duo-2026-11-04/iphone-regression.xcresult on 2026-11-04; no rerun"
+  },
+  {
+    "id": "iphone-02",
+    "name": "两种记录方式",
+    "line1": "两种记录方式",
+    "line2": "开局自由选择",
+    "detail": "基础版与 Pro 版　按熟悉的方式记录",
+    "devices": [
+      "iphone"
+    ],
+    "file": "iphone-02.png",
+    "original": "output/validation/3.1.2/release-materials-2026-11-04/iphone-regression/BCE42862-7333-48F1-9313-1C8EAC0B02C8.png",
+    "sourceSHA256": "e5ee14f18b7008102f554c802c1f24b67bace733b4a019c35c1989051c07fc3a",
+    "provenance": "3.1.2 final iPhone regression XCTest attachment; synthetic practice/setup data; extracted from duo-2026-11-04/iphone-regression.xcresult on 2026-11-04; no rerun"
+  },
+  {
+    "id": "iphone-03",
+    "name": "落点与传球",
+    "line1": "从落点到传球",
+    "line2": "一个球场完成",
+    "detail": "点选击球落点　依次记录守备与传球",
+    "devices": [
+      "iphone"
+    ],
+    "file": "iphone-03.png",
+    "original": "output/validation/3.1.2/release-materials-2026-11-04/iphone-regression/023DFBEC-782D-43B0-A70F-A31D7E78CBB2.png",
+    "sourceSHA256": "2790dd0f22a84a615f5d6e255a7c19398096735d333b8e2a90c995651d99b745",
+    "provenance": "3.1.2 final iPhone regression XCTest attachment; synthetic practice/setup data; extracted from duo-2026-11-04/iphone-regression.xcresult on 2026-11-04; no rerun"
+  },
+  {
+    "id": "iphone-04",
+    "name": "击球结果",
+    "line1": "看到什么结果",
+    "line2": "就按现场记录",
+    "detail": "安打 出局与更多结果　按实际情况选择",
+    "devices": [
+      "iphone"
+    ],
+    "file": "iphone-04.png",
+    "original": "output/validation/3.1.2/release-materials-2026-11-04/iphone-regression/8EC73349-2D80-463A-A99E-F432D9D6FEEE.png",
+    "sourceSHA256": "01da25cafd332780a21a04a4540ca2964550a03c22c2895368d6747b24ee338f",
+    "provenance": "3.1.2 final iPhone regression XCTest attachment; synthetic practice/setup data; extracted from duo-2026-11-04/iphone-regression.xcresult on 2026-11-04; no rerun"
+  },
+  {
+    "id": "iphone-05",
+    "name": "批量名单",
+    "line1": "名单一次整理",
+    "line2": "队员整批加入",
+    "detail": "本机球队与对手名单　先预览 再确认",
+    "devices": [
+      "iphone"
+    ],
+    "file": "iphone-05.png",
+    "original": "output/validation/3.1.2/iphone-ipad-27.2/iphone-roster-images/3C6465FE-D703-429E-90A7-27C1FE89F849.png",
+    "sourceSHA256": "eb411341842372a72add16718a8550a3c15ca3d5eab0ee75eeef9f43b0efa3ff",
+    "provenance": "3.1.2 local roster simulator UI verification"
+  },
+  {
+    "id": "iphone-06",
+    "name": "球员击球落点",
+    "line1": "每次击球去向",
+    "line2": "回看更有依据",
+    "detail": "按所选比赛筛选　查看球员击球落点",
+    "devices": [
+      "iphone"
+    ],
+    "file": "iphone-06.png",
+    "original": "output/validation/3.1.2/statistics-player-contacts/iphone-images/2ACEFB05-C0EB-4CC0-A9CA-644E7C247306.png",
+    "sourceSHA256": "39712cdcfa7574e363ff7492ddedfab4576a57672491f7380704d53d35c87c56",
+    "provenance": "3.1.2 statistics synthetic completed games"
+  },
+  {
+    "id": "duo-01",
+    "name": "展开工作台",
+    "line1": "展开一块球场",
+    "line2": "记分更从容",
+    "detail": "分局比分 球场与主要操作　同屏查看",
+    "devices": [
+      "duo-inner"
+    ],
+    "file": "duo-01.png",
+    "original": "output/validation/3.1.2/duo-2026-11-04/workbench-linescore-final-open-display3.png",
+    "sourceSHA256": "3264d9bb3d43e0953fbeead82d9bb160118246c49a6fc104bb68aadbc2cb933f",
+    "provenance": "3.1.2 final Duo native inner display capture; simulator only"
+  },
+  {
+    "id": "duo-02",
+    "name": "页内Pro",
+    "line1": "记录留在场上",
+    "line2": "过程一气呵成",
+    "detail": "宽屏页内记录　球型 落点与守备",
+    "devices": [
+      "duo-inner"
+    ],
+    "file": "duo-02.webp",
+    "original": "output/validation/3.1.2/duo-2026-11-04/expanded-pro-field-ready-display3.png",
+    "sourceSHA256": "c63735c5eb2412577ec923b54e038280d602dac9b4b5c0a047e730ce9c3fc68f",
+    "provenance": "3.1.2 final Duo native inner display capture; simulator only",
+    "assetSHA256": "b3d62778e9662d6b041312d6dd785cd341828c2c80244fabdab21f30aa97d638",
+    "losslessPixelSHA256": "854872e317157562f76d841635b9d7f22ba98156b443689f3227e764cb64c47c",
+    "assetNote": "Lossless WebP transport copy; decoded RGBA bytes identical to original PNG. Original source remains in validation evidence."
+  },
+  {
+    "id": "duo-03",
+    "name": "深色工作台",
+    "line1": "从白天到夜场",
+    "line2": "记录依然清晰",
+    "detail": "深色界面与大字设置　适配比赛现场",
+    "devices": [
+      "duo-inner"
+    ],
+    "file": "duo-03.png",
+    "original": "output/validation/3.1.2/duo-2026-11-04/workbench-linescore-final-dark-accessibility-large-display3.png",
+    "sourceSHA256": "fb2d155b7b0e590b3f35facffce797716f81db43602cd5b666c526643fd5d43c",
+    "provenance": "3.1.2 final Duo dark accessibility native display; simulator only"
+  },
+  {
+    "id": "duo-04",
+    "name": "外屏Pro",
+    "line1": "收起也能记",
+    "line2": "展开接着做",
+    "detail": "内外屏切换　保留正在编辑的草稿",
+    "devices": [
+      "duo-outer"
+    ],
+    "file": "duo-04.png",
+    "original": "output/validation/3.1.2/duo-2026-11-04/pro-sheet-refolded-display1.png",
+    "sourceSHA256": "f4ce4479e2bf4ed995f60bd79910b17dfb47b96da7ab1b669782c0b1f4eed623",
+    "provenance": "3.1.2 Duo native outer display; simulator only"
+  },
+  {
+    "id": "ipad-01",
+    "name": "iPad工作台",
+    "line1": "球场更宽阔",
+    "line2": "信息更完整",
+    "detail": "比分 球场 投打与阵容　汇聚宽屏工作台",
+    "devices": [
+      "ipad"
+    ],
+    "file": "ipad-01.png",
+    "original": "output/validation/3.1.2/iphone-ipad-27.2/ipad-live.png",
+    "sourceSHA256": "853fde28e2d9d098113217822b73c19f03e16ecb94f16977897fd76ab7f66223",
+    "provenance": "3.1.2 iPad 13-inch simulator capture; earlier verified build"
+  },
+  {
+    "id": "ipad-02",
+    "name": "iPad批量名单",
+    "line1": "先把名单备好",
+    "line2": "到场专心记球",
+    "detail": "本机球队与对手名单　支持批量录入",
+    "devices": [
+      "ipad"
+    ],
+    "file": "ipad-02.png",
+    "original": "output/validation/3.1.2/iphone-ipad-27.2/ipad-images/04900CB0-9CDE-44DC-99EA-F1DD232F4C71.png",
+    "sourceSHA256": "06cbbd20baa5e22a527281c0dd6b6e2495f130037983f5d8cb0f57ff02cfa659",
+    "provenance": "3.1.2 iPad roster preview simulator capture"
+  }
+]

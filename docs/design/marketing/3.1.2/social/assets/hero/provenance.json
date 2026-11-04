@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-04",
+  "type": "imagegen-product-composition",
+  "tool": "built-in image_gen.imagegen",
+  "originalLocalPath": "output/marketing/3.1.2/artwork/four-devices-safe-original.png",
+  "originalSHA256": "62534c7dc31f01aae2c5e87f4aa573a29cda206765b990d23b07e81d906a8da3",
+  "file": "four-devices.webp",
+  "sha256": "a1ff3fb310e41df12d364c66b25297f1a9a2df0d4ab84459f0783a98d44938ce",
+  "width": 1448,
+  "height": 1086,
+  "deviceCount": 4,
+  "devices": [
+    "iPad",
+    "iPhone",
+    "iPhone Duo",
+    "Android phone"
+  ],
+  "screenContent": [
+    "iPad scoring workbench with generic player letter labels",
+    "iPhone genuine BM launch artwork",
+    "Duo practice recording with generic player letter labels",
+    "Android anonymous match-rules setup"
+  ],
+  "status": "Product visual; not an unmodified screenshot or physical-device validation record; no known real player names; Android foldable removed from combined hero; no version numbers."
+}

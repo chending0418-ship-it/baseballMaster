@@ -1,0 +1,13 @@
+{
+  "date": "2026-11-04",
+  "use": "website transparent hero; social originals remain separate",
+  "source": "four-devices.webp",
+  "tool": "built-in image_gen",
+  "prompt": "Use case: background-extraction. Remove only green studio backdrop, floor, glow and reflections. Preserve all four devices, their screens, layout, proportions and lighting. Genuine transparent alpha; no baked checkerboard or surrounding green panel.",
+  "output": "four-devices-transparent.png",
+  "size": [
+    1448,
+    1086
+  ],
+  "label": "产品效果图"
+}

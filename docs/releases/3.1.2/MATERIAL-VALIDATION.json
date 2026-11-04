@@ -1,0 +1,339 @@
+{
+  "date": "2026-11-04",
+  "scope": "release materials and Shanghai static website publication",
+  "appBuildsOrTestsRerun": false,
+  "pngCount": 41,
+  "appStoreSets": 11,
+  "appStorePNGs": 34,
+  "xiaohongshuPNGs": 6,
+  "wechatPNGs": 1,
+  "textLimits": {
+    "promotional-text-zh-Hans.txt": {
+      "count": 92,
+      "unit": "characters",
+      "limit": 170
+    },
+    "description-zh-Hans.txt": {
+      "count": 1491,
+      "unit": "characters",
+      "limit": 4000
+    },
+    "whats-new-zh-Hans.txt": {
+      "count": 387,
+      "unit": "characters",
+      "limit": 4000
+    },
+    "keywords-zh-Hans.txt": {
+      "count": 97,
+      "unit": "utf8_bytes",
+      "limit": 100
+    },
+    "review-notes-en.txt": {
+      "count": 3743,
+      "unit": "utf8_bytes",
+      "limit": 4000
+    },
+    "review-notes-zh-Hans.txt": {
+      "count": 2377,
+      "unit": "utf8_bytes",
+      "limit": 4000
+    }
+  },
+  "localMarkdownLinksChecked": 38,
+  "webViewportChecks": 8,
+  "reviewLinksChecked": 16,
+  "checks": [
+    "PNG exact dimensions, RGB, SHA-256",
+    "Native UI screenshot hashes",
+    "Official device frame provenance and exact screen masks",
+    "All social originals individually visually inspected; no version numbers",
+    "No XHS website/download/contact/QR content; Android test status retained",
+    "No Apple original bezel or mask in Git or delivered ZIP",
+    "ZIP CRC integrity",
+    "Cover and WeChat: original photographic composition revised to four devices, only Duo as foldable, subtle crease, launch-screen variety",
+    "Product visual uses generic team/player letter labels; Android current native UI only generic rules/settings",
+    "Known private-name OCR exclusion: 41 current PNGs scanned, 0 flagged; recognized text and identities not included in repository",
+    "Brand/headline/intro and product visual share horizontal center 540px"
+  ],
+  "files": [
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.9/01-球场记分.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "694bb3f3eff77ace1b4b54a4f5929b1fe85118030205ce20d2ec7fba8bc9531d"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.9/02-两种记录方式.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "06d002d554ab6f43293fe51011cde32ebac1ad3102471094030073ab935c5da7"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.9/03-落点与传球.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "e7f8369e6acad623c317bd31b6f1729094db1e5d7d6de3fa183a1c7b210536d9"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.9/04-击球结果.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "16f717b8fa81f55ea2a125e9d001c7800290b95cbe55de1f6ef995a4dbcae912"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.9/05-批量名单.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "dfd5c1666c786972b7e86289635c59981c7171cb84dc2c6f74010e1c7ff54133"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.9/06-球员击球落点.png",
+      "width": 1320,
+      "height": 2868,
+      "sha256": "063bf6cb3627aa65d73c9115aae60d935ce29f90dc15c9fd21d11f5a2031f1c0"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.3/01-球场记分.png",
+      "width": 1206,
+      "height": 2622,
+      "sha256": "6f505788ccdef728ca4361bd313d3edef2f120977e04a7bdbc04173af67b4f88"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.3/02-两种记录方式.png",
+      "width": 1206,
+      "height": 2622,
+      "sha256": "32cc1cdc721c998e1aa96d727744ca5cf1ef79bdddef097b35f7fdc6d0213a30"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.3/03-落点与传球.png",
+      "width": 1206,
+      "height": 2622,
+      "sha256": "774be8fe502bae64c5e08d579ee81c2bf1f7564fc5f9320612b4e200570e828c"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.3/04-击球结果.png",
+      "width": 1206,
+      "height": 2622,
+      "sha256": "fbcd54e27077d7dea0a1b78ca5869077b6d16e57541a465fb9e6fa8cfd9fcc2a"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.3/05-批量名单.png",
+      "width": 1206,
+      "height": 2622,
+      "sha256": "a97106b6d7dfc940c9c02b84e5bdab057deff0ee0aa46681144c3604dfa1706a"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.3/06-球员击球落点.png",
+      "width": 1206,
+      "height": 2622,
+      "sha256": "6b9a53f51674f9f2d362ea41aa318dc85a6611cc7379292d6914df55265caf1a"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.5/01-球场记分.png",
+      "width": 1242,
+      "height": 2688,
+      "sha256": "ed18a5cb5f79a6ad5615781d15b4eda383d9e7b686e4914e8e209a564a33581f"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.5/02-两种记录方式.png",
+      "width": 1242,
+      "height": 2688,
+      "sha256": "f3297c810e3cc799d4734f58a37c1334b79b420c3e7aaa781ca4e1bdb44361aa"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.5/03-落点与传球.png",
+      "width": 1242,
+      "height": 2688,
+      "sha256": "897758b7c78a83b2d7c8162423cc6d3d5f8612d54012e876e82358e626d1f545"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.5/04-击球结果.png",
+      "width": 1242,
+      "height": 2688,
+      "sha256": "11367d3d72f2d1860f5d705d79c11d5a27fa752bdc902e95b1794995606a9680"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.5/05-批量名单.png",
+      "width": 1242,
+      "height": 2688,
+      "sha256": "6dd38d0f6e804c1c1527fb20948415f975f5b010a2c2185b8186a734a17c61db"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/iphone-6.5/06-球员击球落点.png",
+      "width": 1242,
+      "height": 2688,
+      "sha256": "fb0e887b64d6788edda47771756c0d3b8635089f65301178068aceb6f140d212"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/duo-outer-landscape/01-外屏Pro.png",
+      "width": 2034,
+      "height": 1398,
+      "sha256": "3f2a0197ee886d4669f6d605b54fc4c277c99e0e9be1948020b19286cf805278"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/duo-outer-portrait/01-外屏Pro.png",
+      "width": 1398,
+      "height": 2034,
+      "sha256": "69b14812f02c40242cc55d98b5bf43e2b7e962b8616b7ad885c573027f633eab"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/duo-inner-landscape/01-展开工作台.png",
+      "width": 2853,
+      "height": 2007,
+      "sha256": "70b1fbe7fa4bdef99e61ce8aa2f55f8bd833154780a6a84e87c90595e8fc99a5"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/duo-inner-landscape/02-页内Pro.png",
+      "width": 2853,
+      "height": 2007,
+      "sha256": "20a07d62dbbf3e5a7e7b9f74cec9d5f66bc3d147f85f7140d60846aed144d02d"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/duo-inner-landscape/03-深色工作台.png",
+      "width": 2853,
+      "height": 2007,
+      "sha256": "057e000c78eb4036a168a027959dd279a8d23235ede21d4deeb0b3d1b5148cf9"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/duo-inner-portrait/01-展开工作台.png",
+      "width": 2007,
+      "height": 2853,
+      "sha256": "fbbb32cf7d99e5c620e652aa0b8c9f5c8cc1150e59d7f36fcf7d2b80d292699f"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/duo-inner-portrait/02-页内Pro.png",
+      "width": 2007,
+      "height": 2853,
+      "sha256": "761015d5646cbb33b958494cc2c64793e39d1326146c8df7867b5a675627addf"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/duo-inner-portrait/03-深色工作台.png",
+      "width": 2007,
+      "height": 2853,
+      "sha256": "d199e695c476d20387b47ec0e2d9b849f4a729d2316bdb7a144bdc7d45bf2127"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/ipad-12.9-landscape/01-iPad工作台.png",
+      "width": 2732,
+      "height": 2048,
+      "sha256": "e44e117516a26258c8f55dadf2948d7910dd2695568170469e3865559baffeed"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/ipad-12.9-landscape/02-iPad批量名单.png",
+      "width": 2732,
+      "height": 2048,
+      "sha256": "a14e1ed5d1cdc5fa1672cb55ad2b5cbe263ced5972eff11934d8ded2f1458a6b"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/ipad-12.9-portrait/01-iPad工作台.png",
+      "width": 2048,
+      "height": 2732,
+      "sha256": "10d3483e2d2f24de4a3aaa04651a9371e997696aea4d99483e55194e477e3bff"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/ipad-12.9-portrait/02-iPad批量名单.png",
+      "width": 2048,
+      "height": 2732,
+      "sha256": "0de7c5b77261818af343de847c934486bf43e7fcf63a7451b67010f728df57c0"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/ipad-13-landscape/01-iPad工作台.png",
+      "width": 2752,
+      "height": 2064,
+      "sha256": "e99a0178b2e06919278085a90a0bbad586034abfe801fd40dbefac41ca8e5c98"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/ipad-13-landscape/02-iPad批量名单.png",
+      "width": 2752,
+      "height": 2064,
+      "sha256": "4650e689f0d98cab3c279b5a4de38c66a4cacb52b45db399f6991bcc2bc58e2c"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/ipad-13-portrait/01-iPad工作台.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "e710adb198403b0431c5e702932c15e147b6d1303fb324776aac882ffb3adddd"
+    },
+    {
+      "file": "output/releases/3.1.2/app-store/ipad-13-portrait/02-iPad批量名单.png",
+      "width": 2064,
+      "height": 2752,
+      "sha256": "f28f9ada7228bdb3e33eb0cb8832b2ae7c39036762593d12c4949b979ab816dc"
+    },
+    {
+      "file": "output/marketing/3.1.2/xiaohongshu/2026-11-04/images/01-一场比赛多种屏幕.png",
+      "width": 1080,
+      "height": 1440,
+      "sha256": "9bab9afb4df1cb98c48cad246dac19446e1224e31f4fe20f09c718d1758b2442"
+    },
+    {
+      "file": "output/marketing/3.1.2/xiaohongshu/2026-11-04/images/02-iPad宽屏工作台.png",
+      "width": 1080,
+      "height": 1440,
+      "sha256": "392e4160988ccc949ab7f9febefdbcb5f76b2e1ce92bbd9057a336bed5cb9904"
+    },
+    {
+      "file": "output/marketing/3.1.2/xiaohongshu/2026-11-04/images/03-Duo内外屏记录.png",
+      "width": 1080,
+      "height": 1440,
+      "sha256": "12ff070aaa11fb3afcf867a72f945abf23bd8590ba2853699e0324c1127d5313"
+    },
+    {
+      "file": "output/marketing/3.1.2/xiaohongshu/2026-11-04/images/04-Android同样能记.png",
+      "width": 1080,
+      "height": 1440,
+      "sha256": "38fd09b670cebf2583abb2643881122dd52592c4b00d7c51a2da343bb18fc6d9"
+    },
+    {
+      "file": "output/marketing/3.1.2/xiaohongshu/2026-11-04/images/05-整份名单批量输入.png",
+      "width": 1080,
+      "height": 1440,
+      "sha256": "0393e9b956929dc018b2cfb72d3cb0606bc68c0613f0390df1b2548bdda1cc58"
+    },
+    {
+      "file": "output/marketing/3.1.2/xiaohongshu/2026-11-04/images/06-回看球员击球落点.png",
+      "width": 1080,
+      "height": 1440,
+      "sha256": "2b6e67bee4de232d315b53948389d49100e2c53d883efe83bc832c80e4440b8e"
+    },
+    {
+      "file": "output/marketing/3.1.2/wechat/2026-11-04/images/棒球比赛记录大师-微信一页图.png",
+      "width": 1080,
+      "height": 1800,
+      "sha256": "a2fd45fc33028b427b3eff8607b25c5ed1ad6f842acea0b7e4e242e7c2b4c22c"
+    }
+  ],
+  "privacyAudit": {
+    "images": 41,
+    "flagged": 0,
+    "method": "Local Apple Vision OCR against private deny-list plus visual review. Source Android match/roster/player images withdrawn."
+  },
+  "losslessSourceTransport": {
+    "sourcePixelsIdentical": true,
+    "publicPNGsUnchanged": 40,
+    "sourceWebPBytes": 761118
+  },
+  "websiteDeployment": {
+    "batch": "website-20261104T125935Z",
+    "filesHTTPSHashVerified": 12,
+    "protectedStaticFilesUnchanged": 92,
+    "publicBrowserChecks": 18,
+    "failures": 0,
+    "transparentHero": true,
+    "homepageFilingVisible": true,
+    "appUploaded": false,
+    "backendUpdated": false,
+    "latestContentBatch": "website-20261104T132137Z",
+    "runtimeManifestRefreshed": true
+  },
+  "sharedBulkBackend": {
+    "deployed": true,
+    "batch": "bulk-3.1.2-20261104T131831Z",
+    "localTests": 107,
+    "publicChecks": 9,
+    "publicPassed": true,
+    "databaseMigrated": false,
+    "encryptedBackupsBeforeAndAfter": true,
+    "websiteAligned": true
+  }
+}

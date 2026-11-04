@@ -1,0 +1,66 @@
+{
+  "preparedAt": "2026-11-04",
+  "scope": "Privacy-safe existing Android UI selections only; no app source, emulator or user data changed.",
+  "reason": "User confirmed a player name in prior Android test screenshots belongs to a real child. Prior synthetic-data/private-information assertions are invalid. No existing match/player/roster screenshot may be assumed synthetic.",
+  "approved": [
+    {
+      "file": "android-safe-rules.png",
+      "source": "/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper-android/output/validation/android/0.8.1/phone-final-2bd519bf/functional/device-files/081-visual-audit/phone-1793714275449/22-setup-rules-sharing.png",
+      "sha256": "54daddd57688bcd1c1ca5411560bb75a7496870a65c7a1075f1eea2cb8945bf8",
+      "sourceXml": "/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper-android/output/validation/android/0.8.1/phone-final-2bd519bf/functional/device-files/081-visual-audit/phone-1793714275449/22-setup-rules-sharing.xml",
+      "sourceXmlSHA256": "806cf5327cca012767345bdf581928043a56379d3f746f13a85391403e077918",
+      "copiedWithoutEditing": true,
+      "purpose": "Actual new-match rules settings, no player/team identity visible",
+      "publicCompositionAllowedByContentReview": true,
+      "visualReview": {
+        "method": "Opened original PNG with view_image; reviewed every visible text row and status/navigation area",
+        "result": "No child names, personal names, team names, match IDs, invite links, account identity, scores or roster content visible. Actual feature controls only."
+      },
+      "screenType": "phone",
+      "nativePixels": [
+        1080,
+        2340
+      ],
+      "appVersion": "0.8.1",
+      "appBuild": 9,
+      "physicalDeviceCapture": false
+    },
+    {
+      "file": "android-safe-settings.png",
+      "source": "/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper-android/output/validation/android/0.8.1/phone-final-2bd519bf/functional/device-files/081-visual-audit/phone-1793714275449/15-settings-light.png",
+      "sha256": "f866080bc7f863f68e4f00a8c89748446ac969d08f769e16f7451caadd44d3f0",
+      "sourceXml": "/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper-android/output/validation/android/0.8.1/phone-final-2bd519bf/functional/device-files/081-visual-audit/phone-1793714275449/15-settings-light.xml",
+      "sourceXmlSHA256": "13089dd40d6446f4eca992a231dcaf6357dbaa8796e24d51f31cd1a92a649a36",
+      "copiedWithoutEditing": true,
+      "purpose": "Actual app appearance and guidance settings, no player/team identity visible",
+      "publicCompositionAllowedByContentReview": true,
+      "visualReview": {
+        "method": "Opened original PNG with view_image; reviewed every visible text row and status/navigation area",
+        "result": "No child names, personal names, team names, match IDs, invite links, account identity, scores or roster content visible. Actual feature controls only."
+      },
+      "screenType": "phone",
+      "nativePixels": [
+        1080,
+        2340
+      ],
+      "appVersion": "0.8.1",
+      "appBuild": 9,
+      "physicalDeviceCapture": false
+    }
+  ],
+  "blockedPriorFiles": [
+    "android-open-live.png",
+    "android-phone-live.png",
+    "android-closed-draft.png",
+    "android-open-statistics.png"
+  ],
+  "blockedPolicy": "Do not upload, include in publicity, or label existing roster/match/player screenshot data as fictional. Keep private originals in validation evidence only.",
+  "priorProvenanceInvalidated": "assets/android-provenance.json contains syntheticTeamPlayerMatchData=true, noVisiblePrivateInformation=true, recommendedForPublicComposition=true assertions for previously selected private-data sources; these claims are withdrawn by this audit. Do not rely on them. Root agent must remove/replace those sources and any resulting composition or package.",
+  "checks": [
+    "Rules and settings PNG reviewed individually with view_image",
+    "Source XML inspected; only generic UI control text visible",
+    "Byte-identical copies: no name redaction or screen modification needed",
+    "No home screenshot approved: existing home contains private match/team records",
+    "No new build or AVD launched"
+  ]
+}
