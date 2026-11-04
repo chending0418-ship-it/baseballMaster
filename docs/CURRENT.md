@@ -8,6 +8,7 @@
 | 当前开发 | `codex/dev-3.1.2`，3.1.2（Build 1）；iPhone／iPad、批量名单与统计页球员落点保留；Duo 适配及专项模拟器验收已完成；3.1.1 未完成项全部纳入，见 [3.1.2 开发与发布待办](releases/3.1.2/DEVELOPMENT.md) |
 | 继承问题与验收 | P2 已修复；91 项 iOS 数据、iPhone 6 项 UI 分批通过，iPad Pro 8 项、mini 2 项 UI 通过；Debug／未签名 Release 成功。批量名单覆盖本机／对手／共享，共享后端 107 项通过但未部署；统计页球员落点已接入统一球场，新增专项验证通过；旧记录、备案及迁移仍待办，见 [3.1.2 开发记录](releases/3.1.2/DEVELOPMENT.md) |
 | 设备兼容 | iPhone／iPad 已有验证，Duo 内外屏及半折叠 5 项专项 UI 场景已通过；默认展开首屏完整显示主要操作，页内 Pro 自然展开；原研究保留为 [兼容评估](plans/ADAPTIVE-DEVICE-SUPPORT.md)，实际进度及 Duo 下载入口见 [3.1.2](releases/3.1.2/DEVELOPMENT.md) |
+| 本版发布功能计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；上版范围与承接见 [3.1.1 发布功能计划](<plans/3.1.1 发布功能计划.md>) |
 | 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
 | 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
 | 发布材料 | [3.1.0 发布交接](releases/3.1.0/REVIEW-HANDOFF.md)、`output/releases/3.1.0/` |
