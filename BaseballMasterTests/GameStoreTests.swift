@@ -3454,6 +3454,8 @@ extension GameStoreTests {
         let other = store.currentPitcher
         for _ in 0..<3 { store.applyPlay(.groundOut) }
         XCTAssertTrue(store.ruleNotices().contains { $0.contains(other.name) && $0.contains("已达到") })
+        XCTAssertFalse(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("超过 1 局限制") })
+        store.recordPitch(.ball)
         XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("超过 1 局限制") })
     }
 }
@@ -3608,6 +3610,9 @@ extension GameStoreTests {
         XCTAssertNil(store.ruleNoticeSummary())
         store.startGameClock()
         store.endCurrentHalf(); store.endCurrentHalf()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: first), [1])
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板 1/2 局")
+        store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: first), [1, 2])
         XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
         store.game.pitching[first] = PitchingLine(pitches: 3)
@@ -4537,14 +4542,14 @@ extension GameStoreTests {
 }
 
 extension GameStoreTests {
-    private func slowStore(policy: TwoStrikeFoulPolicy = .oneExtraFoul, balls: Int = 1, strikes: Int = 1) throws -> GameStore {
+    private func slowStore(policy: TwoStrikeFoulPolicy = .oneExtraFoul, balls: Int = 1, strikes: Int = 1, pitcherInningsLimit: Int? = nil) throws -> GameStore {
         let store = GameStore(persistenceURL: nil)
         func team(_ name: String) -> Team {
             Team(name: name, shortName: name, city: "", players: (0..<14).map { Player(name: name + "球员\($0+1)", number: $0+1, primaryPosition: FieldPosition.allCases[$0 % 10]) })
         }
         let own = team("客队"), opponent = team("主队")
         store.teams = [own]; store.currentTeam = own; store.opponentTeams = [opponent]
-        var rules = GameRules(scheduledInnings: 6, fieldersCount: 10, timeLimitMinutes: 90, timeWarningMinutes: 5)
+        var rules = GameRules(scheduledInnings: 6, fieldersCount: 10, timeLimitMinutes: 90, timeWarningMinutes: 5, pitcherInningsLimit: pitcherInningsLimit)
         rules.mode = .slowPitch; rules.competitionFormat = .timed
         rules.initialBalls = balls; rules.initialStrikes = strikes; rules.twoStrikeFoulPolicy = policy; rules.rulesVersion = 2
         func lineup(_ team: Team, count: Int) -> [LineupAssignment] {
@@ -5606,6 +5611,8 @@ extension GameStoreTests {
                 // This draft edits the batting team's future pitcher, who has not taken the mound yet.
                 XCTAssertTrue(store.game.pitcherInningUsage.innings(for: pending.candidate.id).isEmpty)
                 store.endCurrentHalf()
+                XCTAssertTrue(store.game.pitcherInningUsage.innings(for: pending.candidate.id).isEmpty)
+                store.recordPitch(.ball)
             }
             XCTAssertEqual(store.game.pitcherInningUsage.innings(for: pending.candidate.id), [1], "path \(path)")
             XCTAssertEqual(store.pitchingLine(for: pending.candidate).inningsText, "0.0", "path \(path)")
@@ -5691,25 +5698,32 @@ extension GameStoreTests {
         XCTAssertTrue(store.game.pitching.isEmpty)
     }
 
-    func testV30AppearanceLimitAdvancesWithDefensiveInningsWithoutAnyPitches() {
+    func testV312AppearanceLimitWaitsForPitchInNewDefensiveInnings() {
         let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
         let homePitcher = store.currentPitcher
         let awayPitcherID = store.game.activeAwayPitcherID!
         store.startGameClock()
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1])
-        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: awayPitcherID).isEmpty)
         store.endCurrentHalf()
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: awayPitcherID).isEmpty)
+        store.recordPitch(.calledStrike)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: awayPitcherID), [1])
         store.endCurrentHalf()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1])
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板 1/2 局")
+        store.pauseGameClock(); store.startGameClock()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1])
+        store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1, 2])
         XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
         XCTAssertEqual(store.pitchingLine(for: homePitcher).inningsText, "0.0")
-        store.pauseGameClock(); store.startGameClock()
-        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id).count, 2)
         store.endCurrentHalf(); store.endCurrentHalf()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1, 2])
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限", "An unplayed new inning is not the last allowed inning")
+        store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1, 2, 3])
         XCTAssertEqual(store.ruleNoticeSummary(), "登板超限")
-        XCTAssertEqual(store.pitchingLine(for: homePitcher).pitches, 0)
+        XCTAssertEqual(store.pitchingLine(for: homePitcher).pitches, 2)
         XCTAssertEqual(store.pitchingLine(for: homePitcher).inningsText, "0.0")
     }
 
@@ -5746,6 +5760,8 @@ extension GameStoreTests {
         XCTAssertTrue(store.game.pitcherInningUsage.innings(for: oldAway).isEmpty)
         XCTAssertTrue(store.game.pitcherInningUsage.innings(for: newAway.id).isEmpty)
         store.endCurrentHalf()
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: newAway.id).isEmpty)
+        store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: newAway.id), [1])
         XCTAssertTrue(store.game.pitcherInningUsage.innings(for: oldAway).isEmpty)
     }
@@ -5775,7 +5791,7 @@ extension GameStoreTests {
         let pitcher = store.currentPitcher
         store.game.pitching[pitcher.id] = PitchingLine(outsRecorded: 27, pitches: 90)
         store.game.scoringEvents = nil
-        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: pitcher.id), [1])
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: pitcher.id).isEmpty)
         XCTAssertTrue(store.game.pitcherInningUsage.hasIncompleteHistory)
         XCTAssertEqual(store.ruleNoticeSummary(), "登板待核对")
         XCTAssertFalse(store.ruleNotices().contains { $0.contains("超过 2 局") })
@@ -8601,5 +8617,168 @@ extension GameStoreTests {
         store.playerGameRecords = [record]
         let result = store.statisticsBatterContacts(for: player, seasonID: "2026", teamID: nil, gameIDs: [record.id])
         XCTAssertEqual(result.gameCount, 0); XCTAssertTrue(result.contacts.isEmpty); XCTAssertEqual(result.missingLocations, 0)
+    }
+}
+
+
+extension GameStoreTests {
+    func testV312SecondInningRelieverDoesNotChargeCarriedStarter() throws {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+        let a = store.currentPitcher
+        for _ in 0..<6 { XCTAssertTrue(store.applyPlay(.groundOut)) }
+        XCTAssertEqual(store.game.inning, 2)
+        XCTAssertTrue(store.game.isTop)
+        XCTAssertEqual(store.currentPitcher.id, a.id)
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
+        XCTAssertTrue(store.ruleNotices().contains { $0.contains(a.name) && $0.contains("还剩 1 局") })
+        let b = try XCTUnwrap(store.availablePitchers.first)
+        XCTAssertFalse(store.requestLineupChange(.pitcher(b)))
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: b.id).isEmpty)
+        store.cancelPitcherChange()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
+        XCTAssertFalse(store.requestLineupChange(.pitcher(b)))
+        XCTAssertTrue(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: b.id), [2])
+        XCTAssertEqual(store.pitchingLine(for: b).pitches, 0, "Explicitly confirmed B uses one inning even before pitching")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板 1/2 局")
+        XCTAssertTrue(store.ruleNotices().contains { $0.contains(b.name) && $0.contains("还剩 1 局") })
+        XCTAssertFalse(store.game.pitcherInningUsage.hasIncompleteHistory)
+        let preview = store.previewCorrection(try store.makeCorrectionDraft())
+        XCTAssertNil(preview.conflict)
+        XCTAssertEqual(preview.game.pitcherInningUsage.innings(for: a.id), [1])
+        XCTAssertEqual(preview.game.pitcherInningUsage.innings(for: b.id), [2])
+        store.undo()
+        XCTAssertEqual(store.currentPitcher.id, a.id)
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: b.id).isEmpty)
+        store.redo()
+        XCTAssertEqual(store.currentPitcher.id, b.id)
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: b.id), [2])
+    }
+
+    func testV312CarriedStarterFirstPitchChargesNewInningAndRoundTrips() throws {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+        let a = store.currentPitcher
+        for _ in 0..<6 { XCTAssertTrue(store.applyPlay(.groundOut)) }
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
+        store.recordPitch(.ball)
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1, 2])
+        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        store.undo()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板 1/2 局")
+        store.redo()
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1, 2])
+        let b = try XCTUnwrap(store.availablePitchers.first)
+        XCTAssertFalse(store.requestLineupChange(.pitcher(b)))
+        XCTAssertTrue(store.confirmPitcherChange(id: try XCTUnwrap(store.pendingPitcherChange).id))
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1, 2], "Replacing A after a real pitch must retain the second inning")
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: b.id), [2])
+        let saved = try XCTUnwrap(store.activeStoredGame)
+        let decoded = try JSONDecoder().decode(StoredGame.self, from: JSONEncoder().encode(saved))
+        XCTAssertEqual(decoded.state.pitcherInningUsage.inningsByPitcher, store.game.pitcherInningUsage.inningsByPitcher)
+        let restored = GameStore(persistenceURL: nil)
+        try restored.restoreBackup(LocalBackup.read(store.exportBackup()))
+        let restoredGame = try XCTUnwrap(restored.games.first { $0.id == saved.id })
+        XCTAssertEqual(restoredGame.state.pitcherInningUsage.inningsByPitcher, store.game.pitcherInningUsage.inningsByPitcher)
+        let replay = store.previewCorrection(try store.makeCorrectionDraft())
+        XCTAssertNil(replay.conflict)
+        XCTAssertEqual(replay.game.pitcherInningUsage.inningsByPitcher, store.game.pitcherInningUsage.inningsByPitcher)
+    }
+
+    func testV312ThirdOutOnlyChargesPitcherWhoActuallyFacedTheBatter() {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+        let a = store.currentPitcher.id
+        let away = store.game.activeAwayPitcherID!
+        for _ in 0..<3 { XCTAssertTrue(store.applyPlay(.groundOut)) }
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), [1])
+        XCTAssertTrue(store.game.pitcherInningUsage.innings(for: away).isEmpty)
+        for _ in 0..<3 { XCTAssertTrue(store.applyPlay(.groundOut)) }
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: away), [1])
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), [1])
+        XCTAssertFalse(store.game.pitcherInningUsage.hasIncompleteHistory)
+    }
+
+    func testV312NonPitchActionsDoNotChargeCarriedPitcherNewInning() throws {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+        let a = store.currentPitcher.id
+        store.startGameClock()
+        store.endCurrentHalf(); store.endCurrentHalf()
+        store.pauseGameClock(); store.startGameClock()
+        store.recordSubstitution("仅记录守备说明")
+        store.enableTiebreakFromCurrentInning()
+        store.recordIntentionalWalk()
+        let runner = try XCTUnwrap(store.game.baseRunners[.first])
+        XCTAssertTrue(store.recordRunnerEvent(.balk, decisions: [RunnerDecision(player: runner, origin: .base(.first), destination: .base(.second))]))
+        XCTAssertTrue(store.recordRunnerEvent(.pickoff, decisions: [RunnerDecision(player: runner, origin: .base(.second), destination: .out)]))
+        XCTAssertEqual(store.pitchingLine(for: store.currentPitcher).pitches, 0)
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), [1])
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板 1/2 局")
+    }
+
+    func testV312IllegalPitchUsesActualThrownFlagIncludingPenaltyWalk() throws {
+        for thrown in [false, true] {
+            let store = try slowStore(pitcherInningsLimit: 2)
+            let a = store.currentPitcher.id
+            store.startGameClock()
+            store.endCurrentHalf(); store.endCurrentHalf()
+            for _ in 0..<4 { XCTAssertTrue(store.recordIllegalPitch(.ball, wasThrown: thrown)) }
+            XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), thrown ? [1, 2] : [1])
+            XCTAssertEqual(store.pitchingLine(for: store.currentPitcher).pitches, thrown ? 4 : 0)
+            XCTAssertFalse(store.game.pitcherInningUsage.hasIncompleteHistory)
+        }
+    }
+}
+
+
+extension GameStoreTests {
+    func testV312LoosePitchEventsChargeNewInningWithoutUsingPitchTotals() throws {
+        for kind in [RunnerEventKind.wildPitch, .passedBall, .uncertainLooseBall] {
+            let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+            let a = store.currentPitcher.id
+            store.startGameClock()
+            store.endCurrentHalf(); store.endCurrentHalf()
+            store.recordIntentionalWalk()
+            let runner = try XCTUnwrap(store.game.baseRunners[.first])
+            XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), [1])
+            XCTAssertTrue(store.recordRunnerEvent(kind, decisions: [RunnerDecision(player: runner, origin: .base(.first), destination: .base(.second))]))
+            XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), [1, 2], kind.rawValue)
+            XCTAssertEqual(store.pitchingLine(for: store.currentPitcher).pitches, 0, "The runner operation does not add a statistical pitch, but proves a ball was thrown")
+            store.undo()
+            XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), [1])
+            store.redo()
+            store.recordPitch(.ball)
+            XCTAssertTrue(store.recordRunnerEvent(kind, decisions: [RunnerDecision(player: runner, origin: .base(.second), destination: .base(.third))]))
+            XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), [1, 2], "Same inning never counts twice")
+        }
+    }
+
+    func testV312MissingHistoricalPitcherKeepsQuotaUncertain() throws {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+        let a = store.currentPitcher.id
+        store.startGameClock()
+        store.endCurrentHalf(); store.endCurrentHalf()
+        var missing = store.game
+        missing.activeHomePitcherID = nil
+        var events = try XCTUnwrap(store.game.scoringEvents)
+        events[events.count - 1].afterSituation = missing.situationSnapshot
+        store.game.scoringEvents = events
+        XCTAssertTrue(store.game.pitcherInningUsage.hasIncompleteHistory)
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), [1])
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板待核对")
+    }
+
+    func testV312AmbiguousLegacyPenaltyDoesNotInventAConfirmedInning() {
+        let store = v111Store(rules: GameRules(pitcherInningsLimit: 2))
+        let a = store.currentPitcher.id
+        store.startGameClock()
+        store.endCurrentHalf(); store.endCurrentHalf()
+        XCTAssertTrue(store.recordViolation(.quickPitch))
+        XCTAssertEqual(store.pitchingLine(for: store.currentPitcher).pitches, 1)
+        XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a), [1])
+        XCTAssertTrue(store.game.pitcherInningUsage.hasIncompleteHistory)
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板待核对")
     }
 }

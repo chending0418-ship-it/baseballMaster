@@ -951,7 +951,7 @@ struct NewGameSetupView: View {
                                 .frame(minHeight: 54)
                             if hasPitcherInningsLimit {
                                 Divider()
-                                Text("按登板局数限制：登板未投球也计一局，同一局不重复；与统计 IP 分开。")
+                                Text("明确确认登板即计一局；换局自动沿用投手，实际投球后才计新局。同一局不重复，统计 IP 另算。")
                                     .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                                 settingPickerRow(title: "投球局数上限", icon: "number.circle.fill") {
                                     Picker("投球局数上限", selection: $pitcherInningsLimit) {
@@ -1721,7 +1721,7 @@ private struct GameRulesEditor: View {
                     .frame(minHeight: 54)
                 if rules.pitcherInningsLimit != nil {
                     Divider()
-                    Text("按登板局数限制：登板未投球也计一局，同一局不重复；与统计 IP 分开。")
+                    Text("明确确认登板即计一局；换局自动沿用投手，实际投球后才计新局。同一局不重复，统计 IP 另算。")
                         .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                     settingPickerRow(title: "投球局数上限", icon: "number.circle.fill") {
                         Picker(
@@ -2105,7 +2105,7 @@ struct LineupSelectionView: View {
             parts.append("单投手 \(pitches) 球限制，剩余 \(rules.pitchWarningRemaining ?? 0) 球提醒")
         }
         if let innings = rules.pitcherInningsLimit {
-            parts.append("单投手最多登板 \(innings) 局（未投球也计入）")
+            parts.append("单投手最多登板 \(innings) 局（明确确认登板或实际投球计入）")
         }
         if rules.designatedHitterEnabled {
             parts.append(rules.twoWayPlayerEnabled ? "启用大谷条款" : "启用指定打击 DH")

@@ -510,8 +510,9 @@ struct PitchingLine: Equatable, Codable {
     var whip: Double { innings == 0 ? 0 : Double(walks + hits) / innings }
 }
 
-/// Competition limits count innings in which a pitcher took the mound, even
-/// with zero pitches or outs. This projection is independent of statistical IP.
+/// Competition limits count explicit mound confirmations or an actual pitch in
+/// an inning. Carrying the lineup into the next half is not a confirmation.
+/// This projection is independent of statistical IP.
 struct PitcherInningUsage {
     var inningsByPitcher: [UUID: Set<Int>] = [:]
     var hasIncompleteHistory = false
@@ -526,11 +527,10 @@ extension GameState {
         var started = false
         var hasOpeningConfirmation = false
         var previousHalf: Int?
-        func include(_ situation: GameSituationSnapshot?) {
-            guard let situation,
-                  let pitcherID = situation.isTop ? situation.activeHomePitcherID : situation.activeAwayPitcherID else {
+        func observe(_ situation: GameSituationSnapshot?) {
+            guard let situation else { usage.hasIncompleteHistory = true; return }
+            if (situation.isTop ? situation.activeHomePitcherID : situation.activeAwayPitcherID) == nil {
                 usage.hasIncompleteHistory = true
-                return
             }
             let half = (situation.inning - 1) * 2 + (situation.isTop ? 0 : 1)
             if previousHalf == nil && half != 0 { usage.hasIncompleteHistory = true }
@@ -538,6 +538,13 @@ extension GameState {
                 usage.hasIncompleteHistory = true
             }
             previousHalf = half
+        }
+        func include(_ situation: GameSituationSnapshot?) {
+            guard let situation,
+                  let pitcherID = situation.isTop ? situation.activeHomePitcherID : situation.activeAwayPitcherID else {
+                usage.hasIncompleteHistory = true
+                return
+            }
             usage.inningsByPitcher[pitcherID, default: []].insert(situation.inning)
         }
         for event in scoringEvents ?? [] {
@@ -552,10 +559,37 @@ extension GameState {
                 if event.notation == "HALF-END" || event.notation == "RESUME" { started = true }
             }
             guard started else { continue }
-            // A substitution's before/after snapshots retain both pitchers.
-            // Half transitions count only the team now taking the field.
-            include(event.beforeSituation)
-            include(event.afterSituation)
+            // Observe the whole timeline for gaps, but do not turn an automatic
+            // half transition or the current lineup into a mound appearance.
+            observe(event.beforeSituation)
+            observe(event.afterSituation)
+            if event.notation == "PLAY" {
+                include(event.afterSituation)
+            } else if event.category == .substitution,
+                      let before = event.beforeSituation, let after = event.afterSituation,
+                      before.inning == after.inning, before.isTop == after.isTop {
+                let previous = before.isTop ? before.activeHomePitcherID : before.activeAwayPitcherID
+                let incoming = after.isTop ? after.activeHomePitcherID : after.activeAwayPitcherID
+                if previous != incoming { include(after) }
+            } else {
+                // IBB and the derived BB/K records are not additional pitches.
+                // Illegal metadata distinguishes a thrown pitch from a penalty
+                // ball that was never thrown. Runner outs also do not qualify.
+                let actuallyPitched = event.illegalPitch?.wasThrown
+                    ?? (event.category == .pitch
+                        || (event.category == .battedBall && !["IBB", "BB"].contains(event.notation ?? ""))
+                        || (event.category == .out && ["K WP/PB", "K-BUNT"].contains(event.notation ?? ""))
+                        || (event.category == .runner && ["WP", "PB", "WP/PB?"].contains(event.notation ?? "")))
+                if actuallyPitched { include(event.beforeSituation) }
+                // Legacy IP-B does not say whether the ball was physically
+                // thrown. Do not infer a new inning from its statistical pitch.
+                if event.category == .violation, event.notation == "IP-B", event.illegalPitch == nil,
+                   let before = event.beforeSituation,
+                   let pitcher = before.isTop ? before.activeHomePitcherID : before.activeAwayPitcherID,
+                   !usage.innings(for: pitcher).contains(before.inning) {
+                    usage.hasIncompleteHistory = true
+                }
+            }
         }
         let hasLiveState = clockRunningSince != nil || clockElapsedSeconds != nil
             || inning > 1 || !isTop || outs > 0 || !baseRunners.isEmpty
@@ -563,7 +597,7 @@ extension GameState {
             || pitching.values.contains { $0 != PitchingLine() }
             || batting.values.contains { $0 != BattingLine() }
         if started || hasLiveState {
-            include(situationSnapshot)
+            observe(situationSnapshot)
             if !hasOpeningConfirmation { usage.hasIncompleteHistory = true }
         }
         return usage
