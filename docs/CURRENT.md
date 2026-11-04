@@ -6,8 +6,10 @@
 | --- | --- |
 | 平台工作目录 | 本目录为 iOS；Android 已独立迁至可见目录 [baseball-scorekeeper-android](../../baseball-scorekeeper-android/docs/CURRENT.md)，Gradle 工程位于该目录 `android/`。本次仅整理本机路径，既有版本和 PR 状态不变 |
 | 跨平台计划维护 | iOS、Android 各版本分别维护发布功能计划；Android [0.8.1](https://github.com/chending0418-ship-it/baseballMaster/blob/codex/android-0.8.1/docs/plans/0.8.1%20%E5%8F%91%E5%B8%83%E5%8A%9F%E8%83%BD%E8%AE%A1%E5%88%92.md)／[0.8.2](https://github.com/chending0418-ship-it/baseballMaster/blob/codex/android-0.8.2/docs/plans/0.8.2%20%E5%8F%91%E5%B8%83%E5%8A%9F%E8%83%BD%E8%AE%A1%E5%88%92.md) 由各自分支维护 |
+| Android 当前版本 | `codex/android-0.8.2`，0.8.2（Build 10）；示例名单、折叠跑垒分列与 PDF 对齐已完成，本轮经 PR #39 整合；[单份计划](<plans/0.8.2 发布功能计划.md>)、[开发交接](releases/android/0.8.2-DEVELOPMENT.md) |
+| Android 分发与遗留 | 官网仍为 0.8.1（Build 9）测试包，0.8.2 固定 APK 未重新分发；正式赛后归档／旧关联更新、完整跨端互导及实体厂商设备仍待后续，未上传应用市场 |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.2（Build 1） |
-| PR 整合授权 | 2026-11-04 用户授权整理并合入 #34、#37，再整合验证 #39；#34 已合并为 `e58ea84`。本轮合并不包含真实迁移、服务部署或商店上传 |
+| PR 整合授权 | 2026-11-04 用户授权整理并合入 #34、#37，再整合验证 #39；#34 已合并为 `e58ea84`，#37 已合并为 `510021b`；#39 在本分支完成整合验证后通过 PR 合入。整合验证详见 [记录](maintenance/2026-11-04-pr-integration.md)。本轮合并不包含真实迁移、服务部署或商店上传 |
 | 当前开发 | `codex/dev-3.1.2`，3.1.2（Build 1）；iPhone／iPad、批量名单与统计页球员落点保留；Duo 适配及专项模拟器验收已完成；投手额度已修复换局提前计入，30 项专项数据回归通过；3.1.1 未完成项全部纳入，见 [3.1.2 开发与发布待办](releases/3.1.2/DEVELOPMENT.md) |
 | 继承问题与验收 | P2 已修复；91 项 iOS 数据、iPhone 6 项 UI 分批通过，iPad Pro 8 项、mini 2 项 UI 通过；Debug／未签名 Release 成功。批量名单覆盖本机／对手／共享，共享后端 107 项通过但未部署；统计页球员落点已接入统一球场，新增专项验证通过；旧记录、备案及迁移仍待办，见 [3.1.2 开发记录](releases/3.1.2/DEVELOPMENT.md) |
 | 设备兼容 | iPhone／iPad 已有验证，Duo 内外屏及半折叠 5 项专项 UI 场景已通过；默认展开首屏完整显示主要操作，页内 Pro 自然展开；原研究保留为 [兼容评估](plans/ADAPTIVE-DEVICE-SUPPORT.md)，实际进度及 Duo 下载入口见 [3.1.2](releases/3.1.2/DEVELOPMENT.md) |

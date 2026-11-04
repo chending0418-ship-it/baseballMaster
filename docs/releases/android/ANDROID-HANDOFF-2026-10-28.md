@@ -1,0 +1,168 @@
+# Android 迁移统一交接（2026-10-28）
+
+**这是继续开发入口，不是全功能完成或发布证明。** 当前 AN04 完整互导仍有开发缺口，AN05 完整共享记分未完成；AN06 主要代码已接、系统闭环仍有依赖，AN07 用户明确本轮不做，AN08 正式签名发布须另行确认。具体未完成实现及先后依赖见 [后续开发清单](AN04-AN06-REMAINING-2026-10-28.md)。接手时以分支最新 Git 和本文链接的阶段记录为准；不要只读最早 AN04-HANDOFF 后重复已做工作。
+
+## 用户授权与边界
+
+1. 原任务：拉取 `https://github.com/chending0418-ship-it/baseballMaster` 的 `codex/android-migration`，确认包含 `403e6f56ca2386d38f692722aa4c7f899c270e9e`，从 AN04 继续到 AN05／AN06／AN07，分阶段测试、提交、推送安卓分支。
+2. 本轮是安卓迁移。涉及 iOS／全局规则／共享协议／品牌等统一修改只记录，等安卓和 iOS 都上线后统一处理。现行服务和 iOS 源码只读作为适配依据，不新建另一套后端。
+3. 不购买、不合并或直接写 main、不操作生产、不发布中间 APK；正式签名和公开分发另行确认。可本地构建 debug／test APK，但不是交付／发布。
+4. 用户先接手全部界面测试，最新又明确“界面测试能做就做，不做也没事”。因此可选择有条件的 UI 验证，但不能把未测写成通过；优先完成实际数据／协议功能。
+5. 最新要求：今天连续推进开发、做好完整交接，按计划分阶段提交推送，不等最后一次性提交。无需每阶段重新索取同类授权。
+6. 用户追问迁移方式：这是现有 iOS 的原生 Android 迁移。技术代码需移植，功能／页面流程以 iOS 为准；先读 [iOS 源码对照及缺口](IOS-PARITY-AUDIT-2026-10-28.md)，不能只把 API 接上就称为完成迁移。
+7. 最新明确“完成接下来的计划 AN07 不要做”：继续 AN04／AN05／AN06 开发，跳过 AN07 全量验收／设备矩阵；改动所需编译和数据／隔离服务回归仍执行。AN07 保留未执行，正式签名发布仍另行确认。
+
+先读根 AGENTS.md 及 [单份现行计划](../../plans/ANDROID-APK.md)。当前云端缺少上级工作区／品牌目录，不能创建替身或引用用户电脑上的绝对路径。根规则中已撤销的历史说明不作为当前开发限制。
+
+## 仓库和检查点
+
+云端目录 `/workspace/baseballMaster`；Android 为同仓库 `android/`。保留 `BaseballMaster/` 和 Xcode 工程原名，不修改 iOS 版本。工作分支 `codex/android-migration`，普通快进推送，无强推／PR 合并。
+
+| 提交 | 已做内容 | 结果入口 |
+| --- | --- | --- |
+| `403e6f5` | 用户指定的原 AN04 断点 | [云端第三组](AN04-CLOUD-2026-10-28.md#第三组续开发从-403e6f5-恢复) |
+| `df142ec` | 原始纠错审计保留、档案历史阅读、严格本机备份 JSON | 同上 |
+| `9e2f502` | 原生研究导出纠错／撤回、打席／换人，与原 Swift 模型互读 | [模型互读](AN04-WIRE-2026-10-28.md) |
+| `1d0615a` | 来源保护比赛实际导入、Room 3→4、Android 来源备份格式 2 | [来源导入](AN04-IMPORT-2026-10-28.md) |
+| `b0669e5` | 不挤分保送、非第三出局三振的双事件续记 | 同上第六组；156 项 JVM＋11 份 Swift 互读 |
+| `4452a86` | AN05 身份／目录／邀请与加密持久请求 | [AN05 第一组](AN05-DIRECTORY-2026-10-28.md)；171 项测试 |
+| `617c969` | AN05 共享名册、成员管理、独立绑定、冲突草稿和撤权清理 | [AN05 第二组](AN05-ROSTER-2026-10-28.md) |
+| `416b645` | F11 比赛 JSON／游标读取、独立持久交接控制、旧回执后核对权限 | [AN05 第三组](AN05-MATCHES-2026-10-28.md)；190 项测试 |
+| `4fab89b` | 固定本机加密秘密、现行两阶段设备凭证轮换、90 天维护和写失败保护 | [AN05 第四组](AN05-CREDENTIALS-2026-10-28.md) |
+| `7807c8c` | 配对／设备移除／管理恢复、唯一新卡持久续取与过期请求归档 | [AN05 第五组](AN05-SECURITY-2026-10-28.md) |
+| `02abe9b` | F10 菜单、建队／入队／名单／成员／邀请管理和恢复卡查看／轮换；UI 未执行 | [AN05 第六组](AN05-UI-2026-10-28.md) |
+| `5c5543d` | 对照 iOS 校正球队页入口、连接／建队流程，补固定多人邀请、二维码／系统分享；226 项非 UI 回归 | [AN05 第七组](AN05-PARITY-2026-10-28.md) |
+| `716782b` | 在 iOS 迁移对照之后补来源型比赛满垒保送挤分及原始审计／事务／恢复保护 | [AN04 满垒保送](AN04-SCORING-WALK-2026-10-28.md) |
+| `22576da` | 新／原设备双端配对、设备管理、恢复管理权页面和新卡分享，AN07 按用户要求跳过 | [安全页面](AN05-SECURITY-UI-2026-10-28.md) |
+| `ff234a9` | 邀请／配对系统入口、加密链接待办、首次／重复 intent 和明确恢复核对 | [系统链接](AN06-LINKS-2026-10-28.md) |
+| `ac8b94e` | 服务恢复后明确核对、旧操作／本人比赛加密保留、当前完整文件读取及丢确认保护 | [恢复核对](AN05-RECOVERY-REVIEW-2026-10-28.md) |
+| `22f6550` | iOS 同源开屏与公共配置、缓存保护、设置／关于／隐私／支持、本地数据入口 | [开屏与系统页](AN06-LAUNCH-2026-10-28.md) |
+| `98dc63b` | 原始 GameStore／纠错预览执行、严格身份／状态对照及 Kotlin 返回腿；不是 iOS App 运行 | [执行对照](AN04-SWIFT-CORE-2026-10-28.md) |
+| `fc2e4bd` | 420 当前状态＋419 检查点的原始 Swift→Kotlin 投影核对；完整历史未转换 | [状态读取](AN04-STATE-PROJECTION-2026-10-28.md) |
+| `cd6e282` | 109 份／598 帧原始动作、纠错、复核、undo/redo；488 次重放中 1 次原始核心差异独立保留 | [交互对照](AN04-INTERACTIVE-2026-10-28.md) |
+| `333b0ef` | 487 份真实 Swift journal 通过 Kotlin 重放与实际来源导入；非空检查点和 Room 恢复保护 | [扩展读取](AN04-JOURNAL-READ-2026-10-28.md) |
+| `1a75518` | 99 组／420 步原始 Swift 事务与 419 次历史重放；新命令 helper 尚未生成正式文件 | [命令对照](AN04-COMMAND-CODEC-2026-10-28.md) |
+| `4d3f1cd` | 共享比赛只读列表、实时直播和三种历史观看权限、持久请求及撤销／恢复保护 | [共享观看](AN06-SHARED-WATCH-2026-10-28.md) |
+| `d9d6172` | 独立直播、公共字段、独立加密凭证、丢响应和备份恢复保护 | [独立文字直播](AN06-STANDALONE-LIVE-2026-10-28.md) |
+| `af267db` | 401 明确重新接入、候选凭证持久续接、旧工作隔离和稳定加密密钥 | [失效授权](AN05-RECONNECT-2026-10-28.md) |
+| `e4c847c` | 解散／30 天恢复球队、终结回执续取、管理员审计及精确查询限制 | [生命周期与审计](AN05-LIFECYCLE-2026-10-28.md) |
+
+接手先检查，不覆盖未提交工作：
+
+```sh
+git status --short
+git branch --show-current
+git fetch origin codex/android-migration
+git merge-base --is-ancestor 403e6f56ca2386d38f692722aa4c7f899c270e9e HEAD
+git rev-list --left-right --count HEAD...origin/codex/android-migration
+git log -10 --oneline
+```
+
+输出 `0 0` 才是与远端一致。目录重置／新环境先 clone 对应分支；不要从 main 重新起步丢掉迁移增量。`output/` 全部忽略，不在远端；阶段 Markdown 和可复现测试源码会推送，云端生成证据需要重建。
+
+## 已有架构与不可越过的保护
+
+| 位置 | 作用／保护 |
+| --- | --- |
+| `android/core/.../Scoring.kt`、`MatchEngine.kt`、`History.kt` | 三模式规则、逐操作记录、纠错／重放；AN03 已有 iOS 合成基准，不擅自改全局计分规则 |
+| `AppleSourceBackup.kt` | 实际 iOS 文件导入门面；全文件保留、整批拒绝不兼容、来源摘要与 Android 内部标记；严格校验原来源与当前续记血缘 |
+| `AppleGameContinuation.kt` | 对源文件做受限追加，保留原事件／日志／打席／操作／检查点／纠错审计身份；不支持的命令明确拒绝 |
+| `AppleReplayPrototype.kt` | 历史类名保留，现用于只读投影／核对，不得拿投影重写原 iOS 历史 |
+| `AppleExportPrototype.kt` | **原生 Android → iOS 研究编码，未正式接入产品导出**；带来源标记的导入比赛明确拒绝走此路径 |
+| App `Storage.kt`、`AppleImportStorage.kt` | Room schema 4，3→4 只新增来源 BLOB／关联／原操作 ID 索引；不能使用 destructive migration |
+| `AndroidDeviceBackup.kt` | 无来源仍为原格式 1，含来源使用格式 2；恢复只接受空库、整批事务，删除来源再重算哈希不能绕过保护 |
+| `TeamDirectoryClient.kt`、`SharedTeamRoster.kt` | 当前 `/api/v3` 的 Kotlin 客户端和 DTO；API 日期为 Unix 毫秒，比赛 payload 仍为 Swift 2001 起秒数 |
+| `TeamDirectorySession.kt`、`SharedMatchDirectory.kt` | 单笔持久身份操作及每场独立交接控制、固定 operationID、权限／代次核对、缓存、绑定、冲突草稿；不是离线记分更新队列 |
+| App `CredentialVault.kt`、`TeamDirectoryFile.kt` | Keystore 分别保护可轮换认证秘密和固定的本机加密秘密，noBackupFilesDir 下单独 AES-GCM；不进入普通备份／报告／导出或日志 |
+| App `AndroidTeamSharing.kt` | IO 协程应用 API，读取真实本机球队后准备发布，保持原 Room 记录不变；F10 入口见 TeamSharingScreen |
+| `collaboration/`、Swift `TeamCollaboration`／`TeamSharingStore`／`SharedMatches`／`TeamSecurity` | 只读参考现行角色／权限／版本、同步、交接、配对和恢复；不要只按旧 PROTOCOL 段落猜测行为 |
+
+共享球队／云端球员 ID 与本机来源 ID 不相同。共享比赛使用云端球队 ID、球员 sourceID；不能按名字或背号合并。`0` 与 `00` 必须区分。本机、共享缓存及原 iOS 文件保持独立；原始历史和纠错不能因为新客户端字段不同而丢失。
+
+## 当前功能缺口与继续顺序
+
+### AN04（未完成）
+
+应用内已能来源保护地导入可重放比赛、查看旧格式／终场、保存原文或受限续记文件、进行 Android 格式 2 备份恢复。已支持普通格式 7 的非终结投球、保送（含不触发换边／终场／规则确认的挤分）和非第三出局三振。源文件原始纠错审计仍保留。
+
+新命令 helper 最初通过 99 组／420 步原始 Swift 执行与 419 次重放，见 [命令对照](AN04-COMMAND-CODEC-2026-10-28.md)。交互组已补另外 10 组，当前 109 组／598 帧实际动作一致；488 次来源重放中 1 次三字段差异独立记录，见 [交互对照](AN04-INTERACTIVE-2026-10-28.md)。扩展读取又把 487 份真实 Swift journal 接到实际导入门面，支持非空检查点，已知不一致记录拒绝，见 [扩展读取](AN04-JOURNAL-READ-2026-10-28.md)。仍需：全部命令／三种规则／特殊阵容的多事件**写入**、换边／规则确认／终场写入、换人／结束／恢复写入、在原始审计上真正写入纠错／撤回、已有跨端比赛更新的明确合并、原生新比赛正式 iOS 导出、`.bmteam` 完整可编辑映射、旧式个人记录。旧真实样本有 1／2／3／4／6／7，**真实 v5 缺失**。不能把改版本号的文件当作真实 v5，也不能把只读或研究往返称为完整互导。
+
+原始 Swift GameStore／HistoryCorrection 已在 Linux 内存适配器中执行当前 13 份导出样本并经 Kotlin 返回腿核对，范围及时间精度见 [执行对照](AN04-SWIFT-CORE-2026-10-28.md)。实际 iOS App／Core Data 导入和重放未执行：Linux 无 Xcode。模型可读或内存逻辑通过不等于 iOS App 行为相同。`.bmteam` 只读文件库未纳入 `.bmandroid`，目前必须另行导出保管。详细限制以 AN04-IMPORT 和 WIRE 为准。
+
+### AN05（进行中）
+
+F10 基础及名单／成员协议已接“球队 → 球队共享”，含建队／入队／名单／成员／固定多人邀请及恢复卡查看／轮换；按当前 iOS 校正来源披露、范围确认、创建后提示保存卡片及返回层级。固定邀请已有二维码和系统分享代码，第十组补解散／恢复，界面／系统行为未执行。仍缺完整绑定管理、共享建赛及生命周期全面验证。当前原生建赛仍仅接受本机球队；不能只把 `source` 改成 local 绕过共享保护。
+
+F11 已接 JSON 读取、增量游标、交接／强制接管协议及每场控制队列，详见第三组。AN06 第四组增加产品只读比赛列表和观看管理，未开放记分。产品交接入口仍关闭：接收比赛的完整安卓记分／恢复能力尚缺。继续读取 Swift `SharedMatches.swift` 的 wire 模型及持久队列、现行 `collaboration/games.mjs`／`drafts.mjs`。继续完成球队／比赛绑定、正式发布、离线记分更新队列、formatVersion、撤权／离线冲突草稿和恢复隔离；不要重复已有游标和控制队列。完整比赛写入受 AN04 payload 转换约束；不能上传 Android 内部 Game JSON 冒充 iOS StoredGame。
+
+F12 已实现两阶段凭证轮换、90 天维护、旧密文兼容与 SharedPreferences 写失败后阻断（第四组），以及配对／设备移除／管理恢复协议和持久状态（第五组）。第八组已接产品配对／设备管理／管理恢复、配对二维码和系统分享；新卡与旧卡查看都须明确显示后才可标记保存。AN06 已接系统链接；第九组已接全库恢复后的明确核对、旧工作加密保留、重新读取及确认丢失保护；第十组已接解散／恢复及管理员审计。第十一组已接撤销 Bearer 后明确重新接入、旧工作保留及候选凭证续接。继续分享／剪贴板的实际系统验证。普通 accessEpoch 变化的旧请求仍阻断，不借全库核对自动解除或重放，F11 需继续保留／人工处理旧交接。
+
+### AN06／AN07／AN08
+
+AN06：第一组已接应用内 HTTPS／自定义 scheme 邀请和配对，链接加密保留、重启明确继续核对；没有自动加入／授权。HTTPS 域名关联、真实浏览器和安装后继续链路未验证，正式 assetlinks 依赖 AN08 包名／证书及真实网站工作区。继续共享与独立直播、历史观看三种权限、开屏／关于／隐私；使用既有入口／协议，不能传邀请秘密到 query／下载 URL。
+
+第二组已接开屏和“我的”系统页面，备份入口现为“我的 → 本地数据与备份”。应用启动会后台读取公共开屏配置，不含球队 Bearer；没有已启用的本机共享直播时不发球队协作请求，也不自动上传本机比赛；已有共享直播随前台明确续做保活，先核对权限，不注册或开播。正式 UI 不运行，第三／四组已接独立／共享直播、三种历史权限、指定成员／外部观看者、持久请求和保活。真实系统／跨端链路未验证，新安装续接和域名关联尚有后续依赖；不勾选整体验收完成。
+
+AN07：用户最新明确本轮不做。保留 48 条用例及所有未测项，不把 planned 当 passed；必要的开发回归仍做。iOS／Android 真双端权限和交接不能用两个 Kotlin 测试客户端替代。
+
+AN08：正式包名、长期证书、保管、覆盖升级、官网候选材料。正式签名、生产配置、网站和下载上线仍另行确认，当前不执行。
+
+## 工具链和复现
+
+本云端：Linux、JDK 25.0.5、SDK platform 37.0、build-tools 37.0.0；AGP 9.4.0、Gradle wrapper 9.6.0、Kotlin 2.2.10、KSP 2.3.12；Node 24.19.0。Robolectric 4.16，API31 Native SQLite。AN04 满垒保送组冻结 **229 项（136 core＋44 原服务＋49 app），0 失败／错误／跳过**，App／AndroidTest 构建和 lint 通过，lint 15 警告；13 份数据库实际导出文件通过原始 Swift 模型读写及缺字段负向检查，返回核对另计聚合测试。默认脚本原为 macOS/zsh；Linux 可显式用 bash 执行。
+
+最新 AN05 安全页面组为 **230 项（137 core＋44 原服务＋49 app）**，App 构建／lint 通过，未执行 Activity 或 AN07；见第八组 `complete.log` 与 `freeze/`。13 份 Swift 互读属于前一 AN04 检查点，普通测试可能重新生成 UUID 样本，不能拿旧 Swift 回执核对新生成的文件。
+
+AN06 系统链接组最新为 **234 项（140 core＋44 原服务＋50 app）**，App 构建／lint 通过，lint 18 警告；仅开发回归，没有 Activity／浏览器或 AN07，见 [链接组](AN06-LINKS-2026-10-28.md)。
+
+当前 AN05 恢复核对组为 **239 项（140 core＋48 原服务＋51 app）**，App 构建／lint 通过，lint 15 警告，见 [第九组](AN05-RECOVERY-REVIEW-2026-10-28.md)。仅为开发回归，未执行 AN07。
+
+AN06 开屏／系统页最新为 **247 项（144 core＋48 原服务＋55 app）**，App 构建／lint 通过，lint 18 警告；API31 Native Graphics／SQLite 仍属 Android JVM，不是 Activity／UI 或 AN07。见 [第二组](AN06-LAUNCH-2026-10-28.md)。
+
+AN05 生命周期／审计最新为 **252 项（145 core＋52 原服务＋55 app）**，App 构建／lint 通过，lint 18 警告，见 [第十组](AN05-LIFECYCLE-2026-10-28.md)。仍未运行 UI 或 AN07。
+
+最新 AN05 失效授权组为 **259 项（145 core＋56 原服务＋58 app）**，App／AndroidTest 构建及 lint 通过，lint 18 警告；仅开发回归，见 [第十一组](AN05-RECONNECT-2026-10-28.md)。
+
+AN06 独立直播组最新为 **273 项（148 core＋56 协作服务＋8 直播服务＋61 app）**，App／AndroidTest 构建、lint 通过，lint 18 警告，详见 [第三组](AN06-STANDALONE-LIVE-2026-10-28.md)。
+
+AN06 共享观看组最新为 **283 项（149 core＋63 协作服务＋8 直播服务＋63 app）**，App／AndroidTest 构建、lint 通过，lint 19 警告，见 [第四组](AN06-SHARED-WATCH-2026-10-28.md)。
+
+AN04 操作编码组最新开发回归 **287 项（153 core＋63 协作服务＋8 直播服务＋63 app）**，Swift 返回腿另 1 项；App／AndroidTest 构建和 lint 通过，lint 19 警告。新 99 组／420 步执行不混入 JUnit 合计，具体未覆盖及证据见 [命令对照](AN04-COMMAND-CODEC-2026-10-28.md)。
+
+AN04 状态读取组当前累计 **292 项（158 core＋63 协作服务＋8 直播服务＋63 app）**，新增状态返回腿另 1 项。只重跑受影响 core／返回腿和组装／lint，其他数值沿用最近已通过结果；见 [状态读取](AN04-STATE-PROJECTION-2026-10-28.md)。
+
+AN04 交互组补显式 Swift session 聚合 1 项，独立于上述普通 292 项。109 份用例实际动作 598 帧匹配；488 次历史预览中 487 匹配、1 次原始核心三字段差异严格记录，不宣称全量重放通过。重新执行 158 项 core；服务／App／lint 复用前组结果，见 [交互对照](AN04-INTERACTIVE-2026-10-28.md)。
+
+当前扩展读取组为 **296 项常规（161 core＋63 协作服务＋8 直播服务＋64 app），显式 Swift session 另 1 项**；0 失败／错误／跳过，App／AndroidTest 构建、lint 通过（19 警告），见 [扩展读取](AN04-JOURNAL-READ-2026-10-28.md)。实际导入核对 487 份，来源差异 1 帧被拒绝；没有把它计为互导通过。
+
+若同一工作区仍在，工具变量位于 `output/cache/android/tooling/env.sh`，先读取路径并 source（其中只是本机 JDK／SDK 和代理设置，不是用户凭证）。新环境此文件不会随 Git 存在，须配置免费官方 JDK／Android SDK 的 JAVA_HOME、ANDROID_HOME；不要将某台机器的绝对路径写回源码。遵循云端网络代理和 CA，不关闭 TLS 验证、不打印环境秘密。
+
+```sh
+# 在仓库根目录；先按实际环境配置 JAVA_HOME / ANDROID_HOME。
+bash scripts/android/gradle.sh :core:test :core:teamServiceTest :core:liveServiceTest :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
+```
+
+`:core:teamServiceTest` 需 Node 24，只运行 `scripts/android/an05-local-service.mjs` 启动的 127.0.0.1 动态端口和内存 SQLite；不读生产配置。普通 core 测试不要求 Node。不要启动 `collaboration/npm start`，它会选择持久数据库默认路径；也不要运行任何 deploy／verify-production 脚本。默认共享入口指向既有 HTTPS，**当前明确打开共享页就会连接**，UI 自动化不得直接打开；应给 TeamSharingScreen 注入独立测试 API／存储和 fake transport，详见第六／七组。
+
+Swift 6.2.3 Linux 位于本机 `output/cache/android/tooling/swift/`。显式设置 SWIFTC 后，**严格按顺序**执行：
+
+```sh
+# 上述 core/app 测试先完成，冻结它们生成的样本，不同时重跑生产者。
+python3 scripts/android/swift-wire-check.py --output output/validation/android/<新的目录> --input-directory output/validation/android/an04-source-roundtrip/kotlin
+bash scripts/android/gradle.sh :core:swiftWireTest -PswiftWireDirectory=<上述目录的绝对路径>
+```
+
+输出目录必须不存在。返回核对验证实际消费的 payload、源哈希、全部身份、检查点 Data 和 Kotlin 重放。普通测试会重新生成带新 UUID 的文件，因此旧 Swift 回执可能已过期，不能硬用或删除哈希检查。原始 Swift 模型只拷贝到 output 做非 UI Codable 检查，不能修改真实 Swift 文件来让测试通过。
+
+构建目录 `output/cache/android/build/`；JUnit XML 在各模块 `test-results/<task>/`；阶段日志及冻结 XML 在 `output/validation/android/`。失败 XML 可能很大，不要整段输出（含整份比赛）；用 Python 只提取失败测试名、简短消息及差异字段。
+
+## 验证范围、已知失败与未验证项
+
+- AN03 早期设备回归已在历史阶段完成，不能冒充本轮最新包验证。
+- 当前云端没有 `/dev/kvm`；AOSP31／37 镜像存在但软件模拟很慢，之前出现系统 ANR。最新轮未安装或启动 UI 测试。设备恢复、真写满、锁屏下 Keystore、真实进程中断和厂商行为仍未验证。
+- Room 集成使用 API31 Android JVM＋Native SQLite，未启动 Activity；注入 SQLiteFullException 只证明事务回滚，不能称为实际磁盘已填满。
+- 已保留失败记录：旧 UI stale node／系统 ANR、Swift 与样本生产重叠导致校验错批、测试对原球数／revision 的错误假设、跨模块 nullable smart cast 编译错误。修复与最终结果各阶段文档分开登记，不把失败当通过。
+- 确认所有 Gradle 任务最终 BUILD SUCCESSFUL、XML 无 failures/errors/skipped，再登记通过。UP-TO-DATE 只代表复用相同输入，不说成重新运行全部测试。每阶段提交推送后用 ls-remote 核对远端提交，保留干净工作树。
+- 全局遗留：缺省时区接口差异、ERA 7 局口径、旧协议管理员上限和固定邀请秘密来源描述。只在计划第 14 节记录，等两端上线后统一处理，不在迁移中改全局。
+
+接手结束时更新本文及对应阶段文档，说明实际提交、通过／失败／未测、下一处可修改的入口。不要把 AN04 未完成说成仅剩界面，不要把 AN05 原服务集成说成真实 iOS 联调，也不要把本地构建说成正式发布。

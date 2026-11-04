@@ -1,0 +1,38 @@
+{
+  "schema": 2,
+  "baseline": "40df3d2",
+  "generator": "BaseballMasterTests/GameStoreTests/testAndroidRemainingRulesExport",
+  "reference": "actual iOS XCTest result, synthetic data only",
+  "files": [
+    {
+      "path": "remaining-manual-situation-scoring.json",
+      "sha256": "a6bc02f5f030bf6d122a77cded80a0fc3122c9b500919a026a424ede7febc50c",
+      "mode": "standard",
+      "steps": 3
+    },
+    {
+      "path": "remaining-review-error-scoring.json",
+      "sha256": "bfaff56f9d6bf2c140c9a55097fa67788eaa79415524df799a269ee4ddf963cb",
+      "mode": "standard",
+      "steps": 3
+    },
+    {
+      "path": "remaining-review-single-scoring.json",
+      "sha256": "9747e8a694f9e6101ea7490571a064427f1b420e31e3dbd4e9d2f6c441b9d633",
+      "mode": "standard",
+      "steps": 3
+    },
+    {
+      "path": "remaining-tiebreak-scoring.json",
+      "sha256": "619d447e5940e71d77d67f8cd88f4ff5d34c0e1522a44ccbfeb2ece60077589d",
+      "mode": "standard",
+      "steps": 15
+    },
+    {
+      "path": "remaining-double-switch-scoring.json",
+      "sha256": "f9d20e2e8af1b5249b0651f65032af0edb967d56fc39b73d479aa4d21a55682b",
+      "mode": "standard",
+      "steps": 4
+    }
+  ]
+}

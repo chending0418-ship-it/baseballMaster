@@ -3,7 +3,7 @@
 ## iOS／Android 工作目录（2026-11-04 用户确认）
 
 - iOS 只在 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper/` 开发；Android 只在 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper-android/` 开发，Gradle 工程位于后者的 `android/`。两个平台分别使用可见目录，不再把当前 Android 工程放在 `.codex/worktrees/`。
-- 本目录是 **iOS 工作入口**。同属一个 Git 仓库、各用自己的分支和工作目录，不为目录整理改写历史、改变包名／版本或合并 main。跨平台参考源码仍可能随 Git 分支保留；不得误在另一平台目录继续业务开发。
+- 按实际目录选择入口：`baseball-scorekeeper/` 为 **iOS**，`baseball-scorekeeper-android/` 为 **Android**。同属一个 Git 仓库、各用自己的分支和工作目录，不为目录整理改写历史、改变包名／版本或合并 main。跨平台参考源码仍可能随 Git 分支保留；不得误在另一平台目录继续业务开发。
 - Android APK、验证、构建依赖与模拟器资料归 Android 目录 `output/`；旧隐藏目录路径只作历史证据，映射见工作区 `management/MIGRATION.md`。
 
 本项目已迁入 BaseballMaster.CC。当前状态以 [docs/CURRENT.md](docs/CURRENT.md) 为入口。公共品牌规范由 [总品牌目录](../../brand/README.md) 管理；开始品牌及宣传工作时显式读取该目录规范。资料位置以 [总导航](../../management/AGENT-GUIDE.md) 为准。总项目规则见 [工作区约定](../../AGENTS.md)。现有工程名、Bundle ID 和版本号保持稳定。历史证据中的旧目录按工作区 management/MIGRATION.md 映射追溯。
