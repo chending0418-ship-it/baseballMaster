@@ -334,6 +334,11 @@ struct AppAboutView: View {
                     Text(versionText)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(BMTheme.secondaryText)
+                    Link("App 备案号：沪ICP备2026058730号-2A", destination: URL(string: "https://beian.miit.gov.cn/")!)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(BMTheme.green)
+                        .accessibilityHint("前往工业和信息化部备案查询")
+                        .accessibilityIdentifier("about-app-filing")
                 }
                 .padding(.vertical, 12)
 
