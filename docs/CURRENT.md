@@ -7,7 +7,7 @@
 | 平台工作目录 | 本目录为 iOS；Android 已独立迁至可见目录 [baseball-scorekeeper-android](../../baseball-scorekeeper-android/docs/CURRENT.md)，Gradle 工程位于该目录 `android/`。本次仅整理本机路径，既有版本和 PR 状态不变 |
 | 跨平台计划维护 | iOS、Android 各版本分别维护发布功能计划；Android [0.8.1](https://github.com/chending0418-ship-it/baseballMaster/blob/codex/android-0.8.1/docs/plans/0.8.1%20%E5%8F%91%E5%B8%83%E5%8A%9F%E8%83%BD%E8%AE%A1%E5%88%92.md)／[0.8.2](https://github.com/chending0418-ship-it/baseballMaster/blob/codex/android-0.8.2/docs/plans/0.8.2%20%E5%8F%91%E5%B8%83%E5%8A%9F%E8%83%BD%E8%AE%A1%E5%88%92.md) 由各自分支维护 |
 | Android 当前版本 | `codex/android-0.8.2`，0.8.2（Build 10）；示例名单、折叠跑垒分列与 PDF 对齐已完成，本轮经 PR #39 整合；[单份计划](<plans/0.8.2 发布功能计划.md>)、[开发交接](releases/android/0.8.2-DEVELOPMENT.md) |
-| Android 分发与遗留 | 官网仍为 0.8.1（Build 9）测试包，0.8.2 固定 APK 未重新分发；正式赛后归档／旧关联更新、完整跨端互导及实体厂商设备仍待后续，未上传应用市场 |
+| Android 分发与遗留 | 官网已于2026-11-04更新为0.8.2（Build 10）测试包，固定 APK 哈希保持；正式赛后归档／旧关联更新、完整跨端互导及实体厂商设备仍待后续，未上传应用市场 |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.2（Build 1） |
 | 正式归档／导出 | iOS 3.1.2（Build 1）已从干净 main `3d3d83a` 完成 Release 真机 arm64 Archive 与 App Store IPA 导出；签名／dSYM／隐私清单核对通过，尚未上传／提交审核／上架，见 [归档交付](releases/3.1.2/ARCHIVE.md) |
 | PR 整合状态 | #34、iOS #37 与 Android #39 已合入，main 基线 `b415236`。用户新增授权完成共享批量后台后，将本版完整 iOS 收尾及资料通过 [PR #41](https://github.com/chending0418-ship-it/baseballMaster/pull/41) 合入 main；最终公网回执现已冻结，可按本次用户授权经 PR 合并，App 上传／审核／上架分别记录 |
@@ -78,3 +78,7 @@ App Store 与版本宣传脚本现位于 `scripts/release/`，海报模板位于
 正式目录：`output/releases/3.1.2/archives/BaseballMaster-3.1.2-build1.xcarchive`；IPA：`output/releases/3.1.2/app-store-export/BaseballMaster.ipa`，14,793,278 bytes，SHA-256 `f3f068b8f9dfe695f1902a2dc73affb1b54ce13d1966f532f69b18cd631cc572`。源归档的自动开发签名与导出后的 App Store 分发重签分别记录；正式二进制／签名不进入 Git 或宣传 ZIP。详见 [归档交付](releases/3.1.2/ARCHIVE.md)。
 
 本段替代此前按日期保留的“未正式归档”阶段状态。App 尚未上传、提交审核或上架，归档／导出不代表 Apple 服务端验证通过。本次没有重跑 App 功能测试、修改源码或版本。
+
+## Android 官网下载更新（2026-11-04）
+
+用户授权后，上海官网两个 Android 下载入口已切换至0.8.2（Build 10），三文件HTTPS哈希与103个受保护静态文件检查通过；本地四视口及点击完整下载校验通过。固定 APK 未重新构建，旧版下载与 App Store 保留。公网四视口及实际点击完整下载SHA验证也已通过，分发回执见 [0.8.2计划](<plans/0.8.2 发布功能计划.md>) 末尾记录；未上传应用市场。
