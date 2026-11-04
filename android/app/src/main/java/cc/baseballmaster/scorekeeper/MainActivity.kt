@@ -993,7 +993,7 @@ private fun ProfileMenuRow(title: String, subtitle: String, icon: androidx.compo
     }
 }
 
-private val SampleRoster =
+internal val SampleRoster =
     (1..10).joinToString("\n") { "示例球员$it,${if (it == 1) "00" else it.toString()}" }
 
 @Composable

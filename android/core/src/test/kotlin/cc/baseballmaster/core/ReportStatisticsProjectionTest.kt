@@ -106,6 +106,30 @@ class ReportStatisticsProjectionTest {
         ), ReportStatisticsProjection.textAppearance(game, appearance))
     }
 
+    @Test fun textReportKeepsAllPitcherJerseyNumbersThroughARecordedChangeWithoutRewritingHistory() {
+        val original = game().apply {
+            home.players = home.players.map { player -> when (player.id) {
+                "home-1" -> player.copy(jerseyNumbers = listOf("00", "13"))
+                "home-2" -> player.copy(jerseyNumbers = listOf("2", "22"))
+                else -> player
+            } }
+        }
+        var recorded = MatchEngine.apply(original, Command("pitch", pitch = PitchAction.ball))
+        recorded = MatchEngine.apply(recorded, Command("pitcher", playerID = "home-2"))
+        recorded = MatchEngine.apply(recorded, Command("pitch", pitch = PitchAction.calledStrike))
+        val appearance = AppearanceProjection.build(recorded).single()
+        val rawTexts = appearance.events.map { it.text }
+        val descriptions = ReportStatisticsProjection.textAppearance(recorded, appearance)
+        assertEquals("投手：#00 / #13 球员1", descriptions.first())
+        assertTrue(descriptions.contains(rawTexts[1] + "（投手：#00 / #13 球员1 → #2 / #22 球员2）"))
+        assertEquals(rawTexts, appearance.events.map { it.text })
+        // Old records without an explicit jersey-number list still keep their primary number.
+        val legacy = recorded.copy(home = recorded.home.copy(players = recorded.home.players.map {
+            if (it.id == "home-1") it.copy(jerseyNumbers = emptyList()) else it
+        }))
+        assertEquals("投手：#00 球员1", ReportStatisticsProjection.textAppearance(legacy, appearance).first())
+    }
+
     @Test fun missingSnapshotsDoNotInventPitcherHistoryAndCoachPitchOmitsPitcherNames() {
         val game = game()
         val appearance = ProjectedAppearance("pa", 1, 1, true, "away-1", false, false,

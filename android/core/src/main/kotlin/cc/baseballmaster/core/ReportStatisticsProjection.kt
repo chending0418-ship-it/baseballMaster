@@ -26,7 +26,11 @@ object ReportStatisticsProjection {
         fun player(id: String?): String {
             if (id == null) return "未记录"
             return (game.home.players + game.away.players).firstOrNull { it.id == id }
-                ?.let { "#${it.number} ${it.name}" } ?: "历史球员"
+                ?.let { player ->
+                    val numbers = player.jerseyNumbers.ifEmpty { listOf(player.number) }
+                        .joinToString(" / ") { "#$it" }
+                    "$numbers ${player.name}"
+                } ?: "历史球员"
         }
         fun belongsToAppearance(state: Situation) = state.inning == appearance.inning && state.isTop == appearance.isTop
         val coachPitch = game.rules.mode == GameMode.coachPitch

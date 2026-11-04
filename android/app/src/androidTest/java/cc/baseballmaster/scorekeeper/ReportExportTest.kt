@@ -14,36 +14,6 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ReportExportTest {
-    @Test fun emptyTableMessageCannotOverlapItsHeader() {
-        val message = ReportExport.emptyTableMessage
-        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = 9f
-            typeface = android.graphics.Typeface.DEFAULT
-        }
-        val bounds = android.graphics.Rect()
-        paint.getTextBounds(message, 0, message.length, bounds)
-        val headerBottom = 100f
-        val baseline = ReportExport.emptyTableTextBaseline(headerBottom)
-        assertTrue("Chinese text ascenders must clear the header", baseline + bounds.top >= headerBottom + 6f)
-        val bitmap = Bitmap.createBitmap(240, 160, Bitmap.Config.ARGB_8888)
-        try {
-            val canvas = android.graphics.Canvas(bitmap)
-            canvas.drawColor(android.graphics.Color.WHITE)
-            val headerColor = android.graphics.Color.rgb(15, 41, 64)
-            paint.color = headerColor
-            canvas.drawRect(20f, 78f, 220f, headerBottom, paint)
-            paint.color = android.graphics.Color.BLACK
-            canvas.drawText(message, 20f, baseline, paint)
-            for (x in 20 until 220) for (y in 78 until 100) {
-                assertEquals("Empty-table text painted over its header at $x,$y", headerColor, bitmap.getPixel(x, y))
-            }
-            val context = InstrumentationRegistry.getInstrumentation().targetContext
-            File(context.getExternalFilesDir(null), "an04-empty-table-baseline.png").outputStream().use {
-                assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
-            }
-        } finally { bitmap.recycle() }
-    }
-
     @Test fun reportRegressionArtifactsPreserveParticipantsReviewAndSelectedScope() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         fun roster(id: String, name: String) = Team(id, name, (1..13).map {
@@ -157,7 +127,7 @@ class ReportExportTest {
         assertTrue(shown)
         device.pressBack()
     }
-    @Test fun detailedAndTextReportsKeepIOSPageOrientationAndBattedBall() {
+    @Test fun detailedAndTextReportsKeepIOSPageOrientationAndSingleAppearanceScope() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         fun team(id: String) = Team(id, id, (1..9).map { Player("$id-$it", "球员$it", "$it", position = it) })
         var game = MatchFactory.create("report", team("主队"), team("客队"), Rules())

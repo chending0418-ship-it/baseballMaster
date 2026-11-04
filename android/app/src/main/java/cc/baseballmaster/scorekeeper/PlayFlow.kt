@@ -547,14 +547,44 @@ internal fun ProductRunnerEditor(
                 val groups = listOf("进垒" to listOf("stolenBase", "doubleSteal", "delayedSteal", "relayAdvance", "defensiveErrorAdvance"),
                     "投捕失误与判给" to listOf("wildPitch", "passedBall", "uncertainLooseBall", "balk"),
                     "出局" to options.keys.filter { it !in listOf("stolenBase", "doubleSteal", "delayedSteal", "relayAdvance", "defensiveErrorAdvance", "wildPitch", "passedBall", "uncertainLooseBall", "balk") })
-                groups.forEach { (title, kinds) ->
-                    val shown = kinds.filter { it in options }
-                    if (shown.isNotEmpty()) {
-                        Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        shown.forEach { kind -> ProductActionRow(options.getValue(kind), tag = "runner-event-$kind", enabled = !busy) {
-                            json = GameJson.encodeToString(Command("runner", runnerKind = kind, decisions = MatchEngine.suggestedRunner(game, kind)))
-                            menu = false
-                        } }
+                // Use the sheet's usable width: some inner screens are narrower
+                // than the full scoring workbench's 700dp breakpoint.
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val columns = if (maxWidth >= 520.dp) 3 else 1
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        groups.forEach { (title, kinds) ->
+                            val shown = kinds.filter { it in options }
+                            if (shown.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                shown.chunked(columns).forEach { row ->
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        row.forEach { kind ->
+                                            val choose = {
+                                                json = GameJson.encodeToString(Command("runner", runnerKind = kind,
+                                                    decisions = MatchEngine.suggestedRunner(game, kind)))
+                                                menu = false
+                                            }
+                                            Box(Modifier.weight(1f)) {
+                                                if (columns == 1) ProductActionRow(options.getValue(kind),
+                                                    tag = "runner-event-$kind", enabled = !busy, onClick = choose)
+                                                else Surface(onClick = choose, enabled = !busy,
+                                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("runner-event-$kind"),
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    color = MaterialTheme.colorScheme.surface,
+                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                                                    Box(Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
+                                                        Text(options.getValue(kind), fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                                                            textAlign = TextAlign.Center)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

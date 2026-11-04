@@ -69,6 +69,7 @@ internal fun NewGameDialog(
     var opponentID by rememberSaveable { mutableStateOf(initialSchedule?.let { if(it.home.id == it.ourTeamID) it.away.id else it.home.id }.orEmpty()) }
     var opponentName by rememberSaveable { mutableStateOf("") }
     var roster by rememberSaveable { mutableStateOf("") }
+    var confirmSampleRoster by rememberSaveable { mutableStateOf(false) }
     var modeName by rememberSaveable { mutableStateOf(initialSchedule?.rules?.mode?.name ?: GameMode.standard.name) }
     val mode = GameMode.valueOf(modeName)
     var ownHome by rememberSaveable { mutableStateOf(initialSchedule != null && initialSchedule.home.id == initialSchedule.ourTeamID) }
@@ -109,6 +110,14 @@ internal fun NewGameDialog(
         PregameLineupConfirmation(prepared, games, busy, { preparedJSON = "" }) { save(it) }
         return
     }
+    if (confirmSampleRoster) AlertDialog(
+        onDismissRequest = { confirmSampleRoster = false },
+        title = { Text("替换为示例名单？") },
+        text = { Text("当前填写的对方球员名单将被替换为 10 位示例球员。") },
+        confirmButton = { TextButton(onClick = { roster = SampleRoster; confirmSampleRoster = false },
+            modifier = Modifier.testTag("confirm-sample-opponent-roster")) { Text("替换名单") } },
+        dismissButton = { TextButton(onClick = { confirmSampleRoster = false }) { Text("取消") } },
+    )
     ProductPage(
         title = if(initialSchedule == null) "新比赛" else "预告赛前设置",
         busy = busy || sourceBusy,
@@ -336,6 +345,11 @@ internal fun NewGameDialog(
                         Text("每行：姓名,背号（可加英文名）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         OutlinedTextField(roster, { roster = it }, minLines = 5, maxLines = 10,
                             modifier = Modifier.fillMaxWidth().testTag("opponent-roster"), shape = RoundedCornerShape(12.dp))
+                        TextButton(onClick = {
+                            if (roster.isBlank()) roster = SampleRoster else confirmSampleRoster = true
+                        }, enabled = !busy && !sourceBusy, modifier = Modifier.testTag("fill-sample-opponent-roster")) {
+                            Text("填入示例名单")
+                        }
                     }
                 }
             }

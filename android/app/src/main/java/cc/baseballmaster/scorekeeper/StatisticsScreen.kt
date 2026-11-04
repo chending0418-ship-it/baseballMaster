@@ -313,7 +313,7 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
         StatisticsHelp(Modifier.align(Alignment.CenterStart))
         Text("统计", Modifier.align(Alignment.Center), fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Box(Modifier.align(Alignment.CenterEnd)) {
-            ReportShareButton("导出 PDF", "export-team-season-pdf") { context -> ReportExport.team(context, team, year, mode, summary) }
+            ReportShareButton("导出 PDF", "export-team-season-pdf") { context -> ReportExport.team(context, team, year, mode, summary, isFiltered = selectedValid != null) }
         }
     }
     CardBlock {
@@ -471,7 +471,7 @@ internal fun PlayerStatisticsDetail(
     fun closeFilter() { filterOpen = false; filterDraft = null }
     ProductPage("球员统计", onBack = onClose, backTag = "stats-player-close", headerTrailing = {
         ReportShareButton("导出 PDF", "export-player-season-pdf", iconOnly = true) { context ->
-            ReportExport.player(context, team, playerYear, shown, selectedGames)
+            ReportExport.player(context, team, playerYear, shown, selectedGames, eligibleGameCount = eligiblePlayerIDs.size)
         }
     }) {
         Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).testTag("stats-player-identity"),
