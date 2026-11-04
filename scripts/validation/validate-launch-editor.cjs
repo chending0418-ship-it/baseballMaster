@@ -17,6 +17,15 @@ const output=process.env.BM_LAUNCH_VALIDATION_OUTPUT?path.resolve(process.env.BM
   await page.goto(fixture.origin+'/admin/#launch');
   await page.locator('#password').fill(fixture.password);await page.locator('#login-form button').click();
   await page.getByRole('heading',{name:'开屏配置',exact:true}).waitFor();
+  const uploadURL=fixture.origin+'/admin/api/launch-screen/image';
+  for(const [status,text]of [[413,'请求内容超过服务器限制。背景图最多 3 MB；若图片未超限，请联系管理员检查上传配置。'],[502,'服务器响应异常（HTTP 502），请稍后重试。']]){
+   await page.route(uploadURL,route=>route.fulfill({status,contentType:'text/html',body:`<html><h1>${status}</h1></html>`}));
+   await page.locator('input[type=file]').setInputFiles(path.join(root,'collaboration/test/fixtures/launch-background.png'));
+   await page.getByText(text,{exact:true}).waitFor();
+   if(await page.getByRole('button',{name:'发布配置',exact:true}).isDisabled())throw Error('Upload failure left editor locked');
+   if(fixture.store.launchScreen.get().revision!==0)throw Error('Failed upload changed published config');
+   await page.unroute(uploadURL);
+  }
   await page.locator('input[type=file]').setInputFiles(path.join(root,'collaboration/test/fixtures/launch-background.png'));
   await page.getByText('背景已上传，点击“发布配置”后生效。',{exact:true}).waitFor();
   await page.locator('textarea').fill('每一场热爱 都值得记录');await page.locator('input[type=number]').fill('1.2');
@@ -36,8 +45,12 @@ const output=process.env.BM_LAUNCH_VALIDATION_OUTPUT?path.resolve(process.env.BM
   await page.getByRole('button',{name:'恢复默认内容',exact:true}).click();await page.getByRole('button',{name:'发布配置',exact:true}).click();
   await page.getByText('配置已发布。App 下载完成后，在下次启动时生效。',{exact:true}).waitFor();
   const defaults=await page.evaluate(()=>fetch('/api/v3/app/launch-screen').then(r=>r.json()));if(defaults.backgroundImage!==null||!defaults.enabled||defaults.message!=='每一球 都有迹可循')throw Error('Reset failed');
+  await page.route(uploadURL,route=>route.fulfill({status:401,contentType:'text/html',body:'<html>Unauthorized</html>'}));
+  await page.locator('input[type=file]').setInputFiles(path.join(root,'collaboration/test/fixtures/launch-background.png'));
+  await page.locator('#login').waitFor({state:'visible'});
+  if(await page.locator('#login-message').innerText()!=='登录已到期，请重新输入密码。')throw Error('HTML 401 did not reset session');
   if(errors.length||blocked.length)throw Error(JSON.stringify({errors,blocked}));
-  fs.writeFileSync(path.join(output,'browser-checks.json'),JSON.stringify({localOnly:true,productionRequests:0,passed:['owner login','PNG upload and preview','message and duration publication','Beijing schedule serialization','desktop and mobile layout','disable','restore bundled defaults'],config},null,2)+'\n');
+  fs.writeFileSync(path.join(output,'browser-checks.json'),JSON.stringify({localOnly:true,productionRequests:0,passed:['owner login','HTML 413 upload feedback and retry','HTML 502 upload feedback and retry','PNG upload and preview','message and duration publication','Beijing schedule serialization','desktop and mobile layout','disable','restore bundled defaults','HTML 401 resets session'],config},null,2)+'\n');
   console.log('Local launch-editor browser checks passed.');
  }finally{await browser?.close();await fixture.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -28,7 +28,7 @@ window.BMLaunchEditor=async function({read,api,header}){
   lock(true);status.textContent='正在上传背景…';try{
    const uploaded=await api('launch-screen/image',{method:'POST',headers:{'Content-Type':selected.type},body:selected});
    const probe=new Image();probe.src=uploaded.path;await probe.decode();draft.backgroundImage=uploaded;update();status.textContent='背景已上传，点击“发布配置”后生效。';
-  }catch(e){status.textContent=e.message;}finally{lock(false);}
+  }catch(e){file.value='';status.textContent=e.message;}finally{lock(false);}
  });
  form.addEventListener('submit',async event=>{
   event.preventDefault();if(busy)return;lock(true);status.textContent='正在发布配置…';try{

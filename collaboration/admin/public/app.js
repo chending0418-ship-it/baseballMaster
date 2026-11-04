@@ -7,7 +7,10 @@ let authenticated=false,sequence=0,controller=null,expiryTimer=null;
 function reset(message=''){authenticated=false;sequence++;controller?.abort();clearTimeout(expiryTimer);$('shell').hidden=true;$('login').hidden=false;$('content').replaceChildren();$('message').textContent='';$('login-message').textContent=message;$('password').value='';}
 async function api(path,options={}){
  const response=await fetch('/admin/api/'+path,{cache:'no-store',credentials:'same-origin',...options,headers:{'Content-Type':'application/json',...options.headers}});
- const data=await response.json();if(!response.ok){if(response.status===401&&path!=='login')reset('登录已到期，请重新输入密码。');throw new Error(data.error||'暂时无法读取资料，请稍后刷新。');}return data;
+ if(response.status===401&&path!=='login')reset('登录已到期，请重新输入密码。');
+ const fallback=response.status===413?'请求内容超过服务器限制。背景图最多 3 MB；若图片未超限，请联系管理员检查上传配置。':response.status===401?'登录已到期，请重新输入密码。':`服务器响应异常（HTTP ${response.status}），请稍后重试。`;
+ let data;try{data=await response.json();}catch{throw new Error(fallback);}
+ if(!response.ok)throw new Error(typeof data?.error==='string'?data.error:fallback);return data;
 }
 function enter(data){authenticated=true;$('login').hidden=true;$('shell').hidden=false;clearTimeout(expiryTimer);expiryTimer=setTimeout(()=>reset('登录已到期，请重新输入密码。'),Math.max(0,data.expiresAt-Date.now()));render();}
 $('login-form').addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;$('login-message').textContent='正在登录…';try{const data=await api('login',{method:'POST',body:JSON.stringify({password:$('password').value})});$('password').value='';enter(data);}catch(e){$('login-message').textContent=e.message;}finally{button.disabled=false;}});
