@@ -14,7 +14,7 @@
 | 宣传文本 | [promotional-text-zh-Hans.txt](promotional-text-zh-Hans.txt) |
 | 完整描述 | [description-zh-Hans.txt](description-zh-Hans.txt) |
 | 此版本新增内容 | [whats-new-zh-Hans.txt](whats-new-zh-Hans.txt) |
-| 关键词 | [keywords-zh-Hans.txt](keywords-zh-Hans.txt)，UTF-8 97 bytes，不含文件结尾换行 |
+| 关键词 | [keywords-zh-Hans.txt](keywords-zh-Hans.txt)，UTF-8 98 bytes，不含文件结尾换行 |
 | 审核备注主稿 | [review-notes-en.txt](review-notes-en.txt)，UTF-8 3743 bytes，不含文件结尾换行 |
 | 审核备注中文对照 | [review-notes-zh-Hans.txt](review-notes-zh-Hans.txt)，用于核对；不与英文一起粘贴 |
 | 营销 URL | `https://baseballmaster.cc/scorekeeper.html`，产品页已在上海更新，匿名 HTTPS HTTP 200 |
@@ -69,3 +69,14 @@ Apple 当前文档列出：宣传文本 170 characters、描述和更新说明�
 上海共享批量后台已按用户新增授权部署，批次 `bulk-3.1.2-20261104T131831Z`。仅 `server.mjs`、`roster.mjs` 两文件更新并核对 SHA，部署前加密备份成功；33 张表无 DDL、停服期间未恢复或改写数据库，启动后完整性通过；其他五个服务 PID 未变。协议保持 1、最低 App 版本保持 3.0，`bulkRosterImport` 能力已开启；权限、修订、事务和幂等校验继续保留，旧客户端单人编辑兼容。九项公网合成专项已全部通过，合成球队按正常流程解散、临时凭据删除；部署后日备份和完整状态备份成功，配置备份下载、解密和摘要核验通过。最终回执已冻结，可按用户授权经本 PR 合入 main。
 
 部署证据：[deployment-receipt.json](../../../output/validation/3.1.2/bulk-backend-deploy-2026-11-04/deployment-receipt.json)。 公网证据：[public-verification.json](../../../output/validation/3.1.2/bulk-backend-deploy-2026-11-04/public-verification.json)。后续网站批次 `website-20261104T132137Z` 的 12 文件摘要、92 其他静态文件、18 项公网视口及启动清单刷新均通过。此状态替代前述网站发布时点的批量待部署说明。用户已授权本版通过 PR 合入 main；正式签名归档、App 上传、审核和上架仍分别记录，本轮尚未执行。
+
+## 2026-11-04 简体中文 ASO 调整
+
+名称“棒球比赛记录大师”及副标题“棒球慢垒记分、球队共享与统计”保持本批材料原稿；本轮只重写推广文本与关键词，不代改商店字段。如实际填写的名称或副标题不同，需重新核对词位重复。
+
+- 推广文本130字符：从赛前到赛后使用价值开头，再说明多屏、名单、击球落点、共享与文字直播，以及离线核心记分／无订阅内购，减少以设备更新为主的发布说明口吻。无版本号，不把App购买价格写成免费。
+- 关键词98个UTF-8字节，英文逗号分隔、无空格。删除原列表里与名称／副标题重复的完整词位“慢垒、记分、球队、共享、统计”；“计分”补另一种写法，“垒球”补运动相关表达，“记分牌／记分册”保留独立工具意图，其他覆盖具体数据与场边使用场景。中文切词与跨字段组合不作保证，不宣称靠拆字一定命中某个完整查询。
+- 这是基于产品事实与搜索意图的首轮词组，不是搜索量或难度榜单；未取得Apple Ads词量、自然关键词名次或竞品隐藏关键词，不编造这些数据，不加入竞品／商标／无关热词。
+- 上线后按同等时间窗口观察App Store Search来源的展示、产品页浏览、下载与转化；排除广告投放、活动和评分变化等干扰后再判断是否保留词组。App Analytics用于来源效果观察，不当作逐词排名工具。
+
+依据：[Apple App Store search](https://developer.apple.com/app-store/search/)说明推广文本不影响搜索排名，关键词应相关且避免重复名称／副标题；[Connect字段规范](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information/)规定推广文本170字符、关键词100字节。2026-11-04核对。本轮按更具体的100字节字段限制验证，不将概述页100 characters误作100个汉字。

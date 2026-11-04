@@ -9,7 +9,7 @@
   "wechatPNGs": 1,
   "textLimits": {
     "promotional-text-zh-Hans.txt": {
-      "count": 92,
+      "count": 130,
       "unit": "characters",
       "limit": 170
     },
@@ -24,7 +24,7 @@
       "limit": 4000
     },
     "keywords-zh-Hans.txt": {
-      "count": 97,
+      "count": 98,
       "unit": "utf8_bytes",
       "limit": 100
     },
@@ -335,5 +335,12 @@
     "databaseMigrated": false,
     "encryptedBackupsBeforeAndAfter": true,
     "websiteAligned": true
+  },
+  "aso": {
+    "locale": "zh-Hans",
+    "promotionalCharacters": 130,
+    "keywordUTF8Bytes": 98,
+    "nameAndSubtitleUnchanged": true,
+    "searchVolumeOrRankDataAvailable": false
   }
 }
