@@ -1,6 +1,39 @@
 import XCTest
+import UIKit
 
 final class BaseballMasterUITests: XCTestCase {
+    func testV311ConfigurableLaunchKeepsBrandIconsAndSkipsToHome() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--launch-screen-custom-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["launch-message"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["launch-message"].label.contains("固定品牌 图文保持清晰"))
+        XCTAssertTrue(app.images["launch-fixed-bm"].exists)
+        XCTAssertTrue(app.images["launch-fixed-app-icon"].exists)
+        let iconFrame = app.images["launch-fixed-app-icon"].frame
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "3.1.1 可配置开屏"; capture.lifetime = .keepAlways; add(capture)
+        app.buttons["skip-launch-screen"].tap()
+        XCTAssertTrue(app.navigationBars["比赛"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["start-new-game"].exists)
+        app.terminate(); app.launchArguments = ["--launch-screen-preview"]; app.launch()
+        XCTAssertTrue(app.staticTexts["launch-message"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.images["launch-fixed-app-icon"].frame.minY, iconFrame.minY, accuracy: 1, "Caption length must not move the fixed App icon")
+        app.buttons["skip-launch-screen"].tap()
+    }
+
+    func testV311BundledLaunchRetainsProductGreenAndDefaultMessage() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--launch-screen-preview"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["launch-message"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["launch-message"].label, "每一球 都有迹可循")
+        XCTAssertTrue(app.images["launch-fixed-bm"].exists)
+        XCTAssertTrue(app.images["launch-fixed-app-icon"].exists)
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "3.1.1 默认缓存兜底开屏"; capture.lifetime = .keepAlways; add(capture)
+        app.buttons["skip-launch-screen"].tap()
+        XCTAssertTrue(app.navigationBars["比赛"].waitForExistence(timeout: 5))
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
@@ -54,7 +87,12 @@ final class BaseballMasterUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5), app.debugDescription)
         app.terminate(); app.launch()
         app.buttons["import-local-backup"].tap()
-        XCTAssertTrue(app.navigationBars["Browse"].waitForExistence(timeout: 3) || app.buttons["Browse"].exists || app.buttons["浏览"].exists || app.buttons["Cancel"].exists || app.buttons["取消"].exists)
+        let picker = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.navigationBars["Browse"].exists || app.buttons["Browse"].exists || app.buttons["浏览"].exists
+                || app.buttons["Cancel"].exists || app.buttons["取消"].exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [picker], timeout: 20), .completed, app.debugDescription)
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "本机备份系统文件选择器"; capture.lifetime = .keepAlways; add(capture)
     }
 
     func testGamePosterCanEditVenueAndShareImage() throws {
@@ -232,6 +270,13 @@ final class BaseballMasterUITests: XCTestCase {
         for _ in 0..<5 where !empty.isHittable { app.swipeUp() }
         XCTAssertTrue(empty.exists)
         XCTAssertTrue(app.staticTexts["没有符合条件的球员"].exists)
+    }
+
+    private func keepFinishedGameLocal(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let keep = app.buttons["keep-final-local"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 5), "Saved formal matches must ask whether to upload", file: file, line: line)
+        keep.tap()
+        XCTAssertTrue(keep.waitForNonExistence(timeout: 5), file: file, line: line)
     }
 
     private func revealStatisticsControl(_ element: XCUIElement, in app: XCUIApplication) {
@@ -601,6 +646,7 @@ final class BaseballMasterUITests: XCTestCase {
         app.buttons["确认保存"].tap()
         let back = app.buttons["return-final-game-home"]
         XCTAssertTrue(back.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["keep-final-local"].exists, "Practice is never a saved formal match")
         XCTAssertTrue(back.label.contains("返回练习")); back.tap()
         XCTAssertTrue(start.waitForExistence(timeout: 5))
     }
@@ -999,6 +1045,7 @@ extension BaseballMasterUITests {
         XCTAssertTrue(reason.waitForExistence(timeout: 5))
         reason.tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         let capture = XCTAttachment(screenshot: app.screenshot())
         capture.name = "手动结束比赛后的导航"; capture.lifetime = .keepAlways; add(capture)
         let home = app.buttons["return-final-game-home"]
@@ -1027,6 +1074,7 @@ extension BaseballMasterUITests {
         let reason = app.buttons["finish-reason-时间限制结束"]
         XCTAssertTrue(reason.waitForExistence(timeout: 5)); reason.tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         XCTAssertTrue(app.buttons["return-final-game-home"].waitForExistence(timeout: 5))
         let capture = XCTAttachment(screenshot: app.screenshot())
         capture.name = "新建比赛手动结束后的返回入口"; capture.lifetime = .keepAlways; add(capture)
@@ -1069,12 +1117,15 @@ extension BaseballMasterUITests {
         let reason = app.buttons["finish-reason-规定局数完成"]
         XCTAssertTrue(reason.waitForExistence(timeout: 5)); reason.tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
         app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["return-final-game-home"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["return-game-home"].isHittable)
-        app.buttons["return-game-home"].tap()
-        XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5))
+        let returnHome = app.buttons["return-game-home"]
+        XCTAssertFalse(app.buttons["keep-final-local"].exists, "Returning from results must not present a second postgame prompt")
+        XCTAssertTrue(returnHome.isHittable, app.debugDescription)
+        returnHome.tap()
+        XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5), app.debugDescription)
         app.tabBars.buttons["统计"].tap()
         XCTAssertTrue(app.navigationBars["统计"].waitForExistence(timeout: 5))
     }
@@ -1097,6 +1148,7 @@ extension BaseballMasterUITests {
         revealStatisticsControl(suspend, in: app)
         suspend.tap(); app.buttons["确认保存"].tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["keep-final-local"].exists, "Suspending is not finishing and must not offer upload")
         app.buttons["return-game-home"].tap()
         XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5))
         let ongoing = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
@@ -1122,10 +1174,11 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
         let playBall = app.buttons["start-game-clock"]
         if playBall.exists {
-            revealStatisticsControl(playBall, in: app)
-            XCTAssertTrue(playBall.isHittable)
-            playBall.tap()
-            XCTAssertTrue(app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 5))
+            if !app.frame.contains(playBall.frame) { revealStatisticsControl(playBall, in: app) }
+            // Verify the actual tap and confirmation for this visible compact-header control.
+            XCTAssertTrue(app.frame.intersects(playBall.frame), app.debugDescription)
+            playBall.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            XCTAssertTrue(app.alerts["确认双方阵容并开赛？"].waitForExistence(timeout: 5), app.debugDescription)
             app.alerts.buttons["确认开赛"].tap()
         }
     }
@@ -1159,6 +1212,7 @@ extension BaseballMasterUITests {
         revealStatisticsControl(finishReason, in: app)
         finishReason.tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         XCTAssertTrue(app.buttons["return-final-game-home"].waitForExistence(timeout: 3))
         app.buttons["open-box-score"].tap()
         let reopen = app.buttons["reopen-game"]
@@ -1311,6 +1365,7 @@ extension BaseballMasterUITests {
         app.buttons["结束比赛"].tap()
         XCTAssertTrue(app.buttons["finish-reason-记录员结束记录"].waitForExistence(timeout: 5))
         app.buttons["finish-reason-记录员结束记录"].tap(); app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         _ = try waitForPublicLive(code) { $0["isFinal"] as? Bool == true && $0["batterOrder"] is NSNull }
         app.buttons["open-box-score"].tap()
         let reopen = app.buttons["reopen-game"]
@@ -1713,7 +1768,7 @@ extension BaseballMasterUITests {
     }
 
     private func captureHistory(_ app: XCUIApplication, name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
 }
 
@@ -2012,6 +2067,7 @@ extension BaseballMasterUITests {
         app.buttons["结束比赛"].tap()
         app.buttons["finish-reason-记录员结束记录"].tap()
         app.buttons["确认保存"].tap()
+        keepFinishedGameLocal(in: app)
         let result = app.buttons["open-box-score"]
         XCTAssertTrue(result.waitForExistence(timeout: 5))
         result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -2237,9 +2293,23 @@ extension BaseballMasterUITests {
             let destination = app.buttons["share-destination-picker"]; XCTAssertTrue(destination.waitForExistence(timeout: 5)); destination.tap()
             app.buttons["海浪棒球队 · 共享球队"].tap()
             let share = app.buttons["share-current-local-game"]; revealStatisticsControl(share, in: app); share.tap()
-            captureHistory(app, name: "3.0.1-result-import-confirmation")
-            app.alerts.buttons["确认共享"].tap()
-            XCTAssertTrue(app.buttons["查看已共享的比赛"].waitForExistence(timeout: 10)); app.buttons["查看已共享的比赛"].tap()
+            let confirmation = app.alerts["是否上传这场已结束的比赛？"]
+            XCTAssertTrue(confirmation.waitForExistence(timeout: 8))
+            XCTAssertTrue(confirmation.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "本机原件永远保留")).firstMatch.exists)
+            let beforeConfirmation = try await sharingAPI(other, "/teams/\(teamID)/games", method: "GET")
+            XCTAssertEqual((beforeConfirmation["games"] as? [[String: Any]])?.count, 0, "Reviewing a local final must not upload it")
+            captureHistory(app, name: "3.1.1-result-upload-confirmation")
+            confirmation.buttons["暂不上传，保留本机"].tap()
+            let afterCancel = try await sharingAPI(other, "/teams/\(teamID)/games", method: "GET")
+            XCTAssertEqual((afterCancel["games"] as? [[String: Any]])?.count, 0, "Cancelling confirmation must keep the complete match local")
+            share.tap()
+            XCTAssertTrue(confirmation.waitForExistence(timeout: 8))
+            confirmation.buttons["确认上传到球队"].tap()
+            let uploaded = app.staticTexts["postgame-upload-status"]
+            let acknowledged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "完整记录已上传，本机原件保留"), object: uploaded)
+            await fulfillment(of: [acknowledged], timeout: 12)
+            let archive = app.buttons["查看球队已保存的档案"]
+            revealStatisticsControl(archive, in: app); XCTAssertTrue(archive.waitForExistence(timeout: 5)); archive.tap()
         } else {
         revealStatisticsControl(app.buttons["open-shared-matches"], in: app); app.buttons["open-shared-matches"].tap(); XCTAssertTrue(app.buttons["publish-local-match"].waitForExistence(timeout: 5)); app.buttons["publish-local-match"].tap()
         app.buttons["select-match-to-share"].firstMatch.tap(); app.buttons["确认共享"].firstMatch.tap()
@@ -2677,7 +2747,7 @@ extension BaseballMasterUITests {
 }
 
 extension BaseballMasterUITests {
-    @MainActor func testV301FixedInviteMultipleMembersAndShareFutureFromSetup() async throws {
+    @MainActor func testV311FixedInviteMultipleMembersAndSharedRosterScheduleStaysLocal() async throws {
         let app = launchDeviceSecurityApp()
         app.buttons["create-shared-team"].tap()
         app.textFields["shared-team-name"].tap(); app.textFields["shared-team-name"].typeText("301共享队")
@@ -2704,7 +2774,10 @@ extension BaseballMasterUITests {
         let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", initial), object: link)
         await fulfillment(of: [changed], timeout: 8)
         app.buttons["完成"].firstMatch.tap()
-        let create = app.buttons["shared-roster-new-game"]; revealStatisticsControl(create, in: app); create.tap()
+        XCTAssertFalse(app.buttons["shared-roster-new-game"].exists, "Shared-team pages only view and manage archives")
+        app.tabBars.buttons["比赛"].tap()
+        let create = app.buttons["start-new-game"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5)); create.tap()
         XCTAssertTrue(app.navigationBars["新比赛"].waitForExistence(timeout: 5))
         let ownChoice = app.buttons["new-game-own-team"]
         XCTAssertTrue(ownChoice.exists); ownChoice.tap()
@@ -2713,16 +2786,22 @@ extension BaseballMasterUITests {
         app.buttons["301共享队 · 共享球队 · 0 人"].tap()
         let future = app.switches["安排未来比赛"]; revealStatisticsControl(future, in: app)
         future.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        let destination = app.buttons["share-destination-picker"]; revealStatisticsControl(destination, in: app); destination.tap()
-        app.buttons["301共享队 · 共享球队"].tap()
-        captureHistory(app, name: "3.0.1-share-future-setup")
+        let destination = app.buttons["share-destination-picker"]; revealStatisticsControl(destination, in: app)
+        XCTAssertTrue(destination.label.contains("301共享队"), "Selecting a shared roster only presets its post-game upload target")
+        let beforeSave = try await sharingAPI(reader, "/teams/\(teamID)/games?cursor=0", method: "GET")
+        XCTAssertEqual((beforeSave["games"] as? [[String: Any]])?.count, 0, "Choosing a shared roster must not create a cloud match")
+        captureHistory(app, name: "3.1.1-shared-roster-postgame-target")
         let save = app.buttons["continue-to-lineup"]; revealStatisticsControl(save, in: app); save.tap()
         app.alerts.buttons["保存安排"].tap()
         XCTAssertTrue(app.alerts["比赛安排已保存"].waitForExistence(timeout: 12))
         let response = try await sharingAPI(reader, "/teams/\(teamID)/games?cursor=0", method: "GET")
         let games = try XCTUnwrap(response["games"] as? [[String: Any]])
-        XCTAssertEqual(games.count, 1)
-        captureHistory(app, name: "3.0.1-future-shared-and-local-saved")
+        XCTAssertEqual(games.count, 0, "Saving a future match is local only; uploading requires a new confirmation after completion")
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "比赛结束后仍需确认是否上传")).firstMatch.exists)
+        captureHistory(app, name: "3.1.1-future-local-only-saved")
+        app.alerts.buttons["返回比赛首页"].tap()
+        let localSchedule = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "scheduled-game-", "301共享队")).firstMatch
+        XCTAssertTrue(localSchedule.waitForExistence(timeout: 5), "The complete schedule must remain available on this device")
     }
 }
 
@@ -2732,9 +2811,16 @@ extension BaseballMasterUITests {
         let (app, reader, teamID, gameID) = try await createSharedMatchUI(final: true, shareFromResult: true)
         let delete = app.buttons["删除共享比赛"]; revealStatisticsControl(delete, in: app); delete.tap()
         app.alerts.buttons["确认删除共享比赛"].tap()
-        let remote = try await sharingAPI(reader, "/teams/\(teamID)/games/\(gameID)", method: "GET")
+        var remote = try await sharingAPI(reader, "/teams/\(teamID)/games/\(gameID)", method: "GET")
+        for _ in 0..<20 where remote["deleted"] as? Bool != true {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            remote = try await sharingAPI(reader, "/teams/\(teamID)/games/\(gameID)", method: "GET")
+        }
         XCTAssertEqual(remote["deleted"] as? Bool, true)
-        app.tabBars.buttons["比赛"].tap()
+        app.navigationBars["共享比赛"].buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5))
         let original = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "completed-game-")).firstMatch
         XCTAssertTrue(original.waitForExistence(timeout: 5)); revealStatisticsControl(original, in: app); original.tap()
         XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
@@ -2928,5 +3014,1038 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.staticTexts["situation-error-responsibility"].label.contains("一垒手"))
         app.buttons["confirm-situation-play"].tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+    }
+}
+
+
+extension BaseballMasterUITests {
+    func testV311ProOtherResultsOpensFullCatalogAndPreservesSelectedTypeOnBack() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealStatisticsControl(start, in: app); start.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        app.buttons["situation-by-process"].tap()
+        app.buttons["contact-type-line"].tap()
+        let more = app.buttons["process-all-outcomes"]
+        revealStatisticsControl(more, in: app); more.tap()
+        XCTAssertTrue(app.buttons["quick-outcome-HR"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["quick-outcome-HR"].isEnabled)
+        app.navigationBars.buttons["返回"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["平飞 · 结果"].waitForExistence(timeout: 5))
+        revealStatisticsControl(more, in: app); more.tap()
+        app.buttons["quick-outcome-HR"].tap()
+        XCTAssertTrue(app.navigationBars["本垒打"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["contact-type-line"].value as? String, "已选择")
+        app.navigationBars.buttons["返回"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["全部击球"].waitForExistence(timeout: 5))
+        app.buttons["cancel-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertEqual(batter.label, before, "Browsing or cancelling other results must not record a play")
+    }
+
+    func testV311ProSacrificeResultsExplainUnavailableAndSelectMatchingBallType() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealStatisticsControl(start, in: app); start.tap()
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        app.buttons["all-batted-outcomes"].tap()
+        let sacrifice = app.buttons["quick-outcome-SH"]
+        revealStatisticsControl(sacrifice, in: app)
+        XCTAssertFalse(sacrifice.isEnabled)
+        XCTAssertFalse(app.buttons["quick-outcome-SF"].isEnabled)
+        XCTAssertTrue(app.staticTexts["outcome-unavailable-SH"].label.contains("垒上有跑者"))
+        XCTAssertTrue(app.staticTexts["outcome-unavailable-SF"].label.contains("三垒有跑者"))
+        // Record one actual triple, so both sacrifice results become available at zero outs.
+        let triple = app.buttons["quick-outcome-3B"]
+        revealStatisticsControl(triple, in: app); triple.tap()
+        app.buttons["contact-type-line"].tap()
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)).tap()
+        app.buttons["situation-fielder-8"].tap()
+        app.buttons["finish-situation-field"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+        app.buttons["ball-in-play"].tap()
+        app.buttons["situation-by-process"].tap(); app.buttons["contact-type-ground"].tap()
+        let more = app.buttons["process-all-outcomes"]
+        revealStatisticsControl(more, in: app); more.tap()
+        revealStatisticsControl(sacrifice, in: app)
+        XCTAssertTrue(sacrifice.isEnabled)
+        XCTAssertTrue(app.buttons["quick-outcome-SF"].isEnabled)
+        app.buttons["quick-outcome-SF"].tap()
+        XCTAssertEqual(app.buttons["contact-type-fly"].value as? String, "已选择")
+        app.navigationBars.buttons["返回"].firstMatch.tap()
+        revealStatisticsControl(sacrifice, in: app); sacrifice.tap()
+        XCTAssertEqual(app.buttons["contact-type-bunt"].value as? String, "已选择")
+        app.buttons["cancel-situation-play"].tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertEqual(batter.label, before)
+    }
+}
+
+
+extension BaseballMasterUITests {
+    func testV311ManualFinishWaitsForRecordingSheetAndKeepsLocalWithoutUpload() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let ongoing = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(ongoing.waitForExistence(timeout: 5)); ongoing.tap()
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        app.buttons["结束比赛"].tap()
+        let reason = app.buttons["finish-reason-记录员结束记录"]
+        XCTAssertTrue(reason.waitForExistence(timeout: 5)); reason.tap()
+        app.buttons["确认保存"].tap()
+        XCTAssertTrue(app.navigationBars["赛后记录去向"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.navigationBars["结束或中断比赛"].exists)
+        XCTAssertTrue(app.staticTexts["比赛已结束，完整记录已保存在本机。"].exists)
+        let keep = app.buttons["keep-final-local"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 5)); keep.tap()
+        XCTAssertTrue(keep.waitForNonExistence(timeout: 5), "Wait for the postgame sheet to finish dismissing before navigating")
+        let home = app.buttons["return-final-game-home"]
+        XCTAssertTrue(home.waitForExistence(timeout: 5))
+        let result = app.buttons["open-box-score"]
+        XCTAssertTrue(app.frame.intersects(result.frame), app.debugDescription)
+        result.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5), app.debugDescription)
+        app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
+        XCTAssertFalse(app.navigationBars["赛后记录去向"].exists, "Viewing a saved result must not reopen the automatic prompt")
+        home.tap()
+        XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5))
+        XCTAssertFalse(ongoing.exists)
+    }
+}
+
+// Run these cases on an iPad destination. Fixtures use isolated in-memory records.
+extension BaseballMasterUITests {
+    private func requireV312IPad() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "Requires an iPad test destination")
+        XCUIDevice.shared.orientation = .portrait
+        addTeardownBlock { XCUIDevice.shared.orientation = .portrait }
+    }
+
+    private func rotateV312(_ app: XCUIApplication, landscape: Bool) {
+        XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
+        // iPadOS windows can stay narrow after the device rotates. XCUI frames use
+        // screen coordinates, so a width/height comparison is not an orientation signal.
+        // The rotation call waits for UI idling; each caller then checks its live draft/actions.
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
+        print("iPad rotation requested: \(landscape ? "landscape" : "portrait"), app=\(app.frame), window=\(app.windows.firstMatch.frame)")
+    }
+
+    private func revealV312Workbench(_ element: XCUIElement, in app: XCUIApplication) {
+        let scroll = app.scrollViews["scorekeeping-wide-layout"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        var reachability: [String] = []
+        // Off-screen SwiftUI elements can leave the AX tree. Search toward the top
+        // first rather than treating a missing element as one below the viewport.
+        for towardTop in [true, false] {
+            for step in 0..<6 {
+                let exists = element.exists
+                let hittable = exists && element.isHittable
+                reachability.append("towardTop=\(towardTop), step=\(step), exists=\(exists), hittable=\(hittable), frame=\(exists ? String(describing: element.frame) : "missing")")
+                if hittable { return }
+                let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: towardTop ? 0.3 : 0.8))
+                let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: towardTop ? 0.8 : 0.3))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            }
+        }
+        let reachable = element.exists && element.isHittable
+        if !reachable {
+            captureHistory(app, name: "3.1.2-workbench-unreachable-control")
+            print("Workbench failed reachability: \(element)\n" + reachability.joined(separator: "\n"))
+            print("Workbench geometry: app=\(app.frame), window=\(app.windows.firstMatch.frame), scroll=\(scroll.frame)")
+        }
+        XCTAssertTrue(reachable, "Workbench content must be reachable: \(element)\n\(app.debugDescription)")
+    }
+
+    private func assertV312WorkbenchPanels(in app: XCUIApplication) {
+        for identifier in ["workbench-line-score", "workbench-matchup", "workbench-lineups",
+                           "workbench-recent-log", "workbench-recent-appearances"] {
+            XCTAssertTrue(app.descendants(matching: .any)[identifier].firstMatch.waitForExistence(timeout: 5),
+                          "The wide workbench must include \(identifier)")
+        }
+        for heading in ["本场投打表现", "场上阵容", "最近实况", "最近打席"] {
+            let label = app.staticTexts[heading].firstMatch
+            revealV312Workbench(label, in: app)
+            XCTAssertTrue(label.isHittable, "Workbench panels must be readable by scrolling")
+        }
+        revealV312Workbench(app.buttons["ball-in-play"], in: app)
+    }
+
+    func testV312IPadLaunchRotationSkipAndNewGameNavigation() throws {
+        try requireV312IPad()
+        let app = XCUIApplication()
+        app.launchArguments = ["--launch-screen-custom-preview"]
+        app.launch()
+        let brand = app.images["launch-fixed-bm"]
+        let icon = app.images["launch-fixed-app-icon"]
+        let skip = app.buttons["skip-launch-screen"]
+        XCTAssertTrue(brand.waitForExistence(timeout: 5))
+        XCTAssertTrue(icon.exists)
+        XCTAssertTrue(skip.isHittable)
+        captureHistory(app, name: "3.1.2-ipad-portrait-launch")
+        rotateV312(app, landscape: true)
+        XCTAssertTrue(brand.exists)
+        XCTAssertTrue(icon.exists)
+        XCTAssertTrue(app.frame.contains(brand.frame), "Fixed branding must fit the landscape window")
+        XCTAssertTrue(app.frame.contains(icon.frame), "The App icon must stay inside the landscape window")
+        XCTAssertTrue(app.staticTexts["launch-message"].label.contains("固定品牌 图文保持清晰"))
+        XCTAssertTrue(skip.isHittable)
+        captureHistory(app, name: "3.1.2-ipad-landscape-launch")
+        skip.tap()
+        let create = app.buttons["start-new-game"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        XCTAssertTrue(create.isHittable); create.tap()
+        XCTAssertTrue(app.navigationBars["新比赛"].waitForExistence(timeout: 5))
+        let ownTeam = app.buttons["new-game-own-team"]
+        XCTAssertTrue(ownTeam.exists)
+        rotateV312(app, landscape: false)
+        XCTAssertTrue(ownTeam.isHittable, "The new-game form must remain usable after rotating")
+        ownTeam.tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "本机球队")).firstMatch.waitForExistence(timeout: 5))
+        captureHistory(app, name: "3.1.2-ipad-new-game-team-picker")
+    }
+
+    func testV312IPadScoringRotationKeepsPitchCountAndUndoRedo() throws {
+        try requireV312IPad()
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let game = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(game.waitForExistence(timeout: 5)); game.tap()
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        XCTAssertTrue(pitcher.waitForExistence(timeout: 5))
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        assertV312WorkbenchPanels(in: app)
+        revealV312Workbench(app.buttons["pitch-坏球"], in: app)
+        app.buttons["pitch-坏球"].tap()
+        rotateV312(app, landscape: true)
+        let strike = app.buttons["pitch-看振"]
+        revealStatisticsControl(strike, in: app)
+        XCTAssertTrue(strike.isHittable); strike.tap()
+        XCTAssertTrue(pitcher.label.contains("本场已投 2 球"), "Rotation must retain the recorded pitch")
+        captureHistory(app, name: "3.1.2-ipad-landscape-scoring")
+        app.buttons["undo-last-play"].tap()
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"))
+        rotateV312(app, landscape: false)
+        app.buttons["redo-last-play"].tap()
+        XCTAssertTrue(pitcher.label.contains("本场已投 2 球"))
+        XCTAssertTrue(app.buttons["ball-in-play"].isHittable)
+        captureHistory(app, name: "3.1.2-ipad-portrait-scoring")
+    }
+
+    func testV312IPadProRotationPreservesContactAndFieldingDraftThenCancel() throws {
+        try requireV312IPad()
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealStatisticsControl(start, in: app); start.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+        assertV312WorkbenchPanels(in: app)
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        XCTAssertTrue(app.descendants(matching: .any)["docked-situation-editor"].firstMatch.waitForExistence(timeout: 5),
+                      "Wide Pro recording must open inside the workbench")
+        XCTAssertTrue(app.navigationBars["现场记分"].exists, "The workbench must stay on the current scoring page")
+        XCTAssertFalse(app.buttons["reset-practice-inning"].isEnabled,
+                       "An inline draft must lock the parent practice-reset action")
+        revealV312Workbench(app.buttons["quick-outcome-1B"], in: app)
+        app.buttons["quick-outcome-1B"].tap()
+        app.buttons["contact-type-line"].tap()
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).tap()
+        app.buttons["situation-fielder-8"].tap()
+        let summary = app.staticTexts["contact-summary"].label
+        let route = app.staticTexts["situation-route"].label
+        rotateV312(app, landscape: true)
+        XCTAssertEqual(app.buttons["contact-type-line"].value as? String, "已选择")
+        XCTAssertEqual(app.staticTexts["contact-summary"].label, summary, "The selected landing point must survive rotation")
+        XCTAssertEqual(app.staticTexts["situation-route"].label, route)
+        app.buttons["situation-fielder-4"].tap()
+        XCTAssertTrue(app.staticTexts["situation-route"].label.hasPrefix("8 → 4"))
+        XCTAssertTrue(app.buttons["finish-situation-field"].isEnabled)
+        captureHistory(app, name: "3.1.2-ipad-landscape-pro-draft")
+        rotateV312(app, landscape: false)
+        XCTAssertTrue(app.staticTexts["situation-route"].label.hasPrefix("8 → 4"))
+        app.buttons["cancel-situation-play"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["docked-situation-editor"].firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
+        XCTAssertEqual(batter.label, before, "Cancelling the rotated draft must not record a play")
+        XCTAssertTrue(app.buttons["reset-practice-inning"].isEnabled)
+    }
+
+    func testV312IPadDockedProCompletesOnePlayAndUndoRedoKeepsSinglePitch() throws {
+        try requireV312IPad()
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealStatisticsControl(start, in: app); start.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        assertV312WorkbenchPanels(in: app)
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        revealV312Workbench(app.buttons["quick-outcome-1B"], in: app)
+        app.buttons["quick-outcome-1B"].tap()
+        app.buttons["contact-type-line"].tap()
+        app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).tap()
+        app.buttons["situation-fielder-8"].tap()
+        let finish = app.buttons["finish-situation-field"]
+        XCTAssertTrue(finish.isEnabled)
+        finish.tap()
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 5), "Completing the play must close the inline editor")
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "A completed inline play must add exactly one pitch")
+        revealV312Workbench(app.staticTexts["最近打席"].firstMatch, in: app)
+        XCTAssertFalse(app.staticTexts["尚无已完成打席。当前打席确认后显示结果。"].exists)
+        captureHistory(app, name: "3.1.2-ipad-docked-pro-completed-play")
+        revealV312Workbench(app.buttons["undo-last-play"], in: app)
+        app.buttons["undo-last-play"].tap()
+        XCTAssertEqual(batter.label, before, "One undo must reverse the entire recorded play")
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        app.buttons["redo-last-play"].tap()
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "Redo must restore one play without duplicating its pitch")
+    }
+
+    func testV312IPadFinishRotatePostgameAndReturnHomeKeepsSavedResult() throws {
+        try requireV312IPad()
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let game = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(game.waitForExistence(timeout: 5)); game.tap()
+        rotateV312(app, landscape: true)
+        let finish = app.buttons["结束比赛"]
+        revealStatisticsControl(finish, in: app); finish.tap()
+        let reason = app.buttons["finish-reason-记录员结束记录"]
+        XCTAssertTrue(reason.waitForExistence(timeout: 5)); reason.tap()
+        app.buttons["确认保存"].tap()
+        let keep = app.buttons["keep-final-local"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 5))
+        rotateV312(app, landscape: false)
+        XCTAssertTrue(keep.isHittable); keep.tap()
+        XCTAssertTrue(keep.waitForNonExistence(timeout: 5))
+        let result = app.buttons["open-box-score"]
+        revealStatisticsControl(result, in: app); result.tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        rotateV312(app, landscape: true)
+        captureHistory(app, name: "3.1.2-ipad-landscape-final-result")
+        app.navigationBars["比赛结果"].buttons.element(boundBy: 0).tap()
+        XCTAssertFalse(app.navigationBars["赛后记录去向"].exists)
+        app.buttons["return-final-game-home"].tap()
+        XCTAssertTrue(app.buttons["start-new-game"].waitForExistence(timeout: 5))
+        let saved = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "completed-game-")).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 5)); saved.tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["赛后记录去向"].exists, "Opening the saved result must not present a second automatic prompt")
+    }
+
+    func testV312IPadPDFShareDismissalReturnsToPreviewAndResult() throws {
+        try requireV312IPad()
+        let app = XCUIApplication()
+        app.launchArguments = ["--boxscore-preview"]
+        app.launch()
+        rotateV312(app, landscape: true)
+        let export = app.buttons["share-box-score"]
+        revealStatisticsControl(export, in: app); export.tap()
+        XCTAssertTrue(app.navigationBars["比赛战报"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["report-pdf-page-count"].label.contains("A4"))
+        app.buttons["share-report-pdf"].tap()
+        let activity = app.otherElements["ActivityListView"]
+        XCTAssertTrue(activity.waitForExistence(timeout: 5), app.debugDescription)
+        captureHistory(app, name: "3.1.2-ipad-landscape-pdf-share")
+        // iPad activity presentation dismisses by tapping outside its popover/sheet.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).tap()
+        XCTAssertTrue(activity.waitForNonExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["close-report-pdf"].isHittable)
+        rotateV312(app, landscape: false)
+        app.buttons["close-report-pdf"].tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        XCTAssertTrue(export.exists, "Dismissing sharing and preview must retain the saved result")
+    }
+}
+
+extension BaseballMasterUITests {
+    private func enterV312BulkRoster(_ text: String, in app: XCUIApplication) {
+        let input = app.textViews["bulk-roster-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.tap(); input.typeText(text)
+        let preview = app.buttons["preview-bulk-roster"]
+        captureHistory(app, name: "3.1.2-bulk-after-input-before-preview")
+        print("Bulk preview: exists=\(preview.exists), enabled=\(preview.isEnabled), hittable=\(preview.isHittable), frame=\(preview.frame), app=\(app.frame)")
+        if preview.isHittable {
+            preview.tap()
+        } else {
+            let keyboardPreview = app.buttons["keyboard-preview-bulk-roster"]
+            XCTAssertTrue(keyboardPreview.waitForExistence(timeout: 5), "Focused input must expose the keyboard preview action")
+            print("Bulk keyboard preview: enabled=\(keyboardPreview.isEnabled), hittable=\(keyboardPreview.isHittable), frame=\(keyboardPreview.frame)")
+            XCTAssertTrue(keyboardPreview.isHittable)
+            keyboardPreview.tap()
+        }
+    }
+
+    private func assertV312SinglePlayerEditorIsDefault(in app: XCUIApplication) {
+        XCTAssertTrue(app.navigationBars["添加球员"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["中文名"].exists)
+        XCTAssertTrue(app.textFields["英文名"].exists)
+        XCTAssertFalse(app.textViews["bulk-roster-input"].exists,
+                       "Opening Add Player must continue to use the single-player editor")
+        let bulk = app.buttons["open-bulk-roster"]
+        revealStatisticsControl(bulk, in: app)
+        XCTAssertTrue(bulk.isHittable); bulk.tap()
+    }
+
+    func testV312LocalBulkRosterRejectsWholeInvalidPreviewAndCancelAddsNothing() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--team-detail-preview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["add-player"].waitForExistence(timeout: 5))
+        let count = app.staticTexts["roster-player-count"]
+        XCTAssertTrue(count.exists)
+        let originalCount = count.label
+        app.buttons["add-player"].tap()
+        assertV312SinglePlayerEditorIsDefault(in: app)
+        enterV312BulkRoster("未写入甲,,00\n错误乙,Bad,07", in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["bulk-roster-error"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["confirm-bulk-roster"].isEnabled,
+                       "One invalid line must prevent committing the entire roster")
+        captureHistory(app, name: "3.1.2-bulk-local-invalid-preview")
+        app.buttons["cancel-bulk-roster"].tap()
+        XCTAssertTrue(app.navigationBars["添加球员"].waitForExistence(timeout: 5))
+        app.navigationBars["添加球员"].buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["add-player"].waitForExistence(timeout: 5))
+        XCTAssertEqual(count.label, originalCount, "Invalid preview must not partially write valid rows")
+        XCTAssertFalse(app.buttons["player-card-未写入甲"].exists,
+                       "A valid row from a rejected batch must not have been added")
+        XCTAssertFalse(app.buttons["player-card-错误乙"].exists)
+        app.buttons["bulk-add-players"].tap()
+        enterV312BulkRoster("取消甲,,98", in: app)
+        XCTAssertTrue(app.buttons["confirm-bulk-roster"].isEnabled)
+        app.buttons["cancel-bulk-roster"].tap()
+        XCTAssertTrue(app.buttons["add-player"].waitForExistence(timeout: 5))
+        XCTAssertEqual(count.label, originalCount, "Cancelling valid preview must leave the roster count unchanged")
+        XCTAssertFalse(app.buttons["player-card-取消甲"].exists,
+                       "Cancelling a valid preview must not add its players")
+    }
+
+    func testV312LocalBulkRosterConfirmsTwoPlayersWithOptionalEnglishAndDoubleZero() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--team-detail-preview"]
+        app.launch()
+        let bulk = app.buttons["bulk-add-players"]
+        XCTAssertTrue(bulk.waitForExistence(timeout: 5))
+        let count = app.staticTexts["roster-player-count"]
+        let originalCount = try XCTUnwrap(Int(count.label))
+        bulk.tap()
+        enterV312BulkRoster("姓名,英文名,背号\n批量甲,,00\n批量乙,Bulk Two,0", in: app)
+        let confirm = app.buttons["confirm-bulk-roster"]
+        XCTAssertTrue(confirm.isEnabled)
+        XCTAssertFalse(app.buttons["player-card-批量甲"].exists, "Preview must not write into the roster")
+        confirm.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["bulk-roster-success"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["close-bulk-roster"].tap()
+        XCTAssertTrue(bulk.waitForExistence(timeout: 5))
+        XCTAssertEqual(Int(count.label), originalCount + 2, "One confirmation must add exactly the two previewed players")
+        let first = app.buttons["player-card-批量甲"]
+        revealStatisticsControl(first, in: app)
+        XCTAssertTrue(first.exists)
+        XCTAssertTrue(first.label.contains("00"), "Double zero must remain distinct from zero")
+        let second = app.buttons["player-card-批量乙"]
+        revealStatisticsControl(second, in: app)
+        XCTAssertTrue(second.exists)
+        XCTAssertTrue(second.label.contains("Bulk Two"))
+        captureHistory(app, name: "3.1.2-bulk-local-confirmed")
+    }
+
+    func testV312OpponentBulkRosterKeepsSingleDefaultCancelsAndConfirmsBatch() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--setup-preview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["manage-opponents"].waitForExistence(timeout: 5))
+        app.buttons["manage-opponents"].tap()
+        app.buttons["opponent-card-飞鹰"].tap()
+        XCTAssertTrue(app.buttons["add-opponent-player"].waitForExistence(timeout: 5))
+        let count = app.staticTexts["roster-player-count"]
+        let originalCount = try XCTUnwrap(Int(count.label))
+        app.buttons["add-opponent-player"].tap()
+        assertV312SinglePlayerEditorIsDefault(in: app)
+        enterV312BulkRoster("对手取消甲,,99", in: app)
+        XCTAssertTrue(app.buttons["confirm-bulk-roster"].isEnabled)
+        app.buttons["cancel-bulk-roster"].tap()
+        app.navigationBars["添加球员"].buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["add-opponent-player"].waitForExistence(timeout: 5))
+        XCTAssertEqual(Int(count.label), originalCount, "Cancelling opponent preview must not add a player")
+        XCTAssertFalse(app.staticTexts["对手取消甲"].exists)
+        app.buttons["bulk-add-players"].tap()
+        enterV312BulkRoster("对手批量甲,,00\n对手批量乙,Away Two,0", in: app)
+        let confirm = app.buttons["confirm-bulk-roster"]
+        XCTAssertTrue(confirm.isEnabled); confirm.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["bulk-roster-success"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["close-bulk-roster"].tap()
+        XCTAssertTrue(app.buttons["add-opponent-player"].waitForExistence(timeout: 5))
+        XCTAssertEqual(Int(count.label), originalCount + 2, "Opponent batch confirmation must add exactly two players")
+        let first = app.staticTexts["对手批量甲"].firstMatch
+        revealStatisticsControl(first, in: app)
+        XCTAssertTrue(first.exists)
+        let second = app.staticTexts["对手批量乙"].firstMatch
+        revealStatisticsControl(second, in: app)
+        XCTAssertTrue(second.exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Away Two")).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["对手取消甲"].exists)
+        captureHistory(app, name: "3.1.2-bulk-opponent-confirmed")
+    }
+}
+
+extension BaseballMasterUITests {
+    @MainActor func testV312SharedBulkRosterPreviewDoesNotWriteAndConfirmationAddsAtomicBatch() async throws {
+        let app = launchDeviceSecurityApp()
+        let create = app.buttons["create-shared-team"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: create)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 8), .completed)
+        create.tap()
+        XCTAssertTrue(app.textFields["shared-team-name"].waitForExistence(timeout: 5))
+        app.textFields["shared-team-name"].tap()
+        app.textFields["shared-team-name"].typeText("批量共享验收队")
+        app.textFields["shared-nickname"].tap()
+        app.textFields["shared-nickname"].typeText("批量教练")
+        let scope = app.buttons["confirm-sharing-scope"]
+        revealStatisticsControl(scope, in: app); scope.tap()
+        app.buttons["submit-shared-team"].firstMatch.tap()
+        let deferCard = app.buttons["defer-recovery-card"]
+        XCTAssertTrue(deferCard.waitForExistence(timeout: 8)); deferCard.tap()
+        let team = app.buttons["shared-team-批量共享验收队"]
+        XCTAssertTrue(team.waitForExistence(timeout: 8)); team.tap()
+
+        // An independent member reads the real local service; no production credentials or endpoints are used.
+        let invite = app.buttons["invite-team-member"]
+        revealStatisticsControl(invite, in: app); invite.tap()
+        let link = app.staticTexts["team-invitation-url"]
+        XCTAssertTrue(link.waitForExistence(timeout: 8))
+        let token = try XCTUnwrap(URL(string: link.label)?.fragment)
+        let reader = sharingTestSecret()
+        _ = try await sharingAPI(reader, "/devices", body: ["label": "批量验收只读设备"])
+        let joined = try await sharingAPI(reader, "/invitations/redeem", body: [
+            "operationID": UUID().uuidString, "token": token, "nickname": "批量核对成员"
+        ])
+        let teamID = try XCTUnwrap(joined["teamID"] as? String)
+        app.buttons["完成"].firstMatch.tap()
+        let initial = try await sharingAPI(reader, "/teams/\(teamID)", method: "GET")
+        let initialProfile = try XCTUnwrap(initial["team"] as? [String: Any])
+        let initialPlayers = try XCTUnwrap(initialProfile["players"] as? [[String: Any]])
+        XCTAssertEqual(initialPlayers.count, 0)
+
+        let bulk = app.buttons["open-shared-bulk-roster"]
+        XCTAssertTrue(bulk.waitForExistence(timeout: 5))
+        revealStatisticsControl(bulk, in: app); bulk.tap()
+        enterV312BulkRoster("共享批量甲,,00\n共享批量乙,Shared Two,0", in: app)
+        let confirm = app.buttons["confirm-bulk-roster"]
+        XCTAssertTrue(confirm.isEnabled)
+        let previewed = try await sharingAPI(reader, "/teams/\(teamID)", method: "GET")
+        let previewProfile = try XCTUnwrap(previewed["team"] as? [String: Any])
+        XCTAssertEqual((previewProfile["players"] as? [[String: Any]])?.count, 0,
+                       "Previewing the batch must not write any shared players")
+        XCTAssertEqual(previewProfile["revision"] as? Int, initialProfile["revision"] as? Int)
+        revealStatisticsControl(confirm, in: app); confirm.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["bulk-roster-success"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["close-bulk-roster"].tap()
+        let first = app.buttons["edit-shared-player-共享批量甲"]
+        XCTAssertTrue(first.waitForExistence(timeout: 8))
+        revealStatisticsControl(first, in: app)
+        XCTAssertTrue(app.staticTexts["#00"].exists, "Shared roster must retain the double-zero jersey")
+        XCTAssertTrue(app.buttons["edit-shared-player-共享批量乙"].exists)
+
+        let saved = try await sharingAPI(reader, "/teams/\(teamID)", method: "GET")
+        let savedProfile = try XCTUnwrap(saved["team"] as? [String: Any])
+        let savedPlayers = try XCTUnwrap(savedProfile["players"] as? [[String: Any]])
+        XCTAssertEqual(savedPlayers.count, 2, "A single confirmation must add exactly the complete batch")
+        let doubleZero = try XCTUnwrap(savedPlayers.first { $0["chineseName"] as? String == "共享批量甲" })
+        XCTAssertEqual(doubleZero["numbers"] as? [String], ["00"])
+        XCTAssertEqual(doubleZero["englishName"] as? String, "")
+        let zero = try XCTUnwrap(savedPlayers.first { $0["chineseName"] as? String == "共享批量乙" })
+        XCTAssertEqual(zero["numbers"] as? [String], ["0"])
+        XCTAssertEqual(zero["englishName"] as? String, "Shared Two")
+        captureHistory(app, name: "3.1.2-bulk-shared-confirmed-local-http")
+    }
+}
+
+extension BaseballMasterUITests {
+    func testV312StatisticsPlayerContactsUseSelectedGamesAndCanReadEachContact() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v312-player-contacts-preview"]
+        app.launch()
+        let player = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "stats-player-")).firstMatch
+        revealStatisticsControl(player, in: app)
+        XCTAssertTrue(player.isHittable); player.tap()
+        XCTAssertTrue(app.navigationBars["球员数据"].waitForExistence(timeout: 5))
+        let coverage = app.staticTexts["player-contact-coverage"]
+        revealStatisticsControl(coverage, in: app)
+        XCTAssertEqual(coverage.label, "有去向 2 球 · 缺少去向 1 球")
+        XCTAssertTrue(app.descendants(matching: .any)["player-contact-field"].firstMatch.exists)
+        let disclosure = app.buttons["逐球查看（含重叠位置）"]
+        revealStatisticsControl(disclosure, in: app); disclosure.tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "player-contact-row-")).firstMatch
+        revealStatisticsControl(row, in: app)
+        XCTAssertTrue(row.isHittable); row.tap()
+        let detail = app.staticTexts["player-selected-contact-detail"]
+        revealStatisticsControl(detail, in: app)
+        XCTAssertTrue(detail.label.contains("一垒安打"))
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            rotateV312(app, landscape: true)
+            revealStatisticsControl(detail, in: app)
+            XCTAssertTrue(detail.exists)
+        }
+        captureHistory(app, name: "3.1.2-statistics-player-contact-field")
+        let filter = app.buttons["open-game-filter"]
+        revealStatisticsControl(filter, in: app); filter.tap()
+        app.buttons["清空"].tap(); app.buttons["应用"].tap()
+        revealStatisticsControl(coverage, in: app)
+        XCTAssertEqual(coverage.label, "有去向 0 球 · 缺少去向 0 球")
+        XCTAssertTrue(app.staticTexts["player-contact-empty"].exists)
+        XCTAssertFalse(detail.exists, "Changing the selected games must clear the previous contact detail")
+        revealStatisticsControl(filter, in: app); filter.tap()
+        app.buttons["全选"].tap(); app.buttons["应用"].tap()
+        revealStatisticsControl(coverage, in: app)
+        XCTAssertEqual(coverage.label, "有去向 2 球 · 缺少去向 1 球")
+        if UIDevice.current.userInterfaceIdiom == .pad { rotateV312(app, landscape: false) }
+    }
+}
+
+// These tests require a Duo destination and a host driving the real DeviceHub
+// posture controls. Set BM_DUO_TESTS=1 in the test-runner environment when the
+// simulator does not export its model identifier. No app geometry is simulated.
+extension BaseballMasterUITests {
+    private func requireV312Duo() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let isDuo = environment["SIMULATOR_MODEL_IDENTIFIER"] == "iPhone19,4"
+        try XCTSkipUnless(isDuo || environment["BM_DUO_TESTS"] == "1",
+                          "Requires iPhone Duo and a host operating its real posture controls")
+        let documents = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        for name in ["duo-phase.txt", "duo-host-step.txt"] {
+            let url = documents.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        }
+        print("DUO_RUNNER_DOCUMENTS=\(documents.path)")
+    }
+
+    /// Host reads phase, changes the actual device posture, captures DeviceHub
+    /// evidence, then atomically writes the identical step to duo-host-step.txt.
+    private func awaitDuoHost(_ step: String) throws {
+        let documents = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
+        let phase = documents.appendingPathComponent("duo-phase.txt")
+        let acknowledgement = documents.appendingPathComponent("duo-host-step.txt")
+        try step.write(to: phase, atomically: true, encoding: .utf8)
+        print("DUO_AWAIT_HOST=\(step)")
+        let hostReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (try? String(contentsOf: acknowledgement, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)) == step
+        }, object: nil)
+        // Host-driven posture and native input checks can span tool/UI handoffs.
+        let result = XCTWaiter.wait(for: [hostReady], timeout: 1800)
+        XCTAssertEqual(result, .completed, "Host did not acknowledge actual Duo posture step: \(step)")
+        guard result == .completed else { throw NSError(domain: "DuoHostCheckpoint", code: 1) }
+    }
+
+    private func captureV312Duo(_ app: XCUIApplication, name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        print("DUO_OBSERVED=\(name), app=\(app.frame), window=\(app.windows.firstMatch.frame), screen=\(screenshot.image.size)")
+    }
+
+    private func revealV312DuoControl(_ element: XCUIElement, in app: XCUIApplication) {
+        for towardTop in [true, false] {
+            for _ in 0..<8 {
+                let viewport = app.windows.firstMatch.frame
+                if element.exists && element.isHittable && viewport.contains(element.frame) { return }
+                let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
+                let identifier = element.exists ? element.identifier : ""
+                let editorContent = identifier.isEmpty || ["quick-outcome-", "contact-", "situation-fielder-", "situation-route", "finish-situation-"]
+                    .contains { identifier.hasPrefix($0) }
+                let editorScroll = editor.scrollViews.firstMatch
+                let workbench = app.scrollViews["scorekeeping-wide-layout"]
+                let scroll: XCUIElement
+                if editorContent && editor.exists && editorScroll.exists && viewport.intersects(editorScroll.frame) {
+                    // Once the inline panel is visible, scroll its flow rather than
+                    // moving the whole workbench away from the active recording.
+                    scroll = editorScroll
+                } else if workbench.exists {
+                    scroll = workbench
+                } else {
+                    scroll = app.scrollViews.firstMatch
+                }
+                let surface = scroll.exists ? scroll : app
+                let start = surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: towardTop ? 0.3 : 0.75))
+                let end = surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: towardTop ? 0.75 : 0.3))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            }
+        }
+        XCTAssertTrue(element.exists && element.isHittable && app.windows.firstMatch.frame.contains(element.frame),
+                      "Duo control must be reachable in its current window: \(element)\n\(app.debugDescription)")
+    }
+
+    private func assertV312DuoLaunch(_ app: XCUIApplication) {
+        let brand = app.images["launch-fixed-bm"]
+        let icon = app.images["launch-fixed-app-icon"]
+        let skip = app.buttons["skip-launch-screen"]
+        XCTAssertTrue(brand.waitForExistence(timeout: 5))
+        XCTAssertTrue(icon.exists)
+        let viewport = app.windows.firstMatch.frame
+        XCTAssertTrue(viewport.contains(brand.frame), "Brand must fit the actual current window")
+        XCTAssertTrue(viewport.contains(icon.frame), "App icon must fit the actual current window")
+        XCTAssertTrue(skip.isHittable, "Skip must remain reachable after changing displays")
+        XCTAssertTrue(app.staticTexts["launch-message"].label.contains("固定品牌 图文保持清晰"))
+    }
+
+    private func selectV312DuoTab(_ title: String, in app: XCUIApplication) {
+        // Duo may expose root navigation in a vertical toolbar instead of tabBars.
+        // Query any AX type: iOS 27.2 reports these controls as tabs, not buttons.
+        let identifiers = ["比赛": "baseball.diamond.bases", "球队": "person.3.fill",
+                           "统计": "chart.bar.fill", "我的": "person.crop.circle"]
+        let button = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@ AND label == %@", identifiers[title] ?? "", title)
+        ).firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(button.isHittable, "Root navigation must be reachable in the current toolbar: \(title)")
+        button.tap()
+        XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    func testV312DuoLaunchAcrossDisplaysKeepsBrandAndNavigationReachable() throws {
+        try requireV312Duo()
+        try awaitDuoHost("launch-01-closed")
+        let app = XCUIApplication()
+        app.launchArguments = ["--launch-screen-custom-preview"]
+        app.launch()
+        assertV312DuoLaunch(app)
+        captureV312Duo(app, name: "3.1.2-duo-launch-closed")
+        for step in ["launch-02-open", "launch-03-partiallyOpen", "launch-04-closed"] {
+            try awaitDuoHost(step)
+            assertV312DuoLaunch(app)
+            captureV312Duo(app, name: "3.1.2-duo-\(step)")
+        }
+        app.buttons["skip-launch-screen"].tap()
+        let create = app.buttons["start-new-game"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        XCTAssertTrue(create.isHittable)
+        create.tap()
+        XCTAssertTrue(app.navigationBars["新比赛"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["new-game-own-team"].isHittable)
+        captureV312Duo(app, name: "3.1.2-duo-new-game-closed")
+        let back = app.descendants(matching: .any)["BackButton"].firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(back.isHittable, "The system back control must be reachable in Duo's vertical toolbar")
+        back.tap()
+        for title in ["球队", "统计", "我的", "比赛"] { selectV312DuoTab(title, in: app) }
+        try awaitDuoHost("launch-05-open-home")
+        XCTAssertFalse(app.images["launch-fixed-bm"].exists, "Unfolding must not replay a dismissed launch screen")
+        for title in ["球队", "统计", "我的", "比赛"] { selectV312DuoTab(title, in: app) }
+        XCTAssertTrue(create.isHittable)
+        captureV312Duo(app, name: "3.1.2-duo-home-open-navigation")
+    }
+
+    private func enterV312DuoContactDraft(in app: XCUIApplication) throws {
+        let inPlay = app.buttons["ball-in-play"]
+        inPlay.tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        XCTAssertTrue(app.descendants(matching: .any)["docked-situation-editor"].firstMatch.waitForExistence(timeout: 5))
+        let single = app.buttons["quick-outcome-1B"]
+        single.tap()
+        let type = app.buttons["contact-type-line"]
+        type.tap()
+        try tapV312DuoContactPoint(in: app)
+        let center = app.buttons["situation-fielder-8"]
+        center.tap()
+    }
+
+    private func tapV312DuoContactPoint(in app: XCUIApplication) throws {
+        if app.descendants(matching: .any)["docked-situation-editor"].firstMatch.exists {
+            // XCUI element coordinates can disagree with the active Duo display.
+            // The host taps the real visible canvas through Device Hub, then this
+            // test checks the actual fielding stage and all subsequent draft state.
+            try awaitDuoHost("draft-contact-" + UUID().uuidString)
+            XCTAssertTrue(app.buttons["situation-fielder-8"].waitForExistence(timeout: 5),
+                          "The host must select a real landing point before continuing")
+            return
+        }
+        let field = app.otherElements["contact-field"]
+        for _ in 0..<12 {
+            let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
+            let scroll = editor.exists ? editor.scrollViews.firstMatch : app.scrollViews.firstMatch
+            let viewport = app.windows.firstMatch.frame
+            let visible = scroll.exists ? viewport.intersection(scroll.frame) : viewport
+            if field.exists {
+                let fieldFrame = field.frame
+                let location = CGPoint(x: fieldFrame.minX + fieldFrame.width * 0.3,
+                                       y: fieldFrame.minY + fieldFrame.height * 0.3)
+                // Duo's element-relative coordinates can report a rotated screen space.
+                // Anchor in this window and verify the actual screen point.
+                let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+                let originLocation = origin.screenPoint
+                let point = origin.withOffset(CGVector(dx: location.x - originLocation.x,
+                                                       dy: location.y - originLocation.y))
+                let actual = point.screenPoint
+                if field.isHittable && fieldFrame.contains(actual)
+                    && visible.insetBy(dx: 4, dy: 4).contains(actual) {
+                    XCTAssertEqual(actual.x, location.x, accuracy: 0.5)
+                    XCTAssertEqual(actual.y, location.y, accuracy: 0.5)
+                    print("DUO_CONTACT_POINT=\(actual), target=\(location), field=\(fieldFrame), visibleFlow=\(visible)")
+                    point.tap()
+                    XCTAssertTrue(app.buttons["situation-fielder-8"].waitForExistence(timeout: 5),
+                                  "Tapping the visible landing point must enter the fielding stage")
+                    return
+                }
+                let towardTop = location.y < visible.minY
+                let surface = scroll.exists ? scroll : app
+                let start = surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: towardTop ? 0.3 : 0.75))
+                let end = surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: towardTop ? 0.75 : 0.3))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            } else {
+                scroll.swipeUp()
+            }
+        }
+        XCTFail("The selected contact point must be visible inside the recording flow before tapping:\n\(app.debugDescription)")
+    }
+
+    private func revealExpandedDuoControl(_ element: XCUIElement, in app: XCUIApplication, towardTop: Bool = false) {
+        let scroll = app.scrollViews["scorekeeping-wide-layout"]
+        for _ in 0..<8 {
+            if element.exists && element.isHittable && app.windows.firstMatch.frame.contains(element.frame) { return }
+            if towardTop { scroll.swipeDown() } else { scroll.swipeUp() }
+        }
+        XCTAssertTrue(element.isHittable, "Expanded workbench control must be reachable: \(element.identifier)")
+    }
+
+    private func assertV312DuoContactDraft(in app: XCUIApplication, summary: String, route: String) {
+        let summaryLabel = app.staticTexts["contact-summary"]
+        XCTAssertTrue(summaryLabel.waitForExistence(timeout: 5))
+        XCTAssertTrue(summaryLabel.label.contains("平飞"), "The selected ball type must survive display and posture changes")
+        XCTAssertEqual(summaryLabel.label, summary, "Landing point must survive display and posture changes")
+        XCTAssertEqual(app.staticTexts["situation-route"].label, route, "Fielding route must survive display and posture changes")
+        let finish = app.buttons["finish-situation-field"]
+        revealExpandedDuoControl(finish, in: app)
+        XCTAssertTrue(finish.isHittable)
+        XCTAssertTrue(finish.isEnabled)
+        XCTAssertFalse(app.buttons["reset-practice-inning"].isEnabled,
+                       "The parent practice reset must stay locked while a draft is open")
+    }
+
+    func testV312DuoProDraftSurvivesFoldingThenCancelAndOnePlayUndoRedo() throws {
+        try requireV312Duo()
+        try awaitDuoHost("draft-01-open")
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealV312DuoControl(start, in: app)
+        start.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        XCTAssertTrue(batter.waitForExistence(timeout: 5))
+        let before = batter.label
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        XCTAssertTrue(app.scrollViews["scorekeeping-wide-layout"].exists, "The real unfolded display must provide the workbench")
+        try awaitDuoHost("draft-record-1")
+        let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.scrollViews.count, 1, "Only the compact horizontal fielding-route rail may scroll inside the expanded editor")
+        let routeRail = editor.scrollViews.firstMatch
+        XCTAssertLessThan(routeRail.frame.height, 80, "The route rail must not become a vertical viewport that clips the recording field")
+        XCTAssertGreaterThan(routeRail.frame.width, routeRail.frame.height)
+        let summaryLabel = app.staticTexts["contact-summary"]
+        let summary = summaryLabel.label
+        let route = app.staticTexts["situation-route"].label
+        XCTAssertTrue(summary.contains("平飞"), "Start the transition check with the explicitly selected line drive")
+        XCTAssertTrue(route.hasPrefix("8"))
+        captureV312Duo(app, name: "3.1.2-duo-draft-before-fold")
+        for step in ["draft-02-closed", "draft-03-partiallyOpen", "draft-04-open"] {
+            try awaitDuoHost(step)
+            assertV312DuoContactDraft(in: app, summary: summary, route: route)
+            captureV312Duo(app, name: "3.1.2-duo-\(step)")
+        }
+        revealExpandedDuoControl(app.buttons["cancel-situation-play"], in: app, towardTop: true)
+        try awaitDuoHost("draft-cancel")
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+        revealExpandedDuoControl(batter, in: app, towardTop: true)
+        XCTAssertEqual(batter.label, before, "Cancelling a folded draft must not change the batter")
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"), "Cancelling must not record a pitch")
+        XCTAssertTrue(app.buttons["reset-practice-inning"].isEnabled)
+        revealExpandedDuoControl(app.buttons["ball-in-play"], in: app)
+        try awaitDuoHost("draft-record-2")
+        revealExpandedDuoControl(app.buttons["finish-situation-field"], in: app)
+        try awaitDuoHost("draft-confirm-one")
+        XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+        revealExpandedDuoControl(batter, in: app, towardTop: true)
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "One confirmation must add exactly one pitch")
+        revealExpandedDuoControl(app.buttons["undo-last-play"], in: app)
+        try awaitDuoHost("draft-undo")
+        revealExpandedDuoControl(batter, in: app, towardTop: true)
+        XCTAssertEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        revealExpandedDuoControl(app.buttons["redo-last-play"], in: app)
+        try awaitDuoHost("draft-redo")
+        revealExpandedDuoControl(batter, in: app, towardTop: true)
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "Redo must restore one play without duplication")
+        captureV312Duo(app, name: "3.1.2-duo-pro-one-play-undo-redo")
+    }
+
+    func testV312DuoOpenWorkbenchKeepsCoreControlsInFirstViewport() throws {
+        try requireV312Duo()
+        try awaitDuoHost("layout-01-open")
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-scorekeeping-preview", "-showPracticeGuidance", "YES"]
+        app.launch()
+        let field = app.descendants(matching: .any)["scorekeeping-field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["scorekeeping-wide-layout"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["practice-mode-banner"].firstMatch.exists,
+                      "Verify the real guided-practice screen shown in the user's feedback")
+        // Deliberately do not scroll: core scoring must fit in the initial viewport.
+        let viewport = app.windows.firstMatch.frame
+        XCTAssertTrue(viewport.contains(field.frame), "The complete field must fit the first viewport: \(field.frame), window=\(viewport)")
+        for identifier in ["current-pitcher", "current-batter", "pitch-坏球", "pitch-看振", "pitch-挥空", "pitch-界外",
+                           "ball-in-play", "open-runner-events", "open-special-events", "open-state-correction",
+                           "open-substitutions", "结束半局", "结束比赛"] {
+            let control = app.descendants(matching: .any)[identifier].firstMatch
+            XCTAssertTrue(control.exists, "Core content must exist without scrolling: \(identifier)")
+            XCTAssertTrue(control.isHittable, "Core content must be reachable in the first viewport: \(identifier), frame=\(control.frame)")
+            XCTAssertTrue(viewport.contains(control.frame), "Core content must fully fit: \(identifier), frame=\(control.frame), window=\(viewport)")
+        }
+        captureV312Duo(app, name: "3.1.2-duo-open-workbench-first-viewport-guidance")
+    }
+
+    func testV312DuoCompactProSheetKeepsDraftAcrossDisplaysAndRecordsOnePlay() throws {
+        try requireV312Duo()
+        try awaitDuoHost("sheet-01-closed")
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealV312DuoControl(start, in: app)
+        start.tap()
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
+        XCTAssertTrue(batter.waitForExistence(timeout: 5))
+        let before = batter.label
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        XCTAssertFalse(app.scrollViews["scorekeeping-wide-layout"].exists,
+                       "The real closed display must begin with compact scoring")
+        let inPlay = app.buttons["ball-in-play"]
+        revealV312DuoControl(inPlay, in: app)
+        inPlay.tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        let single = app.buttons["quick-outcome-1B"]
+        XCTAssertTrue(single.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["docked-situation-editor"].firstMatch.exists,
+                       "A draft opened on the outer display must use the compact sheet")
+        revealV312DuoControl(single, in: app)
+        single.tap()
+        let type = app.buttons["contact-type-line"]
+        revealV312DuoControl(type, in: app)
+        type.tap()
+        try tapV312DuoContactPoint(in: app)
+        let center = app.buttons["situation-fielder-8"]
+        revealV312DuoControl(center, in: app)
+        center.tap()
+        let summaryLabel = app.staticTexts["contact-summary"]
+        revealV312DuoControl(summaryLabel, in: app)
+        let summary = summaryLabel.label
+        let route = app.staticTexts["situation-route"].label
+        XCTAssertFalse(summary.isEmpty)
+        XCTAssertTrue(route.hasPrefix("8"))
+        captureV312Duo(app, name: "3.1.2-duo-compact-sheet-before-unfold")
+        for step in ["sheet-02-open", "sheet-03-closed"] {
+            try awaitDuoHost(step)
+            XCTAssertFalse(app.descendants(matching: .any)["docked-situation-editor"].firstMatch.exists,
+                           "An active compact sheet must retain its presentation across displays")
+            revealV312DuoControl(type, in: app)
+            XCTAssertEqual(type.value as? String, "已选择")
+            revealV312DuoControl(summaryLabel, in: app)
+            XCTAssertEqual(summaryLabel.label, summary, "The sheet's landing point must survive display changes")
+            XCTAssertEqual(app.staticTexts["situation-route"].label, route,
+                           "The sheet's fielding route must survive display changes")
+            let finish = app.buttons["finish-situation-field"]
+            revealV312DuoControl(finish, in: app)
+            XCTAssertTrue(finish.isHittable)
+            XCTAssertTrue(finish.isEnabled)
+            captureV312Duo(app, name: "3.1.2-duo-\(step)")
+        }
+        let finish = app.buttons["finish-situation-field"]
+        finish.tap()
+        XCTAssertTrue(app.buttons["cancel-situation-play"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(inPlay.waitForExistence(timeout: 5))
+        revealV312DuoControl(batter, in: app)
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"),
+                      "Confirming the retained sheet must add exactly one pitch")
+        let undo = app.buttons["undo-last-play"]
+        revealV312DuoControl(undo, in: app)
+        undo.tap()
+        XCTAssertEqual(batter.label, before, "One undo must reverse the complete sheet submission")
+        XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        app.buttons["redo-last-play"].tap()
+        XCTAssertNotEqual(batter.label, before)
+        XCTAssertTrue(pitcher.label.contains("本场已投 1 球"))
+        captureV312Duo(app, name: "3.1.2-duo-compact-sheet-confirmed-one-play")
+    }
+
+    func testV312DuoPDFSharingSurvivesUnfoldingAndReturnsToResult() throws {
+        try requireV312Duo()
+        try awaitDuoHost("share-01-closed")
+        let app = XCUIApplication()
+        app.launchArguments = ["--boxscore-preview"]
+        app.launch()
+        let export = app.buttons["share-box-score"]
+        revealV312DuoControl(export, in: app)
+        export.tap()
+        XCTAssertTrue(app.navigationBars["比赛战报"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["report-pdf-page-count"].label.contains("A4"))
+        app.buttons["share-report-pdf"].tap()
+        let activity = app.otherElements["ActivityListView"]
+        XCTAssertTrue(activity.waitForExistence(timeout: 5), app.debugDescription)
+        captureV312Duo(app, name: "3.1.2-duo-pdf-share-closed")
+        try awaitDuoHost("share-02-open")
+        XCTAssertTrue(activity.waitForExistence(timeout: 5), "System sharing must remain presented after unfolding")
+        captureV312Duo(app, name: "3.1.2-duo-pdf-share-open")
+        let closeCandidates = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label IN %@ AND identifier != %@", ["Close", "关闭"], "close-report-pdf"))
+            .allElementsBoundByIndex
+        guard let close = closeCandidates.first(where: { $0.isHittable }) else {
+            XCTFail("The system share sheet must expose its own reachable close control:\n\(app.debugDescription)")
+            return
+        }
+        close.tap()
+        XCTAssertTrue(activity.waitForNonExistence(timeout: 5), app.debugDescription)
+        let closePreview = app.buttons["close-report-pdf"]
+        XCTAssertTrue(closePreview.isHittable)
+        closePreview.tap()
+        XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
+        XCTAssertTrue(export.exists, "Closing sharing and its preview must retain the saved result")
+        captureV312Duo(app, name: "3.1.2-duo-pdf-returned-to-result")
     }
 }

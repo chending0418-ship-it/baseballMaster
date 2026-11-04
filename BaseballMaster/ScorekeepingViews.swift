@@ -1,11 +1,25 @@
 import SwiftUI
 import UIKit
 
+struct RecordingWorkspaceActiveKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
 struct ScorekeepingView: View {
+    @State private var showPostgameUpload = false
+    @State private var pendingPostgameGameID: UUID?
+    @State private var recordingPresentationActive = false
+    @State private var scorekeepingVisible = false
+    @State private var correctionAfterDismissal = false
+
     var showsGameHomeButton = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var store: GameStore
     @State private var showPlayFlowSheet = false
+    @State private var dockedPlayFlow = false
+    @State private var workbenchAvailable = false
     @State private var showRunnerEventSheet = false
     @State private var showSpecialEventSheet = false
     @State private var showCorrectionSheet = false
@@ -25,150 +39,78 @@ struct ScorekeepingView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let wide = proxy.size.width >= 740
             let showsField = proxy.size.width >= 390 && proxy.size.height >= 620
-            VStack(spacing: 7) {
-                compactScoreHeader
-                VStack(spacing: 0) {
-                    if showsField {
-                        BaseballDiamondView(game: store.game, fixedHeight: nil)
-                        Divider().overlay(BMTheme.line)
-                    }
-                    matchupBar
-                    if !showsField { compactBaseSummary }
-
-                }
-                    .background(BMTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: BMTheme.cardRadius, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: BMTheme.cardRadius, style: .continuous)
-                            .stroke(BMTheme.line.opacity(0.75), lineWidth: 1)
-                    }
-                    .frame(maxHeight: showsField ? .infinity : nil)
-
-                if !showsField { Spacer(minLength: 0) }
-                if store.isCoachPitch {
-                    Text("教练投手 · 本打席 \(store.game.plateAppearancePitchCount ?? 0) / \(store.coachPitchLimit) 球")
-                        .font(.caption.bold()).accessibilityIdentifier("coach-pitch-count")
-                }
-                if store.game.isFinal {
-                    finalGameCard
-                } else if let decision = store.game.pendingDecision {
-                    BMCard {
-                        VStack(spacing: 12) {
-                            Text(decision.title).font(.headline)
-                            Button(decision == .runLimit ? "交换攻守" : "结束比赛") { store.resolveGameDecision(finish: true) }
-                                .buttonStyle(PrimaryButtonStyle())
-                            Button(decision == .runLimit ? "继续本半局（不再加分）" : "继续比赛") { store.resolveGameDecision(finish: false) }
-                                .buttonStyle(SecondaryButtonStyle())
-                        }
-                    }.accessibilityIdentifier("pending-game-decision")
-                } else {
-                    if store.canSwapOpeningSides {
-                        Button { store.swapOpeningSides() } label: {
-                            Label("互换先攻／后攻", systemImage: "arrow.left.arrow.right")
-                                .font(.caption.bold()).frame(maxWidth: .infinity, minHeight: 32)
-                        }.tint(BMTheme.green).accessibilityIdentifier("swap-opening-sides")
-                    }
-                    pitchControls.disabled(!store.canEditCurrentMatch)
-
-                    HStack(spacing: 10) {
-                        Button {
-                            showRunnerEventSheet = true
-                        } label: {
-                            Label("跑者 / 出局", systemImage: "figure.run")
-                        }
-                        .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green))
-                        .accessibilityIdentifier("open-runner-events")
-
-                        Button {
-                            showSpecialEventSheet = true
-                        } label: {
-                            Label("特殊 / 判罚", systemImage: "exclamationmark.shield")
-                        }
-                        .buttonStyle(ScoreActionButtonStyle(color: BMTheme.orange))
-                        .accessibilityIdentifier("open-special-events")
-                    }
-
-                    if store.isSlowPitch {
-                        Menu {
-                            Button("未挥棒，裁判判一坏球") { store.recordIllegalPitch(.ball, wasThrown: true) }
-                            Button("裁判取消 Illegal，按普通坏球记录") { store.recordIllegalPitch(.ball, wasThrown: true, penaltyApplied: false) }
-                            Button("挥空，按好球处理") { store.recordIllegalPitch(.swingingStrike, wasThrown: true) }
-                            Button("界外，按本场界外规则处理") { store.recordIllegalPitch(.foul, wasThrown: true) }
-                            Button("击球，按最终结果录入") { illegalPlay = true; showPlayFlowSheet = true }
-                            Button("未实际投出的罚球，记一坏") { store.recordIllegalPitch(.ball, wasThrown: false) }
-                            Button("已投出，裁判判 No Pitch") { store.recordIllegalPitch(nil, wasThrown: true) }
-                            Button("未投出，裁判判 No Pitch") { store.recordIllegalPitch(nil, wasThrown: false) }
-                        } label: { Label("Illegal／非法投球", systemImage: "exclamationmark.circle") }
-                        .buttonStyle(ScoreActionButtonStyle(color: BMTheme.orange))
-                        .accessibilityIdentifier("record-illegal-pitch")
-                        .disabled(store.isPregame)
-                        if store.game.strikes >= 2 && store.activeRules?.twoStrikeFoulPolicy == .oneExtraFoul {
-                            Text(store.game.extraFoulUsed == true ? "额外界外机会已用，下次界外出局" : "两好后仍允许一次界外")
-                                .font(.caption).foregroundStyle(BMTheme.secondaryText)
-                        }
-                        TimelineView(.periodic(from: Date(), by: 1)) { context in
-                            if store.hasStartedGameClock && store.activeRules?.isTimeGame == true && (store.remainingGameTime(at: context.date) ?? 1) <= 0 {
-                                Button("时间已到 · 按裁判决定结束比赛") { confirmTimeEnd = true }
-                                    .buttonStyle(PrimaryButtonStyle())
+            Group {
+            if wide || (dockedPlayFlow && showPlayFlowSheet) {
+                ScrollViewReader { scroll in
+                ScrollView {
+                    VStack(spacing: 10) {
+                        if wide {
+                            HStack(spacing: 12) {
+                                compactScoreHeader(height: 75)
+                                    .frame(width: min(340, (proxy.size.width - 24) * 0.4))
+                                    .disabled(isDockedRecording)
+                                WorkbenchLineScore(game: store.game, compact: true)
                             }
+                        } else {
+                        compactScoreHeader().disabled(isDockedRecording)
+                        WorkbenchLineScore(game: store.game)
+                        }
+                        let columns = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+                            : AnyLayout(VStackLayout(spacing: 14))
+                        columns {
+                            VStack(spacing: 14) {
+                                // Keep the editor in the same subtree across a fold. On a
+                                // narrow display, hide read-only context while the task is active.
+                                if wide || !isDockedRecording {
+                                fieldCard(showsField: true, fieldHeight: min(320, max(240, proxy.size.height - 170)))
+                                    .disabled(isDockedRecording)
+                                workbenchMatchup
+                                workbenchLineups
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            VStack(spacing: 14) {
+                                wideRecordingPanel
+                                    .id("recording-workbench-panel")
+                                workbenchRecentLog
+                                workbenchRecentAppearances
+                            }
+                            .frame(width: wide ? min(460, (min(1280, proxy.size.width - 32) - 16) * 0.46) : nil)
                         }
                     }
-                    HStack(spacing: 7) {
-                        undoButton
-                        redoButton
-
-                        Button {
-                            showCorrectionSheet = true
-                        } label: {
-                            Label("修正", systemImage: "slider.horizontal.3")
-                        }
-                        .buttonStyle(ScoreActionButtonStyle(color: BMTheme.orange, compact: true))
-                        .accessibilityIdentifier("open-state-correction")
-
-                        Button {
-                            showSubstitutionSheet = true
-                        } label: {
-                            Label("阵容", systemImage: "person.3.fill")
-                        }
-                        .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green, compact: true))
-                        .accessibilityIdentifier("open-substitutions")
-                    }
-                    if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation,
-                       let latest = store.game.scoringEvents?.last(where: { $0.category == .battedBall }) {
-                        HStack(spacing: 8) {
-                            Text(latest.title).font(.system(size: 10)).lineLimit(2).foregroundStyle(BMTheme.secondaryText)
-                            Spacer(minLength: 0)
-                            Button("补充这球") { situationAmendment = BattedBallEventSelection(id: latest.id) }
-                                .font(.caption.bold()).fixedSize().disabled(!store.canEditCurrentMatch)
-                                .accessibilityIdentifier("amend-situation-play")
-                        }.padding(.horizontal, 8)
-                    }
-                    HStack(spacing: 10) {
-                        Button("结束半局") { confirmEndHalf = true }
-                            .disabled(!store.canRecordAction)
-                        Spacer(minLength: 0)
-                        if store.game.strikes == 2 && store.activeRules?.supportsBunting != false {
-                            Button("触击界外出局") { store.recordFoulBuntStrikeout() }
-                                .foregroundStyle(BMTheme.orange)
-                                .frame(minHeight: 40)
-                                .accessibilityIdentifier("foul-bunt-strikeout")
-                            Spacer(minLength: 0)
-                        }
-                        Button("结束比赛") { showEndReasonSheet = true }
-                    }
-                    .font(.system(size: 14, weight: .semibold))
-                    .padding(.horizontal, 14)
-                    .frame(height: 40)
+                    .frame(maxWidth: 1280)
+                    .padding(12)
+                    .frame(maxWidth: .infinity)
                 }
+                .accessibilityIdentifier("scorekeeping-wide-layout")
+                .onChange(of: wide) { _ in
+                    if isDockedRecording { scroll.scrollTo("recording-workbench-panel", anchor: .top) }
+                }
+                .onChange(of: isDockedRecording) { active in
+                    if active { scroll.scrollTo("recording-workbench-panel", anchor: .top) }
+                }
+                }
+            } else if proxy.size.height < 620 || dynamicTypeSize.isAccessibilitySize {
+                // A short window must keep every action reachable, including slow-pitch extras.
+                ScrollView {
+                    compactContent(showsField: false)
+                        .frame(minHeight: max(0, proxy.size.height - 8), alignment: .top)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                }
+                .accessibilityIdentifier("scorekeeping-compact-scroll-layout")
+            } else {
+                compactContent(showsField: showsField)
+                    .frame(width: max(0, proxy.size.width - 24),
+                           height: max(0, proxy.size.height - 8), alignment: .top)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
             }
-            .frame(
-                width: max(0, proxy.size.width - 24),
-                height: max(0, proxy.size.height - 8),
-                alignment: .top
-            )
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+            }
+            .onAppear { workbenchAvailable = wide }
+            .onChange(of: wide) { workbenchAvailable = $0 }
         }
         .bmScreenBackground()
         .alert("操作未保存", isPresented: Binding(get: { store.storageErrorMessage != nil }, set: { if !$0 { store.storageErrorMessage = nil } })) {
@@ -176,28 +118,51 @@ struct ScorekeepingView: View {
         } message: { Text(store.storageErrorMessage ?? "") }
         .navigationTitle("现场记分")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(showsGameHomeButton)
+        .navigationBarBackButtonHidden(showsGameHomeButton || isDockedRecording)
         .toolbar(.hidden, for: .tabBar)
         .confirmationDialog("结束当前半局？", isPresented: $confirmEndHalf, titleVisibility: .visible) {
             Button("确认交换攻守") { store.endCurrentHalf() }
             Button("取消", role: .cancel) {}
         }
-        .sheet(isPresented: $showRuleNotices) {
+        .sheet(isPresented: $showRuleNotices, onDismiss: recordingSheetDidDismiss) {
             NavigationStack {
                 List(Array(store.ruleNotices().enumerated()), id: \.offset) { _, notice in Text(notice) }
                     .navigationTitle("比赛规则提醒")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showRuleNotices = false } } }
-            }
+            }.onAppear { recordingPresentationActive = true }
         }
-        .sheet(isPresented: $showEndReasonSheet) { GameEndReasonSheet().environmentObject(store) }
-        .sheet(isPresented: $showLiveBroadcast) {
+        .onAppear { scorekeepingVisible = true; schedulePostgameUploadIfReady() }
+        .onDisappear {
+            if !hasRecordingPresentation && !showPostgameUpload { scorekeepingVisible = false }
+        }
+        .onChange(of: store.game.isFinal) { final in
+            if final { queueSavedPostgamePrompt() }
+            else { pendingPostgameGameID = nil }
+        }
+        .onChange(of: store.activeStoredGame?.status) { if $0 == .completed { queueSavedPostgamePrompt() } }
+        .onChange(of: confirmTimeEnd) { if !$0 { schedulePostgameUploadIfReady() } }
+        .onChange(of: confirmEndHalf) { if !$0 { schedulePostgameUploadIfReady() } }
+        .onChange(of: confirmOpeningLineups) { if !$0 { schedulePostgameUploadIfReady() } }
+        .onChange(of: store.storageErrorMessage) { if $0 == nil { schedulePostgameUploadIfReady() } }
+        .onChange(of: store.actionErrorMessage) { if $0 == nil { schedulePostgameUploadIfReady() } }
+        .sheet(isPresented: $showPostgameUpload) { PostgameUploadPrompt() }
+        .sheet(isPresented: $showEndReasonSheet, onDismiss: recordingSheetDidDismiss) {
+            GameEndReasonSheet().environmentObject(store).onAppear { recordingPresentationActive = true }
+        }
+        .sheet(isPresented: $showLiveBroadcast, onDismiss: recordingSheetDidDismiss) {
             if store.liveBroadcasts.isEnabled, let id = store.activeStoredGame?.id {
-                LiveBroadcastSheet(store: store, gameID: id)
+                LiveBroadcastSheet(store: store, gameID: id).onAppear { recordingPresentationActive = true }
             }
         }
-        .sheet(isPresented: $showHistoryCorrection) { HistoryCorrectionView().environmentObject(store) }
-        .sheet(isPresented: $showBatterPerformance) { BatterPerformanceSheet(player: store.currentBatter).environmentObject(store) }
-        .sheet(item: $situationAmendment) { selected in SituationAmendmentSheet(store: store, eventID: selected.id) }
+        .sheet(isPresented: $showHistoryCorrection, onDismiss: recordingSheetDidDismiss) {
+            HistoryCorrectionView().environmentObject(store).onAppear { recordingPresentationActive = true }
+        }
+        .sheet(isPresented: $showBatterPerformance, onDismiss: recordingSheetDidDismiss) {
+            BatterPerformanceSheet(player: store.currentBatter).environmentObject(store).onAppear { recordingPresentationActive = true }
+        }
+        .sheet(item: $situationAmendment, onDismiss: recordingSheetDidDismiss) { selected in
+            SituationAmendmentSheet(store: store, eventID: selected.id).onAppear { recordingPresentationActive = true }
+        }
         .toolbar {
             if showsGameHomeButton {
                 ToolbarItem(placement: .topBarLeading) {
@@ -205,6 +170,7 @@ struct ScorekeepingView: View {
                         Label("比赛首页", systemImage: "chevron.left")
                     }
                     .accessibilityIdentifier("return-game-home")
+                    .disabled(isDockedRecording)
                 }
             }
             if let stored = store.activeStoredGame, let shared = store.sharedMatches.match(localID: stored.id) {
@@ -217,17 +183,21 @@ struct ScorekeepingView: View {
                             .accessibilityIdentifier("open-match-sync-detail")
                         Button { showHistoryCorrection = true } label: { Label("纠正记录", systemImage: "clock.arrow.circlepath") }
                             .accessibilityIdentifier("open-history-correction")
+                    .disabled(isDockedRecording)
                         NavigationLink(destination: GamePosterView(game: stored)) {
                             Label("比赛宣传海报", systemImage: "photo.badge.plus")
                         }.accessibilityIdentifier("open-game-poster")
+                    .disabled(isDockedRecording)
                     } label: { Image(systemName: "ellipsis.circle") }
                     .accessibilityLabel("比赛同步与更多操作")
                     .accessibilityIdentifier("match-sync-controls")
+                    .disabled(isDockedRecording)
                 }
             } else {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showHistoryCorrection = true } label: { Image(systemName: "clock.arrow.circlepath") }
                     .accessibilityLabel("纠正记录").accessibilityIdentifier("open-history-correction")
+                    .disabled(isDockedRecording)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if store.liveBroadcasts.isEnabled, store.activeGameID.map({ !store.sharedMatches.isShared($0) }) ?? true {
@@ -236,6 +206,7 @@ struct ScorekeepingView: View {
                     }
                     .accessibilityLabel("文字直播与分享")
                     .accessibilityIdentifier("open-live-broadcast")
+                    .disabled(isDockedRecording)
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -245,6 +216,7 @@ struct ScorekeepingView: View {
                     }
                     .accessibilityLabel("比赛宣传海报")
                     .accessibilityIdentifier("open-game-poster")
+                    .disabled(isDockedRecording)
                 }
             }
             }
@@ -254,9 +226,11 @@ struct ScorekeepingView: View {
                         .font(.system(size: 14, weight: .bold))
                 }
                 .accessibilityIdentifier("open-box-score")
+                    .disabled(isDockedRecording)
             }
         }
-        .sheet(isPresented: $showPlayFlowSheet) {
+        .sheet(isPresented: Binding(get: { showPlayFlowSheet && !dockedPlayFlow },
+                                    set: { showPlayFlowSheet = $0 }), onDismiss: recordingSheetDidDismiss) {
             Group {
                 if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation {
                     SituationPlayFlowSheet(illegalPitch: illegalPlay)
@@ -268,33 +242,38 @@ struct ScorekeepingView: View {
                 }
             }
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showRunnerEventSheet) {
+        .sheet(isPresented: $showRunnerEventSheet, onDismiss: recordingSheetDidDismiss) {
             RunnerEventFlowSheet()
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showSpecialEventSheet) {
+        .sheet(isPresented: $showSpecialEventSheet, onDismiss: recordingSheetDidDismiss) {
             SpecialEventSheet {
                 showSpecialEventSheet = false
                 presentCorrectionAfterDismissal()
             }
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showCorrectionSheet) {
+        .sheet(isPresented: $showCorrectionSheet, onDismiss: recordingSheetDidDismiss) {
             GameStateCorrectionSheet()
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showSubstitutionSheet) {
+        .sheet(isPresented: $showSubstitutionSheet, onDismiss: recordingSheetDidDismiss) {
             SubstitutionSheet()
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -302,10 +281,12 @@ struct ScorekeepingView: View {
             isPresented: Binding(
                 get: { store.requiresTiebreakRunnerPlacement },
                 set: { _ in }
-            )
+            ),
+            onDismiss: recordingSheetDidDismiss
         ) {
             TiebreakRunnerSheet()
                 .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.hidden)
                 .interactiveDismissDisabled()
@@ -319,7 +300,7 @@ struct ScorekeepingView: View {
             Button("确认开赛") {
                 store.startGameClock()
                 if let pitch = pendingOpeningPitch { store.recordPitch(pitch) }
-                if pendingOpeningPlay { showPlayFlowSheet = true }
+                if pendingOpeningPlay { openPlayFlow() }
                 pendingOpeningPitch = nil; pendingOpeningPlay = false
             }
             Button("取消", role: .cancel) { pendingOpeningPitch = nil; pendingOpeningPlay = false }
@@ -327,9 +308,333 @@ struct ScorekeepingView: View {
             Text("\(store.game.awayTeam.shortName) 与 \(store.game.homeTeam.shortName)的先发阵容确认后开始计时。开赛后仍可按现有方式调整阵容。")
         }
         .gameActionErrorAlert(store)
+        .preference(key: RecordingWorkspaceActiveKey.self, value: isDockedRecording)
     }
 
-    private var compactScoreHeader: some View {
+    // Kept separate so the wide host can embed the same recording workflow here.
+    private var wideRecordingPanel: some View {
+        BMCard {
+            VStack(alignment: .leading, spacing: 12) {
+                workbenchHeading("现场记录", detail: store.game.isFinal ? "本场已结束" : "当前打席 · 第 \(store.currentBattingOrder) 棒")
+                if isDockedRecording {
+                    SituationPlayFlowSheet(illegalPitch: illegalPlay, embedded: true, onClose: closeDockedPlayFlow)
+                        .environmentObject(store)
+                        .onAppear { recordingPresentationActive = true }
+                } else {
+                    recordingControls
+                }
+            }
+        }
+    }
+
+    private var isDockedRecording: Bool { dockedPlayFlow && showPlayFlowSheet }
+
+    private func openPlayFlow() {
+        dockedPlayFlow = workbenchAvailable
+            && (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation
+        showPlayFlowSheet = true
+    }
+
+    private func closeDockedPlayFlow() {
+        showPlayFlowSheet = false
+        dockedPlayFlow = false
+        recordingSheetDidDismiss()
+    }
+
+    private var workbenchMatchup: some View {
+        BMCard {
+            VStack(alignment: .leading, spacing: 12) {
+                workbenchHeading("本场投打表现", detail: "随现场记录更新")
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("当前打者").font(.caption).foregroundStyle(BMTheme.secondaryText)
+                        Text("#\(store.currentBatter.numberText) \(store.currentBatter.name)").font(.subheadline.bold())
+                        let batting = store.battingLine(for: store.currentBatter)
+                        Text("\(batting.atBats) 打数 · \(batting.hits) 安打 · \(batting.runsBattedIn) 打点")
+                        Text("\(batting.walks) 四坏 · \(batting.strikeouts) 三振")
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    Divider()
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(store.isCoachPitch ? "P 位守备" : "当前投手").font(.caption).foregroundStyle(BMTheme.secondaryText)
+                        Text("#\(store.currentPitcher.numberText) \(store.currentPitcher.name)").font(.subheadline.bold())
+                        if store.isCoachPitch {
+                            Text("教练投球，投手数据不适用")
+                        } else {
+                            let pitching = store.pitchingLine(for: store.currentPitcher)
+                            Text("\(pitching.pitches) 球 · \(pitching.inningsText) 局 · \(pitching.strikeouts) 三振")
+                            Text("\(pitching.hits) 被安打 · \(pitching.walks) 四坏")
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .font(.caption)
+                Divider()
+                HStack(spacing: 12) {
+                    Text("接下来").font(.caption.bold()).foregroundStyle(BMTheme.secondaryText)
+                    ForEach(Array(workbenchOnDeck.enumerated()), id: \.offset) { offset, player in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(offset == 0 ? "待打" : "准备").font(.caption2).foregroundStyle(BMTheme.secondaryText)
+                            Text("#\(player.numberText) \(player.name)").font(.caption.bold()).lineLimit(1)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .foregroundStyle(BMTheme.navy)
+        }.accessibilityIdentifier("workbench-matchup")
+    }
+
+    private var workbenchOnDeck: [Player] {
+        let lineup = store.game.battingOrderPlayers
+        guard lineup.count > 1 else { return [] }
+        let current = (store.game.isTop ? store.game.awayBatterIndex : store.game.homeBatterIndex) % lineup.count
+        return (1...min(2, lineup.count - 1)).map { lineup[(current + $0) % lineup.count] }
+    }
+
+    private var workbenchLineups: some View {
+        BMCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    workbenchHeading("场上阵容", detail: "攻守交换后自动更新")
+                    Spacer(minLength: 0)
+                    Button("调整") { showSubstitutionSheet = true }
+                        .font(.caption.bold()).disabled(!store.canEditCurrentMatch || (dockedPlayFlow && showPlayFlowSheet))
+                        .accessibilityIdentifier("workbench-adjust-lineup")
+                }
+                HStack(alignment: .top, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(store.game.battingTeam.shortName) · 进攻").font(.caption.bold()).foregroundStyle(BMTheme.green)
+                        ForEach(Array(store.game.battingOrderPlayers.enumerated()), id: \.offset) { index, player in
+                            HStack(spacing: 6) {
+                                Text("\(index + 1)").monospacedDigit().foregroundStyle(BMTheme.secondaryText).frame(width: 16)
+                                Text("#\(player.numberText) \(player.name)").lineLimit(1)
+                                if player.id == store.currentBatter.id { Text("打击").font(.caption2.bold()).foregroundStyle(BMTheme.green) }
+                            }.font(.caption).frame(minHeight: 23, alignment: .leading)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(store.game.fieldingTeam.shortName) · 守备").font(.caption.bold()).foregroundStyle(BMTheme.green)
+                        ForEach(workbenchFielders) { player in
+                            HStack(spacing: 6) {
+                                Text(player.id == store.currentPitcher.id ? "P" : player.primaryPosition.shortName)
+                                    .foregroundStyle(BMTheme.secondaryText).frame(width: 24, alignment: .leading)
+                                Text("#\(player.numberText) \(player.name)").lineLimit(1)
+                            }.font(.caption).frame(minHeight: 23, alignment: .leading)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }.foregroundStyle(BMTheme.navy)
+        }.accessibilityIdentifier("workbench-lineups")
+    }
+
+    private var workbenchFielders: [Player] {
+        store.game.fieldingPlayerIDs.compactMap { id in store.game.fieldingTeam.players.first { $0.id == id } }
+    }
+
+    private var workbenchRecentLog: some View {
+        BMCard {
+            VStack(alignment: .leading, spacing: 10) {
+                workbenchHeading("最近实况", detail: "最近 6 条 · 包含投球与场上事件")
+                if store.game.playLog.isEmpty {
+                    Text("尚无现场记录，记球后显示在这里。")
+                        .font(.caption).foregroundStyle(BMTheme.secondaryText).padding(.vertical, 12)
+                } else {
+                    ForEach(Array(store.game.playLog.suffix(6).reversed())) { entry in
+                        HStack(alignment: .top, spacing: 10) {
+                            Text(entry.inningLabel).font(.caption2.bold()).foregroundStyle(BMTheme.green)
+                                .frame(width: 28, alignment: .leading)
+                            Text(entry.text).font(.caption).fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if entry.isIncomplete { Image(systemName: "exclamationmark.circle").foregroundStyle(BMTheme.orange) }
+                        }
+                        if entry.id != store.game.playLog.suffix(6).first?.id { Divider() }
+                    }
+                }
+            }.foregroundStyle(BMTheme.navy)
+        }.accessibilityIdentifier("workbench-recent-log")
+    }
+
+    private var workbenchRecentAppearances: some View {
+        BMCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    workbenchHeading("最近打席", detail: "最近 3 个已完成打席")
+                    Spacer(minLength: 0)
+                    NavigationLink("全部", destination: BoxScoreView()).font(.caption.bold())
+                        .disabled(isDockedRecording)
+                }
+                let appearances = Array(store.plateAppearanceRecords().filter(\.isComplete).suffix(3).reversed())
+                if appearances.isEmpty {
+                    Text("尚无已完成打席。当前打席确认后显示结果。")
+                        .font(.caption).foregroundStyle(BMTheme.secondaryText).padding(.vertical, 12)
+                } else {
+                    ForEach(appearances) { appearance in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(appearance.inningLabel) · #\(appearance.batter.numberText) \(appearance.batter.name)")
+                                .font(.caption.bold())
+                            Text(appearance.resultText).font(.caption).foregroundStyle(BMTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if appearance.id != appearances.last?.id { Divider() }
+                    }
+                }
+            }.foregroundStyle(BMTheme.navy)
+        }.accessibilityIdentifier("workbench-recent-appearances")
+    }
+
+    private func workbenchHeading(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.subheadline.bold()).foregroundStyle(BMTheme.navy)
+            Text(detail).font(.caption2).foregroundStyle(BMTheme.secondaryText)
+        }
+    }
+
+    private func compactContent(showsField: Bool) -> some View {
+        VStack(spacing: 7) {
+            compactScoreHeader()
+            fieldCard(showsField: showsField)
+                .frame(maxHeight: showsField ? .infinity : nil)
+            if !showsField { Spacer(minLength: 0) }
+            recordingControls
+        }
+    }
+
+    private func fieldCard(showsField: Bool, fieldHeight: CGFloat? = nil) -> some View {
+        VStack(spacing: 0) {
+            if showsField {
+                BaseballDiamondView(game: store.game, fixedHeight: fieldHeight)
+                Divider().overlay(BMTheme.line)
+            }
+            matchupBar
+            if !showsField { compactBaseSummary }
+        }
+        .background(BMTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: BMTheme.cardRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: BMTheme.cardRadius, style: .continuous)
+                .stroke(BMTheme.line.opacity(0.75), lineWidth: 1)
+        }
+    }
+
+    private var recordingControls: some View {
+        VStack(spacing: 7) {
+            if store.isCoachPitch {
+                Text("教练投手 · 本打席 \(store.game.plateAppearancePitchCount ?? 0) / \(store.coachPitchLimit) 球")
+                    .font(.caption.bold()).accessibilityIdentifier("coach-pitch-count")
+            }
+            if store.game.isFinal {
+                finalGameCard
+            } else if let decision = store.game.pendingDecision {
+                BMCard {
+                    VStack(spacing: 12) {
+                        Text(decision.title).font(.headline)
+                        Button(decision == .runLimit ? "交换攻守" : "结束比赛") { store.resolveGameDecision(finish: true) }
+                            .buttonStyle(PrimaryButtonStyle())
+                        Button(decision == .runLimit ? "继续本半局（不再加分）" : "继续比赛") { store.resolveGameDecision(finish: false) }
+                            .buttonStyle(SecondaryButtonStyle())
+                    }
+                }.accessibilityIdentifier("pending-game-decision")
+            } else {
+                if store.canSwapOpeningSides {
+                    Button { store.swapOpeningSides() } label: {
+                        Label("互换先攻／后攻", systemImage: "arrow.left.arrow.right")
+                            .font(.caption.bold()).frame(maxWidth: .infinity, minHeight: 32)
+                    }.tint(BMTheme.green).accessibilityIdentifier("swap-opening-sides")
+                }
+                pitchControls.disabled(!store.canEditCurrentMatch)
+
+                HStack(spacing: 10) {
+                    Button {
+                        showRunnerEventSheet = true
+                    } label: {
+                        Label("跑者 / 出局", systemImage: "figure.run")
+                    }
+                    .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green))
+                    .accessibilityIdentifier("open-runner-events")
+
+                    Button {
+                        showSpecialEventSheet = true
+                    } label: {
+                        Label("特殊 / 判罚", systemImage: "exclamationmark.shield")
+                    }
+                    .buttonStyle(ScoreActionButtonStyle(color: BMTheme.orange))
+                    .accessibilityIdentifier("open-special-events")
+                }
+
+                if store.isSlowPitch {
+                    Menu {
+                        Button("未挥棒，裁判判一坏球") { store.recordIllegalPitch(.ball, wasThrown: true) }
+                        Button("裁判取消 Illegal，按普通坏球记录") { store.recordIllegalPitch(.ball, wasThrown: true, penaltyApplied: false) }
+                        Button("挥空，按好球处理") { store.recordIllegalPitch(.swingingStrike, wasThrown: true) }
+                        Button("界外，按本场界外规则处理") { store.recordIllegalPitch(.foul, wasThrown: true) }
+                        Button("击球，按最终结果录入") { illegalPlay = true; openPlayFlow() }
+                        Button("未实际投出的罚球，记一坏") { store.recordIllegalPitch(.ball, wasThrown: false) }
+                        Button("已投出，裁判判 No Pitch") { store.recordIllegalPitch(nil, wasThrown: true) }
+                        Button("未投出，裁判判 No Pitch") { store.recordIllegalPitch(nil, wasThrown: false) }
+                    } label: { Label("Illegal／非法投球", systemImage: "exclamationmark.circle") }
+                    .buttonStyle(ScoreActionButtonStyle(color: BMTheme.orange))
+                    .accessibilityIdentifier("record-illegal-pitch")
+                    .disabled(store.isPregame)
+                    if store.game.strikes >= 2 && store.activeRules?.twoStrikeFoulPolicy == .oneExtraFoul {
+                        Text(store.game.extraFoulUsed == true ? "额外界外机会已用，下次界外出局" : "两好后仍允许一次界外")
+                            .font(.caption).foregroundStyle(BMTheme.secondaryText)
+                    }
+                    TimelineView(.periodic(from: Date(), by: 1)) { context in
+                        if store.hasStartedGameClock && store.activeRules?.isTimeGame == true && (store.remainingGameTime(at: context.date) ?? 1) <= 0 {
+                            Button("时间已到 · 按裁判决定结束比赛") { confirmTimeEnd = true }
+                                .buttonStyle(PrimaryButtonStyle())
+                        }
+                    }
+                }
+                HStack(spacing: 7) {
+                    undoButton
+                    redoButton
+
+                    Button {
+                        showCorrectionSheet = true
+                    } label: {
+                        Label("修正", systemImage: "slider.horizontal.3")
+                    }
+                    .buttonStyle(ScoreActionButtonStyle(color: BMTheme.orange, compact: true))
+                    .accessibilityIdentifier("open-state-correction")
+
+                    Button {
+                        showSubstitutionSheet = true
+                    } label: {
+                        Label("阵容", systemImage: "person.3.fill")
+                    }
+                    .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green, compact: true))
+                    .accessibilityIdentifier("open-substitutions")
+                }
+                if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation,
+                   let latest = store.game.scoringEvents?.last(where: { $0.category == .battedBall }) {
+                    HStack(spacing: 8) {
+                        Text(latest.title).font(.system(size: 10)).lineLimit(2).foregroundStyle(BMTheme.secondaryText)
+                        Spacer(minLength: 0)
+                        Button("补充这球") { situationAmendment = BattedBallEventSelection(id: latest.id) }
+                            .font(.caption.bold()).fixedSize().disabled(!store.canEditCurrentMatch)
+                            .accessibilityIdentifier("amend-situation-play")
+                    }.padding(.horizontal, 8)
+                }
+                HStack(spacing: 10) {
+                    Button("结束半局") { confirmEndHalf = true }
+                        .disabled(!store.canRecordAction)
+                    Spacer(minLength: 0)
+                    if store.game.strikes == 2 && store.activeRules?.supportsBunting != false {
+                        Button("触击界外出局") { store.recordFoulBuntStrikeout() }
+                            .foregroundStyle(BMTheme.orange)
+                            .frame(minHeight: 40)
+                            .accessibilityIdentifier("foul-bunt-strikeout")
+                        Spacer(minLength: 0)
+                    }
+                    Button("结束比赛") { showEndReasonSheet = true }
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .padding(.horizontal, 14)
+                .frame(height: 40)
+            }
+        }
+    }
+
+    private func compactScoreHeader(height: CGFloat = 58) -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(store.game.inning)局\(store.game.isTop ? "上" : "下")")
@@ -348,6 +653,8 @@ struct ScorekeepingView: View {
                 }
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(BMTheme.navy)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             }
             Spacer(minLength: 2)
 
@@ -361,7 +668,7 @@ struct ScorekeepingView: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 58)
+        .frame(height: height)
         .background(BMTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
@@ -595,7 +902,7 @@ struct ScorekeepingView: View {
                 haptic(.medium)
                 illegalPlay = false
                 if store.isPregame { pendingOpeningPlay = true; confirmOpeningLineups = true }
-                else { showPlayFlowSheet = true }
+                else { openPlayFlow() }
             } label: {
                 HStack {
                     Image(systemName: "baseball.fill")
@@ -691,8 +998,44 @@ struct ScorekeepingView: View {
     }
 
     private func presentCorrectionAfterDismissal() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        correctionAfterDismissal = true
+    }
+
+    private func recordingSheetDidDismiss() {
+        recordingPresentationActive = false
+        if correctionAfterDismissal {
+            correctionAfterDismissal = false
             showCorrectionSheet = true
+            return
+        }
+        schedulePostgameUploadIfReady()
+    }
+
+    private var hasRecordingPresentation: Bool {
+        recordingPresentationActive || showRuleNotices || showEndReasonSheet || showLiveBroadcast
+            || showHistoryCorrection || showBatterPerformance || situationAmendment != nil
+            || showPlayFlowSheet || showRunnerEventSheet || showSpecialEventSheet || showCorrectionSheet
+            || showSubstitutionSheet || store.requiresTiebreakRunnerPlacement
+            || confirmTimeEnd || confirmEndHalf || confirmOpeningLineups || correctionAfterDismissal
+    }
+
+    private func queueSavedPostgamePrompt() {
+        guard scorekeepingVisible, let saved = store.activeStoredGame, saved.status == .completed, saved.state.isFinal,
+              saved.sharedGameID == nil, store.storageErrorMessage == nil else { return }
+        pendingPostgameGameID = saved.id
+        schedulePostgameUploadIfReady()
+    }
+
+    private func schedulePostgameUploadIfReady() {
+        // Run after SwiftUI consumes the final-state / alert bindings. Sheets call this only after onDismiss.
+        DispatchQueue.main.async {
+            guard scorekeepingVisible, let id = pendingPostgameGameID, !showPostgameUpload, !hasRecordingPresentation,
+                  !store.requiresDataRecovery, store.storageErrorMessage == nil, store.actionErrorMessage == nil,
+                  let saved = store.activeStoredGame, saved.id == id, saved.sharedGameID == nil,
+                  saved.status == .completed, saved.state.isFinal, store.game.isFinal else { return }
+            pendingPostgameGameID = nil
+            guard store.claimAutomaticPostgamePrompt(gameID: id) else { return }
+            showPostgameUpload = true
         }
     }
 }
@@ -1812,7 +2155,7 @@ private struct PitcherChangeConfirmationModifier: ViewModifier {
                     .accessibilityIdentifier("cancel-pitcher-change")
             } message: { value in
                 Text("\(value.teamName)\n原投手：\(value.previous.lineupSelectionText)\n新投手：\(value.candidate.lineupSelectionText)\n\n请核对场上实际投手。确认后才能继续记录；取消不改变记录。"
-                     + (store.activeRules?.pitcherInningsLimit.map { "\n本场限制 \($0) 个登板局。登板后即使未投球，也占用该局额度；同一局不重复计算。统计 IP 另按实际出局数累计。" } ?? ""))
+                     + (store.activeRules?.pitcherInningsLimit.map { "\n本场限制 \($0) 个登板局。明确确认登板即占用该局额度；换局自动沿用投手，实际投球后才计新局。同一局不重复计算，统计 IP 另按实际出局数累计。" } ?? ""))
             }
             .onDisappear { if pending != nil { store.cancelPitcherChange() } }
     }

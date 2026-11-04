@@ -11,7 +11,7 @@ export class RosterService {
     return { team: { ...row, ...(saved ? JSON.parse(saved.profile) : { shortName: row.name, city: '', players: [] }) }, role: member.role, memberID: member.id };
   }
   update(team, device, body) {
-    this.check(Number.isSafeInteger(body.baseRevision) && body.baseRevision > 0 && ['profile','player'].includes(body.kind));
+    this.check(Number.isSafeInteger(body.baseRevision) && body.baseRevision > 0 && ['profile','player','players'].includes(body.kind));
     return this.store.operation(device, body, `roster:${team}`, () => this.store.membership(team, device, body.kind === 'profile' ? 'editTeam' : 'editRoster'), () => {
       const detail = this.read(team, device), profile = detail.team;
       this.check(profile.revision === body.baseRevision, 409, 'roster_conflict', '名单已在其他设备更新，请核对后重新保存。');
@@ -19,6 +19,22 @@ export class RosterService {
       if (body.kind === 'profile') {
         this.check(text(body.name) && body.name.trim() && text(body.shortName) && body.shortName.trim() && text(body.city));
         profile.name = body.name.trim(); profile.shortName = body.shortName.trim(); profile.city = body.city.trim();
+      } else if (body.kind === 'players') {
+        this.check(Array.isArray(body.players) && body.players.length > 0 && body.players.length <= 200);
+        this.check(profile.players.length + body.players.length <= 2000 && profile.players.filter(v => !v.archived).length + body.players.length <= 200,
+          409, 'capacity', '整批新增后名单将超过容量，请先整理名单。');
+        const ids = new Set(profile.players.map(p => p.id)), sources = new Set(profile.players.map(p => p.sourceID));
+        const additions = body.players.map(p => {
+          this.check(p && uuid(p.id) && uuid(p.sourceID) && text(p.chineseName) && text(p.englishName)
+            && Array.isArray(p.numbers) && p.numbers.length <= 10 && new Set(p.numbers).size === p.numbers.length
+            && p.numbers.every(n => typeof n === 'string' && /^(00|0|[1-9][0-9]?)$/.test(n)) && p.archived === false
+            && (p.chineseName.trim() || p.englishName.trim() || p.numbers.length));
+          const id = p.id.toLowerCase(), sourceID = p.sourceID.toLowerCase();
+          this.check(!ids.has(id) && !sources.has(sourceID), 409, 'identity_conflict', '批量新增仅接受新球员身份，原名单未修改。');
+          ids.add(id); sources.add(sourceID);
+          return { id, sourceID, chineseName: p.chineseName.trim(), englishName: p.englishName.trim(), numbers: p.numbers, archived: false };
+        });
+        profile.players.push(...additions);
       } else {
         const p = body.player;
         this.check(p && uuid(p.id) && uuid(p.sourceID) && text(p.chineseName) && text(p.englishName)
@@ -38,7 +54,7 @@ export class RosterService {
       const { name, shortName, city, players } = profile;
       this.db.prepare('UPDATE teams SET name=?,revision=revision+1 WHERE id=?').run(name, team);
       this.db.prepare('INSERT INTO team_profiles VALUES(?,?) ON CONFLICT(team_id) DO UPDATE SET profile=excluded.profile').run(team, JSON.stringify({ shortName, city, players }));
-      this.store.audit(team, device, body.kind === 'profile' ? 'teamProfileUpdated' : body.player.archived ? 'playerArchived' : 'playerUpdated', objectID);
+      this.store.audit(team, device, body.kind === 'profile' ? 'teamProfileUpdated' : body.kind === 'players' ? 'playersImported' : body.player.archived ? 'playerArchived' : 'playerUpdated', objectID);
       return this.read(team, device);
     });
   }

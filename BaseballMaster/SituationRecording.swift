@@ -66,6 +66,7 @@ enum SituationFieldMode: String, CaseIterable, Identifiable {
 }
 
 struct SituationFieldView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let game: GameState
     var observation: BattedBallObservation?
     @Binding var fielding: BattedBallFielding
@@ -75,10 +76,10 @@ struct SituationFieldView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                SituationFieldBackground()
+                BaseballFieldBackground()
                 if mode == .landing, let onPoint {
                     Color.clear.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded { value in
-                        onPoint(CGPoint(x: value.location.x / proxy.size.width, y: value.location.y / proxy.size.height))
+                        onPoint(BaseballFieldLayout.contactCoordinate(at: value.location, in: proxy.size))
                     }).accessibilityLabel("在球场点选击球落点").accessibilityIdentifier("contact-field")
                 }
                 Path { path in
@@ -132,64 +133,19 @@ struct SituationFieldView: View {
                         .overlay(Circle().stroke(.white, lineWidth: 3))
                         .frame(width: 17, height: 17)
                         .background(Circle().fill(Color.yellow.opacity(0.3)).padding(-6))
-                        .position(x: point.x * proxy.size.width, y: point.y * proxy.size.height)
+                        .position(BaseballFieldLayout.contactPoint(point, in: proxy.size))
                         .allowsHitTesting(false)
                 }
             }.clipShape(RoundedRectangle(cornerRadius: 15))
-        }.frame(height: 260)
+        }
+        .frame(height: horizontalSizeClass == .regular
+               ? (game.rulesSnapshot?.isSlowPitch == true ? 400 : 360)
+               : (game.rulesSnapshot?.isSlowPitch == true ? 330 : 260))
+        .frame(maxWidth: 640)
+        .frame(maxWidth: .infinity)
     }
     private func scaled(_ position: FieldPosition, _ size: CGSize) -> CGPoint {
-        let point: CGPoint = switch position {
-        case .pitcher: CGPoint(x: 0.5, y: 0.70)
-        case .catcher: CGPoint(x: 0.5, y: 0.91)
-        case .firstBase: CGPoint(x: 0.84, y: 0.65)
-        case .secondBase: CGPoint(x: 0.65, y: 0.49)
-        case .thirdBase: CGPoint(x: 0.16, y: 0.65)
-        case .shortstop: CGPoint(x: 0.35, y: 0.49)
-        case .leftField: CGPoint(x: 0.22, y: 0.23)
-        case .centerField: CGPoint(x: 0.5, y: 0.12)
-        case .rightField: CGPoint(x: 0.78, y: 0.23)
-        case .free: CGPoint(x: 0.5, y: 0.31)
-        }
-        return CGPoint(x: point.x * size.width, y: point.y * size.height)
-    }
-}
-
-/// Exact 360 × 260 geometry and palette of the approved recording/demoReview V4.
-/// Player labels are supplied separately so they can show names and jersey numbers.
-private struct SituationFieldBackground: View {
-    var body: some View {
-        GeometryReader { proxy in
-            let transform = CGAffineTransform(scaleX: proxy.size.width / 360, y: proxy.size.height / 260)
-            ZStack {
-                Color(red: 237/255, green: 227/255, blue: 206/255)
-                Path { p in
-                    p.move(to: CGPoint(x: -5, y: 72))
-                    p.addQuadCurve(to: CGPoint(x: 365, y: 72), control: CGPoint(x: 180, y: -80))
-                    p.addLine(to: CGPoint(x: 180, y: 251)); p.closeSubpath()
-                }.transform(transform).fill(Color(red: 213/255, green: 183/255, blue: 128/255))
-                Path { p in
-                    p.move(to: CGPoint(x: 3, y: 77))
-                    p.addQuadCurve(to: CGPoint(x: 357, y: 77), control: CGPoint(x: 180, y: -68))
-                    p.addLine(to: CGPoint(x: 180, y: 242)); p.closeSubpath()
-                }.transform(transform).fill(Color(red: 43/255, green: 117/255, blue: 88/255))
-                diamond([(180,130),(247,192),(180,251),(113,192)], transform)
-                    .fill(Color(red: 205/255, green: 178/255, blue: 127/255))
-                diamond([(180,148),(228,192),(180,236),(132,192)], transform)
-                    .fill(Color(red: 57/255, green: 124/255, blue: 96/255))
-                Path { p in
-                    p.move(to: CGPoint(x: 0, y: 65)); p.addLine(to: CGPoint(x: 180, y: 246)); p.addLine(to: CGPoint(x: 360, y: 65))
-                    p.move(to: CGPoint(x: 116, y: 192)); p.addLine(to: CGPoint(x: 180, y: 134)); p.addLine(to: CGPoint(x: 244, y: 192))
-                }.transform(transform).stroke(Color(red: 1, green: 245/255, blue: 217/255), lineWidth: 2)
-            }
-        }.allowsHitTesting(false).accessibilityHidden(true)
-    }
-    private func diamond(_ vertices: [(CGFloat, CGFloat)], _ transform: CGAffineTransform) -> Path {
-        Path { p in
-            p.move(to: CGPoint(x: vertices[0].0, y: vertices[0].1))
-            for point in vertices.dropFirst() { p.addLine(to: CGPoint(x: point.0, y: point.1)) }
-            p.closeSubpath()
-        }.applying(transform)
+        BaseballFieldLayout.fielderPosition(position, in: size)
     }
 }
 
@@ -200,9 +156,16 @@ struct SituationPlayFlowSheet: View {
     let illegalPitch: Bool
     var initial: SituationExistingPlay? = nil
     var onSave: ((PlayOutcome, DefensivePlay?, [RunnerDecision], Bool?, BattedBallObservation) -> Bool)? = nil
+    var embedded = false
+    var onClose: (() -> Void)? = nil
     @State private var initialized = false
+    @State private var sourceGame: GameState?
+    @State private var sourceGameID: UUID?
+    @State private var sourcePracticeID: UUID?
     private enum Stage { case entry, catalog, process, processResult, contact, review, timing }
     @State private var stage: Stage = .entry
+    @State private var catalogReturnStage: Stage = .entry
+    @State private var resultReturnStage: Stage = .entry
     @State private var outcome = PlayOutcome.single
     @State private var observation = BattedBallObservation()
     @State private var selectedType: BattedBallType?
@@ -223,6 +186,8 @@ struct SituationPlayFlowSheet: View {
     }
     private var fieldIssue: String? {
         if selectedType == nil { return "请选择球型" }
+        if outcome == .sacrificeBunt && selectedType != .bunt { return "牺牲触击请将球型选为触击。" }
+        if outcome == .sacrificeFly && !(selectedType.map { [BattedBallType.fly, .line, .popup].contains($0) } ?? false) { return "牺牲高飞请核对高飞、平飞或内野小飞球型。" }
         if !observation.hasLocation { return "请在球场点选落点，或选择大致区域" }
         if fielding.status == nil { return "请点第一位处理球的守备员，再按传球顺序继续点选" }
         if !fielding.isValid { return "请核对守备路线" }
@@ -231,45 +196,102 @@ struct SituationPlayFlowSheet: View {
         return nil
     }
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if [.entry, .catalog, .process, .processResult].contains(stage) { context }
-                    switch stage {
-                    case .entry: entry
-                    case .catalog: catalog
-                    case .process: typeGrid(isProcess: true)
-                    case .processResult: outcomeGrid(processOutcomes)
-                    case .contact: contact
-                    case .review: review
-                    case .timing: timingOptions
+        Group {
+            if embedded {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        if stage != .entry { Button("返回") { goBack() } }
+                        Text(title).font(.headline)
+                        Spacer(minLength: 0)
+                        if stage == .entry {
+                            Button("全部击球") { catalogReturnStage = .entry; stage = .catalog }
+                                .accessibilityIdentifier("all-batted-outcomes")
+                        }
+                        Button(action: close) { Image(systemName: "xmark") }
+                            .frame(width: 44, height: 44)
+                            .accessibilityLabel("取消本球").accessibilityIdentifier("cancel-situation-play")
                     }
-                    if let issue { Text(issue).font(.callout).foregroundStyle(BMTheme.red).accessibilityIdentifier("situation-issue") }
-                }.padding(16)
-            }.bmScreenBackground()
-                .safeAreaInset(edge: .bottom) { footer }
-                .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { if stage != .entry { Button("返回") { goBack() } } }
-                    ToolbarItem(placement: .confirmationAction) {
-                        if stage == .entry { Button("全部击球") { stage = .catalog }.accessibilityIdentifier("all-batted-outcomes") }
-                        Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("取消本球").accessibilityIdentifier("cancel-situation-play")
-                    }
+                    .padding(.horizontal, 16)
+                    Divider()
+                    flowContent
                 }
-                .gameActionErrorAlert(store)
-                .onAppear {
-                    guard !initialized else { return }; initialized = true
-                    if let initial {
-                        outcome = initial.outcome; observation = initial.observation
-                        selectedType = initial.observation.type; fielding = initial.observation.fielding ?? BattedBallFielding(status: .pending)
-                        decisions = initial.decisions; runnerDetails = initial.observation.runnerDetails ?? initial.decisions.map { BattedBallRunnerDetail(playerID: $0.id) }
-                        timing = initial.timing; stage = .review
-                    }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("docked-situation-editor")
+            } else {
+                NavigationStack {
+                    flowContent
+                        .gameActionErrorAlert(store)
+                        .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                if stage != .entry { Button("返回") { goBack() } }
+                            }
+                            ToolbarItem(placement: .confirmationAction) {
+                                if stage == .entry {
+                                    Button("全部击球") { catalogReturnStage = .entry; stage = .catalog }
+                                        .accessibilityIdentifier("all-batted-outcomes")
+                                }
+                                Button(action: close) { Image(systemName: "xmark") }
+                                    .accessibilityLabel("取消本球").accessibilityIdentifier("cancel-situation-play")
+                            }
+                        }
                 }
-                .sheet(item: Binding(get: { extraRunner.map(RunnerRouteSelection.init) }, set: { extraRunner = $0?.id })) { selection in
-                    extraRouteSheet(selection.id)
-                }
+            }
         }
+    }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
+    }
+
+    private var flowContent: some View {
+        Group {
+            if embedded {
+                // The workbench owns scrolling. Let the complete recording flow
+                // expand naturally instead of clipping its field in another viewport.
+                VStack(spacing: 0) {
+                    flowSections
+                    footer
+                }
+            } else {
+                ScrollView { flowSections }
+                    .safeAreaInset(edge: .bottom) { footer }
+            }
+        }.bmScreenBackground()
+            .onAppear {
+                guard !initialized else { return }; initialized = true
+                sourceGame = store.game
+                sourceGameID = store.activeGameID
+                sourcePracticeID = store.transientCorrectionID
+                if let initial {
+                    outcome = initial.outcome; observation = initial.observation
+                    selectedType = initial.observation.type; fielding = initial.observation.fielding ?? BattedBallFielding(status: .pending)
+                    decisions = initial.decisions; runnerDetails = initial.observation.runnerDetails ?? initial.decisions.map { BattedBallRunnerDetail(playerID: $0.id) }
+                    timing = initial.timing; stage = .review
+                }
+            }
+            .sheet(item: Binding(get: { extraRunner.map(RunnerRouteSelection.init) }, set: { extraRunner = $0?.id })) { selection in
+                extraRouteSheet(selection.id)
+            }
+    }
+
+    private var flowSections: some View {
+        VStack(alignment: .leading, spacing: 14) {
+                if [.entry, .catalog, .process, .processResult].contains(stage) { context }
+                switch stage {
+                case .entry: entry
+                case .catalog: catalog
+                case .process: typeGrid(isProcess: true)
+                case .processResult:
+                    outcomeGrid(processOutcomes.filter { $0 != .other })
+                    Button("其他结果／全部结果") { catalogReturnStage = .processResult; stage = .catalog }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("process-all-outcomes")
+                    Button("结果待确认") { choose(.other) }.buttonStyle(SecondaryButtonStyle())
+                case .contact: contact
+                case .review: review
+                case .timing: timingOptions
+                }
+                if let issue { Text(issue).font(.callout).foregroundStyle(BMTheme.red).accessibilityIdentifier("situation-issue") }
+        }.padding(16)
     }
     private var title: String {
         switch stage {
@@ -325,20 +347,34 @@ struct SituationPlayFlowSheet: View {
     private func outcomeGrid(_ values: [PlayOutcome]) -> some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
             ForEach(values) { result in
-                Button(result == .flyOut ? "高飞接杀" : result == .error ? "守备失误" : result.rawValue) { choose(result) }
-                    .buttonStyle(SecondaryButtonStyle(color: result.isHit ? BMTheme.green : BMTheme.navy))
-                    .disabled(!available(result)).accessibilityIdentifier("quick-outcome-\(result.notation)")
+                VStack(alignment: .leading, spacing: 4) {
+                    Button(result == .flyOut ? "高飞接杀" : result == .error ? "守备失误" : result == .other ? "结果待确认" : result.rawValue) { choose(result) }
+                        .buttonStyle(SecondaryButtonStyle(color: result.isHit ? BMTheme.green : BMTheme.navy))
+                        .disabled(!available(result)).accessibilityIdentifier("quick-outcome-\(result.notation)")
+                        .accessibilityHint(unavailableReason(result) ?? "")
+                    if let reason = unavailableReason(result) {
+                        Text(reason).font(.caption).foregroundStyle(BMTheme.secondaryText)
+                            .accessibilityIdentifier("outcome-unavailable-\(result.notation)")
+                    }
+                }
             }
         }
     }
-    private func available(_ result: PlayOutcome) -> Bool {
+    private func available(_ result: PlayOutcome) -> Bool { unavailableReason(result) == nil }
+    private func unavailableReason(_ result: PlayOutcome) -> String? {
         switch result {
-        case .doublePlay: store.game.outs < 2 && store.hasRunners
-        case .triplePlay: store.game.outs == 0 && store.game.baseRunners.count >= 2
-        case .sacrificeBunt: !store.isSlowPitch && store.game.outs < 2 && store.hasRunners
-        case .sacrificeFly: store.game.outs < 2 && store.game.baseRunners[.third] != nil
-        case .infieldFly: store.game.outs < 2 && store.game.baseRunners[.first] != nil && store.game.baseRunners[.second] != nil
-        default: true
+        case .doublePlay:
+            return store.game.outs >= 2 ? "已有两出局，不能记录双杀。" : !store.hasRunners ? "双杀需要垒上有跑者。" : nil
+        case .triplePlay:
+            return store.game.outs != 0 ? "三杀需要零出局。" : store.game.baseRunners.count < 2 ? "三杀需要至少两名跑者。" : nil
+        case .sacrificeBunt:
+            if store.isSlowPitch { return "慢垒不允许触击。" }
+            return store.game.outs >= 2 ? "牺牲触击需要少于两出局。" : !store.hasRunners ? "牺牲触击需要垒上有跑者。" : nil
+        case .sacrificeFly:
+            return store.game.outs >= 2 ? "牺牲高飞需要少于两出局。" : store.game.baseRunners[.third] == nil ? "牺牲高飞需要三垒有跑者。" : nil
+        case .infieldFly:
+            return store.game.outs >= 2 ? "内野高飞必死需要少于两出局。" : store.game.baseRunners[.first] == nil || store.game.baseRunners[.second] == nil ? "需一、二垒均有跑者。" : nil
+        default: return nil
         }
     }
     private func typeGrid(isProcess: Bool = false) -> some View {
@@ -349,6 +385,7 @@ struct SituationPlayFlowSheet: View {
                     if isProcess { stage = .processResult }
                 }.buttonStyle(SecondaryButtonStyle(color: selectedType == type ? BMTheme.orange : BMTheme.green))
                     .disabled(type == .bunt && store.isSlowPitch).accessibilityIdentifier("contact-type-\(type.rawValue)")
+                    .accessibilityValue(selectedType == type ? "已选择" : "未选择")
             }
         }
     }
@@ -525,6 +562,10 @@ struct SituationPlayFlowSheet: View {
         store.game.fieldingTeam.players.first { store.game.fieldingPlayerIDs.contains($0.id) && $0.primaryPosition == position }
     }
     private func choose(_ result: PlayOutcome) {
+        guard available(result) else { issue = unavailableReason(result); return }
+        resultReturnStage = stage
+        if result == .sacrificeBunt { selectedType = .bunt }
+        if result == .sacrificeFly { selectedType = .fly }
         outcome = result; fielding = BattedBallFielding(); observation = BattedBallObservation(type: selectedType ?? .unknown)
         if selectedType == nil {
             selectedType = result == .groundOut ? .ground : [.flyOut, .sacrificeFly].contains(result) ? .fly : result == .lineOut ? .line : result == .sacrificeBunt ? .bunt : nil
@@ -546,6 +587,12 @@ struct SituationPlayFlowSheet: View {
         else { submit() }
     }
     private func submit() {
+        guard sourceGame == store.game, sourceGameID == store.activeGameID,
+              sourcePracticeID == store.transientCorrectionID else {
+            store.actionErrorMessage = "比赛局面已变化，本球草稿未写入。请按当前局面重新记录。"
+            close()
+            return
+        }
         guard fieldIssue == nil else { issue = fieldIssue; stage = .contact; return }
         let outs = decisions.filter { $0.destination == .out }.count
         if outcome == .doublePlay && outs != 2 || outcome == .triplePlay && outs != 3 { issue = "请明确本次\(outcome.rawValue)的实际出局者"; stage = .review; return }
@@ -560,22 +607,23 @@ struct SituationPlayFlowSheet: View {
         fielding.capture(in: store.game); observation.fielding = fielding; observation.runnerDetails = runnerDetails
         let defense = situationDefensivePlay(outcome: outcome, observation: observation, decisions: decisions)
         if let onSave {
-            if onSave(outcome, defense, decisions, timing, observation) { dismiss() }
+            if onSave(outcome, defense, decisions, timing, observation) { close() }
             else { issue = "修改未保存，请核对比赛是否已变化。" }
             return
         }
         let result = illegalPitch
             ? store.recordIllegalPitch(nil, wasThrown: true, outcome: outcome, defensivePlay: defense, decisions: decisions, timingRunCounts: timing, observation: observation)
             : store.applyPlay(outcome, defensivePlay: defense, decisions: decisions, timingRunCounts: timing, observation: observation)
-        if result { dismiss() }
+        if result { close() }
     }
     private func goBack() {
         issue = nil
         switch stage {
         case .entry: break
-        case .catalog, .process: stage = .entry
+        case .catalog: stage = catalogReturnStage
+        case .process: stage = .entry
         case .processResult: stage = .process
-        case .contact: stage = contactReturnToReview ? .review : .entry
+        case .contact: stage = contactReturnToReview ? .review : resultReturnStage
         case .review: contactReturnToReview = false; stage = .entry
         case .timing: stage = .review
         }

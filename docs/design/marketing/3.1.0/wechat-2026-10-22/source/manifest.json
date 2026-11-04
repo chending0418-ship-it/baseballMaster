@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-22",
+  "importedFrom": "output/marketing/3.1.0/wechat-2026-10-22/source",
+  "currentEditableSource": "docs/design/marketing/3.1.0/wechat-2026-10-22/source",
+  "defaultOutput": "output/marketing/3.1.0/wechat-2026-10-22",
+  "changes": "Renderer paths point to App output; source image and artwork logic preserved.",
+  "files": {
+    "render.cjs": {
+      "sha256": "173dcaa42bb73e0eadf7cd1d3bee261d4269c454f0057ade69f3168e268cedc0",
+      "originalSha256": "0851d6cec816b3affa38b58525eca664998fab0daf5f2c35f786dcdaa16d4e56"
+    },
+    "field-art.cjs": {
+      "sha256": "dbda0b920d2e66d84530219520b47a651269fb6d5d1c98b8cf02c38c4af4f2e5",
+      "originalSha256": "dbda0b920d2e66d84530219520b47a651269fb6d5d1c98b8cf02c38c4af4f2e5"
+    }
+  },
+  "sharedInputs": {
+    "BaseballMaster/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png": "d16c7a2a96ac3ca93fa254fab06327184c6605364d759fb8a8f38029bfcd0255"
+  }
+}

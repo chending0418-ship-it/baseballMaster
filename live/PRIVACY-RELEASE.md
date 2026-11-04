@@ -7,7 +7,7 @@
 - 隐私政策：<https://baseballmaster.cc/privacy.html>。
 - 技术支持：<https://baseballmaster.cc/support.html>。
 - 本次说明涵盖本地历史纠错、主动开播、公开字段、持链接可看、同步、保留与删除、备份、未成年人资料及支持请求。两页已同步 Web 服务部署状态，并明确 App 尚未正式发布；页面更新本身不会替旧版 App 开启直播。
-- 9 月 29 日页面改写见 [官网更新记录](../website/deploy/2026-09-29-policy-support-2.1.md)；本次服务、隐私状态、App 配置及验收见 [正式部署记录](deploy/2026-09-30-production.md)。
+- 9 月 29 日页面改写见 [官网更新记录](../../../website/deploy/2026-09-29-policy-support-2.1.md)；本次服务、隐私状态、App 配置及验收见 [正式部署记录](deploy/2026-09-30-production.md)。
 
 ## 文案依据
 

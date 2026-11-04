@@ -157,6 +157,7 @@ struct TeamDetailView: View {
     @State private var playerEditorContext: PlayerEditorContext?
     @State private var teamEditorContext: TeamEditorContext?
     @State private var playerPendingDeletion: Player?
+    @State private var showBulkImport = false
 
     var body: some View {
         Group {
@@ -177,6 +178,7 @@ struct TeamDetailView: View {
                                 Spacer()
                                 VStack(spacing: 2) {
                                     Text("\(team.players.count)")
+                                        .accessibilityIdentifier("roster-player-count")
                                         .font(.system(size: 28, weight: .black, design: .rounded))
                                         .foregroundStyle(BMTheme.green)
                                     Text("球员")
@@ -196,6 +198,9 @@ struct TeamDetailView: View {
                             }
                             .foregroundStyle(BMTheme.green)
                             .accessibilityIdentifier("add-player")
+                            Button("批量输入") { showBulkImport = true }
+                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(BMTheme.green)
+                                .accessibilityIdentifier("bulk-add-players")
                         }
 
                         if team.players.isEmpty {
@@ -286,6 +291,9 @@ struct TeamDetailView: View {
         .sheet(item: $playerEditorContext) { context in
             PlayerEditorSheet(teamID: context.teamID, player: context.player)
                 .environmentObject(store)
+        }
+        .sheet(isPresented: $showBulkImport) {
+            LocalBulkRosterImportSheet(teamID: teamID).environmentObject(store)
         }
         .sheet(item: $teamEditorContext) { context in
             TeamEditorSheet(team: context.team)
@@ -394,6 +402,7 @@ struct PlayerEditorSheet: View {
 
     @State private var chineseName: String
     @State private var englishName: String
+    @State private var showBulkImport = false
     @State private var numberInputs: [JerseyNumberInput]
 
     init(teamID: UUID, player: Player?, isOpponent: Bool = false) {
@@ -414,6 +423,13 @@ struct PlayerEditorSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if player == nil {
+                    Section {
+                        Button { showBulkImport = true } label: {
+                            Label("批量输入名单", systemImage: "person.3.sequence")
+                        }.accessibilityIdentifier("open-bulk-roster")
+                    }
+                }
                 Section("姓名") {
                     TextField("中文名", text: $chineseName)
                     TextField("英文名", text: $englishName)
@@ -478,6 +494,9 @@ struct PlayerEditorSheet: View {
                     .disabled(!isValid)
                 }
             }
+        }
+        .sheet(isPresented: $showBulkImport) {
+            LocalBulkRosterImportSheet(teamID: teamID, isOpponent: isOpponent).environmentObject(store)
         }
     }
 
@@ -932,7 +951,7 @@ struct NewGameSetupView: View {
                                 .frame(minHeight: 54)
                             if hasPitcherInningsLimit {
                                 Divider()
-                                Text("按登板局数限制：登板未投球也计一局，同一局不重复；与统计 IP 分开。")
+                                Text("明确确认登板即计一局；换局自动沿用投手，实际投球后才计新局。同一局不重复，统计 IP 另算。")
                                     .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                                 settingPickerRow(title: "投球局数上限", icon: "number.circle.fill") {
                                     Picker("投球局数上限", selection: $pitcherInningsLimit) {
@@ -987,6 +1006,10 @@ struct NewGameSetupView: View {
         .navigationTitle("新比赛")
         .scrollDismissesKeyboard(.interactively)
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: selectedTeamID) { id in
+            if store.teamSharing.teams.contains(where: { $0.id == id }) { shareTeamID = id }
+            else { shareTeamID = nil }
+        }
         .onAppear {
             if selectedTeamID == nil || !store.recordableTeams.contains(where: { $0.id == selectedTeamID }) {
                 selectedTeamID = store.currentTeam?.id
@@ -1051,11 +1074,7 @@ struct NewGameSetupView: View {
     }
 
     private var scheduledSharingResult: String {
-        guard let shareTeamID else { return "" }
-        if let createdGameID, store.sharedMatches.publishedMatch(sourceID: createdGameID, teamID: shareTeamID) != nil {
-            return "\n已共享到球队，成员可以查看这场比赛。"
-        }
-        return "\n共享尚未完成：" + (store.sharedMatches.message ?? "请稍后从比赛设置重试共享。")
+        shareTeamID == nil ? "" : "\n已预设赛后上传目标；比赛结束后仍需确认是否上传。现在只保存在本机。"
     }
 
     private func saveSchedule() {
@@ -1071,10 +1090,8 @@ struct NewGameSetupView: View {
                 scheduledAt: scheduledAt
             )
         }
-        Task {
-            if let shareTeamID, let game = store.games.first(where: { $0.id == createdGameID }) { await store.sharedMatches.publish(game, teamID: shareTeamID) }
-            showScheduledCreated = true
-        }
+        if let createdGameID { _ = store.setPostgameUploadTarget(gameID: createdGameID, teamID: shareTeamID) }
+        showScheduledCreated = createdGameID != nil
     }
 
     private func settingPickerRow<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
@@ -1208,6 +1225,7 @@ struct OpponentTeamDetailView: View {
     let teamID: UUID
     @State private var playerEditorContext: PlayerEditorContext?
     @State private var playerPendingDeletion: Player?
+    @State private var showBulkImport = false
 
     var body: some View {
         Group {
@@ -1226,6 +1244,12 @@ struct OpponentTeamDetailView: View {
                                         .foregroundStyle(BMTheme.secondaryText)
                                 }
                                 Spacer()
+                                VStack(spacing: 2) {
+                                    Text("\(team.players.count)")
+                                        .font(.title2.bold()).foregroundStyle(BMTheme.green)
+                                        .accessibilityIdentifier("roster-player-count")
+                                    Text("球员").font(.caption)
+                                }
                             }
                         }
 
@@ -1239,6 +1263,9 @@ struct OpponentTeamDetailView: View {
                             }
                             .foregroundStyle(BMTheme.green)
                             .accessibilityIdentifier("add-opponent-player")
+                            Button("批量输入") { showBulkImport = true }
+                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(BMTheme.green)
+                                .accessibilityIdentifier("bulk-add-players")
                         }
 
                         if team.players.count < 9 {
@@ -1301,6 +1328,9 @@ struct OpponentTeamDetailView: View {
         .bmScreenBackground()
         .navigationTitle("对手名单")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showBulkImport) {
+            LocalBulkRosterImportSheet(teamID: teamID, isOpponent: true).environmentObject(store)
+        }
         .sheet(item: $playerEditorContext) { context in
             PlayerEditorSheet(teamID: context.teamID, player: context.player, isOpponent: true)
                 .environmentObject(store)
@@ -1691,7 +1721,7 @@ private struct GameRulesEditor: View {
                     .frame(minHeight: 54)
                 if rules.pitcherInningsLimit != nil {
                     Divider()
-                    Text("按登板局数限制：登板未投球也计一局，同一局不重复；与统计 IP 分开。")
+                    Text("明确确认登板即计一局；换局自动沿用投手，实际投球后才计新局。同一局不重复，统计 IP 另算。")
                         .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                     settingPickerRow(title: "投球局数上限", icon: "number.circle.fill") {
                         Picker(
@@ -2075,7 +2105,7 @@ struct LineupSelectionView: View {
             parts.append("单投手 \(pitches) 球限制，剩余 \(rules.pitchWarningRemaining ?? 0) 球提醒")
         }
         if let innings = rules.pitcherInningsLimit {
-            parts.append("单投手最多登板 \(innings) 局（未投球也计入）")
+            parts.append("单投手最多登板 \(innings) 局（明确确认登板或实际投球计入）")
         }
         if rules.designatedHitterEnabled {
             parts.append(rules.twoWayPlayerEnabled ? "启用大谷条款" : "启用指定打击 DH")
@@ -2308,8 +2338,8 @@ struct ObservedGameLineupView: View {
             Text(confirmationSummary)
         }
         .onChange(of: createdGameID) { id in
-            if let shareTeamID, let game = store.games.first(where: { $0.id == id }) {
-                Task { await store.sharedMatches.publish(game, teamID: shareTeamID) }
+            if let id {
+                _ = store.setPostgameUploadTarget(gameID: id, teamID: shareTeamID)
             }
         }
         .sheet(item: $posterGame) { stored in

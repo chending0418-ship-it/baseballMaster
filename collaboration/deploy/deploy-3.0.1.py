@@ -2,12 +2,15 @@
 from pathlib import Path
 import hashlib,json,subprocess,tarfile
 ROOT=Path(__file__).resolve().parents[2]
+WORKSPACE=ROOT.parents[1]
+def local_source(name):
+ return (WORKSPACE if name.startswith('website/') else ROOT)/name
 OUT=ROOT/'output/deployments/collaboration/3.0.1-20261019'
 FILES=['collaboration/server.mjs','collaboration/permissions.mjs','website/public/join/index.html']
-manifest={p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in FILES}
+manifest={p:hashlib.sha256(local_source(p).read_bytes()).hexdigest() for p in FILES}
 baseline=json.loads((OUT/'baseline.json').read_text())
 with tarfile.open(OUT/'overlay.tar.gz','w:gz') as tar:
- for p in FILES:tar.add(ROOT/p,arcname=p)
+ for p in FILES:tar.add(local_source(p),arcname=p)
 (OUT/'manifest.json').write_text(json.dumps(manifest,indent=2))
 remote='/root/baseballmaster-deploy/3.0.1-20261019'
 subprocess.run(['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10','jingsen-prod','install -d -m 700 '+remote],check=True,timeout=30)

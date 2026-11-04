@@ -68,6 +68,17 @@ struct TeamDirectoryState: Codable {
     var lastSecurityReceipt: TeamSecurityReceipt? = nil
     var profiles: [SharedTeamProfile]? = nil
     var rosterDraft: SharedRosterChange? = nil
+    /// Definitively rejected batches remain reviewable without locking unrelated roster edits.
+    var preservedBulkRosterDrafts: [SharedRosterChange]? = nil
+
+    mutating func preserveBulkRosterDraft(_ draft: SharedRosterChange) {
+        guard draft.kind == "players" else { return }
+        var saved = preservedBulkRosterDrafts ?? []
+        if let index = saved.firstIndex(where: { $0.teamID == draft.teamID && $0.players?.map(\.id) == draft.players?.map(\.id) }) {
+            saved[index] = draft
+        } else { saved.append(draft) }
+        preservedBulkRosterDrafts = saved
+    }
 }
 protocol TeamDirectoryStorage {
     func load() throws -> TeamDirectoryState
@@ -128,6 +139,11 @@ final class TeamSharingStore: ObservableObject {
     var teams: [SharedTeamSummary] { state.teams }
     var canMutate: Bool { loaded && !isBusy && state.pending == nil && !state.requiresRecoveryReview }
     var pendingTitle: String? { state.pending?.command.title }
+    var preservedBulkRosterDrafts: [SharedRosterChange] {
+        var saved = state
+        if let legacy = saved.rosterDraft, legacy.kind == "players" { saved.preserveBulkRosterDraft(legacy) }
+        return saved.preservedBulkRosterDrafts ?? []
+    }
 
     init(service: TeamDirectoryService, storage: TeamDirectoryStorage) { self.service = service; self.storage = storage }
 
@@ -159,7 +175,14 @@ final class TeamSharingStore: ObservableObject {
     func loadCachedDirectory() { do { try loadIfNeeded() } catch { report(error) } }
     private func loadIfNeeded() throws {
         guard !loaded else { return }
-        do { state = try storage.load(); loaded = true; onChange?() }
+        do {
+            var saved = try storage.load()
+            if let legacy = saved.rosterDraft, legacy.kind == "players" {
+                saved.preserveBulkRosterDraft(legacy); saved.rosterDraft = nil
+                try storage.save(saved)
+            }
+            state = saved; loaded = true; onChange?()
+        }
         catch { throw TeamServiceError.message("本机共享记录暂时无法读取，请解锁设备后重试。原资料已保留。") }
     }
     private func refreshList() async throws {
@@ -174,7 +197,10 @@ final class TeamSharingStore: ObservableObject {
             if let old = next.teamAccessEpochs?[team.id.uuidString], old != (team.accessEpoch ?? 1) {
                 if next.pending?.command.teamID == team.id {
                     if case .security(let command) = next.pending?.command, command.kind == "recovery-redeem" { }
-                    else { next.pending = nil }
+                    else {
+                        if case .roster(let draft) = next.pending?.command, draft.kind == "players" { next.preserveBulkRosterDraft(draft) }
+                        next.pending = nil
+                    }
                 }
                 next.fixedInvitations?.removeAll { $0.teamID == team.id }
                 next.recoveryCards?.removeAll { $0.teamID == team.id }
@@ -185,7 +211,8 @@ final class TeamSharingStore: ObservableObject {
         next.recoveryCards?.removeAll { card in !remote.teams.contains { $0.id == card.teamID && $0.role == .admin && ($0.recoveryVersion == nil || $0.recoveryVersion == card.version) } }
         if let pair = next.outgoingPairing, !remote.teams.contains(where: { $0.id == pair.teamID && $0.memberID == pair.memberID }) { next.outgoingPairing = nil }
         next.profiles?.removeAll { profile in !remote.teams.contains { $0.id == profile.id } }
-        if let draft = next.rosterDraft, !remote.teams.contains(where: { $0.id == draft.teamID && (draft.kind == "player" ? $0.role.canEditPlayers : $0.role == .admin) }) { next.rosterDraft = nil }
+        if let draft = next.rosterDraft, draft.kind != "players",
+           !remote.teams.contains(where: { $0.id == draft.teamID && (draft.kind == "player" ? $0.role.canEditPlayers : $0.role == .admin) }) { next.rosterDraft = nil }
         next.fixedInvitations?.removeAll { saved in !remote.teams.contains { $0.id == saved.teamID && $0.role == .admin } }
         next.teams = remote.teams; next.recoveryEpoch = remote.recoveryEpoch; next.lastRefreshed = Date()
         let accessible = Set(remote.teams.map(\.id))
@@ -223,7 +250,10 @@ final class TeamSharingStore: ObservableObject {
                 _ = try await api.securityRequest(path: "devices/recovery-review", method: "POST", body: .object(["recoveryEpoch": .uuid(remote.recoveryEpoch)]))
             }
             var next = state
-            if case .roster(let draft) = next.pending?.command { next.rosterDraft = draft }
+            if case .roster(let draft) = next.pending?.command {
+                if draft.kind == "players" { next.preserveBulkRosterDraft(draft) }
+                else { next.rosterDraft = draft }
+            }
             next.pending = nil; next.lastInvitation = nil; next.fixedInvitations = nil; next.pairing = nil; next.outgoingPairing = nil
             next.teams = remote.teams; next.profiles = profiles; next.recoveryEpoch = remote.recoveryEpoch
             next.teamAccessEpochs = Dictionary(uniqueKeysWithValues: remote.teams.map { ($0.id.uuidString,$0.accessEpoch ?? 1) })
@@ -232,6 +262,36 @@ final class TeamSharingStore: ObservableObject {
             next.requiresRecoveryReview = false; next.lastRefreshed = Date(); try persist(next)
             return true
         } catch { report(error); return false }
+    }
+
+    /// One immutable batch is durable before one network mutation; retries reuse every identity.
+    func importRoster(teamID: UUID, input: String, reviewedRevision: Int, preservedDraftID: UUID? = nil) async -> BulkRosterImportOutcome {
+        if case .roster(let pending) = state.pending?.command, pending.kind == "players", pending.teamID == teamID {
+            guard pending.bulkInput == input else { return .failure("上一批新增结果尚未确认，请先重试原批次；输入已保留。") }
+            return await retryPending() ? .success(pending.players?.count ?? 0) : .failure(errorMessage ?? "整批修改尚未确认，请重试。")
+        }
+        guard canMutate, teams.contains(where: { $0.id == teamID && $0.role.canEditPlayers }) else {
+            return .failure("当前不能新增共享名单。请先恢复连接、核对权限或处理待确认操作；输入已保留。")
+        }
+        let parsed = BulkRosterParser.parse(input)
+        guard parsed.canImport else { return .failure("请先修正预览中的输入问题，原名单未修改。") }
+        let saved = preservedBulkRosterDrafts
+        let prior = preservedDraftID.flatMap { id in saved.first { $0.teamID == teamID && $0.players?.first?.id == id } }
+            ?? (preservedDraftID == nil ? saved.first { $0.teamID == teamID && $0.bulkInput == input } : nil)
+        if preservedDraftID != nil && prior == nil {
+            return .failure("这份保留批次已处理或已变化，请关闭后重新核对名单；不会重复新增。")
+        }
+        let players: [SharedRosterPlayer]
+        if let prior, prior.kind == "players", prior.teamID == teamID, prior.bulkInput == input, let saved = prior.players {
+            players = saved
+        } else {
+            players = parsed.rows.map { row in
+                SharedRosterPlayer(id: UUID(), sourceID: UUID(), chineseName: row.chineseName,
+                                   englishName: row.englishName, numbers: row.numberText.isEmpty ? [] : [row.numberText], archived: false)
+            }
+        }
+        let change = SharedRosterChange(teamID: teamID, baseRevision: reviewedRevision, kind: "players", players: players, bulkInput: input)
+        return await submit(.roster(change)) ? .success(players.count) : .failure(errorMessage ?? "整批修改尚未确认，输入已保留。")
     }
 
     /// Exactly one durable operation may be outstanding. Input cannot change while its outcome is unknown.
@@ -280,7 +340,11 @@ final class TeamSharingStore: ObservableObject {
                 if !(next.profiles ?? []).contains(where: { $0.id == detail.team.id && $0.revision > detail.team.revision }) {
                     next.profiles = (next.profiles ?? []).filter { $0.id != detail.team.id } + [detail.team]
                 }
-                next.rosterDraft = nil
+                if change.kind == "players" {
+                    next.preservedBulkRosterDrafts?.removeAll {
+                        $0.teamID == change.teamID && $0.players?.map(\.id) == change.players?.map(\.id)
+                    }
+                } else { next.rosterDraft = nil }
             case let .security(command):
                 guard let api = service as? TeamSecurityService else { throw TeamServiceError.message("设备服务暂不可用。") }
                 var fields = command.fields; fields["operationID"] = .uuid(pending.id)
@@ -318,7 +382,10 @@ final class TeamSharingStore: ObservableObject {
         } catch {
             if let problem = error as? TeamServiceError, !problem.isRetryable {
                 var next = state; next.pending = nil
-                if case .roster(let change) = pending.command, !problem.endsAccess { next.rosterDraft = change }
+                if case .roster(let change) = pending.command {
+                    if change.kind == "players" { next.preserveBulkRosterDraft(change) }
+                    else if !problem.endsAccess { next.rosterDraft = change }
+                }
                 if problem.endsAccess { next.teams = []; next.lastInvitation = nil }
                 do { try persist(next) } catch { errorMessage = "结果未能保存，待处理操作已保留，请重试。"; return false }
             }
@@ -340,7 +407,9 @@ final class TeamSharingStore: ObservableObject {
         guard credentialExpired, !isBusy, let client = service as? TeamServiceClient else { return false }
         isBusy = true; defer { isBusy = false }
         do {
-            var next = state; next.pending = nil; next.lastInvitation = nil; next.fixedInvitations = nil; next.pairing = nil; next.outgoingPairing = nil
+            var next = state
+            if case .roster(let draft) = next.pending?.command, draft.kind == "players" { next.preserveBulkRosterDraft(draft) }
+            next.pending = nil; next.lastInvitation = nil; next.fixedInvitations = nil; next.pairing = nil; next.outgoingPairing = nil
             next.recoveryCards = nil; next.lastSecurityReceipt = nil; next.requiresRecoveryReview = true; try persist(next)
             try await client.reconnectWithNewCredential()
             credentialExpired = false; errorMessage = nil; return true

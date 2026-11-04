@@ -14,6 +14,7 @@ private enum AppLaunchArguments {
 @main
 struct BaseballMasterApp: App {
     @StateObject private var store: GameStore
+    @StateObject private var launchScreen: LaunchScreenController
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -48,13 +49,15 @@ struct BaseballMasterApp: App {
         initialStore.runUpgradeReleaseAuditIfRequested()
         #endif
         _store = StateObject(wrappedValue: initialStore)
+        _launchScreen = StateObject(wrappedValue: LaunchScreenController.forApp(arguments: AppLaunchArguments.values))
     }
 
     var body: some Scene {
         WindowGroup {
-            LaunchRouterView()
+            AppLaunchContainer(controller: launchScreen, requiresDataRecovery: store.requiresDataRecovery) { LaunchRouterView() }
                 .environmentObject(store)
                 .onOpenURL { url in
+                    launchScreen.dismiss()
                     if let token = DevicePairingLink.token(from: url.absoluteString) {
                         store.selectedTab = 1
                         store.teamSharing.incomingPairing = DevicePairingLink.url(token).absoluteString
@@ -66,6 +69,7 @@ struct BaseballMasterApp: App {
                 }
                 .task { store.liveBroadcasts.setForeground(true); store.sharedMatches.setForeground(true); store.teamSharing.setForeground(true) }
                 .onChange(of: scenePhase) { phase in
+                    if phase == .background { launchScreen.dismiss() }
                     store.liveBroadcasts.setForeground(phase == .active)
                     store.sharedMatches.setForeground(phase == .active)
                     if phase != .inactive { store.teamSharing.setForeground(phase == .active) }
@@ -144,6 +148,8 @@ struct LaunchRouterView: View {
                 V11ScorekeepingFixture(mode: .standard, showsHome: true, openingPreview: true)
             } else if arguments.contains("--v22-coach-opening-preview") {
                 V11ScorekeepingFixture(mode: .coachPitch, showsHome: true, openingPreview: true)
+            } else if arguments.contains("--v312-player-contacts-preview") {
+                StatisticsPreviewFixtureView(contactPreview: true)
             } else if arguments.contains("--v22-statistics-preview") {
                 StatisticsPreviewFixtureView(multipleGames: true)
             } else if arguments.contains("--statistics-preview") {
@@ -274,6 +280,7 @@ private struct GamePosterFixtureView: View {
 
 private struct StatisticsPreviewFixtureView: View {
     var multipleGames = false
+    var contactPreview = false
     @EnvironmentObject private var store: GameStore
     @State private var configured = false
 
@@ -283,6 +290,17 @@ private struct StatisticsPreviewFixtureView: View {
                 guard !configured, let opponent = store.opponentTeams.first else { return }
                 configured = true
                 let lineup = Array(store.currentTeam!.players.prefix(9))
+                if contactPreview {
+                    for index in 0..<3 {
+                        store.startNewGame(opponent: opponent, isHome: false, innings: 6, lineup: lineup)
+                        var observation = BattedBallObservation(type: index == 0 ? .line : .fly)
+                        if index == 0 { observation.selectPoint(CGPoint(x: 0.27, y: 0.29)) }
+                        if index == 1 { observation.selectRegion(.right) }
+                        _ = store.applyPlay(.single, observation: observation)
+                        store.finishGame()
+                    }
+                    return
+                }
                 store.startNewGame(opponent: opponent, isHome: false, innings: 6, lineup: lineup)
                 _ = store.applyPlay(.single)
                 _ = store.applyPlay(.homeRun)

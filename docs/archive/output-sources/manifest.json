@@ -1,0 +1,372 @@
+{
+  "date": "2026-10-22",
+  "purpose": "Historical editable source snapshots; original delivery/export copies remain unmodified. Current render commands are documented in docs/CURRENT.md.",
+  "files": [
+    {
+      "originalOutput": "marketing/3.0.1/xiaohongshu-2026-10-19/source/render.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/3.0.1/xiaohongshu-2026-10-19/source/render.cjs",
+      "sha256": "048d3b9e8962490dab401517f484ecb8047c765339bf28edab49c00068d7e197",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/3.0.1/xiaohongshu-2026-10-19-v2/source/render.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/3.0.1/xiaohongshu-2026-10-19-v2/source/render.cjs",
+      "sha256": "2559254ed2be453e52f51a72c71e258d904fa04da6aab1721694c139acf7472f",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/3.1.0/xiaohongshu/source/render.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/3.1.0/xiaohongshu/source/render.cjs",
+      "sha256": "238038947008d4be02203d2e11dc9a5b10b2295694fdc3bd40fdb020668a90dc",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/3.1.0/xiaohongshu-2026-10-22-v2/source/render.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/3.1.0/xiaohongshu-2026-10-22-v2/source/render.cjs",
+      "sha256": "0ea86a2c642016206bfecbbae3c484d1572ef70479d6ddb2eae95936d21195ba",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/3.1.0/xiaohongshu-2026-10-22-v2/source/style.css",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/3.1.0/xiaohongshu-2026-10-22-v2/source/style.css",
+      "sha256": "d5c6fd3f849e9f51889afd4cab41d6ab4ef99e96a2d786e010203ebac2af10e9",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/3.1.0/xiaohongshu-2026-10-22-v3/source/render.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/3.1.0/xiaohongshu-2026-10-22-v3/source/render.cjs",
+      "sha256": "7bcf2de20b9cfe23b499d1da9ca9944a4aea94ffaa4652c8cfbda78ead3bbf12",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/douyin/2026-09-29/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/douyin/2026-09-29/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sha256": "5f5d6febca7b38a1e7690a9626fc8a5b9fd49c67fdc5ea3a228526b2edfece0f",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/douyin/2026-09-29/排版源文件/01-无需科学上网.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/douyin/2026-09-29/排版源文件/01-无需科学上网.svg",
+      "sha256": "0f2c8d4c374437051c24556ce21750b0a9826a9504285fe112569436b89ea36b",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/douyin/2026-09-29/排版源文件/02-看到什么记录什么.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/douyin/2026-09-29/排版源文件/02-看到什么记录什么.svg",
+      "sha256": "1c5b1ab3408e4db6d43ac77e82eeb0379427e21875f53f17a35d9d171a130473",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/douyin/2026-09-29/排版源文件/03-教练投打抛打适用.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/douyin/2026-09-29/排版源文件/03-教练投打抛打适用.svg",
+      "sha256": "322c40df9b3a2bfa3e088e3e09f8591224eb4f453611fbb1086170756852e512",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/douyin/2026-09-29/排版源文件/04-球数局数时间提醒.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/douyin/2026-09-29/排版源文件/04-球数局数时间提醒.svg",
+      "sha256": "8d2cdc6125392599c1d32369aadddfb845bb61cc5f3eb9ef8d2598ee5c2675de",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/douyin/2026-09-29/排版源文件/05-打席报告与规则备查.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/douyin/2026-09-29/排版源文件/05-打席报告与规则备查.svg",
+      "sha256": "aa22da9f36adf7bc850a78cc877ae785b095c845a7aca156855d04c518f7acd3",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/douyin/2026-09-29/排版源文件/export.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/douyin/2026-09-29/排版源文件/export.cjs",
+      "sha256": "5a98b30b0a59904a437057e280ad7e85999cdce20376c9f343100a038f471cd1",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/screenshots/2026-09-29/Logo/BaseballMaster-组合Logo-深绿底.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/screenshots/2026-09-29/Logo/BaseballMaster-组合Logo-深绿底.svg",
+      "sha256": "09f53db1d5dd54e1b4ef513bdd72148c5e3333f00327a0dea467877e8e874321",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/screenshots/2026-09-29/Logo/BaseballMaster-组合Logo-透明底.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/screenshots/2026-09-29/Logo/BaseballMaster-组合Logo-透明底.svg",
+      "sha256": "dd073e159dd6bf84fcaa77a57a9e961b1a4b6ff7e6b2310603860ee960027ce4",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29/排版源文件/01-无需科学上网.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29/排版源文件/01-无需科学上网.svg",
+      "sha256": "b6fb4b5027bd80169a55699b62cc2f1ebcad87bd2241582426f0e346b1ad6eb0",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29/排版源文件/02-看到什么记录什么.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29/排版源文件/02-看到什么记录什么.svg",
+      "sha256": "c67315ce2374aa7227318398b3972a9230be205b84d71b77cf53acce2daf66d5",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29/排版源文件/03-教练投打抛打适用.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29/排版源文件/03-教练投打抛打适用.svg",
+      "sha256": "88ee05c876e4cedbf6317d6366c9a2accc84287c3ecd487aef339421ecf51408",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29/排版源文件/04-球数局数时间提醒.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29/排版源文件/04-球数局数时间提醒.svg",
+      "sha256": "0e244dfaa645dfc8042adb24f609081af1eafa8c1836217f7422f4e73e8de706",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29/排版源文件/05-打席报告与规则备查.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29/排版源文件/05-打席报告与规则备查.svg",
+      "sha256": "8efb695fb80b10d37a62e25822cc24e34a93c4ba261b04e06cbe0591b464e6b8",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29/排版源文件/export.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29/排版源文件/export.cjs",
+      "sha256": "4659d28d5d9f854742887f523a9e2e2222da954ab62cf4fbafe2a8341c819d49",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v2/排版源文件/01-无需科学上网.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v2/排版源文件/01-无需科学上网.svg",
+      "sha256": "d0fd34ca0d6137038613879ad823214ada624bb452af9155a7c6a215d755293f",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v2/排版源文件/02-看到什么记录什么.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v2/排版源文件/02-看到什么记录什么.svg",
+      "sha256": "5a8a7cbb8725bba7fd1c5e87886db3fc11c900e63a9eae94acae5c156f82c29b",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v2/排版源文件/03-教练投打抛打适用.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v2/排版源文件/03-教练投打抛打适用.svg",
+      "sha256": "b2cb0822760ffcb3fa80e1d20545c421772d6cc99995e6d11eef512b9f2be3e2",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v2/排版源文件/04-球数局数时间提醒.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v2/排版源文件/04-球数局数时间提醒.svg",
+      "sha256": "82a1c3e94a954b58fe54601ad7e76f166bb87fd8d15627a84aa15cf06968793e",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v2/排版源文件/05-打席报告与规则备查.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v2/排版源文件/05-打席报告与规则备查.svg",
+      "sha256": "35a4ffbb26fac5dea70e74fae0c87424e457c42398ca6c81a17d2c257270a0f0",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v2/排版源文件/export.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v2/排版源文件/export.cjs",
+      "sha256": "4659d28d5d9f854742887f523a9e2e2222da954ab62cf4fbafe2a8341c819d49",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v3/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v3/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sha256": "7b7fcf43e4c6f853281b2abf68cd5b3f364656da02dab8cc41149e6a8b2d7483",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v3/排版源文件/01-无需科学上网.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v3/排版源文件/01-无需科学上网.svg",
+      "sha256": "fec0f79f9ffed169622321f6287f3bbb6aa01e15cee478e83750935c724752ad",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v3/排版源文件/02-看到什么记录什么.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v3/排版源文件/02-看到什么记录什么.svg",
+      "sha256": "4d7e56f3261092f5e4934edc832c069bb84681401dd2f2b262a4170e0ac0ae6d",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v3/排版源文件/03-教练投打抛打适用.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v3/排版源文件/03-教练投打抛打适用.svg",
+      "sha256": "f3b7177b2076d4c3fe16f3e61ce67c58953cfd7417e1c0e0d6ffb9486805cbb2",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v3/排版源文件/04-球数局数时间提醒.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v3/排版源文件/04-球数局数时间提醒.svg",
+      "sha256": "4f33138e5e06ac3395892a341f31d224a1d41af255f7e91916b3c7b0f8b243c1",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v3/排版源文件/05-打席报告与规则备查.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v3/排版源文件/05-打席报告与规则备查.svg",
+      "sha256": "d3b49531db28e4c80fafd42d13befb484e3ce9ea6c43b49bcc680fcfa1d997cd",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v3/排版源文件/export.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v3/排版源文件/export.cjs",
+      "sha256": "356fd8548cb3b5d381d639fedec08a13702a2b3007b48cf165f2e238e26e0e9a",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v4/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v4/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sha256": "e69bcfe7853a61d86c89d673f302ae1caadca3f93b8b6de6d1b89b2ddeb22ecc",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v4/排版源文件/01-无需科学上网.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v4/排版源文件/01-无需科学上网.svg",
+      "sha256": "38d20985d6069fc50c41f72d69bc4f9ac153cfbff35d1a4bc2341df6ab717d1c",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v4/排版源文件/02-看到什么记录什么.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v4/排版源文件/02-看到什么记录什么.svg",
+      "sha256": "c68d43bdda62cc81393e41c4de875500490aa7dd48f1a7227b19ae5c85571221",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v4/排版源文件/03-教练投打抛打适用.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v4/排版源文件/03-教练投打抛打适用.svg",
+      "sha256": "d2f6acb0b627af9b8ae890f60dad2dbcf885808ed41dcfb5df95e03ad91f2c87",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v4/排版源文件/04-球数局数时间提醒.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v4/排版源文件/04-球数局数时间提醒.svg",
+      "sha256": "01254bf33c09b39bde1adbb37b3d0d68319ff9067aed23cc28464df3a061e1d8",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v4/排版源文件/05-打席报告与规则备查.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v4/排版源文件/05-打席报告与规则备查.svg",
+      "sha256": "3a75d7eb8664f8da42e2a63b12ccd2d738f6dbce0f626090c44d12ab63db28cf",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v4/排版源文件/export.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v4/排版源文件/export.cjs",
+      "sha256": "356fd8548cb3b5d381d639fedec08a13702a2b3007b48cf165f2e238e26e0e9a",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v5/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v5/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sha256": "ad436fe7ac38a95f410fb3590ce1fee5fccc8962d4ab51520e9f9bc6e4e29bf6",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v5/排版源文件/01-无需科学上网.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v5/排版源文件/01-无需科学上网.svg",
+      "sha256": "e2591c227bd46f1d306bab05762e92832126aca2dab95ab8eaf44089bc899852",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v5/排版源文件/02-看到什么记录什么.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v5/排版源文件/02-看到什么记录什么.svg",
+      "sha256": "eead382b6ea3cad44db41e57b6cf82348bf7a06e401e27112f1388c8caee67d3",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v5/排版源文件/03-教练投打抛打适用.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v5/排版源文件/03-教练投打抛打适用.svg",
+      "sha256": "a8545e7e3302b320f6ec2dfa5f565ddc7f96fa42b6cf9e1f89340e40a198736a",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v5/排版源文件/04-球数局数时间提醒.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v5/排版源文件/04-球数局数时间提醒.svg",
+      "sha256": "aac4e0f602ee6f8572ff91cc0106e9192e2b6cabb60c862e22218b8dc1e10833",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v5/排版源文件/05-打席报告与规则备查.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v5/排版源文件/05-打席报告与规则备查.svg",
+      "sha256": "48bc3f6992da771ed9a011254d44d38649f33651716cc27863de6854f80669a2",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v5/排版源文件/export.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v5/排版源文件/export.cjs",
+      "sha256": "356fd8548cb3b5d381d639fedec08a13702a2b3007b48cf165f2e238e26e0e9a",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v6/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v6/排版源文件/00-封面-家长记分别再手忙脚乱.svg",
+      "sha256": "4025b5f622a1676bc76d30a1e3041ce83245756f38167aaa4bc629ce7a617e86",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v6/排版源文件/01-无需科学上网.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v6/排版源文件/01-无需科学上网.svg",
+      "sha256": "1a69f8be3ea2a20f949b8a2d00ed9ef50bab9effcf30f411c4282ab355b02c9c",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v6/排版源文件/02-看到什么记录什么.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v6/排版源文件/02-看到什么记录什么.svg",
+      "sha256": "99a2473d379bd25d51a4a88fb6420e23f144fee9eae2439edf44dcf2ccc72fa1",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v6/排版源文件/03-教练投打抛打适用.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v6/排版源文件/03-教练投打抛打适用.svg",
+      "sha256": "8870389a8d55f21a4eb8ce1acca85c906b9bacb91b09f8a5d61d811ea819884d",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v6/排版源文件/04-球数局数时间提醒.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v6/排版源文件/04-球数局数时间提醒.svg",
+      "sha256": "1f19b50db8e3fa48658aa909020b4913ca0d87c90a339ef7c900933cd70f9e11",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v6/排版源文件/05-打席报告与规则备查.svg",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v6/排版源文件/05-打席报告与规则备查.svg",
+      "sha256": "0f572d64a0365e9841122e25c83961094c1e1813a646dc86a338ba4c29557479",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "marketing/xiaohongshu/2026-09-29-v6/排版源文件/export.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/marketing/xiaohongshu/2026-09-29-v6/排版源文件/export.cjs",
+      "sha256": "356fd8548cb3b5d381d639fedec08a13702a2b3007b48cf165f2e238e26e0e9a",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "releases/2.1/app-store/source/capture-live.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/releases/2.1/app-store/source/capture-live.cjs",
+      "sha256": "7d3feb0bbb15d596dacfe9a6cb35433c55b890b5065a752fb574a5abb1f0bf36",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "releases/2.1/app-store/source/render.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/releases/2.1/app-store/source/render.cjs",
+      "sha256": "3d8583b6932ad9f1adeb124cc41b44bd8cd0b858947b884ec6a707a8d6491417",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "samples/batted-ball-interaction/batted-ball-flow.html",
+      "sourceSnapshot": "docs/archive/output-sources/samples/batted-ball-interaction/batted-ball-flow.html",
+      "sha256": "c7d9fb20018b9211cb13191c830eda54bea251672585804f7fe44ed5a416896f",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "samples/batted-ball-interaction/current/render-current.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/samples/batted-ball-interaction/current/render-current.cjs",
+      "sha256": "ae9ddce1e54ff1c6b16724a806be97c72b05d6149a2f9b35ef643579126df72d",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "samples/batted-ball-interaction/make-overview.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/samples/batted-ball-interaction/make-overview.cjs",
+      "sha256": "2588b13a73915beb70cb7c1e11d9318ab22a4f81f181bd8e5287a1eecdacd91c",
+      "status": "historical_snapshot"
+    },
+    {
+      "originalOutput": "samples/batted-ball-interaction/render-demo.cjs",
+      "sourceSnapshot": "docs/archive/output-sources/samples/batted-ball-interaction/render-demo.cjs",
+      "sha256": "9a003ab351b3100c11f22b0c0c294c340ce9afdb6cf0d64fcda6c05f32451033",
+      "status": "historical_snapshot"
+    }
+  ]
+}

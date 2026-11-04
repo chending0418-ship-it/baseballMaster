@@ -101,6 +101,19 @@ struct PendingMatchOperation: Codable {
 struct MatchConflict: Codable, Identifiable {
     let id: UUID; var localID: UUID; let savedAt: Date; var game: StoredGame; let reason: String
 }
+struct PostgameDocumentBaseline: Codable {
+    let gameID: UUID
+    let digest: String
+    let writerEpoch: Int
+
+    init(_ match: SharedMatch) {
+        gameID = match.id; digest = match.digest; writerEpoch = match.writerEpoch
+    }
+
+    func matches(_ match: SharedMatch) -> Bool {
+        gameID == match.id && digest == match.digest && writerEpoch == match.writerEpoch
+    }
+}
 struct SharedMatchLocalState: Codable {
     var matches: [SharedMatch] = []
     var pending: [PendingMatchOperation] = []
@@ -119,6 +132,9 @@ struct SharedMatchLocalState: Codable {
     var isolatedCopiesVersion: Int? = nil
     var legacyRestoreSourceIDs: [UUID]? = nil
     var publishedSources: [String: UUID]? = nil
+    var postgameServerRevisions: [String: Int]? = nil
+    var postgameDocumentBaselines: [String: PostgameDocumentBaseline]? = nil
+    var heldOperations: [PendingMatchOperation]? = nil
 }
 protocol SharedMatchStorage { func load() throws -> SharedMatchLocalState; func save(_ state: SharedMatchLocalState) throws }
 struct SharedMatchFile: SharedMatchStorage {
@@ -165,7 +181,42 @@ struct SharedMatchFile: SharedMatchStorage {
             storage: SharedMatchFile(url: configuration.url.deletingLastPathComponent().appendingPathComponent(configuration.url.lastPathComponent + ".matches"), vault: configuration.vault))
     }
     private func persist(_ next: SharedMatchLocalState) throws { try storage.save(next); state = next; store?.objectWillChange.send() }
+    /// Old continuous-scorekeeping mutations are evidence to review, never upload consent.
+    private func holdLegacyWrites() throws {
+        let legacy = state.pending.filter {
+            ["create", "update", "live", "live-heartbeat"].contains($0.kind) || $0.kind.hasPrefix("handoff/")
+        }
+        var next = state
+        for match in state.matches {
+            guard let localID = match.payload?.id, let local = store?.games.first(where: { $0.id == localID }) else { continue }
+            let dirty = state.acknowledgedRevisions[localID.uuidString] != (local.revision ?? 0)
+            guard dirty || legacy.contains(where: { $0.localID == localID }) else { continue }
+            preserveDraft(localID, reason: "旧共享记分已改为只读；未确认的本机修改保留待核对", into: &next)
+        }
+        for pending in legacy {
+            preserveDraft(pending.localID, reason: "旧共享上传已暂停；请从本机完整终场记录重新核对", into: &next)
+        }
+        let retained = Set((next.heldOperations ?? []).map(\.id))
+        let additions = legacy.filter { !retained.contains($0.id) }
+        if !additions.isEmpty { next.heldOperations = (next.heldOperations ?? []) + additions }
+        let held = Set(legacy.map(\.id))
+        next.pending.removeAll { held.contains($0.id) }
+        if !legacy.isEmpty || next.conflicts.count != state.conflicts.count { try persist(next) }
+    }
     private func migrateIndependentCopies() throws {
+        // This must also run for devices which completed the earlier ID migration.
+        try holdLegacyWrites()
+        // Older clients only remembered a revision. Upgrade from an exact acknowledged
+        // cached document, never from a newer document whose content was not confirmed.
+        var baselines = state
+        for (key, gameID) in state.publishedSources ?? [:] {
+            guard baselines.postgameDocumentBaselines?[key] == nil,
+                  let remote = state.matches.first(where: { $0.id == gameID && !$0.deleted }),
+                  state.postgameServerRevisions?[key] == remote.serverRevision else { continue }
+            if baselines.postgameDocumentBaselines == nil { baselines.postgameDocumentBaselines = [:] }
+            baselines.postgameDocumentBaselines?[key] = PostgameDocumentBaseline(remote)
+        }
+        if baselines.postgameDocumentBaselines?.count != state.postgameDocumentBaselines?.count { try persist(baselines) }
         guard state.isolatedCopiesVersion != 1 else { isolationReady = true; return }
         var next = state
         var replacements: [UUID: UUID] = [:]
@@ -197,7 +248,7 @@ struct SharedMatchFile: SharedMatchStorage {
     }
     func match(localID: UUID) -> SharedMatch? { state.matches.first { $0.payload?.id == localID } }
     func match(id: UUID) -> SharedMatch? { state.matches.first { $0.id == id } }
-    func isShared(_ localID: UUID) -> Bool { match(localID: localID) != nil || state.pending.contains { $0.localID == localID } || store?.games.first(where: { $0.id == localID })?.sharedGameID != nil }
+    func isShared(_ localID: UUID) -> Bool { match(localID: localID) != nil || state.pending.contains { $0.localID == localID && !$0.kind.hasPrefix("postgame") } || store?.games.first(where: { $0.id == localID })?.sharedGameID != nil }
     func canEdit(_ localID: UUID) -> Bool {
         guard isShared(localID) else { return true }
         guard isolationReady else { return false }
@@ -214,7 +265,7 @@ struct SharedMatchFile: SharedMatchStorage {
         guard let match = match(localID: localID) else { return "权限待核对" }
         if match.handoff != nil { return "交接中 · 暂停记分" }
         if let game = store?.games.first(where: { $0.id == localID }), canEdit(localID), state.acknowledgedRevisions[localID.uuidString] != (game.revision ?? 0) { return "待同步" }
-        return "已同步至 " + Date(timeIntervalSince1970: match.updatedAt / 1000).formatted(date: .omitted, time: .shortened) + (match.canWrite ? " · 本机记分" : " · 只读")
+        return "已同步至 " + Date(timeIntervalSince1970: match.updatedAt / 1000).formatted(date: .omitted, time: .shortened) + " · 球队档案（只读）"
     }
     func setForeground(_ active: Bool) {
         ticker?.cancel(); ticker = nil
@@ -236,9 +287,8 @@ struct SharedMatchFile: SharedMatchStorage {
         }
     }
     func saved(_ game: StoredGame) {
-        guard isShared(game.id), canEdit(game.id) else { return }
-        do { try stageUpdate(game) } catch { message = "比赛已保存到本机，待同步队列未能保存。请检查存储空间后重试。" }
-        requestSync()
+        // Ordinary local saves (including finish and later corrections) are not consent
+        // to submit a team archive. Only publish queues a confirmed final snapshot.
     }
     private func documentFields(_ game: StoredGame) throws -> [String: MatchJSON] {
         var clean = game
@@ -246,6 +296,8 @@ struct SharedMatchFile: SharedMatchStorage {
         clean.sharedTeamID = nil; clean.sharedGameID = nil
         clean.sharedPlayerLinks = nil; clean.historySourceID = nil
         clean.publicationState = nil; clean.pendingPublicationRevisions = nil
+        clean.postgameUploadTeamID = nil
+        clean.postgameTargetConfigured = nil
         clean.minimumWriterFormat = 2
         return ["formatVersion": .number(2), "payload": try .encode(clean), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(clean).data())]
     }
@@ -255,28 +307,79 @@ struct SharedMatchFile: SharedMatchStorage {
         return PendingMatchOperation(id: id, localID: localID, teamID: teamID, gameID: gameID, path: path, method: method,
             body: .object(body), kind: kind, sentLocalRevision: revision, token: token)
     }
-    private func stageUpdate(_ game: StoredGame) throws {
-        guard let match = match(localID: game.id), canEdit(game.id), !state.pending.contains(where: { $0.localID == game.id }),
-              state.acknowledgedRevisions[game.id.uuidString] != (game.revision ?? 0) else { return }
-        var fields = try documentFields(game); fields["baseRevision"] = .number(Double(match.serverRevision)); fields["writerEpoch"] = .number(Double(match.writerEpoch))
-        var next = state
-        next.pending.append(operation(localID: game.id, teamID: match.teamID, gameID: match.id, path: TeamServiceClient.matchPath(match.teamID,match.id),
-            method: "PUT", kind: "update", fields: fields, revision: game.revision ?? 0))
-        try persist(next)
+    func pendingPostgameUploads(sourceID: UUID) -> [PendingMatchOperation] {
+        state.pending.filter { $0.localID == sourceID && $0.kind.hasPrefix("postgame") }
     }
-    func publish(_ game: StoredGame, teamID: UUID) async {
-        guard !busy else { message = "正在同步其他比赛，本机记录已保留，请稍后从比赛设置或结束页面重试共享。"; return }
-        guard loaded, !state.requiresRecoveryReview else { message = "共享资料需要先读取或核对，本机记录已保留，完成核对后可重试共享。"; return }
-        guard !isShared(game.id) else { message = "这场比赛已在共享球队中，无需再次共享。"; return }
+
+    func postgameStatus(_ game: StoredGame, teamID: UUID) -> String {
+        if state.pending.contains(where: { $0.localID == game.id && $0.teamID == teamID && $0.kind.hasPrefix("postgame") }) {
+            return busy ? "本机已保存，正在上传到球队" : "本机已保存，待上传到球队"
+        }
+        let key = "\(teamID):\(game.id)"
+        if state.acknowledgedRevisions["postgame:" + key] == (game.revision ?? 0) { return "完整记录已上传，本机原件保留" }
+        if state.heldOperations?.contains(where: { $0.localID == game.id && $0.teamID == teamID }) == true { return "本机已保存，上传权限有变化，待核对" }
+        return publishedMatch(sourceID: game.id, teamID: teamID) == nil ? "本机已保存，尚未上传" : "本机已保存，可核对后更新球队档案"
+    }
+
+    /// Only this explicitly confirmed action queues a complete final snapshot.
+    func publish(_ game: StoredGame, teamID: UUID, reviewedServerRevision: Int? = nil) async {
+        guard loaded, !state.requiresRecoveryReview, store?.teamSharing.state.requiresRecoveryReview != true else {
+            message = "共享资料需要先读取或核对，本机记录已保留。"; return
+        }
+        guard let current = store?.games.first(where: { $0.id == game.id }), current == game,
+              current.status == .completed, current.state.isFinal, current.sharedGameID == nil, !isShared(game.id) else {
+            message = "请先结束并保存本机比赛，再确认上传。记录若已更改，请重新核对。"; return
+        }
+        guard !busy else { message = "正在处理其他请求，本机记录已保留，请稍后确认上传。"; return }
+        let uploads = pendingPostgameUploads(sourceID: game.id)
+        guard uploads.allSatisfy({ $0.teamID == teamID }) else {
+            message = "这场比赛已有确认过的上传等待核对，不能在结果未明时改投另一支球队。原请求和本机原件均已保留。"
+            return
+        }
+        if let pending = uploads.first {
+            do {
+                guard case .object(let queuedFields) = pending.body, let queuedPayload = queuedFields["payload"],
+                      let proposedPayload = try documentFields(game)["payload"] else {
+                    throw TeamServiceError.message("原上传快照无法读取，已保留请求和本机记录，请先核对。")
+                }
+                let queued = try JSONDecoder().decode(StoredGame.self, from: JSONEncoder().encode(queuedPayload))
+                let proposed = try JSONDecoder().decode(StoredGame.self, from: JSONEncoder().encode(proposedPayload))
+                guard queued == proposed else {
+                    message = "此前确认的终场版本仍待上传。本机已有新修改，请先核对旧上传结果，再重新确认上传最新版；原请求和本机原件均已保留。"
+                    return
+                }
+                await synchronize()
+            } catch { report(error) }
+            return
+        }
+        let key = "\(teamID):\(game.id)"
+        if state.acknowledgedRevisions["postgame:" + key] == (game.revision ?? 0) {
+            message = "这个版本已上传，本机原件仍保留。"; return
+        }
         do {
             try migrateIndependentCopies()
-            if publishedMatch(sourceID: game.id, teamID: teamID) != nil { message = "这场比赛已经共享。要向成员更新记录，请从共享球队中打开这场比赛。"; return }
-            if state.pending.contains(where: { $0.teamID == teamID && $0.kind == "create" }) { message = "请先同步待共享比赛。"; return }
+            var fields = try documentFields(game)
+            let remote = publishedMatch(sourceID: game.id, teamID: teamID)
+            if let remote {
+                // Never overwrite an independently changed official document or an active match.
+                guard reviewedServerRevision == remote.serverRevision,
+                      !remote.deleted, remote.canWrite, remote.handoff == nil,
+                      remote.writerDeviceID == state.deviceID,
+                      remote.payload?.status == .scheduled || state.postgameDocumentBaselines?[key]?.matches(remote) == true,
+                      !state.pending.contains(where: { $0.gameID == remote.id }),
+                      !state.conflicts.contains(where: { $0.localID == remote.id }) else {
+                    throw TeamServiceError.message("球队记录或权限已有变化，请先核对；本机原件不会覆盖它。")
+                }
+                fields["baseRevision"] = .number(Double(remote.serverRevision))
+                fields["writerEpoch"] = .number(Double(remote.writerEpoch))
+            }
             var next = state
-            next.originalLocalGames = (next.originalLocalGames ?? []) + [game]
-            next.pending.append(operation(localID: UUID(), teamID: teamID, gameID: nil, path: "teams/\(teamID.uuidString.lowercased())/games",
-                method: "POST", kind: "create", fields: try documentFields(game), revision: game.revision ?? 0))
-            try persist(next); await synchronize()
+            next.pending.append(operation(localID: game.id, teamID: teamID, gameID: remote?.id,
+                path: remote.map { TeamServiceClient.matchPath(teamID, $0.id) } ?? "teams/\(teamID.uuidString.lowercased())/games",
+                method: remote == nil ? "POST" : "PUT", kind: remote == nil ? "postgameCreate" : "postgameUpdate",
+                fields: fields, revision: game.revision ?? 0))
+            try persist(next)
+            await synchronize()
         } catch { report(error) }
     }
     func synchronize(teamID: UUID? = nil) async {
@@ -295,12 +398,18 @@ struct SharedMatchFile: SharedMatchStorage {
                 if let old = next.teamAccessEpochs?[team.id.uuidString], old != (team.accessEpoch ?? 1) {
                     for match in next.matches where match.teamID == team.id { preserveDraft(match.payload?.id, reason: "球队管理权恢复后需要重新核对", into: &next) }
                     for pending in next.pending where pending.teamID == team.id { preserveDraft(pending.localID, reason: "球队管理权恢复前的未同步记录", into: &next) }
+                    next.heldOperations = (next.heldOperations ?? []) + next.pending.filter { $0.teamID == team.id }
                     next.pending.removeAll { $0.teamID == team.id }; next.cursors.removeValue(forKey: team.id.uuidString)
                     next.lastInvitationURL = nil
                 }
             }
             next.teamAccessEpochs = Dictionary(uniqueKeysWithValues: teams.teams.map { ($0.id.uuidString, $0.accessEpoch ?? 1) })
             let accessible = Set(teams.teams.map(\.id))
+            for pending in next.pending where !accessible.contains(pending.teamID) {
+                preserveDraft(pending.localID, reason: "球队访问权限已失效，本机原件和上传请求保留待核对", into: &next)
+                next.heldOperations = (next.heldOperations ?? []) + [pending]
+            }
+            next.pending.removeAll { !accessible.contains($0.teamID) }
             for old in next.matches where !accessible.contains(old.teamID) {
                 preserveDraft(old.payload?.id, reason: "球队访问权限已失效", into: &next)
                 next.pending.removeAll { $0.gameID == old.id }
@@ -317,7 +426,6 @@ struct SharedMatchFile: SharedMatchStorage {
             for remote in state.matches where !state.pending.contains(where: { $0.gameID == remote.id }) {
                 if remote.deleted || remote.payload.map({ !canEdit($0.id) }) == true { try install(remote) }
             }
-            for game in store?.games ?? [] { try stageUpdate(game) }
             for pending in state.pending {
                 guard accessible.contains(pending.teamID) else { continue }
                 do {
@@ -326,26 +434,46 @@ struct SharedMatchFile: SharedMatchStorage {
                     if let known = pending.gameID { gameID = known }
                     else { gameID = try JSONDecoder().decode(SharedMatch.self, from: JSONEncoder().encode(result)).id }
                     let remote = try await fetchMatch(teamID: pending.teamID, gameID: gameID)
+                    if pending.kind.hasPrefix("postgame") {
+                        guard case .object(let fields) = pending.body, let payload = fields["payload"] else { throw TeamServiceError.message("上传快照无法读取，本机原件保留。") }
+                        let expected = try JSONDecoder().decode(StoredGame.self, from: JSONEncoder().encode(payload))
+                        var received = remote.payload
+                        received?.id = remote.wireLocalID ?? remote.payload?.id ?? remote.id
+                        guard received == expected else { throw TeamServiceError.response(409, "球队记录在上传后已有变化，请核对；本机原件仍保留。") }
+                    }
                     var completed = state
+                    if pending.kind.hasPrefix("postgame") {
+                        let key = "\(pending.teamID):\(pending.localID)"
+                        if completed.publishedSources == nil { completed.publishedSources = [:] }
+                        if completed.postgameServerRevisions == nil { completed.postgameServerRevisions = [:] }
+                        if completed.postgameDocumentBaselines == nil { completed.postgameDocumentBaselines = [:] }
+                        completed.publishedSources?[key] = remote.id
+                        completed.postgameServerRevisions?[key] = remote.serverRevision
+                        completed.postgameDocumentBaselines?[key] = PostgameDocumentBaseline(remote)
+                        completed.acknowledgedRevisions["postgame:" + key] = pending.sentLocalRevision
+                    }
                     if pending.kind == "create", let sourceID = remote.wireLocalID {
                         if completed.publishedSources == nil { completed.publishedSources = [:] }
                         completed.publishedSources?["\(pending.teamID):\(sourceID)"] = remote.id
                         completed.acknowledgedRevisions[remote.id.uuidString] = remote.payload?.revision ?? 0
                     }
-                    if let revision = pending.sentLocalRevision { completed.acknowledgedRevisions[pending.localID.uuidString] = revision }
+                    if let revision = pending.sentLocalRevision, !pending.kind.hasPrefix("postgame") { completed.acknowledgedRevisions[pending.localID.uuidString] = revision }
                     completed.pending.removeAll { $0.id == pending.id }
                     if pending.kind == "drafts", case .object(let fields) = pending.body,
                        case .string(let rawID) = fields["conflictID"], let conflictID = UUID(uuidString: rawID) {
                         completed.submittedConflictIDs = Array(Set((completed.submittedConflictIDs ?? []) + [conflictID]))
                     }
                     if let token = pending.token { completed.lastInvitationURL = remote.viewURL.absoluteString + "/" + token }
-                    try accept(remote, into: &completed, preserveNewerLocal: pending.sentLocalRevision != nil)
+                    try accept(remote, into: &completed, preserveNewerLocal: pending.sentLocalRevision != nil && !pending.kind.hasPrefix("postgame"))
                     try persist(completed)
-                    try install(remote, preserveNewerLocal: pending.sentLocalRevision != nil)
+                    try install(remote, preserveNewerLocal: pending.sentLocalRevision != nil && !pending.kind.hasPrefix("postgame"))
                 } catch let e as TeamServiceError {
                     if case .response(let status, _) = e, [400,401,403,404,409,410,413,426].contains(status) {
                         var rejected = state
                         preserveDraft(pending.localID, reason: e.localizedDescription, into: &rejected)
+                        if !(rejected.heldOperations ?? []).contains(where: { $0.id == pending.id }) {
+                            rejected.heldOperations = (rejected.heldOperations ?? []) + [pending]
+                        }
                         rejected.pending.removeAll { $0.id == pending.id }; try persist(rejected)
                     }
                     throw e
@@ -353,21 +481,15 @@ struct SharedMatchFile: SharedMatchStorage {
             }
             let targets = teamID.map { [$0] } ?? teams.teams.map(\.id)
             for team in targets where accessible.contains(team) { try await pull(team) }
-            for match in state.matches where match.writerDeviceID == device && match.writerActive && match.liveEnabled && match.payload?.state.isFinal == false {
-                let result = try await service.matchCommand(path: TeamServiceClient.matchPath(match.teamID, match.id) + "/live-heartbeat", method: "POST", body: .object([:]))
-                var refreshed = try JSONDecoder().decode(SharedMatch.self, from: JSONEncoder().encode(result))
-                refreshed.payload = match.payload; refreshed.wireLocalID = match.wireLocalID
-                var next = state; try accept(refreshed, into: &next, preserveNewerLocal: true); try persist(next)
-            }
-            // A second edit made during an in-flight upload becomes a new operation based on its acknowledged revision.
-            for game in store?.games ?? [] { try stageUpdate(game) }
+            // Legacy shared-live links remain readable until their existing expiry.
+            // Only the standalone local live manager maintains new broadcasts.
             if !state.pending.isEmpty { requested = true }
         } catch { report(error) }
     }
     private func preserveDraft(_ localID: UUID?, reason: String, into next: inout SharedMatchLocalState) {
         guard let localID, let game = store?.games.first(where: { $0.id == localID }),
               !next.conflicts.contains(where: { $0.localID == localID }),
-              next.matches.first(where: { $0.payload?.id == localID })?.writerDeviceID == next.deviceID || next.pending.contains(where: { $0.localID == localID && ["create", "update"].contains($0.kind) }),
+              next.matches.first(where: { $0.payload?.id == localID })?.writerDeviceID == next.deviceID || next.pending.contains(where: { $0.localID == localID && (["create", "update"].contains($0.kind) || $0.kind.hasPrefix("postgame")) }),
               next.pending.contains(where: { $0.localID == localID }) || next.acknowledgedRevisions[localID.uuidString] != (game.revision ?? 0) else { return }
         next.conflicts.append(MatchConflict(id: UUID(), localID: localID, savedAt: Date(), game: game, reason: reason))
     }
@@ -501,6 +623,9 @@ struct SharedMatchFile: SharedMatchStorage {
     func detachAfterRestore() {
         var next = state
         for match in next.matches { preserveDraft(match.payload?.id, reason: "已恢复本机备份，请核对球队已保存的记录", into: &next) }
+        let heldIDs = Set((next.heldOperations ?? []).map(\.id))
+        let suspended = next.pending.filter { !heldIDs.contains($0.id) }
+        if !suspended.isEmpty { next.heldOperations = (next.heldOperations ?? []) + suspended }
         next.pending = []; next.cursors = [:]
         next.historyImport = nil // Restoring a backup never resumes an earlier import.
         next.requiresRecoveryReview = !next.matches.isEmpty || store?.games.contains(where: { $0.sharedGameID != nil }) == true
@@ -546,11 +671,14 @@ struct SharedMatchFile: SharedMatchStorage {
             for game in store?.games ?? [] {
                 let original = state.matches.first { $0.payload?.id == game.id }
                 let authored = original?.writerDeviceID == state.deviceID
-                    || state.pending.contains { $0.localID == game.id && ["create", "update"].contains($0.kind) }
+                    || state.pending.contains { $0.localID == game.id && (["create", "update"].contains($0.kind) || $0.kind.hasPrefix("postgame")) }
                 if authored && !next.conflicts.contains(where: { $0.localID == game.id }) {
                     next.conflicts.append(MatchConflict(id: UUID(), localID: game.id, savedAt: Date(), game: game, reason: "恢复前本机记录，请与恢复后的球队比赛逐条核对"))
                 }
             }
+            let heldIDs = Set((next.heldOperations ?? []).map(\.id))
+            let suspended = next.pending.filter { !heldIDs.contains($0.id) }
+            if !suspended.isEmpty { next.heldOperations = (next.heldOperations ?? []) + suspended }
             next.matches = remotes; next.pending = []; next.historyImport = nil; next.lastInvitationURL = nil
             next.deviceID = device; next.recoveryEpoch = teams.recoveryEpoch; next.cursors = cursors
             next.teamAccessEpochs = Dictionary(uniqueKeysWithValues: teams.teams.map { ($0.id.uuidString, $0.accessEpoch ?? 1) })
