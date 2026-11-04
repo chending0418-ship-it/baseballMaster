@@ -1,6 +1,6 @@
 # BaseballMaster Android
 
-当前开发与本地测试版为 **0.8.1（versionCode 9）**，按实际 iOS 3.1.0／3.1.2 模拟器 App 对齐手机页面与操作，展开内屏采用 iPad 工作台，见 [本版开发与验收](../docs/releases/android/0.8.1-DEVELOPMENT.md)。分支 `codex/android-0.8.1`；本轮未更新官网下载或合并 main，网站仍保留 0.8.0 测试包。最低 Android 12／API 31，编译及目标 API 37。现行产品状态从 [CURRENT](../docs/CURRENT.md) 与 [单份迁移计划](../docs/plans/ANDROID-APK.md) 进入。
+当前开发与打包版为 **0.8.2（versionCode 10）**，在 0.8.1 基础上恢复新比赛示例名单入口、优化折叠屏跑垒选项，并按 iOS 统一五类 PDF 版式与分页，见 [本版开发与打包交接](../docs/releases/android/0.8.2-DEVELOPMENT.md)。分支 `codex/android-0.8.2`；用户授权推送与创建 PR，但不合并 main。官网下载本轮不更新，仍为 0.8.1（Build 9）测试包。最低 Android 12／API 31，编译及目标 API 37。现行产品状态从 [CURRENT](../docs/CURRENT.md) 与 [单份迁移计划](../docs/plans/ANDROID-APK.md) 进入。
 
 源码结构：`core/` 为规则／数据模块；`app/` 为 Compose、ViewModel、Room 及平台接入。0.8.1 已取消强制竖屏和 480dp 限宽，使用可用窗口与 WindowManager 折叠特征排列工作台；宽窄切换保持同一任务、草稿与修订保护。相同球员身份的资料更正、替补和特殊投手／DH 关系有独立数据与设备回归。完整跨端互导与正式赛后云端归档仍是后续范围，不能用界面对齐代替其完成。下方 AN03–AN06 记录保留其阶段边界，当前状态优先以上述本版交接为准。
 
