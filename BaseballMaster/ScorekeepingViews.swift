@@ -20,7 +20,6 @@ struct ScorekeepingView: View {
     @State private var showPlayFlowSheet = false
     @State private var dockedPlayFlow = false
     @State private var workbenchAvailable = false
-    @State private var workbenchHeight: CGFloat = 850
     @State private var showRunnerEventSheet = false
     @State private var showSpecialEventSheet = false
     @State private var showCorrectionSheet = false
@@ -110,9 +109,8 @@ struct ScorekeepingView: View {
                     .padding(.bottom, 8)
             }
             }
-            .onAppear { workbenchAvailable = wide; workbenchHeight = proxy.size.height }
+            .onAppear { workbenchAvailable = wide }
             .onChange(of: wide) { workbenchAvailable = $0 }
-            .onChange(of: proxy.size.height) { workbenchHeight = $0 }
         }
         .bmScreenBackground()
         .alert("操作未保存", isPresented: Binding(get: { store.storageErrorMessage != nil }, set: { if !$0 { store.storageErrorMessage = nil } })) {
@@ -321,7 +319,6 @@ struct ScorekeepingView: View {
                 if isDockedRecording {
                     SituationPlayFlowSheet(illegalPitch: illegalPlay, embedded: true, onClose: closeDockedPlayFlow)
                         .environmentObject(store)
-                        .frame(height: min(760, max(320, workbenchHeight - 160)))
                         .onAppear { recordingPresentationActive = true }
                 } else {
                     recordingControls

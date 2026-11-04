@@ -114,7 +114,7 @@ Pro 宽屏击球改为右侧面板内记录，左侧比赛信息保留；原有�
 用户恢复 Duo 开发并要求沿用 3.1.2（1）、推送及 PR、不合并 main。复用 iPad 的尺寸驱动工作台，使用 Xcode 27.2（27B52）与 Duo 专属 iOS 27.2（24B91016s）；实际展开能使用双列与系统竖排工具栏，普通 iPhone 的竖屏声明保持。依 [Apple 适配说明](https://developer.apple.com/iphone-duo/prepare/) 导出并检查 app-resizability 技能；生产源码没有主屏尺寸、设备类型或物理方向决定布局的遗留，SwiftUI 场景生命周期、启动 storyboard、iPad 四方向及无全屏锁定配置已核对。
 
 - 开屏品牌及底部文案按当前可用区域布局，背景独立铺满，不再手加／减 safe-area insets；系统侧栏与内外屏安全区变化交由 SwiftUI 处理。
-- 宽屏 Pro 编辑器折到外屏时保留同一视图身份及草稿，隐藏只读上下文并定位到活动编辑面板；短窗口内编辑高度下限调为 320，继续使用内部滚动及底部确认。外屏已经打开的 sheet 在展开后继续保留原流程。
+- 宽屏 Pro 编辑器折到外屏时保留同一视图身份及草稿，隐藏只读上下文并定位到活动编辑面板；用户随后要求直接展开：取消页内编辑器固定高度及内部 ScrollView，球型、完整球场、跑者核对与确认区按内容自然撑开，由工作台唯一外层滚动承载；确认按钮位于流程底部。外屏已经打开的 sheet 在展开后继续保留原流程。
 - 用户指出顶部过高后，将宽屏总比分／计时／球数与分局表并排在同一行，分局表使用 75 点的紧凑白色卡片；上下间距和边距收紧。分局表按用户后续反馈去掉铺满整列的浅绿块及米色表头，局数列保持固定的缩放宽度，余宽留给队名，当前局仅小范围圆角高亮，R／H／E 对齐，整张卡片统一白底薄边。练习提示在空间足够时合为单行，窄屏仍可两行；球场按可用高度取 240–320 点，慢垒保留必要的最低场高。目标是在 Duo 默认展开窗口首屏完整显示球场、投打条及主要记分动作，详细投打、阵容与历史继续向下查看。
 - 新增真实 Device Hub 姿态驱动的 Duo UI 用例：开屏／根导航、内屏页内 Pro 草稿、外屏 sheet 草稿、分享中展开与首屏可达。runner Documents 中通过 duo-phase.txt／duo-host-step.txt 同步实际 Closed／Partially Open／Open 操作；不以假窗口宽度或 iPad 测试替代 Duo。
 
@@ -133,3 +133,7 @@ Pro 宽屏击球改为右侧面板内记录，左侧比赛信息保留；原有�
 首屏边界修复已真实通过：`build-viewport-final.log` 构建成功，`ui-viewport-final.log` 中首屏专项 **1/1 通过、无跳过**（43.517 秒）。球场的装饰图形会 overscan 后裁切，原 AX 容器却聚合了裁切外范围；现使用 SwiftUI `contentShape(.interaction, RoundedRectangle(...))` 将交互／无障碍焦点限定到画布，保留守备员与垒包子元素，未缩小测试要求。完整球场、投打条和全部主要动作的窗口包含及可达断言均通过，测试没有滚动页面。参考 [Apple ContentShapeKinds.accessibility](https://developer.apple.com/documentation/swiftui/contentshapekinds/accessibility)。
 
 `build-release-final-styled.log` 的未签名 Release 已成功；最后的画布边界修复继续用 `build-release-verified.log` 重新构建设备 Release，尚在进行中。
+
+用户最新界面反馈：旧页内 Pro 卡片固定高度截住球场，现已去掉高度上限与内部滚动，完整内容自然展开；普通 sheet 仍由自身滚动与底部操作区承载。新版 Debug 已构建，展开 Pro 的真实 UI 输入／姿态检查，以及 iPhone／iPad 相关回归正在重新执行；前面有限高版本的 Pro 记录不冒充这次自然展开验证。
+
+自然展开版本已新增确认：`iphone-expanded-pro`（1 项完整 Pro 取消／提交／更正）与 `ipad-expanded-pro`（1 项旋转保留草稿并取消）通过；`build-release-expanded-final.log` 的未签名设备 Release 构建通过。Duo 自然展开的最终流程仍在真实 Device Hub 操作与 XCTest 断言配合下验收。守备路线保留原有单行横向 rail，移除的是截住整个编辑器的内部竖向滚动窗口。

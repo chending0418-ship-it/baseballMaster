@@ -245,25 +245,19 @@ struct SituationPlayFlowSheet: View {
     }
 
     private var flowContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                if [.entry, .catalog, .process, .processResult].contains(stage) { context }
-                switch stage {
-                case .entry: entry
-                case .catalog: catalog
-                case .process: typeGrid(isProcess: true)
-                case .processResult:
-                    outcomeGrid(processOutcomes.filter { $0 != .other })
-                    Button("其他结果／全部结果") { catalogReturnStage = .processResult; stage = .catalog }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("process-all-outcomes")
-                    Button("结果待确认") { choose(.other) }.buttonStyle(SecondaryButtonStyle())
-                case .contact: contact
-                case .review: review
-                case .timing: timingOptions
+        Group {
+            if embedded {
+                // The workbench owns scrolling. Let the complete recording flow
+                // expand naturally instead of clipping its field in another viewport.
+                VStack(spacing: 0) {
+                    flowSections
+                    footer
                 }
-                if let issue { Text(issue).font(.callout).foregroundStyle(BMTheme.red).accessibilityIdentifier("situation-issue") }
-            }.padding(16)
+            } else {
+                ScrollView { flowSections }
+                    .safeAreaInset(edge: .bottom) { footer }
+            }
         }.bmScreenBackground()
-            .safeAreaInset(edge: .bottom) { footer }
             .onAppear {
                 guard !initialized else { return }; initialized = true
                 sourceGame = store.game
@@ -279,6 +273,25 @@ struct SituationPlayFlowSheet: View {
             .sheet(item: Binding(get: { extraRunner.map(RunnerRouteSelection.init) }, set: { extraRunner = $0?.id })) { selection in
                 extraRouteSheet(selection.id)
             }
+    }
+
+    private var flowSections: some View {
+        VStack(alignment: .leading, spacing: 14) {
+                if [.entry, .catalog, .process, .processResult].contains(stage) { context }
+                switch stage {
+                case .entry: entry
+                case .catalog: catalog
+                case .process: typeGrid(isProcess: true)
+                case .processResult:
+                    outcomeGrid(processOutcomes.filter { $0 != .other })
+                    Button("其他结果／全部结果") { catalogReturnStage = .processResult; stage = .catalog }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("process-all-outcomes")
+                    Button("结果待确认") { choose(.other) }.buttonStyle(SecondaryButtonStyle())
+                case .contact: contact
+                case .review: review
+                case .timing: timingOptions
+                }
+                if let issue { Text(issue).font(.callout).foregroundStyle(BMTheme.red).accessibilityIdentifier("situation-issue") }
+        }.padding(16)
     }
     private var title: String {
         switch stage {

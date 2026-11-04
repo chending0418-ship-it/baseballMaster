@@ -3659,7 +3659,8 @@ extension BaseballMasterUITests {
             (try? String(contentsOf: acknowledgement, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)) == step
         }, object: nil)
-        let result = XCTWaiter.wait(for: [hostReady], timeout: 90)
+        // Host-driven posture and native input checks can span tool/UI handoffs.
+        let result = XCTWaiter.wait(for: [hostReady], timeout: 1800)
         XCTAssertEqual(result, .completed, "Host did not acknowledge actual Duo posture step: \(step)")
         guard result == .completed else { throw NSError(domain: "DuoHostCheckpoint", code: 1) }
     }
@@ -3764,25 +3765,30 @@ extension BaseballMasterUITests {
         captureV312Duo(app, name: "3.1.2-duo-home-open-navigation")
     }
 
-    private func enterV312DuoContactDraft(in app: XCUIApplication) {
+    private func enterV312DuoContactDraft(in app: XCUIApplication) throws {
         let inPlay = app.buttons["ball-in-play"]
-        revealV312DuoControl(inPlay, in: app)
         inPlay.tap()
         if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
         XCTAssertTrue(app.descendants(matching: .any)["docked-situation-editor"].firstMatch.waitForExistence(timeout: 5))
         let single = app.buttons["quick-outcome-1B"]
-        revealV312DuoControl(single, in: app)
         single.tap()
         let type = app.buttons["contact-type-line"]
-        revealV312DuoControl(type, in: app)
         type.tap()
-        tapV312DuoContactPoint(in: app)
+        try tapV312DuoContactPoint(in: app)
         let center = app.buttons["situation-fielder-8"]
-        revealV312DuoControl(center, in: app)
         center.tap()
     }
 
-    private func tapV312DuoContactPoint(in app: XCUIApplication) {
+    private func tapV312DuoContactPoint(in app: XCUIApplication) throws {
+        if app.descendants(matching: .any)["docked-situation-editor"].firstMatch.exists {
+            // XCUI element coordinates can disagree with the active Duo display.
+            // The host taps the real visible canvas through Device Hub, then this
+            // test checks the actual fielding stage and all subsequent draft state.
+            try awaitDuoHost("draft-contact-" + UUID().uuidString)
+            XCTAssertTrue(app.buttons["situation-fielder-8"].waitForExistence(timeout: 5),
+                          "The host must select a real landing point before continuing")
+            return
+        }
         let field = app.otherElements["contact-field"]
         for _ in 0..<12 {
             let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
@@ -3790,10 +3796,21 @@ extension BaseballMasterUITests {
             let viewport = app.windows.firstMatch.frame
             let visible = scroll.exists ? viewport.intersection(scroll.frame) : viewport
             if field.exists {
-                let point = field.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3))
-                let location = point.screenPoint
-                if field.isHittable && visible.insetBy(dx: 4, dy: 4).contains(location) {
-                    print("DUO_CONTACT_POINT=\(location), field=\(field.frame), visibleFlow=\(visible)")
+                let fieldFrame = field.frame
+                let location = CGPoint(x: fieldFrame.minX + fieldFrame.width * 0.3,
+                                       y: fieldFrame.minY + fieldFrame.height * 0.3)
+                // Duo's element-relative coordinates can report a rotated screen space.
+                // Anchor in this window and verify the actual screen point.
+                let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+                let originLocation = origin.screenPoint
+                let point = origin.withOffset(CGVector(dx: location.x - originLocation.x,
+                                                       dy: location.y - originLocation.y))
+                let actual = point.screenPoint
+                if field.isHittable && fieldFrame.contains(actual)
+                    && visible.insetBy(dx: 4, dy: 4).contains(actual) {
+                    XCTAssertEqual(actual.x, location.x, accuracy: 0.5)
+                    XCTAssertEqual(actual.y, location.y, accuracy: 0.5)
+                    print("DUO_CONTACT_POINT=\(actual), target=\(location), field=\(fieldFrame), visibleFlow=\(visible)")
                     point.tap()
                     XCTAssertTrue(app.buttons["situation-fielder-8"].waitForExistence(timeout: 5),
                                   "Tapping the visible landing point must enter the fielding stage")
@@ -3812,15 +3829,12 @@ extension BaseballMasterUITests {
     }
 
     private func assertV312DuoContactDraft(in app: XCUIApplication, summary: String, route: String) {
-        let type = app.buttons["contact-type-line"]
-        revealV312DuoControl(type, in: app)
-        XCTAssertEqual(type.value as? String, "已选择", "Ball type must survive display and posture changes")
         let summaryLabel = app.staticTexts["contact-summary"]
-        revealV312DuoControl(summaryLabel, in: app)
+        XCTAssertTrue(summaryLabel.waitForExistence(timeout: 5))
+        XCTAssertTrue(summaryLabel.label.contains("平飞"), "The selected ball type must survive display and posture changes")
         XCTAssertEqual(summaryLabel.label, summary, "Landing point must survive display and posture changes")
         XCTAssertEqual(app.staticTexts["situation-route"].label, route, "Fielding route must survive display and posture changes")
         let finish = app.buttons["finish-situation-field"]
-        revealV312DuoControl(finish, in: app)
         XCTAssertTrue(finish.isHittable)
         XCTAssertTrue(finish.isEnabled)
         XCTAssertFalse(app.buttons["reset-practice-inning"].isEnabled,
@@ -3843,12 +3857,17 @@ extension BaseballMasterUITests {
         let before = batter.label
         XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
         XCTAssertTrue(app.scrollViews["scorekeeping-wide-layout"].exists, "The real unfolded display must provide the workbench")
-        enterV312DuoContactDraft(in: app)
+        try awaitDuoHost("draft-record-1")
+        let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.scrollViews.count, 1, "Only the compact horizontal fielding-route rail may scroll inside the expanded editor")
+        let routeRail = editor.scrollViews.firstMatch
+        XCTAssertLessThan(routeRail.frame.height, 80, "The route rail must not become a vertical viewport that clips the recording field")
+        XCTAssertGreaterThan(routeRail.frame.width, routeRail.frame.height)
         let summaryLabel = app.staticTexts["contact-summary"]
-        revealV312DuoControl(summaryLabel, in: app)
         let summary = summaryLabel.label
         let route = app.staticTexts["situation-route"].label
-        XCTAssertFalse(summary.isEmpty)
+        XCTAssertTrue(summary.contains("平飞"), "Start the transition check with the explicitly selected line drive")
         XCTAssertTrue(route.hasPrefix("8"))
         captureV312Duo(app, name: "3.1.2-duo-draft-before-fold")
         for step in ["draft-02-closed", "draft-03-partiallyOpen", "draft-04-open"] {
@@ -3856,30 +3875,19 @@ extension BaseballMasterUITests {
             assertV312DuoContactDraft(in: app, summary: summary, route: route)
             captureV312Duo(app, name: "3.1.2-duo-\(step)")
         }
-        let cancel = app.buttons["cancel-situation-play"]
-        revealV312DuoControl(cancel, in: app)
-        cancel.tap()
-        let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
+        try awaitDuoHost("draft-cancel")
         XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
-        revealV312DuoControl(batter, in: app)
         XCTAssertEqual(batter.label, before, "Cancelling a folded draft must not change the batter")
         XCTAssertTrue(pitcher.label.contains("本场已投 0 球"), "Cancelling must not record a pitch")
         XCTAssertTrue(app.buttons["reset-practice-inning"].isEnabled)
-        enterV312DuoContactDraft(in: app)
-        let finish = app.buttons["finish-situation-field"]
-        revealV312DuoControl(finish, in: app)
-        XCTAssertTrue(finish.isEnabled)
-        finish.tap()
+        try awaitDuoHost("draft-submit-one")
         XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
-        revealV312DuoControl(batter, in: app)
         XCTAssertNotEqual(batter.label, before)
         XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "One confirmation must add exactly one pitch")
-        let undo = app.buttons["undo-last-play"]
-        revealV312DuoControl(undo, in: app)
-        undo.tap()
+        try awaitDuoHost("draft-undo")
         XCTAssertEqual(batter.label, before)
         XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
-        app.buttons["redo-last-play"].tap()
+        try awaitDuoHost("draft-redo")
         XCTAssertNotEqual(batter.label, before)
         XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "Redo must restore one play without duplication")
         captureV312Duo(app, name: "3.1.2-duo-pro-one-play-undo-redo")
@@ -3940,7 +3948,7 @@ extension BaseballMasterUITests {
         let type = app.buttons["contact-type-line"]
         revealV312DuoControl(type, in: app)
         type.tap()
-        tapV312DuoContactPoint(in: app)
+        try tapV312DuoContactPoint(in: app)
         let center = app.buttons["situation-fielder-8"]
         revealV312DuoControl(center, in: app)
         center.tap()
