@@ -82,3 +82,5 @@ App Store 与版本宣传脚本现位于 `scripts/release/`，海报模板位于
 ## 2026-11-05 上海证书自动化（当前）
 
 baseballmaster.cc 与 www.baseballmaster.cc 已切换到 Let's Encrypt，上海 Certbot 免费自动续签并通过专属 hook 自动部署；每日 03:00／15:00（北京时间，随机延迟最多30分钟）检查，近到期才续签，部署失败保留旧证书并重试。两域正式签发、续签 dry-run 含部署 hook、定时任务与异机严格 HTTPS 检查通过，现证书有效至 2027-02-02 23:05:55。此条替代迁移记录中“尚无自动续期”的旧状态；无 App／数据库变更。操作与回退见 [证书维护](../collaboration/deploy/2026-11-05-certificate-auto-renew.md)。源码及文档使用独立分支 codex/ssl-auto-renew-20261105，经 PR 审查，不直接改 main。
+
+本次维护源码与回执：[Draft PR #48](https://github.com/chending0418-ship-it/baseballMaster/pull/48)，已推送、未合并；线上配置已完成。

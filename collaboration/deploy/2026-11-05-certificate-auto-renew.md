@@ -36,3 +36,5 @@ systemctl enable --now baseballmaster-certificate-renew.timer
 本次 ACME 账户未绑定邮箱，不提供邮件通知保证；故障查看日志与 timer 状态。日常核查可执行 systemctl list-timers baseballmaster-certificate-renew.timer。需要手工恢复旧证书时，先核对备份仍有效及无后续操作，暂停专属 timer，恢复备份的 fullchain.pem 与 privkey.pem（root 0600），专属 nginx -t 后 reload，并严格验证两域。备份旧证书到期后不可作为有效回滚目标；不要运行通用 nginx.service 或覆盖其他服务配置。
 
 腾讯云当前这两域对应的旧证书已不再用于上海站点；自动续费可由用户在确认后关闭，不删除或吊销历史证书。证书源文件、私钥与 ACME 账户均不进 Git。
+
+本次维护源码与回执：[Draft PR #48](https://github.com/chending0418-ship-it/baseballMaster/pull/48)，已推送、未合并；线上配置已完成。
