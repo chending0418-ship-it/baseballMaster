@@ -84,4 +84,4 @@ App Store 与版本宣传脚本现位于 `scripts/release/`，海报模板位于
 
 用户反馈上传背景后出现 `Unexpected token '<'`。只读公网复现确认 `/admin/` 网关的 4 KiB 请求限制返回 HTTP 413 HTML；8 KiB 请求直达后台则正常返回 HTTP 401 JSON。修复为图片上传精确路由单独放行至 3 MiB，其余后台接口保留 4 KiB；前端兼容非 JSON 错误页并维持登录过期处理，上传失败后可重新选择同一文件。
 
-19 项后台／开屏测试、10 组浏览器检查及 5 项隔离 Nginx 边界检查通过；隔离网关使用临时高端口与合成上游，没有修改线上配置或写入真实数据。源码在 `codex/fix-launch-upload-20261104`，PR 待创建；版本仍为 3.1.2（Build 1）。本轮仅准备服务修复，未部署、未合并。具体上线白名单、回退和证据见 [修复交接](../collaboration/deploy/2026-11-04-launch-upload-fix.md)。
+19 项后台／开屏测试、10 组浏览器检查及 5 项隔离 Nginx 边界检查通过；隔离网关使用临时高端口与合成上游，没有修改线上配置或写入真实数据。源码在 `codex/fix-launch-upload-20261104`，[PR #47](https://github.com/chending0418-ship-it/baseballMaster/pull/47)（Draft，未合并）；版本仍为 3.1.2（Build 1）。本轮仅准备服务修复，未部署、未合并。具体上线白名单、回退和证据见 [修复交接](../collaboration/deploy/2026-11-04-launch-upload-fix.md)。

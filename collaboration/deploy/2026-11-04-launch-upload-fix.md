@@ -1,6 +1,6 @@
 # 开屏背景上传修复：准备完成，待部署授权
 
-日期：2026-11-04（北京时间）。归属：记录大师 iOS／共用服务。分支：`codex/fix-launch-upload-20261104`，PR 待创建，目标 `main`；App 保持 3.1.2（Build 1）。
+日期：2026-11-04（北京时间）。归属：记录大师 iOS／共用服务。分支：`codex/fix-launch-upload-20261104`，[PR #47](https://github.com/chending0418-ship-it/baseballMaster/pull/47)（Draft，未合并），目标 `main`；App 保持 3.1.2（Build 1）。
 
 ## 已确认的原因
 
