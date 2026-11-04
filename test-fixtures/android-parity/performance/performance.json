@@ -1,0 +1,354 @@
+{
+  "androidPerformance": 1,
+  "annual": {
+    "completedAppearances": 3,
+    "contacts": 3,
+    "gameCount": 3,
+    "line": {
+      "atBats": 3,
+      "caughtStealing": 0,
+      "doubles": 0,
+      "hitByPitch": 0,
+      "hits": 3,
+      "homeRuns": 0,
+      "plateAppearances": 3,
+      "runs": 0,
+      "runsBattedIn": 0,
+      "sacrifices": 0,
+      "stolenBases": 0,
+      "strikeouts": 0,
+      "triples": 0,
+      "walks": 0
+    },
+    "missingLocations": 0
+  },
+  "commands": [
+    {
+      "kind": "pitch",
+      "pitch": "ball"
+    },
+    {
+      "decisions": [
+        {
+          "destination": 1,
+          "origin": 0,
+          "playerID": "a2000000-0000-0000-0000-000000000001"
+        }
+      ],
+      "kind": "play",
+      "observation": {
+        "fielding": {
+          "errorPosition": null,
+          "route": [],
+          "status": "pending"
+        },
+        "precision": "region",
+        "region": "center",
+        "type": "line"
+      },
+      "outcome": "single"
+    },
+    {
+      "kind": "intentionalWalk"
+    }
+  ],
+  "current": {
+    "completedAppearances": 1,
+    "contacts": 1,
+    "gameCount": 1,
+    "line": {
+      "atBats": 1,
+      "caughtStealing": 0,
+      "doubles": 0,
+      "hitByPitch": 0,
+      "hits": 1,
+      "homeRuns": 0,
+      "plateAppearances": 1,
+      "runs": 0,
+      "runsBattedIn": 0,
+      "sacrifices": 0,
+      "stolenBases": 0,
+      "strikeouts": 0,
+      "triples": 0,
+      "walks": 0
+    },
+    "missingLocations": 0
+  },
+  "initialGame": {
+    "away": {
+      "id": "a2000000-0000-0000-0000-000000000000",
+      "name": "客队",
+      "players": [
+        {
+          "id": "a2000000-0000-0000-0000-000000000001",
+          "name": "球员1",
+          "number": "1",
+          "position": 1
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000002",
+          "name": "球员2",
+          "number": "2",
+          "position": 2
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000003",
+          "name": "球员3",
+          "number": "3",
+          "position": 3
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000004",
+          "name": "球员4",
+          "number": "4",
+          "position": 4
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000005",
+          "name": "球员5",
+          "number": "5",
+          "position": 5
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000006",
+          "name": "球员6",
+          "number": "6",
+          "position": 6
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000007",
+          "name": "球员7",
+          "number": "7",
+          "position": 7
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000008",
+          "name": "球员8",
+          "number": "8",
+          "position": 8
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000009",
+          "name": "球员9",
+          "number": "9",
+          "position": 9
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000010",
+          "name": "球员10",
+          "number": "10",
+          "position": 9
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000011",
+          "name": "球员11",
+          "number": "11",
+          "position": 9
+        },
+        {
+          "id": "a2000000-0000-0000-0000-000000000012",
+          "name": "球员12",
+          "number": "12",
+          "position": 9
+        }
+      ]
+    },
+    "awayOrder": [
+      "a2000000-0000-0000-0000-000000000001",
+      "a2000000-0000-0000-0000-000000000002",
+      "a2000000-0000-0000-0000-000000000003",
+      "a2000000-0000-0000-0000-000000000004",
+      "a2000000-0000-0000-0000-000000000005",
+      "a2000000-0000-0000-0000-000000000006",
+      "a2000000-0000-0000-0000-000000000007",
+      "a2000000-0000-0000-0000-000000000008",
+      "a2000000-0000-0000-0000-000000000009"
+    ],
+    "awayRunsByInning": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "home": {
+      "id": "b2000000-0000-0000-0000-000000000000",
+      "name": "主队",
+      "players": [
+        {
+          "id": "b2000000-0000-0000-0000-000000000001",
+          "name": "球员1",
+          "number": "1",
+          "position": 1
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000002",
+          "name": "球员2",
+          "number": "2",
+          "position": 2
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000003",
+          "name": "球员3",
+          "number": "3",
+          "position": 3
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000004",
+          "name": "球员4",
+          "number": "4",
+          "position": 4
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000005",
+          "name": "球员5",
+          "number": "5",
+          "position": 5
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000006",
+          "name": "球员6",
+          "number": "6",
+          "position": 6
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000007",
+          "name": "球员7",
+          "number": "7",
+          "position": 7
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000008",
+          "name": "球员8",
+          "number": "8",
+          "position": 8
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000009",
+          "name": "球员9",
+          "number": "9",
+          "position": 9
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000010",
+          "name": "球员10",
+          "number": "10",
+          "position": 9
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000011",
+          "name": "球员11",
+          "number": "11",
+          "position": 9
+        },
+        {
+          "id": "b2000000-0000-0000-0000-000000000012",
+          "name": "球员12",
+          "number": "12",
+          "position": 9
+        }
+      ]
+    },
+    "homeOrder": [
+      "b2000000-0000-0000-0000-000000000001",
+      "b2000000-0000-0000-0000-000000000002",
+      "b2000000-0000-0000-0000-000000000003",
+      "b2000000-0000-0000-0000-000000000004",
+      "b2000000-0000-0000-0000-000000000005",
+      "b2000000-0000-0000-0000-000000000006",
+      "b2000000-0000-0000-0000-000000000007",
+      "b2000000-0000-0000-0000-000000000008",
+      "b2000000-0000-0000-0000-000000000009"
+    ],
+    "homeRunsByInning": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "id": "performance",
+    "rules": {
+      "halfRunLimit": null,
+      "innings": 6,
+      "mode": "standard"
+    }
+  },
+  "mode": "standard",
+  "playerID": "a2000000-0000-0000-0000-000000000001",
+  "source": "actual iOS GameStore.batterPerformance @ 40df3d2",
+  "sources": [
+    {
+      "foreignTeam": false,
+      "historySourceID": null,
+      "id": "a95203e4-2c5c-40e5-872e-1e393f3133af",
+      "incomplete": false,
+      "mode": "standard",
+      "playedAt": 1767198600000,
+      "timeZoneID": "Asia/Shanghai",
+      "updatedAt": 1793084992702
+    },
+    {
+      "foreignTeam": false,
+      "historySourceID": "d3000000-0000-0000-0000-000000000001",
+      "id": "d3000000-0000-0000-0000-000000000002",
+      "incomplete": false,
+      "mode": "standard",
+      "playedAt": 1767198600000,
+      "timeZoneID": "Asia/Shanghai",
+      "updatedAt": 101000
+    },
+    {
+      "foreignTeam": false,
+      "historySourceID": "d3000000-0000-0000-0000-000000000001",
+      "id": "d3000000-0000-0000-0000-000000000003",
+      "incomplete": false,
+      "mode": "standard",
+      "playedAt": 1767198600000,
+      "timeZoneID": "Asia/Shanghai",
+      "updatedAt": 102000
+    },
+    {
+      "foreignTeam": false,
+      "historySourceID": null,
+      "id": "d3000000-0000-0000-0000-000000000004",
+      "incomplete": false,
+      "mode": "coachPitch",
+      "playedAt": 1767198600000,
+      "timeZoneID": "Asia/Shanghai",
+      "updatedAt": 103000
+    },
+    {
+      "foreignTeam": false,
+      "historySourceID": null,
+      "id": "d3000000-0000-0000-0000-000000000005",
+      "incomplete": false,
+      "mode": "standard",
+      "playedAt": 1767198600000,
+      "timeZoneID": "UTC",
+      "updatedAt": 104000
+    },
+    {
+      "foreignTeam": false,
+      "historySourceID": null,
+      "id": "d3000000-0000-0000-0000-000000000006",
+      "incomplete": true,
+      "mode": "standard",
+      "playedAt": 1767198600000,
+      "timeZoneID": "Asia/Shanghai",
+      "updatedAt": 105000
+    },
+    {
+      "foreignTeam": true,
+      "historySourceID": null,
+      "id": "d3000000-0000-0000-0000-000000000007",
+      "incomplete": false,
+      "mode": "standard",
+      "playedAt": 1767198600000,
+      "timeZoneID": "Asia/Shanghai",
+      "updatedAt": 106000
+    }
+  ]
+}

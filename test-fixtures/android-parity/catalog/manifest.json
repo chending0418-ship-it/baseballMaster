@@ -1,0 +1,416 @@
+{
+  "schema": 2,
+  "baseline": "40df3d2",
+  "generator": "BaseballMasterTests/GameStoreTests/testAndroidCatalogExport",
+  "reference": "actual iOS XCTest result, synthetic data only",
+  "files": [
+    {
+      "path": "catalog-runner-standard-wildPitch-scoring.json",
+      "sha256": "9900d43391af81a92636087348881f89721f66107d9dde269be63717e6eba202",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-balk-scoring.json",
+      "sha256": "1989b1a6cff139b256964879b5d62ebee0804433a195074cacf14f1d30eba442",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-forceOut-scoring.json",
+      "sha256": "e4f66e713754d1c3f266df5295d0375aeaaaf86ba6a2f294eaa496154d691c6d",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-relayAdvance-scoring.json",
+      "sha256": "ca6db1910779e8c6288d526224fede890bf0b6157f96e499825a6e27b06c3ca9",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-runnerInterference-scoring.json",
+      "sha256": "5bc6d58fdfe737cb1671b7a616570212061a68f93122d0d9a73463161b2c0924",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-coachPitch-tagOut-scoring.json",
+      "sha256": "5a095a625bcbd03dd3efa54df9e5d775afe9cbf956865cea7fcd040c150ff1bc",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-passedRunner-scoring.json",
+      "sha256": "9f03822fa9f451dbdcee8cd20355ea3906e5657188fad744d54c423bc56b887f",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-appealOut-scoring.json",
+      "sha256": "4cd9dcb112df388a34589c853f5407483b3b6e9137b1591d787d37a8a63a0051",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-defensiveErrorAdvance-scoring.json",
+      "sha256": "5426d008e23441252f68f6120eaf5fbf1c3e32aa763b7f93cf54b81f7c83279b",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-runnerHitByBall-scoring.json",
+      "sha256": "68bab571f628108dfa8bf2a2cf7a00bfe432413a35fc02d3b9d93814f5569d3d",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-uncertainLooseBall-scoring.json",
+      "sha256": "766d5b8b81638ca0c829a6735208c4a40fdfa88a79bb9ff68b3b5dfaa8450694",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-runnerInterference-scoring.json",
+      "sha256": "4ed34e7ea188691ec9c4d0bcc5c092e5d2b84369046c6e2714e292c0a43a567c",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-violation-illegalBat-scoring.json",
+      "sha256": "4193d8bbaa633a993cc84c3487e5c7372ef4a2fb3d80b25f1e9d2e65c2c3410f",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-standard-leftEarly-scoring.json",
+      "sha256": "3c9e6865514da1943d0b8b1645c450594397d2b7cb5d84145fc442558d8675b6",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-illegalPitch-scoring.json",
+      "sha256": "89eaa8b1fe79ddd2510fb632437060730a1efb24bb0cec34ab4062977e352b4c",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-violation-coachInterference-scoring.json",
+      "sha256": "33cfc0c154193be84e98a2618445440b14bd9c5d90d49b354617db6db15dcca7",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-slowPitch-pickoff-scoring.json",
+      "sha256": "29591bf5713805d839acc289f60de67be0f54edf38c6e9c67228b3b9617c7dd8",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-coachPitch-coachAssistance-scoring.json",
+      "sha256": "38235458f08dccc19e0e50c24e959d0f54533e7acc7f615160a54ed2a8b43068",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-coachAssistance-scoring.json",
+      "sha256": "09a3fd6382c6e8a268426b07c45ebbb3ed15750b829ddb62e77b687ed6200919",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-catcherInterference-scoring.json",
+      "sha256": "f06427ced6ff60daab2ccc7956d31c6364284abcda0f1a8d20054c8486417d9c",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-coachPitch-runnerInterference-scoring.json",
+      "sha256": "22c41351d6839481a0dfc7397376d580ebc1a3deedfd31a0d2bbb2c56f18263d",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-tagOut-scoring.json",
+      "sha256": "fdf17271dd211cc7c586f7de486a8fa7cdadecdf440ca7572804ad3d2926141d",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-runningLaneInterference-scoring.json",
+      "sha256": "75d08391990540cb43c6f072693fee083788ab2f9bd21b825b6381e78db947aa",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-violation-balk-scoring.json",
+      "sha256": "f0e97a06f560971c579755bc10a2b88a2937b9d5a5c00eddced6c6ade531aa95",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-standard-passedBall-scoring.json",
+      "sha256": "94745c0ad19075637b119d15a79fe22c6db7b36773a188687710a481a0871e1e",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-outOfBasePath-scoring.json",
+      "sha256": "4990f38a86c9551cef1b4de13ac8551588acebe8e7c0a2d72cf3a90a191e9a46",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-coachPitch-pickoff-scoring.json",
+      "sha256": "5eecc0ff15f60bdc04a2bfe5de263307f559709b80fc13a691adb80a14f078d6",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-passingRunner-scoring.json",
+      "sha256": "924f9178906d72d94d183bd52cf0b4f6f4bf0466091dc273f6bb11ea579ccbb4",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-slowPitch-relayAdvance-scoring.json",
+      "sha256": "06c0173118ddefb57db5fe2751cd2b9e70acdd9c27b22723334d9d8cce285d56",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-coachPitch-forceOut-scoring.json",
+      "sha256": "e254f0498ea2b0bf9f90ca6a9ca19f3f7deb75c914619aca459a6fc79b25d179",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-coachPitch-outOfBasePath-scoring.json",
+      "sha256": "9adf873204de84c8080f30289a4918741aea80897e24a00c2f902086b71721d5",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-forceOut-scoring.json",
+      "sha256": "a7118134872a95b11629b463b864a834cc5e9f81ef4ebf69867c229534403d48",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-detachedEquipment-scoring.json",
+      "sha256": "76add38f7e7c6a1fffc54b4430c538f229acaacb645278f18a01110590b24890",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-coachPitch-relayAdvance-scoring.json",
+      "sha256": "e267848594a5301897ecb2cff420c6dfd2509d38a6d61fb190faecf31c3f30e2",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-defensiveErrorAdvance-scoring.json",
+      "sha256": "10bd18fa10f8043b81ad58575c4e6d44bafcadfbd003af4235e197062f00f86b",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-batterOutOfBox-scoring.json",
+      "sha256": "0ea33fb72ed49c260f0c0f493ee1f7ed1f8f885f1e411bec502ed73252df77b4",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-slowPitch-tagOut-scoring.json",
+      "sha256": "a8063b24f465d61f3887e0b0293dec4ce3d619f42368ee3596c36d479d4d659a",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-outOfBasePath-scoring.json",
+      "sha256": "8fa9f64615871c72d83b3c7535dad5af0fcfe06c8c2af1a4724f6681d2b6a5de",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-passedRunner-scoring.json",
+      "sha256": "ab849fbaecaed1c7b45f9652aaa7e1f6aadb590584d13f959e5dea2edb5e4140",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-delayedSteal-scoring.json",
+      "sha256": "e5af1509dcad93ce751cc581cf5744b886c00d367508ca79fba6bdf2d19b3910",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-coachPitch-runnerHitByBall-scoring.json",
+      "sha256": "be4a5b42889fba2a2434327eb96bed91bc3b29526b22ead3306238494584270d",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-caughtStealing-scoring.json",
+      "sha256": "0cf020d24179bb08e83716781bc848c6851f3880a783bd6ab99913515cf6d550",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-missedBase-scoring.json",
+      "sha256": "330da4e490ab68639f4dc7f3cf3111afc021e446a1c785272300c0793598525b",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-batterInterference-scoring.json",
+      "sha256": "6f73f8edffc500870d1d42c1118b7ee49a63ec11aecf08e8b48ececa18106ee9",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-violation-foreignSubstance-scoring.json",
+      "sha256": "d602f2e7ca01c586a239ad49bd4278fe77f4ad32ec58fb6f3a134e67171c3701",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-standard-caughtStealing-scoring.json",
+      "sha256": "5ac26587f39e0b294f43b44057aa5f24c9aed16a2bf8d926374b56549c90c835",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-wildPitch-scoring.json",
+      "sha256": "2a5861ad0440906bbbb1dd7118cc262c6586398ade88ba53a5878070e4f05a14",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-stolenBase-scoring.json",
+      "sha256": "46776e81f6982ea413b6c20496141229206342dafc4e8982847b97de90e6d14c",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-runnerHitByBall-scoring.json",
+      "sha256": "230dd63787d7a835565e9911df9217f36d18ecdbefd2cd0a69d55896c4ef9915",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-obstruction-scoring.json",
+      "sha256": "28f806b12b253328652933066dcc8b97da2fb2be843a26fc2f9b3db95f549c8c",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-coachPitch-passedRunner-scoring.json",
+      "sha256": "368d1f4a5d9483e23d7c641ff5f8afa81f1a8d422d60eb4ebf680cac7fcb0b6a",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-coachPitch-missedBase-scoring.json",
+      "sha256": "03a2f20e4a833769601feacf64dff2344d5d83fd63b98bf804be571453e8da48",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-coachPitch-defensiveErrorAdvance-scoring.json",
+      "sha256": "f5b82f0df1a79e375d080081ca91603d37a89a8bd4da9bde7a2e4ba0af862451",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-plateObstruction-scoring.json",
+      "sha256": "aa0ff36cb4cad86c8f47282cb1add6231ad26cd2f56aa8f27fcb073b272d46cd",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-violation-fakeTag-scoring.json",
+      "sha256": "01cd22e4ae8b72cb97665c0c48cd83d12be00a42ec22217856260c37228bffaf",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-slowPitch-appealOut-scoring.json",
+      "sha256": "f539b52b25a45b0903caeb21d3435326eab3bc6bb9e740f8a1fae114d0fa5e57",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-quickPitch-scoring.json",
+      "sha256": "2bd4a8e57b7de638689be64f8fba2237b0d8e4b96aebbae71fc1fce2d31263eb",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-runner-slowPitch-passedBall-scoring.json",
+      "sha256": "7e9e7784118b3d583dacb0366e73395013e32a44c3d3d89f94f960b0ba6bd737",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-violation-battingOutOfTurn-scoring.json",
+      "sha256": "a9e1b7eacfd8e88176430c133f40e7492df40c2bcb49507b637cc1179c7d911b",
+      "mode": "standard",
+      "steps": 5
+    },
+    {
+      "path": "catalog-expanded-slow-scoring.json",
+      "sha256": "01c9fe4e37a6599ce5883d96acde77eadbd385ae42314c9f083a4507791a6592",
+      "mode": "slowPitch",
+      "steps": 3
+    },
+    {
+      "path": "catalog-runner-standard-uncertainLooseBall-scoring.json",
+      "sha256": "22783e740f300cc4bcfd4a2dba7b0519d1a8764eaa291b336a0c0b41d6625888",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-doubleSteal-scoring.json",
+      "sha256": "01c5a4212eed332e85d70c6ea5a03d002b86d974296c26e0233b6d6cc554e29d",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-runnerInterference-scoring.json",
+      "sha256": "75a943f542cd99860f898b84c4d4ba46e83caedb8965c165ebb807e90f406016",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-pickoff-scoring.json",
+      "sha256": "e2ca3e45d055521cc6ce2eb96b5c0c21787a0da30daf76dec8d8b2ea84e2b6e8",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-slowPitch-coachAssistance-scoring.json",
+      "sha256": "0d09e90c38a098313721bb47afe5b9529d51c51110664dd7b2ab0fa58f87679c",
+      "mode": "slowPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-coachPitch-appealOut-scoring.json",
+      "sha256": "e238739bea0a197adf08af38779e05da8bbe04800c07a67b90145823024c88e5",
+      "mode": "coachPitch",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-missedBase-scoring.json",
+      "sha256": "2aa6618d48abbdbf9aa41011dd7f7f5eb15307fc18fd77b64dcd14f41b6eb6d5",
+      "mode": "standard",
+      "steps": 4
+    },
+    {
+      "path": "catalog-runner-standard-balk-scoring.json",
+      "sha256": "d2d1d31a7b7c7d1b5997b0a58fa2b224abc7f79994a644754e746fb49e90f0b3",
+      "mode": "standard",
+      "steps": 4
+    }
+  ]
+}
