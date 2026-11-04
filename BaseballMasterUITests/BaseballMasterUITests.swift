@@ -3776,12 +3776,39 @@ extension BaseballMasterUITests {
         let type = app.buttons["contact-type-line"]
         revealV312DuoControl(type, in: app)
         type.tap()
-        let field = app.otherElements["contact-field"]
-        revealV312DuoControl(field, in: app)
-        field.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).tap()
+        tapV312DuoContactPoint(in: app)
         let center = app.buttons["situation-fielder-8"]
         revealV312DuoControl(center, in: app)
         center.tap()
+    }
+
+    private func tapV312DuoContactPoint(in app: XCUIApplication) {
+        let field = app.otherElements["contact-field"]
+        for _ in 0..<12 {
+            let editor = app.descendants(matching: .any)["docked-situation-editor"].firstMatch
+            let scroll = editor.exists ? editor.scrollViews.firstMatch : app.scrollViews.firstMatch
+            let viewport = app.windows.firstMatch.frame
+            let visible = scroll.exists ? viewport.intersection(scroll.frame) : viewport
+            if field.exists {
+                let point = field.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3))
+                let location = point.screenPoint
+                if field.isHittable && visible.insetBy(dx: 4, dy: 4).contains(location) {
+                    print("DUO_CONTACT_POINT=\(location), field=\(field.frame), visibleFlow=\(visible)")
+                    point.tap()
+                    XCTAssertTrue(app.buttons["situation-fielder-8"].waitForExistence(timeout: 5),
+                                  "Tapping the visible landing point must enter the fielding stage")
+                    return
+                }
+                let towardTop = location.y < visible.minY
+                let surface = scroll.exists ? scroll : app
+                let start = surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: towardTop ? 0.3 : 0.75))
+                let end = surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: towardTop ? 0.75 : 0.3))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            } else {
+                scroll.swipeUp()
+            }
+        }
+        XCTFail("The selected contact point must be visible inside the recording flow before tapping:\n\(app.debugDescription)")
     }
 
     private func assertV312DuoContactDraft(in app: XCUIApplication, summary: String, route: String) {
@@ -3913,9 +3940,7 @@ extension BaseballMasterUITests {
         let type = app.buttons["contact-type-line"]
         revealV312DuoControl(type, in: app)
         type.tap()
-        let field = app.otherElements["contact-field"]
-        revealV312DuoControl(field, in: app)
-        field.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.3)).tap()
+        tapV312DuoContactPoint(in: app)
         let center = app.buttons["situation-fielder-8"]
         revealV312DuoControl(center, in: app)
         center.tap()

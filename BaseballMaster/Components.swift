@@ -382,6 +382,8 @@ struct BaseballDiamondView: View {
             }
         }
         .frame(height: game.rulesSnapshot?.isSlowPitch == true ? max(fixedHeight ?? 330, 330) : fixedHeight)
+        // The artwork overscans its clipped canvas; focus must follow the canvas.
+        .contentShape(.interaction, RoundedRectangle(cornerRadius: 16))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("完整棒球场，\(game.fieldingTeam.shortName)守备，垒上\(game.baseRunners.count)人")
         .accessibilityIdentifier("scorekeeping-field")

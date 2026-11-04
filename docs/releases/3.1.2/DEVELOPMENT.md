@@ -126,4 +126,10 @@ Pro 宽屏击球改为右侧面板内记录，左侧比赛信息保留；原有�
 
 普通 iPhone 已新增复核：iPhone 18 Pro／iOS 27.2 的 4 项 UI 通过（默认／自定义开屏、基础练习、完整 Pro 取消／提交／更正）；iPhone 16e／iOS 26.2 的 2 项既有球场锚点与坐标往返／历史数据不变回归通过。
 
-本轮追加批次：iPad mini／iOS 27.2 的 2 项 UI 通过（开屏旋转／新建；Pro 旋转保留落点与守备草稿并取消）；Duo 的开屏导航与新版首屏可达已通过。其余 Duo 录入／分享重跑及最终 Release 构建仍在进行中。新版白色分局表实图为 `workbench-linescore-final-open-display3.png`，已实际确认首屏仍包含完整球场及主要按钮。
+本轮追加批次：iPad mini／iOS 27.2 的 2 项 UI 通过（开屏旋转／新建；Pro 旋转保留落点与守备草稿并取消）；Duo 的开屏导航已通过。新版首屏视觉检查正常；自动化首屏的球场 AX 容器聚合了越界绘图，不能据此将首屏测试记为已通过，已更正早期误报并进行修复／重跑。Duo 系统分享切屏并关闭返回已通过，其余录入重跑及最后构建记录继续补充。新版白色分局表实图为 `workbench-linescore-final-open-display3.png`，已实际确认首屏仍包含完整球场及主要按钮。
+
+过程证据区分：`ui-duo-final` 中 launch 与 PDF share 通过；外屏 sheet 因 host 在 ack 前抓图延迟导致 90 秒协调超时，后续改为确认实际姿态后先 ack、再抓图；页内 Pro 初次测试点击点处于内层滚动裁切区外，未成功选择落点，改为验证真实点击点在内层可见交集后才发送手势并立即检查守备阶段。首屏完整球场断言保持，不以缩小断言区域或只看按钮代替。
+
+首屏边界修复已真实通过：`build-viewport-final.log` 构建成功，`ui-viewport-final.log` 中首屏专项 **1/1 通过、无跳过**（43.517 秒）。球场的装饰图形会 overscan 后裁切，原 AX 容器却聚合了裁切外范围；现使用 SwiftUI `contentShape(.interaction, RoundedRectangle(...))` 将交互／无障碍焦点限定到画布，保留守备员与垒包子元素，未缩小测试要求。完整球场、投打条和全部主要动作的窗口包含及可达断言均通过，测试没有滚动页面。参考 [Apple ContentShapeKinds.accessibility](https://developer.apple.com/documentation/swiftui/contentshapekinds/accessibility)。
+
+`build-release-final-styled.log` 的未签名 Release 已成功；最后的画布边界修复继续用 `build-release-verified.log` 重新构建设备 Release，尚在进行中。
