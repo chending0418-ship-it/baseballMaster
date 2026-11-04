@@ -4,6 +4,7 @@
 
 | 项目 | 当前依据 |
 | --- | --- |
+| 平台工作目录 | iOS 使用 `apps/baseball-scorekeeper/`；Android 使用并列的 `apps/baseball-scorekeeper-android/`，各自按平台版本维护发布功能计划；目录调整不更改本历史分支功能和发布状态 |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.1（Build 1） |
 | 当前开发 | `codex/dev-3.1.1`；本机完整记录、赛后确认上传、Pro 完整结果目录及完赛返回修复已完成；iOS 26.2 数据 74 项、UI 16 项通过，Debug／Release 构建通过；见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)、[配置说明](releases/3.1.1/CONFIGURABLE-LAUNCH.md) |
 | 本版发布功能计划 | [3.1.1 发布功能计划](<plans/3.1.1 发布功能计划.md>)，汇总当版实现、既有验收及转入 3.1.2 的未完成项 |

@@ -1,10 +1,16 @@
 # 统一工作区（2026-10-22）
 
+## iOS／Android 工作目录（2026-11-04 用户确认）
+
+- iOS 只在 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper/` 开发；Android 只在 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper-android/` 开发，Gradle 工程位于后者的 `android/`。两个平台分别使用可见目录，不再把当前 Android 工程放在 `.codex/worktrees/`。
+- 本目录是 **iOS 工作入口**。同属一个 Git 仓库、各用自己的分支和工作目录，不为目录整理改写历史、改变包名／版本或合并 main。跨平台参考源码仍可能随 Git 分支保留；不得误在另一平台目录继续业务开发。
+- Android APK、验证、构建依赖与模拟器资料归 Android 目录 `output/`；旧隐藏目录路径只作历史证据，映射见工作区 `management/MIGRATION.md`。
+
 本项目已迁入 BaseballMaster.CC。当前状态以 [docs/CURRENT.md](docs/CURRENT.md) 为入口。公共品牌规范由 [总品牌目录](../../brand/README.md) 管理；开始品牌及宣传工作时显式读取该目录规范。资料位置以 [总导航](../../management/AGENT-GUIDE.md) 为准。总项目规则见 [工作区约定](../../AGENTS.md)。现有工程名、Bundle ID 和版本号保持稳定。历史证据中的旧目录按工作区 management/MIGRATION.md 映射追溯。
 
 # 当前版本发布计划约定
 
-2026-11-04 用户要求：每个版本都在各自开发／发布分支维护单份 `docs/plans/<版本> 发布功能计划.md`；已有 3.1.0 根目录计划原位保留，不重复建立。完成开发、修复或验证后，交付前同步对应计划的最终功能、实际验证及证据、未完成项与转版归属、服务部署和商店发布状态，并更新 `docs/CURRENT.md` 导航，随对应分支提交和推送。不能只更新开发日志而漏掉发布功能计划，也不能把功能完成、构建通过或服务部署写成 App 已上传／审核／上架。历史分支保留当版真实边界，不反向混入后续版本代码；进入 main 仍遵守 PR 与用户授权。
+2026-11-04 用户要求：**iOS 与 Android 的每个开发、维护和发布版本，都必须在对应分支维护单份 `docs/plans/<版本> 发布功能计划.md`**；已有 3.1.0 根目录计划原位保留，不重复建立。正文注明平台、版本及 Build，完整列明增量功能与继承范围、实际验证及证据、未完成项与转版归属、打包／分发／服务部署／商店状态，以及分支和 PR。新增功能、修复、验证、范围变更或交付后及时更新，交付前同步 `docs/CURRENT.md`，随对应分支提交推送并更新 PR。不能只写 DEVELOPMENT／测试日志而漏掉发布功能计划；不能把实现、构建、服务部署或 Git 推送写成已上传／审核／上架。两平台的版本号分别管理，不为同一功能强行对齐版本号，不混入另一平台的业务修改；进入 main 仍须 PR 和明确授权。
 
 # 当前 Git 协作约定
 
