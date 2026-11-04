@@ -1,0 +1,47 @@
+{
+  "checked_date": "2026-11-04",
+  "source_page": "https://developer.apple.com/design/resources/",
+  "marketing_guidelines": "https://developer.apple.com/app-store/marketing/guidelines/",
+  "status": "originals extracted locally after explicit user license acceptance; all task volumes detached at handoff",
+  "license_id": "LYL142 06/21/2023",
+  "license_text_local": "output/cache/3.1.2-device-bezels/apple-design-resources-license-LYL142-2023-06-21.txt",
+  "license_accepted": true,
+  "mounted_volumes": [],
+  "downloads": [
+    {
+      "download_url": "https://devimages-cdn.apple.com/design/resources/download/Bezel-iPad-Pro-%28M5%29.dmg",
+      "local_original": "output/cache/3.1.2-device-bezels/Bezel-iPad-Pro-M5.dmg",
+      "bytes": 6787021,
+      "sha256": "ebde5f7249d416ad83d2d14881c31a0ae3ed8343643d26a0fbf61195aeb06f0f",
+      "software_license_agreement": true,
+      "extracted_assets": [
+        "apple-originals/ipad-landscape.png",
+        "apple-originals/ipad-portrait.png"
+      ]
+    },
+    {
+      "download_url": "https://devimages-cdn.apple.com/design/resources/download/Bezel-iPhone-Duo.dmg",
+      "local_original": "output/cache/3.1.2-device-bezels/Bezel-iPhone-Duo.dmg",
+      "bytes": 452785429,
+      "sha256": "6d623163830ea86c9298f37f1f32d4fe29810be05c9155b7dcd3ca3805d76cc2",
+      "software_license_agreement": true,
+      "extracted_assets": [
+        "apple-originals/duo-open.png",
+        "apple-originals/duo-closed.png"
+      ]
+    },
+    {
+      "download_url": "https://devimages-cdn.apple.com/design/resources/download/Bezel-iPhone-18.dmg",
+      "local_original": "output/cache/3.1.2-device-bezels/Bezel-iPhone-18.dmg",
+      "bytes": 144149642,
+      "sha256": "b27e827d156c9646048c2462cbba1c55c4267917083d8d43141086ea285d1792",
+      "software_license_agreement": true,
+      "extracted_assets": [
+        "apple-originals/iphone-portrait.png"
+      ]
+    }
+  ],
+  "license_acceptance": "用户在本聊天明确回复：同意协议，使用官方设备壳。",
+  "provenance": "apple-provenance.json",
+  "redistribution": "Do not commit or redistribute standalone original PNGs or alpha masks. Final delivery ZIP contains composite promotional images only."
+}

@@ -1,0 +1,26 @@
+App: BaseballMaster / 棒球比赛记录大师
+Version: 3.1.2 (Build 1)
+Bundle ID: com.jasonchen.baseballmaster
+
+No sign-in or review account is required. The UI is Simplified Chinese. There are no subscriptions, in-app purchases, ads or third-party analytics SDKs. Basic and Pro are two included scoring workflows, not paid tiers. No camera, microphone or location permission is needed.
+
+Offline scoring, practice, statistics, reports and local backups do not require an account. Optional sharing uses our own service with device authorization, not iCloud. Existing local games are not automatically uploaded. At launch the app may fetch a public first-party configuration/image; this contains no team/game payload or device authorization and does not block entering the app offline.
+
+Suggested review:
+1. Open 我的 (Profile) > 练习一局 (Practice one inning), select Pro and start. Tap 击球进入场内 (Ball in play), choose a result, select a ball type/location and actual fielders/throws, then confirm. Cancel does not record a play; confirm records it once. Practice does not enter official statistics. The app records the scorer's observations/rulings, not automatic officiating.
+2. On iPad, rotate or resize the app. Wide layouts show the field, score and supporting information together with inline Pro input. Narrow layouts reflow. On iPhone Duo, test outer/inner screens and half-folded state. A pending Pro draft is retained across layout changes. Our documented Duo validation used a simulator; no physical-device validation is claimed.
+3. Open 球队 (Teams), create/select a local team, open its roster and tap 批量输入 (Bulk input). Paste fictional rows, for example:
+Test A,Alex,12
+Test B,,00
+Preview, check and confirm the batch. Canceling the preview does not change the roster. The same flow is available for opponents. Shared-team bulk adding requires the server's bulkRosterImport capability; if unavailable, the app preserves input and explains the requirement.
+4. To inspect player locations with saved data, create/finish a local game and record Pro contacts. Open 统计 (Statistics), select its team and player, then 打击 (Batting). Filter the year/mode/games; tap locations or expand the per-play list. Point locations, approximate regions and missing information are distinct. Field coordinates are scorer-selected points on an illustration, not GPS. Statistics cover only recorded games the device can access.
+5. A finished local game can be reviewed and separately uploaded to a shared team. The local original is retained. A local game is not automatically converted into a shared game. Pitcher appearance limits are separate from IP; an automatically carried-over pitcher consumes a new inning only after pitching, while explicitly confirming a pitcher appearance consumes it at confirmation.
+
+Optional sharing: 球队 > 球队共享 (Team sharing) > 新建共享球队 (Create shared team). Create a fictional team and nickname; invite a second installation if testing handoff. No fixed or expiring review credentials are needed. Only one device records each shared match at a time, with confirmed handoff. Membership/roles control access.
+
+Anyone holding a valid live link can view text, not audio/video. Temporary live access expires after successful closure, one hour after completion or one hour without sync/heartbeat. Persistent team archives and separately controlled historical web access are independent of temporary live links.
+
+Privacy: https://baseballmaster.cc/scorekeeper/privacy-en.html
+Support: https://baseballmaster.cc/scorekeeper/support-en.html
+Marketing: https://baseballmaster.cc/scorekeeper.html
+Contact: chending0418@gmail.com

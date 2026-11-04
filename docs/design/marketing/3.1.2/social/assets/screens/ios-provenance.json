@@ -1,0 +1,47 @@
+[
+  {
+    "file": "ios-field.png",
+    "source": "docs/design/marketing/3.1.2/appstore/source/iphone-01.png",
+    "sha256": "2caeb10cee6fbc9a45b8ab3c67fe54f4819a606b1b06f737bd3ea65c84b9a687",
+    "syntheticData": true
+  },
+  {
+    "file": "ios-bulk.png",
+    "source": "docs/design/marketing/3.1.2/appstore/source/ipad-02.png",
+    "sha256": "06cbbd20baa5e22a527281c0dd6b6e2495f130037983f5d8cb0f57ff02cfa659",
+    "syntheticData": true
+  },
+  {
+    "file": "ios-contacts.png",
+    "source": "docs/design/marketing/3.1.2/appstore/source/iphone-06.png",
+    "sha256": "39712cdcfa7574e363ff7492ddedfab4576a57672491f7380704d53d35c87c56",
+    "syntheticData": true
+  },
+  {
+    "file": "duo-open.png",
+    "source": "docs/design/marketing/3.1.2/appstore/source/duo-01.png",
+    "sha256": "3264d9bb3d43e0953fbeead82d9bb160118246c49a6fc104bb68aadbc2cb933f",
+    "syntheticData": true
+  },
+  {
+    "file": "duo-pro.webp",
+    "source": "output/validation/3.1.2/duo-2026-11-04/expanded-pro-field-ready-display3.png",
+    "sha256": "b3d62778e9662d6b041312d6dd785cd341828c2c80244fabdab21f30aa97d638",
+    "syntheticData": true,
+    "sourceSHA256": "c63735c5eb2412577ec923b54e038280d602dac9b4b5c0a047e730ce9c3fc68f",
+    "losslessPixelSHA256": "854872e317157562f76d841635b9d7f22ba98156b443689f3227e764cb64c47c",
+    "note": "Decoded RGBA equals original PNG; retained lossless source for transfer size."
+  },
+  {
+    "file": "duo-closed.png",
+    "source": "docs/design/marketing/3.1.2/appstore/source/duo-04.png",
+    "sha256": "f4ce4479e2bf4ed995f60bd79910b17dfb47b96da7ab1b669782c0b1f4eed623",
+    "syntheticData": true
+  },
+  {
+    "file": "ipad-landscape.png",
+    "source": "output/validation/3.1.2/iphone-ipad-27.2/ipad-screen-images/2A5E06B6-C216-4CE1-8877-34B61D30A437.png",
+    "sha256": "40fb303feed6228a7995657e0bb886d5093fce876ceeaf0b0586b2efdf6754ac",
+    "syntheticData": true
+  }
+]

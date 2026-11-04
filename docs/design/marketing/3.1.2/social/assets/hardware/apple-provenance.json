@@ -1,0 +1,102 @@
+{
+  "checkedDate": "2026-11-04",
+  "sourcePage": "https://developer.apple.com/design/resources/",
+  "guidelines": "https://developer.apple.com/app-store/marketing/guidelines/",
+  "license": "Apple Design Resources LYL142 06/21/2023",
+  "licenseAcceptedByUser": true,
+  "licenseAcceptance": "User explicitly replied 同意协议，使用官方设备壳 in the active chat.",
+  "usage": "Local originals are excluded from Git and source/distribution ZIPs. Deliver composite images only. Do not redistribute standalone Apple template content.",
+  "compositing": "Set device canvas to width/height aspect ratio. Position actual unmodified screenshot in screen bounds and apply screen.mask as alpha mask (mask file dimensions equal screen width/height). Overlay full original bezel at 0,0 full canvas; do not crop, tilt, flip or add shadows. screen.mask is an exact alpha-hole derivative, required for asymmetric Duo closed corners.",
+  "devices": [
+    {
+      "id": "ipad-landscape",
+      "file": "apple-originals/ipad-landscape.png",
+      "width": 3000,
+      "height": 2300,
+      "frameOnTop": true,
+      "screen": {
+        "x": 124,
+        "y": 118,
+        "width": 2752,
+        "height": 2064,
+        "mask": "apple-originals/ipad-landscape-screen-mask.png"
+      },
+      "archive": "Bezel-iPad-Pro-M5.dmg",
+      "sourcePath": "PNG/iPad Pro (M5) 13\" - Space Black - Landscape.png",
+      "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
+      "maskSha256": "db59b3c4903b3364fbe3d5120a6429317c6f91e856568f996b49e9a82f0218d1"
+    },
+    {
+      "id": "ipad-portrait",
+      "file": "apple-originals/ipad-portrait.png",
+      "width": 2300,
+      "height": 3000,
+      "frameOnTop": true,
+      "screen": {
+        "x": 118,
+        "y": 124,
+        "width": 2064,
+        "height": 2752,
+        "mask": "apple-originals/ipad-portrait-screen-mask.png"
+      },
+      "archive": "Bezel-iPad-Pro-M5.dmg",
+      "sourcePath": "PNG/iPad Pro (M5) 13\" - Space Black - Portrait.png",
+      "sha256": "0f995b4f4f48ea4f50f4da416eb18979ca4b0987a653158730a3b272901c2cc6",
+      "maskSha256": "3b3b6e8bbcc64b8ef29d14a94829debf3157017502649ee9b34917642b954011"
+    },
+    {
+      "id": "duo-open",
+      "file": "apple-originals/duo-open.png",
+      "width": 3093,
+      "height": 2247,
+      "frameOnTop": true,
+      "screen": {
+        "x": 120,
+        "y": 120,
+        "width": 2853,
+        "height": 2007,
+        "mask": "apple-originals/duo-open-screen-mask.png"
+      },
+      "archive": "Bezel-iPhone-Duo.dmg",
+      "sourcePath": "PNG/iPhone Duo - Night Sky - Inner Open Landscape.png",
+      "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
+      "maskSha256": "532822e0543b543006ff558e1ec7694cc8bac6076b511451ba73ccfcae4bd3fd"
+    },
+    {
+      "id": "duo-closed",
+      "file": "apple-originals/duo-closed.png",
+      "width": 1574,
+      "height": 2194,
+      "frameOnTop": true,
+      "screen": {
+        "x": 88,
+        "y": 80,
+        "width": 1398,
+        "height": 2034,
+        "mask": "apple-originals/duo-closed-screen-mask.png"
+      },
+      "archive": "Bezel-iPhone-Duo.dmg",
+      "sourcePath": "PNG/iPhone Duo - Night Sky - Outer Closed Portrait.png",
+      "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
+      "maskSha256": "44e75980dbf83d3bacb2b3ffa113b9b5d2ed6659fb944ce74ad296f07682410d"
+    },
+    {
+      "id": "iphone-portrait",
+      "file": "apple-originals/iphone-portrait.png",
+      "width": 1470,
+      "height": 3000,
+      "frameOnTop": true,
+      "screen": {
+        "x": 75,
+        "y": 66,
+        "width": 1320,
+        "height": 2868,
+        "mask": "apple-originals/iphone-portrait-screen-mask.png"
+      },
+      "archive": "Bezel-iPhone-18.dmg",
+      "sourcePath": "PNG/iPhone 18 Pro Max/iPhone 18 Pro Max - Black - Portrait.png",
+      "sha256": "13fc8a8f0bc612f50c00d073b12aefa87bce1e4618fbdd3aa882438ae171e2be",
+      "maskSha256": "bd2819305b3a992e97e83355e78f7afe11444861427a1e9818204a69990ad594"
+    }
+  ]
+}

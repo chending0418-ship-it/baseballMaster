@@ -1,0 +1,140 @@
+{
+  "preparedAt": "2026-11-04",
+  "hardware": {
+    "android-open": {
+      "officialModel": "pixel_10_pro_fold",
+      "state": "default",
+      "layoutCanvasPixels": [
+        2204,
+        2274
+      ],
+      "displayRectPixels": {
+        "x": 62,
+        "y": 58,
+        "width": 2076,
+        "height": 2152
+      },
+      "backIntrinsicPixels": [
+        2201,
+        2268
+      ],
+      "maskIntrinsicPixels": [
+        2076,
+        2152
+      ],
+      "backOrigin": [
+        0,
+        0
+      ],
+      "maskOrigin": [
+        62,
+        58
+      ],
+      "closedCornerRadius": null,
+      "files": [
+        {
+          "file": "hardware/android-open/back.webp",
+          "source": "/Applications/Android Studio.app/Contents/plugins/android/resources/device-art-resources/pixel_10_pro_fold/default/back.webp",
+          "sha256": "e81e502e6f0ddccd88ab8bd517defaea46b346fdadb05c10fa918ec3b5b401e7",
+          "copiedWithoutEditing": true
+        },
+        {
+          "file": "hardware/android-open/mask.webp",
+          "source": "/Applications/Android Studio.app/Contents/plugins/android/resources/device-art-resources/pixel_10_pro_fold/default/mask.webp",
+          "sha256": "e1f480353b9f8edd7f4285d74914ee1fedb3aa2a44027481a9d2f9de35225a19",
+          "copiedWithoutEditing": true
+        },
+        {
+          "file": "hardware/android-open/layout",
+          "source": "/Applications/Android Studio.app/Contents/plugins/android/resources/device-art-resources/pixel_10_pro_fold/default/layout",
+          "sha256": "c364d549ed818357241563e4bf2db18a66e6127311e0a5ca65115128e6da2d66",
+          "copiedWithoutEditing": true
+        }
+      ]
+    },
+    "android-closed": {
+      "officialModel": "pixel_10_pro_fold",
+      "state": "closed",
+      "layoutCanvasPixels": [
+        1236,
+        2554
+      ],
+      "displayRectPixels": {
+        "x": 84,
+        "y": 66,
+        "width": 1080,
+        "height": 2364
+      },
+      "backIntrinsicPixels": [
+        1236,
+        2495
+      ],
+      "maskIntrinsicPixels": [
+        1080,
+        2364
+      ],
+      "backOrigin": [
+        0,
+        0
+      ],
+      "maskOrigin": [
+        84,
+        66
+      ],
+      "closedCornerRadius": 75,
+      "files": [
+        {
+          "file": "hardware/android-closed/back.webp",
+          "source": "/Applications/Android Studio.app/Contents/plugins/android/resources/device-art-resources/pixel_10_pro_fold/closed/back.webp",
+          "sha256": "f935d250955e45094202661abc381158f7f54ef7e70f6d6224f03f87d715ac5c",
+          "copiedWithoutEditing": true
+        },
+        {
+          "file": "hardware/android-closed/mask.webp",
+          "source": "/Applications/Android Studio.app/Contents/plugins/android/resources/device-art-resources/pixel_10_pro_fold/closed/mask.webp",
+          "sha256": "d1a702ae5fd9d2dcc0bf70775c9c1221c78cd54cd5bc81a4c68ecae4d9f9b8e2",
+          "copiedWithoutEditing": true
+        },
+        {
+          "file": "hardware/android-closed/layout",
+          "source": "/Applications/Android Studio.app/Contents/plugins/android/resources/device-art-resources/pixel_10_pro_fold/closed/layout",
+          "sha256": "429b83a82bb2dd1cd8c1f467282eefaad38f63636a2a1836567a3bf5adf51232",
+          "copiedWithoutEditing": true
+        }
+      ]
+    }
+  },
+  "additionalPhoneFrame": {
+    "model": "Google Pixel 7",
+    "source": "/Applications/Android Studio.app/Contents/plugins/android/resources/device-art-resources/pixel_7",
+    "canvas": [
+      1200,
+      2541
+    ],
+    "screen": {
+      "x": 59,
+      "y": 58,
+      "width": 1080,
+      "height": 2400
+    },
+    "compositing": "Original 1080x2340 screenshot is contained without stretching; 30 px background padding at top and bottom in the native 1080x2400 display.",
+    "files": [
+      {
+        "file": "hardware/android-phone/back.webp",
+        "sha256": "90c2aa5af3931c37366f519befa9e3565bdcb28542071f0920e123a3c551f4a6",
+        "copiedWithoutEditing": true
+      },
+      {
+        "file": "hardware/android-phone/mask.webp",
+        "sha256": "f8502556c018bcbeffaace4dd0fa79c857ffbabdb41cb7263e71657f13ed4215",
+        "copiedWithoutEditing": true
+      },
+      {
+        "file": "hardware/android-phone/layout",
+        "sha256": "25a6c319f5e8ad399c5ffdae5895149e59e7cfe8e2ba5652ed6ec6143572b375",
+        "copiedWithoutEditing": true
+      }
+    ]
+  },
+  "status": "Hardware provenance only. All former roster, scoring and player-statistics UI images are WITHDRAWN from publicity because their data was not confirmed fictional. Current approved Android UI: screens/android-safe-rules.png and android-safe-settings.png; see android-safe-provenance.json."
+}
