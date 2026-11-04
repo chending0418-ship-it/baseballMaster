@@ -6,7 +6,7 @@
 | --- | --- |
 | 平台工作目录 | 本目录为 iOS；Android 已独立迁至可见目录 [baseball-scorekeeper-android](../../baseball-scorekeeper-android/docs/CURRENT.md)，Gradle 工程位于该目录 `android/`。本次仅整理本机路径，既有版本和 PR 状态不变 |
 | 跨平台计划维护 | iOS、Android 各版本分别维护发布功能计划；Android [0.8.1](https://github.com/chending0418-ship-it/baseballMaster/blob/codex/android-0.8.1/docs/plans/0.8.1%20%E5%8F%91%E5%B8%83%E5%8A%9F%E8%83%BD%E8%AE%A1%E5%88%92.md)／[0.8.2](https://github.com/chending0418-ship-it/baseballMaster/blob/codex/android-0.8.2/docs/plans/0.8.2%20%E5%8F%91%E5%B8%83%E5%8A%9F%E8%83%BD%E8%AE%A1%E5%88%92.md) 由各自分支维护 |
-| Android 当前版本 | `codex/android-0.8.2`，0.8.2（Build 10）；示例名单、折叠跑垒分列与 PDF 对齐已完成，本轮经 PR #39 整合；[单份计划](<plans/0.8.2 发布功能计划.md>)、[开发交接](releases/android/0.8.2-DEVELOPMENT.md) |
+| Android 当前入口 | [Android CURRENT](../../baseball-scorekeeper-android/docs/CURRENT.md)，当前版本、验证和交付从该平台入口进入 |
 | Android 分发与遗留 | 官网仍为 0.8.1（Build 9）测试包，0.8.2 固定 APK 未重新分发；正式赛后归档／旧关联更新、完整跨端互导及实体厂商设备仍待后续，未上传应用市场 |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.2（Build 1） |
 | PR 整合授权 | 2026-11-04 用户授权整理并合入 #34、#37，再整合验证 #39；#34 已合并为 `e58ea84`，#37 已合并为 `510021b`；#39 在本分支完成整合验证后通过 PR 合入。整合验证详见 [记录](maintenance/2026-11-04-pr-integration.md)。本轮合并不包含真实迁移、服务部署或商店上传 |
@@ -14,8 +14,8 @@
 | 继承问题与验收 | P2 已修复；91 项 iOS 数据、iPhone 6 项 UI 分批通过，iPad Pro 8 项、mini 2 项 UI 通过；Debug／未签名 Release 成功。批量名单覆盖本机／对手／共享，共享后端 107 项通过但未部署；统计页球员落点已接入统一球场，新增专项验证通过；旧记录、备案及迁移仍待办，见 [3.1.2 开发记录](releases/3.1.2/DEVELOPMENT.md) |
 | 设备兼容 | iPhone／iPad 已有验证，Duo 内外屏及半折叠 5 项专项 UI 场景已通过；默认展开首屏完整显示主要操作，页内 Pro 自然展开；原研究保留为 [兼容评估](plans/ADAPTIVE-DEVICE-SUPPORT.md)，实际进度及 Duo 下载入口见 [3.1.2](releases/3.1.2/DEVELOPMENT.md) |
 | 本版发布功能计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；上版范围与承接见 [3.1.1 发布功能计划](<plans/3.1.1 发布功能计划.md>) |
-| 上版发布功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
-| 上版开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
+| 历史 3.1.0 功能计划 | [3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)，保留上版范围与发布事项 |
+| 历史 3.1.0 开发与验收 | [3.1.0 开发交接](releases/3.1.0/DEVELOPMENT.md)、[验收记录](releases/3.1.0/ACCEPTANCE.md) |
 | 发布材料 | [3.1.0 发布交接](releases/3.1.0/REVIEW-HANDOFF.md)、`output/releases/3.1.0/` |
 | 已确认上架 | 既有 README 记录用户确认 3.0 已上架；本轮没有连接 App Store Connect 核验新状态 |
 | 3.1.0 上传与审核 | 现有交接为材料已准备、尚未上传或提交；后续以用户确认或回执更新 |
@@ -23,8 +23,9 @@
 | 原设备连接问题 | 2026-11-02 用户确认改动后无需继续排查，已关闭；两场旧比赛原件核对仍保留在 I311-05 |
 | 3.1.1 历史发布边界 | 开屏服务已增量部署到现有香港服务（固定 URL）；App 未正式归档、上传或提交审核，备案与上海迁移仍等待 |
 | 服务实现 | `live/`、`collaboration/` 随本项目维护，原公网 URL 保持 |
-| 上海迁移准备 | 隔离验收、正式证书、上海 COS 备份恢复及正反向迁移演练已通过；正式候选配置已校验但未安装。用户决定等备案通过后再开始真实数据迁移，今晚 23:00 不执行维护；生产数据未复制、域名未切换、香港未操作，见 [迁移方案与阶段记录](plans/ICP-MIGRATION.md#14-真实数据迁移前的准备交接2026-10-23) |
+| 上海迁移准备 | 隔离验收、正式证书、上海 COS 备份恢复及正反向迁移演练已通过；正式候选配置已校验但未安装。用户决定等备案通过后再开始真实数据迁移，该次决定取消当晚 23:00 的维护；生产数据未复制、域名未切换、香港未操作，见 [迁移方案与阶段记录](plans/ICP-MIGRATION.md#14-真实数据迁移前的准备交接2026-10-23) |
 | 公共品牌与官网 | [品牌](../../../brand/README.md)、[官网](../../../website/README.md) |
+| 本次工作区整理 | [2026-11-04 整理记录](../../../management/2026-11-04-workspace-tidy.md)：入口精简及过期构建缓存清理，源码、发布归档与验证证据保留；[文档 PR #40](https://github.com/chending0418-ship-it/baseballMaster/pull/40) 为 Draft，未合并 |
 | 目录整理历史 | [迁移记录](../../../management/MIGRATION.md)，当次未修改业务代码、版本号或部署 |
 
 需求与后续设计入口：[3.1.1 开机图](design/launch-screen/3.1.1/README.md)、[3.1.0 发布功能计划](<../3.1.0 发布功能计划.md>)、[3.1 原始详细规划](plans/3.1-BATTED-BALL.md)、[后续计划](plans/BACKLOG.md)、[产品设计](design)。

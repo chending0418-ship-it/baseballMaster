@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-04",
+  "interpretLinksRelativeToOriginalPath": true,
+  "files": [
+    {
+      "originalPath": "apps/baseball-scorekeeper/AGENTS.md",
+      "file": "AGENTS-before.txt",
+      "sha256": "48132d1ebf7b1aef2724d4b169ee180598e73d58ec5c9e70d19410bc713de83e"
+    },
+    {
+      "originalPath": "apps/baseball-scorekeeper/README.md",
+      "file": "README-before.md",
+      "sha256": "b22ebae330dbe88c98c1b95c546c9660848876b1e7a7caaff284c20ac58ee5f3"
+    },
+    {
+      "originalPath": "apps/baseball-scorekeeper/TODO.md",
+      "file": "TODO-before.md",
+      "sha256": "389074dd8e51e051efa77b9d9c46600d01261bf3c8c377a4f8ff6f5581ee13b9"
+    }
+  ]
+}
