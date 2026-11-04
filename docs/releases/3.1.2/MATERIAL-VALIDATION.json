@@ -1,6 +1,6 @@
 {
   "date": "2026-11-04",
-  "scope": "local release materials only",
+  "scope": "release materials and Shanghai static website publication",
   "appBuildsOrTestsRerun": false,
   "pngCount": 41,
   "appStoreSets": 11,
@@ -312,5 +312,16 @@
     "sourcePixelsIdentical": true,
     "publicPNGsUnchanged": 40,
     "sourceWebPBytes": 761118
+  },
+  "websiteDeployment": {
+    "batch": "website-20261104T125935Z",
+    "filesHTTPSHashVerified": 12,
+    "protectedStaticFilesUnchanged": 92,
+    "publicBrowserChecks": 18,
+    "failures": 0,
+    "transparentHero": true,
+    "homepageFilingVisible": true,
+    "appUploaded": false,
+    "backendUpdated": false
   }
 }

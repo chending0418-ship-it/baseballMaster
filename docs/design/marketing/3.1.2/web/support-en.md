@@ -1,6 +1,8 @@
 # BaseballMaster Support
 
-For the iOS app. Draft dated November 4, 2026. The available download version is the one shown on the [App Store](https://apps.apple.com/cn/app/id6802063886).
+Updated November 4, 2026. This page explains the iOS app; available features depend on the installed app. Available downloads are shown on the [App Store](https://apps.apple.com/cn/app/id6802063886). Android is currently distributed for testing, with features and operations defined by its test package. Updating this website does not mean an app update is available on the store.
+
+Online services now run in Shanghai, China, with existing team, invitation and viewing URLs retained. Unshared rosters and games stay on the device. See the [privacy policy](https://baseballmaster.cc/scorekeeper/privacy-en.html) for regions, migration rollback copies and deletion arrangements.
 
 ## Contact the developer
 
@@ -54,13 +56,35 @@ Text broadcasts show scores, lineups and play text, not captured audio or video.
 
 Historical web access may be open, approved viewers only or closed. Restricted viewers must apply and be approved; forwarding does not authorize another viewer. Clearing cookies or changing browsers may require reapproval. Closing web access does not delete the game, and revocation cannot retrieve already saved copies.
 
-The app may fetch branded launch screen settings; this does not upload local rosters or games. Offline, local resources are used. See the privacy policy for processing scope, regions, retention and deletion.
+The app may fetch branded launch screen settings; this does not upload local rosters or games. Offline, local resources are used. See the [privacy policy](https://baseballmaster.cc/scorekeeper/privacy-en.html) for processing scope, regions, retention and deletion.
 
 ## Backups, exports and deletion
 
 Use Profile → Backup and Restore to export a complete backup outside the app. PDF/TXT reports are for reading and cannot replace complete recovery files. Local exports are unencrypted: verify recipients and remove unrelated information. Team archives exclude device authorization, administrator recovery codes and viewing permissions.
 
 After restoring an older local backup, reconnect to reconcile shared records; it does not overwrite the entire server. Deactivating players preserves historical results. Leaving a team or deleting the app does not delete the team’s cloud records. Administrators can delete cloud games or dissolve teams; the privacy policy describes the 30-day recovery period and backup expiry. We cannot restore local records that were never uploaded or backed up.
+
+## Historical corrections and pregame lineups
+
+### What if a substitution, position or result was missed?
+
+Use the correction entry at the relevant point in the game history, preview its effects, then save. Correcting a finished game leaves it finished. Review revisions in correction history; the latest correction can be previewed for withdrawal before saving. Check RBI, earned runs and defensive responsibility against the official ruling for complex errors. Saved corrections update local statistics and valid broadcasts after synchronization. Previously exported PDFs, TXT files and images are not replaced automatically; generate them again.
+
+### How do adult slow-pitch games work?
+
+Choose adult slow pitch in new game setup, select time-based or inning-based play, initial ball/strike counts and the foul-ball policy after two strikes. Assign 10 different defensive positions per side, including Free; the batting order may contain more than 10 players, with extra batters not currently fielding. Adjust lineups again before Play Ball. Pregame edits become the initial lineup; in-game substitutions and pitching changes are recorded at their actual point. Record an Illegal ruling, its final outcome and whether a pitch was actually delivered separately; an undelivered penalty ball does not increase actual pitch count. Reaching the time limit does not automatically cut off a plate appearance: follow the official’s decision.
+
+### How do I reorder players or filter statistics?
+
+Use drag handles in lineup adjustment. Away/home offense can be exchanged before the first pitch; recording it locks the choice, and undoing it does not unlock it. Select only the finished games you need in statistics. An empty selection stays empty or zero rather than reverting to all records. After finishing a game, return home from the final card; results remain available from recent games.
+
+## Reports and exports
+
+Use export on game, team or player statistics pages, then save or send PDFs through the system share sheet. Plate appearance reports have detailed and concise text layouts; match posters can be generated on their relevant page. Check available storage and try saving to the Files app if needed. Reading reports are not complete recovery backups.
+
+## Broadcast content and deletion requests
+
+If player information is exposed without authorization, a minor’s privacy is affected or play text is inappropriate, [contact the developer](mailto:chending0418@gmail.com?subject=BaseballMaster%20Privacy). Provide the necessary viewing link or code, the information concerned, the reason and a reply contact. Redact unrelated information in screenshots. Do not send complete backups or publishing credentials. We verify the request and may stop public access where necessary. Publishers can first close the broadcast in the app and confirm success; other viewers should stop forwarding it.
 
 ## Connection and display problems
 

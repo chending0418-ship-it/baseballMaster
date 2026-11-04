@@ -1,6 +1,6 @@
 # BaseballMaster Privacy Policy
 
-Draft dated November 4, 2026. Covers the iOS app and its team collaboration, text broadcast and viewing services. The effective date will be the actual publication date.
+Updated and effective November 4, 2026. Covers the iOS app and its team collaboration, text broadcast and viewing services.
 
 <a id="contact"></a>
 
@@ -58,7 +58,8 @@ Viewing pages offer no public game directory and ask search engines not to index
 - You control local data and can export or delete it. The app maintains available local automatic backups and upgrade recovery copies; these are not remote cloud backups. Deleting the app may remove its documents. External exports must be removed separately.
 - Shared team archives remain until an authorized administrator deletes games or dissolves the team. Closing historical web viewing, ending a game, leaving a team or uninstalling the app does not delete shared games for the team.
 - Deleted cloud games have a 30-day recovery period. Dissolving a team immediately closes member access and sharing; recovery within the original permission scope is available for 30 days. Recovery does not automatically restore old memberships, invitations or viewing access. Game content is purged after expiry.
-- The shared service creates encrypted daily backups in independent object storage, retaining daily backups for up to 30 days. With the recovery period, deleted content may take up to 60 days after deletion to expire from retained backups. Restores continue to apply deletion and revocation records rather than reviving revoked access.
+- The shared service creates encrypted daily backups. Routine team backups follow a 30-day retention period. The deletion recovery period and daily-backup expiry operate separately. Restores continue to apply deletion and revocation records rather than reviving revoked access.
+- Complete data and configuration backups made for migration verification, rollback and recovery are managed separately from routine team backups and currently have no automatic expiry. Access is restricted to necessary personnel. Copies will be cleaned up to the necessary scope as migration closeout is completed; the routine retention period does not mean every copy is cleared within the same period. Contact the operator on this page to clarify the scope of a personal-data deletion request.
 - Necessary operation attribution, objects and timestamps are kept for security and audit. Names are cleared after dissolved-team expiry. Deletion markers, revocation digests and operation identifiers that cannot be used to view or reconstruct game content may remain to prevent stale devices or backups from restoring access.
 - Legacy and local-only temporary broadcasts are removed on expiry or successful closure and are not backed up as long-term team archives. Service restarts may end these temporary broadcasts earlier; their removal does not delete the local original.
 
@@ -68,7 +69,7 @@ Recovery cannot guarantee zero data loss. Keep important complete archives outsi
 
 ## 7. Providers, regions and security
 
-The website, online services and independent backups use Tencent Cloud infrastructure. The provider processes requests as needed for hosting, networking, storage and security. Current production online services run in Hong Kong, China. If service regions change, this policy will be updated to reflect actual production service and backup regions and the retention of old copies.
+The website, online services and independent backups use Tencent Cloud infrastructure. The provider processes requests as needed for hosting, networking, storage and security. Current production online services and primary business data are located in Shanghai, China. Routine team backups use independent private object storage in the Shanghai region. Old data, journals and backup copies in Hong Kong, China, remain for migration verification, rollback and recovery, with restricted access; they are not a separate externally writable primary service. These migration copies currently have no automatic expiry and will be cleaned up to the necessary scope as migration closeout is completed. We will update this policy if regions or processing arrangements change.
 
 Transfers use HTTPS, access is controlled by member/device permissions, and backups are encrypted with keys held separately. IP addresses and other connection information are processed to respond to requests and apply rate limits. Operational information is limited to service operation and security troubleshooting. We do not intentionally record rosters, game payloads, link secrets or credentials in logs. No security measure eliminates every risk. Protect your devices and administrator recovery card.
 
@@ -92,4 +93,4 @@ The app is a match recording tool without a public community or chat. A parent, 
 
 If you contact support, we receive the contact information, messages and attachments you provide solely to resolve the request, and delete them when no longer needed, except where retention is legally required.
 
-When processing changes, we update this page’s date and explain the applicable changes. New upload or public sharing features describe their scope before activation. Upgrading does not automatically share local games. See the support page for operating instructions.
+When processing changes, we update this page’s date and explain the applicable changes. New upload or public sharing features describe their scope before activation. Upgrading does not automatically share local games. See the [support page](https://baseballmaster.cc/scorekeeper/support-en.html) for operating instructions.

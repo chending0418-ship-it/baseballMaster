@@ -1,6 +1,6 @@
 # 3.1.2 隐私、支持 URL 与官网内容交接
 
-2026-11-04。iOS 3.1.2（Build 1）。本次完成文字源稿、目标路由及官网介绍策划；**所有新增 URL 均未创建或验证上线**，不得据本地文件直接填写为已可用的 App Store Connect 地址。官网只策划，不部署；现有 App 内链接、官网源码、DNS 和服务均未修改。
+2026-11-04。iOS 3.1.2（Build 1）。用户后续已授权在迁移后的上海环境发布隐私／支持及官网介绍。正式页面已实现，部署与公网验收结果见文末更新；App 内链接、App Store Connect 和 App 发布仍为独立步骤。
 
 ## 目标网址
 
@@ -25,18 +25,12 @@
 - `ConfigurableLaunchScreen.swift`：默认启动后异步 GET `/api/v3/app/launch-screen`，必要时下载同域图像；临时会话禁 Cookie、无共享鉴权、阻止重定向，不包含名单或比赛正文。文稿明确区分“不自动上传本机比赛”与“可能发起开屏网络请求”。
 - `BulkRosterImportView.swift`、`BulkRosterImport.swift`：由用户主动输入／粘贴，每批最多 200 人，预览／取消不新增，确认只新增。`TeamSharingStore.swift` 保存必要批次与重试状态；`TeamCollaboration.swift` 先核对服务端批量能力。共享生产服务尚未更新，不把客户端完成写成已对所有用户开放。
 - `TeamCollaboration.swift`／`TeamCollaborationViews.swift` 与既有公开隐私：无手机号／邮箱／Apple 账号注册、角色授权、摘要凭据、设备配对、历史观看与删除路径。无个人注册账户不意味着无成员身份和数据删除义务。
-- `collaboration/maintenance.mjs`：30 天回收／解散后内容清除逻辑；既有公开政策为独立日备份 30 天、删除后至多 60 天备份到期。`collaboration/backup.mjs` 为加密备份及撤权／删除重放。最终发布前须核对实际生产任务配置。
-- `live/server.mjs` 与迁移方案：临时文字直播为独立范围，不是音视频；到期与持久球队档案分开。既有地域为中国香港。同期任务已推进上海离线预迁移，但正式流量未切换，故草稿第七节仍写当前香港生产事实，未声称线上已迁上海。
+- `collaboration/maintenance.mjs`：30 天回收／解散后内容清除逻辑；旧政策曾按日备份推算删除后至多 60 天；新正文已区分日常与迁移完整备份，删除该通用承诺。`collaboration/backup.mjs` 为加密备份及撤权／删除重放。最终发布前须核对实际生产任务配置。
+- `live/server.mjs` 与迁移方案：临时文字直播为独立范围，不是音视频；到期与持久球队档案分开。正式服务已在同日迁往上海，旧香港迁移副本受限保留，新正文与迁移回执一致。
 
-## 上海完成后的隐私地域替换段
+## 正式环境事实（2026-11-04 更新）
 
-本轮两种语言的隐私正文使用当前可证实的中国香港事实，不能在未来迁移后原样发布。正式迁移并验收后，须根据回执用以下结构替换第七节首段，并同时更新两种语言、旧新 URL：
-
-> 网站、在线服务和独立备份使用腾讯云基础设施。正式在线服务的主数据存储于中国上海，日备份存储于腾讯云中国上海地域的独立私有对象存储。原香港环境中为迁移回退保留的旧副本，按下述已确认范围和期限受限保存：[由迁移交接填写旧数据库／安全日志／备份范围、保留期限与清除安排]。这些副本不继续对外提供独立写入服务。提供方在托管、网络、存储和安全所需范围处理请求。
-
-> The website, online services and independent backups use Tencent Cloud infrastructure. Primary production service data is stored in Shanghai, China, and daily backups are stored in independent private object storage in Tencent Cloud’s Shanghai region. Old copies retained in Hong Kong for migration rollback are restricted to the following confirmed scope and retention period: [complete from the migration handoff, including old databases, security journals, backups and deletion arrangements]. They do not continue to operate as a separate externally writable production service. The provider processes requests as needed for hosting, networking, storage and security.
-
-**方括号是内部编辑门槛，不能发布。** 当前原香港数据与备份计划保留，不能笼统写“所有数据只在上海”或“已删除境外副本”。迁移临时包及离线副本的范围／清理亦按既有迁移方案逐项核对，不在隐私正文公开服务器 IP、桶名、内部路径或凭据位置。若上线时真实迁移未完成，则保留当前事实段，不提前换成上海段。
+用户已确认迁移与 DNS 切换。隐私中英正文现写明上海正式主服务、上海私有日备份；原香港旧数据、日志及备份受限保留用于迁移核验和回退，不继续作为独立可写主服务。日常球队备份保留 30 天；完整状态、配置与迁移副本目前无自动到期，不再泛称全部备份最长 60 天。迁移收尾按必要范围清理，无虚构完成日期。公开内容不包含 IP、桶名、内部路径或凭据。
 
 ## 发布前集中待核对
 
@@ -49,8 +43,15 @@
 
 ## 交付和验证边界
 
-源稿位于 `docs/design/marketing/3.1.2/web/`，以本版真实功能与既有公开内容为依据；官网产品页正式实现归总品牌仓库。此处没有生成网站部署包、上传文件、调用生产接口或迁移真实数据。文稿完整性、关键能力、链接和缺失字段已作文本检查，不能据此记为线上网页验收。
+源稿位于 `docs/design/marketing/3.1.2/web/`，以本版真实功能与既有公开内容为依据；官网产品页正式实现归总品牌仓库。最初仅准备稿件；用户后续授权官网部署，实际网页实现与部署单独记录。没有进行新的真实数据迁移或业务服务发布。
 
 Apple 资料已于 2026-11-04 查阅：[App Review Guidelines 5.1](https://developer.apple.com/app-store/review/guidelines/)、[App privacy 字段](https://developer.apple.com/help/app-store-connect/reference/app-information/app-privacy/)、[App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/)。政策需说明实际收集与用途、共享及保留／删除，并在 App 和商店提供可用入口；最终审核结果以 Apple 回执为准。
 
-同期备案进展：根据 2026-11-04 迁移任务的当前记录，网站 `沪ICP备2026058730号-1`、App `沪ICP备2026058730号-2A` 已通过，用户确认商店备案配置完成。正式网页需沿用共享页脚的网站号，并与 App 号分开；本轮不保存个人证件或地址，也不发布官网。上海离线预迁移不是正式流量切换。
+同期备案进展：根据 2026-11-04 迁移任务的当前记录，网站 `沪ICP备2026058730号-1`、App `沪ICP备2026058730号-2A` 已通过，用户确认商店备案配置完成。正式网页需沿用共享页脚的网站号，并与 App 号分开；本轮不保存个人证件或地址。迁移当前状态与本批页面发布分别记录，不将网页发布当作 App 上架。
+
+
+## 2026-11-04 正式上线回执
+
+用户后续授权后，已发布产品介绍、四份新中英文页面及两份旧兼容页。批次 `website-20261104T125935Z`；12文件HTTPS摘要一致，92其他静态文件保持，Nginx检查后平滑重载。上海公网匿名可读，新旧路径均200，旧锚点、备案及语言链接保持。产品无后缀入口 `/scorekeeper` 与既有 `.html` 均保持，保留并行任务的路由及首页／教练口袋改动。官网四设备图现用真实alpha透明底，去掉矩形摄影背景；社交海报背景不因此改变。部署证据在 `output/validation/3.1.2/website-publish-2026-11-04/`，公开源稿在总仓库website。
+
+新网址可用于本轮填写，但本轮未登录或修改 App Store Connect，未上传／提交 App；此前发布前清单的账号及业务能力项仍按实际提交核对。
