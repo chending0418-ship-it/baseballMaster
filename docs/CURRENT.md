@@ -9,6 +9,7 @@
 | Android 当前版本 | `codex/android-0.8.2`，0.8.2（Build 10）；示例名单、折叠跑垒分列与 PDF 对齐已完成，本轮经 PR #39 整合；[单份计划](<plans/0.8.2 发布功能计划.md>)、[开发交接](releases/android/0.8.2-DEVELOPMENT.md) |
 | Android 分发与遗留 | 官网仍为 0.8.1（Build 9）测试包，0.8.2 固定 APK 未重新分发；正式赛后归档／旧关联更新、完整跨端互导及实体厂商设备仍待后续，未上传应用市场 |
 | 源码版本 | `BaseballMaster.xcodeproj/project.pbxproj`：3.1.2（Build 1） |
+| 正式归档／导出 | iOS 3.1.2（Build 1）已从干净 main `3d3d83a` 完成 Release 真机 arm64 Archive 与 App Store IPA 导出；签名／dSYM／隐私清单核对通过，尚未上传／提交审核／上架，见 [归档交付](releases/3.1.2/ARCHIVE.md) |
 | PR 整合状态 | #34、iOS #37 与 Android #39 已合入，main 基线 `b415236`。用户新增授权完成共享批量后台后，将本版完整 iOS 收尾及资料通过 [PR #41](https://github.com/chending0418-ship-it/baseballMaster/pull/41) 合入 main；最终公网回执现已冻结，可按本次用户授权经 PR 合并，App 上传／审核／上架分别记录 |
 | 当前发布 | iOS 3.1.2（Build 1），功能代码已通过 #37 进入 main；本轮补齐备案展示、上海迁移源码／回执、已上线网页和共享批量服务，再整合 #41 资料。安全收尾分支 `codex/release-3.1.2-final-20261104` 从远端 #41 建立，不带旧拒绝素材父链 |
 | 继承问题与验收 | P2 已修复；91 项 iOS 数据、iPhone 6 项 UI 分批通过，iPad Pro 8 项、mini 2 项 UI 通过；Debug／未签名 Release 成功。批量名单覆盖本机／对手／共享，共享后端 107 项通过，上海批量服务已上线、协议与旧客户端单人编辑兼容保持，九项公网专项已通过；统计页球员落点已接入统一球场，新增专项验证通过；旧记录仍待原件；备案展示已实现、服务器迁移已完成，App 发布仍待办，见 [3.1.2 开发记录](releases/3.1.2/DEVELOPMENT.md) |
@@ -69,3 +70,11 @@ App Store 与版本宣传脚本现位于 `scripts/release/`，海报模板位于
 ### 简体中文推广文本与关键词ASO调整
 
 2026-11-04 按用户要求重写推广文本（130字符）与关键词（98 UTF-8字节），保留名称／副标题，区分推广文本的下载转化用途和关键词的搜索覆盖用途。与副标题重复的完整词位已减少，无版本号／竞品词／虚构热度或排名，字段及资料总包同步更新。依据与取词逻辑记在本版APPSTORE-METADATA；未代填App Store Connect。
+
+## 2026-11-04 正式 Release 归档与 App Store IPA 导出（当前）
+
+已从干净 main `3d3d83a6aaf64be353e0f71c749a3e7e3ad879d6` 完成 iOS 3.1.2（Build 1）Release generic iOS device（arm64）归档，并以 `app-store-connect`／`destination=export` 导出 App Store 分发 IPA，未使用上传。签名、版本／Build／Bundle ID、设备族、最低 iOS、隐私 plist 与 dSYM 一致性核对通过；导出包 `get-task-allow=false`，无设备白名单。
+
+正式目录：`output/releases/3.1.2/archives/BaseballMaster-3.1.2-build1.xcarchive`；IPA：`output/releases/3.1.2/app-store-export/BaseballMaster.ipa`，14,793,278 bytes，SHA-256 `f3f068b8f9dfe695f1902a2dc73affb1b54ce13d1966f532f69b18cd631cc572`。源归档的自动开发签名与导出后的 App Store 分发重签分别记录；正式二进制／签名不进入 Git 或宣传 ZIP。详见 [归档交付](releases/3.1.2/ARCHIVE.md)。
+
+本段替代此前按日期保留的“未正式归档”阶段状态。App 尚未上传、提交审核或上架，归档／导出不代表 Apple 服务端验证通过。本次没有重跑 App 功能测试、修改源码或版本。
