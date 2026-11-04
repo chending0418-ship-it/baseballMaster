@@ -18,7 +18,7 @@
 | I312-04 | 旋转及弹层状态 | 旋转保留 Pro 落点与守备草稿，取消不记球、确认仅一球、撤销重做及终场返回通过 |
 | I312-05 | 开屏、分享和窗口边界 | 开屏适应可用高度；单实例可缩放；PDF 分享关闭及返回结果通过；任意分屏尺寸未穷举 |
 | I312-06 | iPhone 回归及 Debug／Release 构建 | 91 项 iOS 数据回归、iPhone 6 项 UI 分批通过；Debug／未签名 Release 构建成功 |
-| I312-07 | Duo 工具链与原生适配 | 已恢复开发；Xcode 27.2／Duo iOS 27.2 就绪，内外屏与半折叠专项验收进行中，见末尾记录 |
+| I312-07 | Duo 工具链与原生适配 | 实现完成；Duo 专属模拟器内外屏／半折叠 5 项 UI 场景通过，包含首屏可达和 Pro 自然展开，见末尾汇总 |
 | I312-08 | 3.1.1 P2 球员对应后更正上传（原 I311-10） | 已修复，4 项专项与现有数据回归通过；保持真实正文并发、权限和交接保护 |
 | I312-09 | 真实两场旧比赛核对及旧数据处理（原 I311-05） | 待取得本机原件核对，不自动覆盖生产；旧请求被保留不等于用户处理闭环已完整 |
 | I312-10 | App 备案号与关于页（承接 3.1.1） | 待正式 App 备案号，展示完整编号与工信部查询入口，不用网站备案号／占位号 |
@@ -118,7 +118,7 @@ Pro 宽屏击球改为右侧面板内记录，左侧比赛信息保留；原有�
 - 用户指出顶部过高后，将宽屏总比分／计时／球数与分局表并排在同一行，分局表使用 75 点的紧凑白色卡片；上下间距和边距收紧。分局表按用户后续反馈去掉铺满整列的浅绿块及米色表头，局数列保持固定的缩放宽度，余宽留给队名，当前局仅小范围圆角高亮，R／H／E 对齐，整张卡片统一白底薄边。练习提示在空间足够时合为单行，窄屏仍可两行；球场按可用高度取 240–320 点，慢垒保留必要的最低场高。目标是在 Duo 默认展开窗口首屏完整显示球场、投打条及主要记分动作，详细投打、阵容与历史继续向下查看。
 - 新增真实 Device Hub 姿态驱动的 Duo UI 用例：开屏／根导航、内屏页内 Pro 草稿、外屏 sheet 草稿、分享中展开与首屏可达。runner Documents 中通过 duo-phase.txt／duo-host-step.txt 同步实际 Closed／Partially Open／Open 操作；不以假窗口宽度或 iPad 测试替代 Duo。
 
-本轮构建、截图及原始失败证据保存在 `output/validation/3.1.2/duo-2026-11-04/`。最终自动化通过项在测试完成后补充。
+本轮构建、截图及原始失败证据保存在 `output/validation/3.1.2/duo-2026-11-04/`。以下中间批次按时间保留，最终结论见本节末尾汇总。
 
 已完成视觉检查：`workbench-final-open-display3.png` 为真实展开内屏（2853×2007），完整球场、投打条和主要动作无需滚动即可看见；内屏竖向窗口可重排且球数保留。仅按既有方向策略检查实际可用横／竖窗口，不宣称 iPhone 四方向全部支持。深色／accessibility-large 检查发现分局表固定行高与动态字体重叠，已让行高、表格总高及列宽使用 ScaledMetric；修复图 `workbench-dark-accessibility-large-fixed-display3.png` 已目视确认三行独立、无重叠。默认字号保持 75 点紧凑尺寸，大字允许向下及表格横向滚动。
 
@@ -132,8 +132,32 @@ Pro 宽屏击球改为右侧面板内记录，左侧比赛信息保留；原有�
 
 首屏边界修复已真实通过：`build-viewport-final.log` 构建成功，`ui-viewport-final.log` 中首屏专项 **1/1 通过、无跳过**（43.517 秒）。球场的装饰图形会 overscan 后裁切，原 AX 容器却聚合了裁切外范围；现使用 SwiftUI `contentShape(.interaction, RoundedRectangle(...))` 将交互／无障碍焦点限定到画布，保留守备员与垒包子元素，未缩小测试要求。完整球场、投打条和全部主要动作的窗口包含及可达断言均通过，测试没有滚动页面。参考 [Apple ContentShapeKinds.accessibility](https://developer.apple.com/documentation/swiftui/contentshapekinds/accessibility)。
 
-`build-release-final-styled.log` 的未签名 Release 已成功；最后的画布边界修复继续用 `build-release-verified.log` 重新构建设备 Release，尚在进行中。
+`build-release-final-styled.log` 与画布边界修复后的 `build-release-verified.log` 未签名 Release 均构建成功；最新自然展开版本以 `build-release-expanded-final.log` 为准。
 
 用户最新界面反馈：旧页内 Pro 卡片固定高度截住球场，现已去掉高度上限与内部滚动，完整内容自然展开；普通 sheet 仍由自身滚动与底部操作区承载。新版 Debug 已构建，展开 Pro 的真实 UI 输入／姿态检查，以及 iPhone／iPad 相关回归正在重新执行；前面有限高版本的 Pro 记录不冒充这次自然展开验证。
 
 自然展开版本已新增确认：`iphone-expanded-pro`（1 项完整 Pro 取消／提交／更正）与 `ipad-expanded-pro`（1 项旋转保留草稿并取消）通过；`build-release-expanded-final.log` 的未签名设备 Release 构建通过。Duo 自然展开的最终流程仍在真实 Device Hub 操作与 XCTest 断言配合下验收。守备路线保留原有单行横向 rail，移除的是截住整个编辑器的内部竖向滚动窗口。
+
+
+### 本轮最终结果（2026-11-04）
+
+Duo 本轮适配与专项模拟器验收完成。最新生产改动为 `ab67d7f`（页内 Pro 自然展开），之后仅调整测试的真实滚动／主机协调及本文档。`summary.json` 按每个用例的实际 passed 行汇总 **11 项不同 UI 场景、2 项数据回归**；不将混合批次中失败的其他用例算作通过，也不将较早的有限高 Pro 流程冒充最终自然展开验证。5 个生产文件的 SHA256 与最新 Debug／Release 构建源码一致，见 `source-audit.json`。
+
+| 范围 | 本轮最终证据 | 结果 |
+| --- | --- | --- |
+| Duo 开屏与根导航、外屏 Pro sheet 切屏后确认／撤销／恢复 | `ui-drafts-launch-final.log` 对应 2 个用例的 passed 行 | 2 项通过 |
+| Duo 默认展开首屏 | `ui-viewport-final.log`；没有滚动，完整球场、投打条及主要操作均在窗口内且可达 | 1 项通过 |
+| Duo PDF 系统分享切屏及返回 | `ui-duo-final.log` 的 PDF 用例 passed 行（该混合批次另有失败，后续分别修复重跑） | 1 项通过 |
+| Duo 页内 Pro 自然展开 | `ui-expanded-native-scroll.log`、`.xcresult`；1 项／0 失败，505.507 秒 | 1 项通过 |
+| iPhone 18 Pro／iOS 27.2 | `iphone-regression.log` 的开屏 2 项与基础流程 1 项；自然展开后的完整 Pro 用例以 `iphone-expanded-pro.log`（169.924 秒）为准 | 4 项不同 UI 场景通过 |
+| iPad mini／iOS 27.2 | 开屏／新建以 `ipad-mini-regression.log` 为准；自然展开后的 Pro 旋转保留草稿／取消以 `ipad-expanded-pro.log`（126.297 秒）为准 | 2 项不同 UI 场景通过 |
+| iPhone 16e／iOS 26.2 | `field-mapping.log`，既有球场锚点与落点往返／历史数据不变 | 2 项数据回归通过 |
+| 最新构建 | `build-expanded-native-scroll.log`（Debug App＋runner）；`build-release-expanded-final.log`（未签名设备 Release） | 均成功 |
+
+最终 Duo Pro 检查使用真实 Device Hub 输入：一垒安打、平飞、球场落点和中外野 8 号守备员；Closed → Partially Open → Open 后精确比较落点摘要和守备路线，确认按钮可达，练习重置保持禁用。实际取消不改变打者／0 球；第二次确认推进打者且恰好 1 球；撤销回原打者／0 球；恢复为新打者／1 球。测试使用外层工作台的原生 `swipeUp/Down`，没有通过修改业务状态或注入滚动偏移完成操作。
+
+这是 Device Hub 实际姿态／画布输入与 XCTest 断言配合的辅助 UI 验证，不是无人值守自动化。1800 秒仅为 host 操作协调等待上限，505.507 秒包含手动切换、截图和等待，不是 App 性能指标。原生坐标链在 Duo 旋转坐标系下的旧失败及已中止批次均保留，不删除原始证据。
+
+最新视觉证据：`workbench-linescore-final-open-display3.png` 为默认首屏；`workbench-linescore-final-dark-accessibility-large-display3.png` 为深色／大字分局表；`expanded-pro-field-ready-display3.png` 和 `expanded-pro-footer-ready-display3.png` 分别显示自然展开的完整球场与随内容排列的确认区。默认主要操作一屏可见；展开后的完整 Pro 由整页滚动承载，内部只保留横向守备路线，不再有截断球场的竖向小窗口。只读复核确认普通 sheet、草稿状态、取消及仅一次提交逻辑保持。
+
+版本仍为 **3.1.2（1）**，最低 iOS 16、工程名与 Bundle ID 保持。推送至 `codex/dev-3.1.2`、更新 [PR #37](https://github.com/chending0418-ship-it/baseballMaster/pull/37)，不合并 main。没有部署后端、正式归档、上传或提交审核；备案、真实旧比赛和服务器迁移仍保留为发布待办。Duo 结论限专属模拟器和实际检查的窗口／姿态，不宣称真机或所有尺寸穷举通过。

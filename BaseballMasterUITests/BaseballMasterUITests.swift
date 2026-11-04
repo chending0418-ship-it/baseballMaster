@@ -3828,6 +3828,15 @@ extension BaseballMasterUITests {
         XCTFail("The selected contact point must be visible inside the recording flow before tapping:\n\(app.debugDescription)")
     }
 
+    private func revealExpandedDuoControl(_ element: XCUIElement, in app: XCUIApplication, towardTop: Bool = false) {
+        let scroll = app.scrollViews["scorekeeping-wide-layout"]
+        for _ in 0..<8 {
+            if element.exists && element.isHittable && app.windows.firstMatch.frame.contains(element.frame) { return }
+            if towardTop { scroll.swipeDown() } else { scroll.swipeUp() }
+        }
+        XCTAssertTrue(element.isHittable, "Expanded workbench control must be reachable: \(element.identifier)")
+    }
+
     private func assertV312DuoContactDraft(in app: XCUIApplication, summary: String, route: String) {
         let summaryLabel = app.staticTexts["contact-summary"]
         XCTAssertTrue(summaryLabel.waitForExistence(timeout: 5))
@@ -3835,6 +3844,7 @@ extension BaseballMasterUITests {
         XCTAssertEqual(summaryLabel.label, summary, "Landing point must survive display and posture changes")
         XCTAssertEqual(app.staticTexts["situation-route"].label, route, "Fielding route must survive display and posture changes")
         let finish = app.buttons["finish-situation-field"]
+        revealExpandedDuoControl(finish, in: app)
         XCTAssertTrue(finish.isHittable)
         XCTAssertTrue(finish.isEnabled)
         XCTAssertFalse(app.buttons["reset-practice-inning"].isEnabled,
@@ -3875,19 +3885,29 @@ extension BaseballMasterUITests {
             assertV312DuoContactDraft(in: app, summary: summary, route: route)
             captureV312Duo(app, name: "3.1.2-duo-\(step)")
         }
+        revealExpandedDuoControl(app.buttons["cancel-situation-play"], in: app, towardTop: true)
         try awaitDuoHost("draft-cancel")
         XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+        revealExpandedDuoControl(batter, in: app, towardTop: true)
         XCTAssertEqual(batter.label, before, "Cancelling a folded draft must not change the batter")
         XCTAssertTrue(pitcher.label.contains("本场已投 0 球"), "Cancelling must not record a pitch")
         XCTAssertTrue(app.buttons["reset-practice-inning"].isEnabled)
-        try awaitDuoHost("draft-submit-one")
+        revealExpandedDuoControl(app.buttons["ball-in-play"], in: app)
+        try awaitDuoHost("draft-record-2")
+        revealExpandedDuoControl(app.buttons["finish-situation-field"], in: app)
+        try awaitDuoHost("draft-confirm-one")
         XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+        revealExpandedDuoControl(batter, in: app, towardTop: true)
         XCTAssertNotEqual(batter.label, before)
         XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "One confirmation must add exactly one pitch")
+        revealExpandedDuoControl(app.buttons["undo-last-play"], in: app)
         try awaitDuoHost("draft-undo")
+        revealExpandedDuoControl(batter, in: app, towardTop: true)
         XCTAssertEqual(batter.label, before)
         XCTAssertTrue(pitcher.label.contains("本场已投 0 球"))
+        revealExpandedDuoControl(app.buttons["redo-last-play"], in: app)
         try awaitDuoHost("draft-redo")
+        revealExpandedDuoControl(batter, in: app, towardTop: true)
         XCTAssertNotEqual(batter.label, before)
         XCTAssertTrue(pitcher.label.contains("本场已投 1 球"), "Redo must restore one play without duplication")
         captureV312Duo(app, name: "3.1.2-duo-pro-one-play-undo-redo")
