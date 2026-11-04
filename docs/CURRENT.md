@@ -34,3 +34,6 @@ App Store 与版本宣传脚本现位于 `scripts/release/`，海报模板位于
 公共品牌与官网分别直接使用工作区 brand/、website/ 的真实目录；App 内不设置目录替身。修改公共资料在总品牌仓库提交。完整资料位置见 [总导航](../../../management/AGENT-GUIDE.md)。
 
 当前微信群宣传源稿：docs/design/marketing/3.1.0/wechat-2026-10-22/source/。在 App 根目录运行 node docs/design/marketing/3.1.0/wechat-2026-10-22/source/render.cjs；导出仍写入本 App 的 output/marketing/3.1.0/wechat-2026-10-22/。历史输出中的可编辑脚本与 SVG 已保存到 docs/archive/output-sources/，按其 manifest 追溯，不能将历史设计当作当前交互基准。
+
+
+本次迁移工具、备案展示及运行交接保存为 [Draft PR #42](https://github.com/chending0418-ship-it/baseballMaster/pull/42)，分支 `codex/icp-shanghai-cutover-review-20261104-d7700543`；未合并、未上传 App。品牌官网及语音说明在各自无远端的本机仓库独立提交，未混入其他聊天的工作区提交。
