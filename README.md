@@ -1,4 +1,8 @@
-# BaseballMaster iOS App
+# BaseballMaster Android 工作目录
+
+本工作目录用于 **Android**，从 [Android 工程说明](android/README.md) 和 [当前状态](docs/CURRENT.md) 进入。当前路径为 `apps/baseball-scorekeeper-android/`；iOS 使用并列的 `apps/baseball-scorekeeper/`。下方 iOS／品牌内容是共享仓库继承资料，不是本目录的开发入口。
+
+**发布功能计划：** [0.8.2](<docs/plans/0.8.2 发布功能计划.md>) · [0.8.1](<docs/plans/0.8.1 发布功能计划.md>)。每个平台、每个版本都维护独立计划。
 
 **统一入口：** [当前状态](docs/CURRENT.md) · [BaseballMaster 工作区](../../README.md) · [公共品牌规范](../../brand/README.md)。旧版本的日期记录继续保留。
 
@@ -157,7 +161,7 @@ xcodebuild \
 
 ## 页面截图
 
-- [2.1 App Store 七张宣传图总览](output/releases/2.1/app-store/index.html)
+- [2.1 App Store 七张宣传图总览](../baseball-scorekeeper/output/releases/2.1/app-store/index.html)
 - [2.1 记分纠错实际截图](docs/releases/2.1/screenshots/index.html)
 - [早期界面截图归档](docs/archive/screenshots/initial-ui)（保留供历史对照）
 

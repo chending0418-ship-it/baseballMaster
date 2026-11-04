@@ -100,3 +100,9 @@
 ## Android 0.8.0 对齐开发（2026-11-03）
 
 从 `codex/android-migration` 的 Build 7 交付基线 `ebdc157` 建立 `codex/android-0.8.0`，继续在现有工作现场 `/Users/JasonChan/.codex/worktrees/android-remaining/baseball-scorekeeper` 开发。iOS 3.1.1 对照固定为 `315580d`；主目录的 3.1.2 未提交工作不混入、不回退。版本 0.8.0（8）仅调整 Android，沿用预览包名及签名。验收与剩余边界见 [0.8.0](releases/android/0.8.0-DEVELOPMENT.md)。本地开发、APK 准备与模拟器验证不代表官网发布或 main 合并。
+
+## 平台可见工作目录（2026-11-04）
+
+用户要求 iOS 与 Android 分开放在可见目录。iOS 继续使用 `apps/baseball-scorekeeper/`，Android 当前工作目录从 `/Users/JasonChan/.codex/worktrees/android-remaining/baseball-scorekeeper/` 移至 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper-android/`，当前分支 `codex/android-0.8.2`。采用 Git worktree move 保留分支及完整历史，不改写提交，不合并 main。旧 Android 迁移 worktree 归档于 Android 的 `output/backups/worktrees/android-migration/`，只作历史备份。既有交付、日志中的旧路径不批量改写，映射见工作区 `management/MIGRATION.md`。
+
+本次目录调整与两端版本计划的仓库内交接见 [平台目录与计划维护](maintenance/2026-11-04-platform-workspaces.md)，Android 0.8.2 范围见 [发布功能计划](<plans/0.8.2 发布功能计划.md>)。
