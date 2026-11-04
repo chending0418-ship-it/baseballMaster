@@ -1,0 +1,15 @@
+[Unit]
+Description=Renew and reconcile BaseballMaster HTTPS certificate
+Wants=network-online.target
+After=network-online.target baseballmaster-mainland-web.service
+
+[Service]
+Type=oneshot
+Environment=RENEWED_LINEAGE=/etc/letsencrypt/live/baseballmaster.cc
+ExecStart=/usr/bin/certbot renew --cert-name baseballmaster.cc --quiet
+ExecStartPost=/usr/local/sbin/baseballmaster-deploy-certificate
+UMask=0077
+TimeoutStartSec=900
+PrivateTmp=true
+ProtectHome=true
+
