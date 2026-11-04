@@ -82,3 +82,5 @@ App Store 与版本宣传脚本现位于 `scripts/release/`，海报模板位于
 ## Android 官网下载更新（2026-11-04）
 
 用户授权后，上海官网两个 Android 下载入口已切换至0.8.2（Build 10），三文件HTTPS哈希与103个受保护静态文件检查通过；本地四视口及点击完整下载校验通过。固定 APK 未重新构建，旧版下载与 App Store 保留。公网四视口及实际点击完整下载SHA验证也已通过，分发回执见 [0.8.2计划](<plans/0.8.2 发布功能计划.md>) 末尾记录；未上传应用市场。
+
+分发文档已在 `codex/android-0.8.2-download` 推送，交接 [PR #46](https://github.com/chending0418-ship-it/baseballMaster/pull/46) 保持开放、未合并；官网分发本身已完成。
