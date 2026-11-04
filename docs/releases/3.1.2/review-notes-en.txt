@@ -12,7 +12,7 @@ Suggested review:
 3. Open 球队 (Teams), create/select a local team, open its roster and tap 批量输入 (Bulk input). Paste fictional rows, for example:
 Test A,Alex,12
 Test B,,00
-Preview, check and confirm the batch. Canceling the preview does not change the roster. The same flow is available for opponents. Shared-team bulk adding requires the server's bulkRosterImport capability; if unavailable, the app preserves input and explains the requirement.
+Preview, check and confirm the batch. Canceling the preview does not change the roster. The same flow is available for opponents. Shared-team bulk adding is live. Authorized administrators and scorers can add a batch; permission and revision checks still apply. Single-player editing in older clients remains compatible.
 4. To inspect player locations with saved data, create/finish a local game and record Pro contacts. Open 统计 (Statistics), select its team and player, then 打击 (Batting). Filter the year/mode/games; tap locations or expand the per-play list. Point locations, approximate regions and missing information are distinct. Field coordinates are scorer-selected points on an illustration, not GPS. Statistics cover only recorded games the device can access.
 5. A finished local game can be reviewed and separately uploaded to a shared team. The local original is retained. A local game is not automatically converted into a shared game. Pitcher appearance limits are separate from IP; an automatically carried-over pitcher consumes a new inning only after pitching, while explicitly confirming a pitcher appearance consumes it at confirmation.
 

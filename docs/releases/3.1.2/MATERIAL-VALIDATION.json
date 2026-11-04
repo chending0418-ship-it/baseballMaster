@@ -9,17 +9,17 @@
   "wechatPNGs": 1,
   "textLimits": {
     "promotional-text-zh-Hans.txt": {
-      "count": 82,
+      "count": 92,
       "unit": "characters",
       "limit": 170
     },
     "description-zh-Hans.txt": {
-      "count": 1458,
+      "count": 1491,
       "unit": "characters",
       "limit": 4000
     },
     "whats-new-zh-Hans.txt": {
-      "count": 361,
+      "count": 387,
       "unit": "characters",
       "limit": 4000
     },
@@ -29,12 +29,12 @@
       "limit": 100
     },
     "review-notes-en.txt": {
-      "count": 3697,
+      "count": 3743,
       "unit": "utf8_bytes",
       "limit": 4000
     },
     "review-notes-zh-Hans.txt": {
-      "count": 2335,
+      "count": 2377,
       "unit": "utf8_bytes",
       "limit": 4000
     }
@@ -322,6 +322,18 @@
     "transparentHero": true,
     "homepageFilingVisible": true,
     "appUploaded": false,
-    "backendUpdated": false
+    "backendUpdated": false,
+    "latestContentBatch": "website-20261104T132137Z",
+    "runtimeManifestRefreshed": true
+  },
+  "sharedBulkBackend": {
+    "deployed": true,
+    "batch": "bulk-3.1.2-20261104T131831Z",
+    "localTests": 107,
+    "publicChecks": 9,
+    "publicPassed": true,
+    "databaseMigrated": false,
+    "encryptedBackupsBeforeAndAfter": true,
+    "websiteAligned": true
   }
 }

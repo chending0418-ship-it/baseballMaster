@@ -79,6 +79,9 @@ report['archives'].append(write_zip(OUT/'发布准备资料.zip',master))
 deployment=ROOT/'output/validation/3.1.2/website-publish-2026-11-04/deployment-receipt.json'
 assert deployment.exists()
 report['websiteDeployment']=json.loads(deployment.read_text())
+backend=ROOT/'output/validation/3.1.2/bulk-backend-deploy-2026-11-04/deployment-receipt.json'
+report['sharedBulkBackendDeployment']=json.loads(backend.read_text())
+assert report['sharedBulkBackendDeployment']['bulkCapability'] is True
 report['visualReview']='34 App Store images reviewed by source/layout groups; all 6 rebuilt social originals and 1 WeChat original opened and reviewed. Old illustrated draft rejected and excluded.'
 (QA/'final-validation.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
 print(json.dumps({'imagesValidated':len(report['files']),'archives':report['archives'],'text':report['text']},ensure_ascii=False,indent=2))

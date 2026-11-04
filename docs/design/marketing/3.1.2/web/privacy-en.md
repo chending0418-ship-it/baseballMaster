@@ -39,7 +39,7 @@ Device authorization is held in the local system Keychain and is excluded from o
 
 Bulk rosters are pasted or entered by you, one player per line in “name,English name,number” format. The app does not continuously read your clipboard. Previewing or cancelling does not add players; confirmation saves locally or submits one batch to the shared service. Necessary batch and retry state may be saved locally. Drafts remain available when a request fails or its result is unknown to help avoid duplicates. Player field charts use existing games you are entitled to access and do not infer missing coordinates.
 
-Invited team members have role-based access. Each team can have up to two administrators. Administrators and recorders can add or edit player names and numbers; ordinary members are read-only, and administrators manage membership and permissions. Share player information only when authorized and avoid unrelated contact details or sensitive information.
+Invited team members have role-based access. Each team can have up to three administrators. Administrators and recorders can add or edit player names and numbers; ordinary members are read-only, and administrators manage membership and permissions. Share player information only when authorized and avoid unrelated contact details or sensitive information.
 
 <a id="live"></a>
 

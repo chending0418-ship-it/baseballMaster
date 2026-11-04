@@ -15,7 +15,7 @@
 | 完整描述 | [description-zh-Hans.txt](description-zh-Hans.txt) |
 | 此版本新增内容 | [whats-new-zh-Hans.txt](whats-new-zh-Hans.txt) |
 | 关键词 | [keywords-zh-Hans.txt](keywords-zh-Hans.txt)，UTF-8 97 bytes，不含文件结尾换行 |
-| 审核备注主稿 | [review-notes-en.txt](review-notes-en.txt)，UTF-8 3697 bytes，不含文件结尾换行 |
+| 审核备注主稿 | [review-notes-en.txt](review-notes-en.txt)，UTF-8 3743 bytes，不含文件结尾换行 |
 | 审核备注中文对照 | [review-notes-zh-Hans.txt](review-notes-zh-Hans.txt)，用于核对；不与英文一起粘贴 |
 | 营销 URL | `https://baseballmaster.cc/scorekeeper.html`，产品页已在上海更新，匿名 HTTPS HTTP 200 |
 | 支持 URL | `https://baseballmaster.cc/scorekeeper/support.html`，新页已上线，匿名 HTTPS HTTP 200 |
@@ -48,9 +48,9 @@
 
 已实现的增量：iPad 宽屏现场工作台、iPhone Duo 内外屏／半折叠草稿保护、批量名单预览与整批新增、统计页球员击球落点、投手额度修复。继承 3.1.1 的本机完整原件、独立赛后确认上传、Pro 结果与统一球场保留。
 
-共享球队整批新增依赖生产服务 `bulkRosterImport`。客户端和后端已实现、本地验证通过，生产尚未更新；当前文案保留“需球队服务支持”。服务部署与公网验证闭环前，不把共享整批新增写成已可用的无条件承诺。App 端失败时会保留草稿，不逐人补写。
+共享球队整批新增的上海生产服务已上线，公开能力包含 `bulkRosterImport`。管理员和记录员按权限操作，事务、修订与幂等保护保留；失败时保留草稿，不逐人补写。协议仍为 1、最低 App 版本仍为 3.0，旧客户端的原单人名单编辑继续兼容；新版批量入口需具备该入口的 App。部署回执及九项公网专项均已通过，记录分开保留。
 
-Duo 有专项模拟器证据；文案可以说明支持范围，不写“真机全面验证”“所有姿态／分屏穷举”。备案与商店备案配置采用同期用户确认；上海已接管，香港受限迁移副本仍保留且无自动到期，日常上海球队备份按 30 天管理。新版隐私／支持页与官网内容已上线并核验匿名 HTTP 200；旧比赛原件处理、共享批量服务更新、签名归档和上传审核仍保留各自待办。
+Duo 有专项模拟器证据；文案可以说明支持范围，不写“真机全面验证”“所有姿态／分屏穷举”。备案与商店备案配置采用同期用户确认；上海已接管，香港受限迁移副本仍保留且无自动到期，日常上海球队备份按 30 天管理。新版隐私／支持页与官网内容已上线并核验匿名 HTTP 200；共享批量服务已完成部署，九项公网专项已通过；旧比赛原件处理、签名归档和上传审核仍保留各自待办。
 
 ## 限制与来源
 
@@ -62,4 +62,10 @@ Apple 当前文档列出：宣传文本 170 characters、描述和更新说明�
 
 批次 `website-20261104T125935Z` 已在上海完成静态网站发布：12 个文件的 HTTPS SHA-256 与发布清单一致，92 个其他静态文件未变，`nginx -t` 通过，后端代码及数据未修改。新四页、旧两页及产品页已另核验匿名 HTTP 200，两种语言隐私页具有 `rights` 锚点。公网多视口视觉验收由主代理另行记录，不将部署哈希核对替代视觉验收。
 
-证据：[deployment-receipt.json](../../../output/validation/3.1.2/website-publish-2026-11-04/deployment-receipt.json)。App 未因本次网页发布而归档、上传、提交审核或上架，共享批量服务仍未部署。
+证据：[deployment-receipt.json](../../../output/validation/3.1.2/website-publish-2026-11-04/deployment-receipt.json)。App 未因本次网页发布而归档、上传、提交审核或上架，共享批量服务在该次网页发布时点尚未部署；随后上线状态见下节。
+
+## 2026-11-04 共享批量服务上线（当前）
+
+上海共享批量后台已按用户新增授权部署，批次 `bulk-3.1.2-20261104T131831Z`。仅 `server.mjs`、`roster.mjs` 两文件更新并核对 SHA，部署前加密备份成功；33 张表无 DDL、停服期间未恢复或改写数据库，启动后完整性通过；其他五个服务 PID 未变。协议保持 1、最低 App 版本保持 3.0，`bulkRosterImport` 能力已开启；权限、修订、事务和幂等校验继续保留，旧客户端单人编辑兼容。九项公网合成专项已全部通过，合成球队按正常流程解散、临时凭据删除；部署后日备份和完整状态备份成功，配置备份下载、解密和摘要核验通过。最终回执已冻结，可按用户授权经本 PR 合入 main。
+
+部署证据：[deployment-receipt.json](../../../output/validation/3.1.2/bulk-backend-deploy-2026-11-04/deployment-receipt.json)。 公网证据：[public-verification.json](../../../output/validation/3.1.2/bulk-backend-deploy-2026-11-04/public-verification.json)。后续网站批次 `website-20261104T132137Z` 的 12 文件摘要、92 其他静态文件、18 项公网视口及启动清单刷新均通过。此状态替代前述网站发布时点的批量待部署说明。用户已授权本版通过 PR 合入 main；正式签名归档、App 上传、审核和上架仍分别记录，本轮尚未执行。

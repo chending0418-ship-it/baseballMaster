@@ -30,7 +30,7 @@ Local team players, opponent rosters and authorized shared team rosters have bul
 
 The format is “name,English name,number”. The English name and number may be blank, but keep the commas. Chinese or English commas are supported, numbers can be 0–99 or 00, and a batch can contain up to 200 players. Preview first, fix errors, check duplicate-name/number warnings, then confirm. Confirmation adds new players without overwriting existing players or historical games; previewing/cancelling adds nothing.
 
-Shared entry requires an administrator or recorder role, a connection and a service supporting the bulk capability. If support is unavailable, a revision conflicts, permissions change or the result is unknown, keep the draft and follow refresh/review prompts. Do not create duplicate batches. Retry the original batch to reconcile an unknown result. Use the single-player form only after confirming that the earlier batch did not succeed.
+Shared bulk entry requires an administrator or recorder role and a connection. Preview the roster, then confirm the batch. If a revision conflicts, permissions change, a network error occurs or the result is unknown, keep the draft and follow refresh/review prompts. Do not create duplicate batches. Retry the original batch to reconcile an unknown result; a batch request does not automatically fall back to individual writes. Use the existing single-player form only after confirming that the earlier batch did not succeed, to avoid adding duplicate players.
 
 ## Player field charts
 
@@ -48,7 +48,7 @@ Basic follows observed outcomes step by step. Pro records ball type, landing pos
 
 Local-only use remains available without registration. Selected team/roster/game content uploads only when you choose sharing; keep complete local originals safe. Postgame confirmation uploads and live broadcasts are separate. Before uploading, check the destination team, player mappings and game content. Corrections after changing player mappings still require current permissions and revision checks. On conflict, read the latest state instead of overwriting another person’s work.
 
-A team may have up to two administrators. Administrators manage members/permissions; administrators and recorders can add or edit roster information; ordinary members are read-only. Join by invitation and change devices through mutually confirmed pairing or a new invitation. A team name/nickname alone cannot recover management rights. Transfer an in-progress game through the confirmed handoff flow to avoid simultaneous editing.
+A team may have up to three administrators. Administrators manage members/permissions; administrators and recorders can add or edit roster information; ordinary members are read-only. Join by invitation and change devices through mutually confirmed pairing or a new invitation. A team name/nickname alone cannot recover management rights. Transfer an in-progress game through the confirmed handoff flow to avoid simultaneous editing.
 
 ## Broadcasts, historical access and privacy
 
