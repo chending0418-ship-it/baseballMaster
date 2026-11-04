@@ -150,6 +150,7 @@ struct RecordingMethodPicker: View {
 
 /// Compact field for performance plots and legacy observation editing. No position labels.
 struct BattedBallField: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     var observation: BattedBallObservation?
     var marks: [BatterContact] = []
     var onPoint: ((CGPoint) -> Void)?
@@ -158,30 +159,11 @@ struct BattedBallField: View {
         GeometryReader { proxy in
             let size = proxy.size
             ZStack {
-                RoundedRectangle(cornerRadius: 16).fill(BMTheme.greenSoft)
-                Path { p in
-                    let home = point(CGPoint(x: 0.5, y: 0.90), size)
-                    p.move(to: home)
-                    p.addLine(to: point(CGPoint(x: 0.08, y: 0.38), size))
-                    p.addQuadCurve(to: point(CGPoint(x: 0.92, y: 0.38), size), control: point(CGPoint(x: 0.5, y: -0.13), size))
-                    p.closeSubpath()
-                }.fill(BMTheme.green.opacity(0.18))
-                Path { p in
-                    p.move(to: point(CGPoint(x: 0.5, y: 0.90), size))
-                    p.addLine(to: point(CGPoint(x: 0.25, y: 0.63), size))
-                    p.addLine(to: point(CGPoint(x: 0.5, y: 0.36), size))
-                    p.addLine(to: point(CGPoint(x: 0.75, y: 0.63), size))
-                    p.closeSubpath()
-                }.stroke(BMTheme.orange.opacity(0.65), lineWidth: 2)
-                Path { p in
-                    p.move(to: point(CGPoint(x: 0.02, y: 0.30), size))
-                    p.addLine(to: point(CGPoint(x: 0.5, y: 0.90), size))
-                    p.addLine(to: point(CGPoint(x: 0.98, y: 0.30), size))
-                }.stroke(BMTheme.green, lineWidth: 1.5)
+                BaseballFieldBackground()
                 // This background alone handles input, so reading a mark never moves a draft point.
                 if let onPoint {
                     Color.clear.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded { value in
-                        onPoint(CGPoint(x: value.location.x / size.width, y: value.location.y / size.height))
+                        onPoint(BaseballFieldLayout.contactCoordinate(at: value.location, in: size))
                     }).accessibilityLabel("击球去向球场，点选大致位置；也可使用下方区域按钮")
                         .accessibilityIdentifier("contact-field")
                 }
@@ -199,17 +181,26 @@ struct BattedBallField: View {
                     marker(observation, color: BMTheme.orange).position(point(location, size)).allowsHitTesting(false)
                 }
             }
-        }.frame(height: 265)
+        }
+        .frame(height: horizontalSizeClass == .regular ? 360 : 265)
+        .frame(maxWidth: 640)
+        .frame(maxWidth: .infinity)
     }
-    private func point(_ value: CGPoint, _ size: CGSize) -> CGPoint { CGPoint(x: value.x * size.width, y: value.y * size.height) }
+    private func point(_ value: CGPoint, _ size: CGSize) -> CGPoint { BaseballFieldLayout.contactPoint(value, in: size) }
     private func trajectory(_ value: CGPoint, size: CGSize, color: Color) -> some View {
-        Path { p in p.move(to: point(CGPoint(x: 0.5, y: 0.90), size)); p.addLine(to: point(value, size)) }
-            .stroke(color.opacity(0.35), style: StrokeStyle(lineWidth: 1.3, dash: [4, 3])).allowsHitTesting(false)
+        let path = Path { p in
+            p.move(to: BaseballFieldLayout.geometry(in: size).home)
+            p.addLine(to: point(value, size))
+        }
+        return ZStack {
+            path.stroke(.white.opacity(0.65), style: StrokeStyle(lineWidth: 2.8, dash: [4, 3]))
+            path.stroke(color.opacity(0.9), style: StrokeStyle(lineWidth: 1.3, dash: [4, 3]))
+        }.allowsHitTesting(false)
     }
     private func marker(_ observation: BattedBallObservation, color: Color) -> some View {
         Text(observation.type.symbol).font(.caption2.bold()).foregroundStyle(color)
             .frame(width: observation.precision == .region ? 36 : 23, height: observation.precision == .region ? 36 : 23)
-            .background(color.opacity(observation.precision == .region ? 0.12 : 0.22), in: Circle())
+            .background(.white.opacity(0.95), in: Circle())
             .overlay(Circle().stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: observation.precision == .region ? [3, 2] : [])))
     }
 }
@@ -298,6 +289,46 @@ extension GameStore {
         if let id = event.logEntryID, let log = game.playLog.firstIndex(where: { $0.id == id }) { game.playLog[log].text = text }
     }
 
+    /// The statistics detail page supplies its exact selected game IDs, including an empty selection.
+    /// Never read the open scorekeeping draft or infer identities from names/numbers.
+    func statisticsBatterContacts(for player: Player, seasonID: String, teamID: UUID?, gameIDs: Set<UUID>) -> BatterPerformance {
+        let eligible = completedStatisticsGames(teamID: teamID, seasonID: seasonID, gameIDs: gameIDs)
+            .filter { !$0.statisticsSources(for: player.id).isEmpty }
+        func sourceKey(_ stored: StoredGame) -> UUID {
+            if let source = stored.historySourceID { return source }
+            if let sharedID = stored.sharedGameID, let remote = sharedMatches.match(id: sharedID) {
+                return remote.historySourceID ?? remote.wireLocalID ?? stored.id
+            }
+            return stored.id
+        }
+        // A source may have several selected imported/shared copies. Keep one saved document;
+        // local/team scope and access have already been decided by the statistics layer above.
+        var seen = Set<UUID>()
+        let sources = eligible.sorted {
+            if ($0.sharedGameID == nil) != ($1.sharedGameID == nil) { return $0.sharedGameID == nil }
+            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+            return $0.id.uuidString < $1.id.uuidString
+        }.filter { seen.insert(sourceKey($0)).inserted }
+        var result = BatterPerformance()
+        for stored in sources {
+            let ids = stored.statisticsSources(for: player.id)
+            let line = stored.statisticsBatting(for: player.id)
+            result.gameCount += 1
+            result.line = .aggregate([result.line, line])
+            result.completedAppearances += line.plateAppearances
+            for event in stored.state.scoringEvents ?? [] where event.category == .battedBall
+                && event.isTop == !stored.isHome
+                && (event.primaryPlayerID ?? event.plateAppearanceBatterID).map(ids.contains) == true {
+                if let observation = event.battedBall, observation.hasLocation {
+                    let date = stored.displayDate.formatted(date: .numeric, time: .omitted)
+                    result.contacts.append(BatterContact(id: stored.id.uuidString + event.id.uuidString, observation: observation,
+                        outcome: event.resolvedOutcome, detail: "\(date) · 第\(event.inning)局\(event.isTop ? "上" : "下") · \(observation.summary) · \(event.resolvedOutcome?.rawValue ?? event.title)"))
+                } else { result.missingLocations += 1 }
+            }
+        }
+        return result
+    }
+
     func batterPerformance(playerID: UUID, annual: Bool) -> BatterPerformance {
         let current = activeStoredGame
         let mode = activeRules?.gameMode ?? game.rulesSnapshot?.gameMode ?? .standard
@@ -317,12 +348,11 @@ extension GameStore {
             }
             let grouped = Dictionary(grouping: eligible, by: sourceKey)
             sources = grouped.values.compactMap { values in values.max { a, b in
-                if (a.sharedGameID != nil) != (b.sharedGameID != nil) { return a.sharedGameID == nil }
+                if (a.sharedGameID != nil) != (b.sharedGameID != nil) { return a.sharedGameID != nil }
                 return a.updatedAt < b.updatedAt
             } }
-            if let current, current.sharedGameID == nil,
-               !sources.contains(where: { $0.sharedGameID != nil && sourceKey($0) == current.id }) {
-                sources.removeAll { $0.id == current.id }
+            if let current, current.sharedGameID == nil {
+                sources.removeAll { sourceKey($0) == current.id }
                 var live = current; live.state = game; sources.append(live)
             }
         } else if var current { current.state = game; sources = [current] }

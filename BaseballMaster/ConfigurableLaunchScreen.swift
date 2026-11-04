@@ -248,26 +248,25 @@ struct ConfigurableLaunchScreenView: View {
     private let ink = Color(red: 198 / 255, green: 213 / 255, blue: 204 / 255)
     var body: some View {
         GeometryReader { geometry in
-            let fullHeight = geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom
+            // Size from this window so short iPad windows keep the fixed brand and footer separate.
+            let iconY = max(90, geometry.size.height - 103)
+            let identityScale = min(1, max(0.1, min(
+                (geometry.size.width - 48) / 260,
+                max(24, iconY - 106) / 223
+            )))
+            let identityY = min(geometry.size.height * 0.46968,
+                                iconY - 46 - 223 * identityScale / 2)
             ZStack {
-                Group {
-                    if let image = presentation.image { Image(uiImage: image).resizable() }
-                    else { Image("LaunchArtwork").resizable() }
-                }
-                .scaledToFill().frame(width: geometry.size.width, height: fullHeight).clipped()
-                .overlay { if presentation.image != nil { Color.black.opacity(0.66) } }
-                .position(x: geometry.size.width / 2, y: fullHeight / 2 - geometry.safeAreaInsets.top)
-                .accessibilityHidden(true)
-                Image("LaunchIdentity").resizable().frame(width: 260, height: 223)
-                    .position(x: geometry.size.width / 2, y: fullHeight * 0.46968 - geometry.safeAreaInsets.top)
+                Image("LaunchIdentity").resizable().frame(width: 260 * identityScale, height: 223 * identityScale)
+                    .position(x: geometry.size.width / 2, y: identityY)
                     .accessibilityLabel("BaseballMaster 棒球比赛记录大师").accessibilityIdentifier("launch-fixed-bm")
                 Image("LaunchAppIcon").resizable().frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 10))
-                    .position(x: geometry.size.width / 2, y: geometry.size.height - 103)
+                    .position(x: geometry.size.width / 2, y: iconY)
                     .accessibilityLabel("棒球比赛记录大师 App 图标").accessibilityIdentifier("launch-fixed-app-icon")
                 if !presentation.configuration.message.isEmpty {
                     Text(presentation.configuration.message).font(.system(size: 11, weight: .medium)).tracking(2.42)
                         .lineSpacing(4).multilineTextAlignment(.center).lineLimit(2).foregroundStyle(ink)
-                        .frame(width: min(280, geometry.size.width - 48), height: 38, alignment: .top)
+                        .frame(width: max(0, min(280, geometry.size.width - 48)), height: 38, alignment: .top)
                         .position(x: geometry.size.width / 2, y: geometry.size.height - 48)
                         .accessibilityIdentifier("launch-message")
                 }
@@ -278,7 +277,20 @@ struct ConfigurableLaunchScreenView: View {
                     .padding(.trailing, 20).accessibilityIdentifier("skip-launch-screen")
             }
         }
-        .background(Color(red: 9 / 255, green: 42 / 255, blue: 42 / 255).ignoresSafeArea())
+        .background {
+            GeometryReader { background in
+                Group {
+                    if let image = presentation.image { Image(uiImage: image).resizable() }
+                    else { Image("LaunchArtwork").resizable() }
+                }
+                .scaledToFill()
+                .frame(width: background.size.width, height: background.size.height)
+                .clipped()
+                .overlay { if presentation.image != nil { Color.black.opacity(0.66) } }
+            }
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
+        }
         .preferredColorScheme(.dark)
     }
 }

@@ -3,6 +3,7 @@
 当前状态与本次发布材料只从 [CURRENT.md](CURRENT.md) 进入，不在这里重复维护版本状态。全部资料的归属与放置规则见 [工作区总导航](../../../management/AGENT-GUIDE.md)。
 
 - [设计与交互](design/)：以 CURRENT 指向的现行基准为准。
+- [球队比赛同步方案](plans/TEAM-MATCH-SYNC-FLOW.md)：原调查、已确认流程及 iOS 3.1.1／3.1.2 实现承接；真实旧记录和生产迁移继续按版本计划跟踪。
 - [需求与计划](plans/)：iOS／Android 每个版本分别维护单份 `docs/plans/<版本> 发布功能计划.md`，从 CURRENT 导航；详细开发和验收日志不替代计划。既有 3.1.0 根目录计划原位保留，不再复制。
 - [版本发布与审核交接](releases/)：按版本保存，历史记录不代表当前状态。
 - [研究](research/)与[维护记录](maintenance/)：保存方法、运行说明及整理依据。

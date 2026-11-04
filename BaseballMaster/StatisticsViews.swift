@@ -19,7 +19,10 @@ struct StatsOverviewView: View {
     init(initialTeamID: UUID? = nil) { _selectedTeamID = State(initialValue: initialTeamID) }
 
     private var team: Team? {
-        store.statisticsTeams.first { $0.id == (selectedTeamID ?? store.currentTeam?.id) } ?? store.statisticsTeams.first
+        let currentID = store.currentTeam?.id
+        let localID = currentID.map(store.localStatisticsScope)
+        let preferredID = selectedTeamID ?? (store.statisticsTeams.contains { $0.id == localID } ? localID : currentID)
+        return store.statisticsTeams.first { $0.id == preferredID } ?? store.statisticsTeams.first
     }
     private var seasonID: String {
         store.statisticsSeasons.contains(where: { $0.id == selectedSeasonID })

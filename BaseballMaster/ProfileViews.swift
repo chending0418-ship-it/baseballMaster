@@ -847,6 +847,7 @@ struct PracticeScorekeepingView: View {
     @StateObject private var practiceStore: GameStore
     @AppStorage("showPracticeGuidance") private var showPracticeGuidance = true
     @State private var showResetConfirmation = false
+    @State private var recordingWorkspaceActive = false
 
     init(method: RecordingMethod = .traditional) {
         let store = GameStore(persistenceURL: nil)
@@ -857,6 +858,7 @@ struct PracticeScorekeepingView: View {
     var body: some View {
         ScorekeepingView()
             .environmentObject(practiceStore)
+            .onPreferenceChange(RecordingWorkspaceActiveKey.self) { recordingWorkspaceActive = $0 }
             .safeAreaInset(edge: .top, spacing: 0) {
                 if showPracticeGuidance {
                     practiceBanner
@@ -869,6 +871,7 @@ struct PracticeScorekeepingView: View {
                     } label: {
                         Label("重新练习", systemImage: "arrow.counterclockwise")
                     }
+                    .disabled(recordingWorkspaceActive)
                     .accessibilityIdentifier("reset-practice-inning")
                 }
             }
@@ -883,6 +886,15 @@ struct PracticeScorekeepingView: View {
     }
 
     private var practiceBanner: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                Image(systemName: "graduationcap.fill").foregroundStyle(BMTheme.green)
+                Text("练习模式 · 不会保存到正式数据")
+                    .font(.system(size: 12, weight: .bold)).foregroundStyle(BMTheme.navy)
+                Text(practicePrompt).font(.system(size: 11)).foregroundStyle(BMTheme.secondaryText)
+                Spacer(minLength: 0)
+            }
+            .fixedSize(horizontal: true, vertical: false)
         HStack(spacing: 10) {
             Image(systemName: "graduationcap.fill")
                 .foregroundStyle(BMTheme.green)
@@ -896,8 +908,10 @@ struct PracticeScorekeepingView: View {
             }
             Spacer()
         }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.vertical, 5)
         .background(BMTheme.greenSoft)
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityIdentifier("practice-mode-banner")

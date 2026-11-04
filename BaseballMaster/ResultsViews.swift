@@ -5,6 +5,8 @@ struct BoxScoreView: View {
     @EnvironmentObject private var store: GameStore
     @State private var selectedSection = 0
     @State private var showEndReasonSheet = false
+    @State private var showPostgameUpload = false
+    @State private var pendingFinishedGameID: UUID?
     @State private var confirmLegacyReopen = false
     @State private var showShareSheet = false
     @State private var showLiveBroadcast = false
@@ -61,6 +63,7 @@ struct BoxScoreView: View {
                 }
                 if !store.game.isFinal && store.canEditCurrentMatch {
                     Button {
+                        pendingFinishedGameID = store.activeStoredGame?.id
                         showEndReasonSheet = true
                     } label: {
                         Label("结束并保存比赛结果", systemImage: "checkmark.seal.fill")
@@ -109,7 +112,15 @@ struct BoxScoreView: View {
         } message: {
             Text("第 \(store.game.inning) 局\(store.game.isTop ? "上" : "下")，\(store.game.outs) 出局，打者 \(store.currentBatter.compactName)，垒上 \(store.game.baseRunners.count) 人。旧版本未保存完整的结束阶段，请核对后恢复；需要调整时使用现场局面修正。")
         }
-        .sheet(isPresented: $showEndReasonSheet) {
+        .sheet(isPresented: $showPostgameUpload) { PostgameUploadPrompt() }
+        .sheet(isPresented: $showEndReasonSheet, onDismiss: {
+            defer { pendingFinishedGameID = nil }
+            guard let id = pendingFinishedGameID, let saved = store.activeStoredGame,
+                  saved.id == id, saved.sharedGameID == nil, saved.status == .completed,
+                  saved.state.isFinal, store.storageErrorMessage == nil,
+                  store.claimAutomaticPostgamePrompt(gameID: id) else { return }
+            showPostgameUpload = true
+        }) {
             GameEndReasonSheet()
                 .environmentObject(store)
                 .presentationDetents([.large])
@@ -438,6 +449,29 @@ struct BoxScoreView: View {
         .frame(height: 46)
         .overlay(alignment: .bottom) {
             Rectangle().fill(BMTheme.line.opacity(0.65)).frame(height: 1)
+        }
+    }
+}
+
+struct PostgameUploadPrompt: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: GameStore
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if let saved = store.activeStoredGame, saved.sharedGameID == nil,
+                   saved.status == .completed, saved.state.isFinal {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text("比赛已结束，完整记录已保存在本机。").font(.headline)
+                        LocalMatchShareView(game: saved)
+                    }.padding()
+                }
+            }.navigationTitle("赛后记录去向")
+                .toolbar {
+                    Button(store.activeStoredGame.map { !store.sharedMatches.pendingPostgameUploads(sourceID: $0.id).isEmpty } == true
+                           ? "完成" : "暂不上传，保留本机") { dismiss() }
+                        .accessibilityIdentifier("keep-final-local")
+                }
         }
     }
 }
@@ -793,6 +827,7 @@ struct PlayerDetailView: View {
     @State private var selectedSeasonID: String
     @State private var inheritedGameIDs: Set<UUID>?
     @State private var selectedGameIDs = Set<UUID>()
+    @State private var selectedContact: BatterContact?
     @State private var showGameFilter = false
     @State private var modeFilter: GameMode?
 
@@ -936,6 +971,8 @@ struct PlayerDetailView: View {
                         }
                     }
 
+                    playerContactChart
+
                     VStack(alignment: .leading, spacing: 10) {
                         SectionHeader(title: "表现总结", subtitle: selectedSeasonName)
                         performanceSummary(title: "近 3 场", records: Array(selectedGames.prefix(3)))
@@ -981,6 +1018,9 @@ struct PlayerDetailView: View {
                 }
             }
         }
+        .onChange(of: selectedGameIDs) { _ in selectedContact = nil }
+        .onChange(of: selectedSeasonID) { _ in selectedContact = nil }
+        .onChange(of: modeFilter) { _ in selectedContact = nil }
         .onAppear(perform: prepareInitialSelection)
         .onChange(of: selectedSeasonID) { _ in
             inheritedGameIDs = nil
@@ -990,6 +1030,45 @@ struct PlayerDetailView: View {
             GameFilterSheet(games: seasonGames, initialSelection: selectedGameIDs,
                             timeZones: Dictionary(uniqueKeysWithValues: store.games.map { ($0.id, $0.playedTimeZone) })) { selection in
                 selectedGameIDs = selection
+            }
+        }
+    }
+
+    private var playerContactChart: some View {
+        let performance = store.statisticsBatterContacts(for: player, seasonID: selectedSeasonID,
+            teamID: statisticsTeamID, gameIDs: Set(selectedGames.map(\.id)))
+        return BMCard {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "击球落点", subtitle: "当前筛选 · \(selectedGames.count) 场")
+                BattedBallField(marks: performance.contacts, onMark: { selectedContact = $0 })
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("player-contact-field")
+                HStack {
+                    Label("安打", systemImage: "circle.fill").foregroundStyle(BMTheme.green)
+                    Label("出局", systemImage: "circle.fill").foregroundStyle(BMTheme.red)
+                    Label("其他", systemImage: "circle.fill").foregroundStyle(BMTheme.orange)
+                }.font(.caption)
+                Text("有去向 \(performance.contacts.count) 球 · 缺少去向 \(performance.missingLocations) 球")
+                    .font(.subheadline).accessibilityIdentifier("player-contact-coverage")
+                Text("实线圈表示点选位置，虚线圈只表示区域。连线不代表真实轨迹；旧记录缺少资料时保持未知，保送与三振不画线。")
+                    .font(.caption).foregroundStyle(BMTheme.secondaryText)
+                if let selectedContact {
+                    Text(selectedContact.detail).font(.callout)
+                        .accessibilityIdentifier("player-selected-contact-detail")
+                }
+                if performance.contacts.isEmpty {
+                    Text("当前筛选没有有位置的击球记录")
+                        .foregroundStyle(BMTheme.secondaryText)
+                        .accessibilityIdentifier("player-contact-empty")
+                } else {
+                    DisclosureGroup("逐球查看（含重叠位置）") {
+                        ForEach(performance.contacts) { contact in
+                            Button(contact.detail) { selectedContact = contact }
+                                .font(.caption).padding(.vertical, 6)
+                                .accessibilityIdentifier("player-contact-row-" + contact.id)
+                        }
+                    }
+                }
             }
         }
     }

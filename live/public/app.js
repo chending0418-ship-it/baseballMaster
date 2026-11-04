@@ -6,6 +6,9 @@ let snapshot, metadata, pending, revision, timer, stopped = false, visibleHalves
 let view = 'live', lineupTeam = 'away', liveScroll = 0;
 const text = (id, value) => { $(id).textContent = value; };
 const node = (tag, value, className) => { const el = document.createElement(tag); if (value !== undefined) el.textContent = value; if (className) el.className = className; return el; };
+// Point selection describes the recorder's input, not a location spectators can interpret.
+// Keep the observed ball type, named regions, fielding and runner text unchanged.
+const spectatorText = value => value.replace(/(击球观察：[^\n；;]*?)\s*·\s*点选(?:位置|去向)(?=\s*(?:[；;（(]|$))/g, '$1');
 const halfKey = e => `${e.inning}-${e.isTop ? 'top' : 'bottom'}`;
 const halfName = e => `${e.inning} 局${e.isTop ? '上' : '下'}`;
 const player = p => p ? `#${p.number} ${p.name}` : '—';
@@ -134,12 +137,12 @@ function render(s) {
       const status = { interrupted:'未完成 · 中断', review:'待确认' }[e.status]; if (status) heading.append(node('span', status, 'status ' + e.status));
       body.append(heading);
       const clean = e.player && e.summary.startsWith(e.player.name + '：') ? e.summary.slice(e.player.name.length + 1) : e.summary;
-      body.append(node('span', current ? `${s.balls} 坏 ${s.strikes} 好 · ${s.outs} 出局` : clean, 'summary'));
+      body.append(node('span', current ? `${s.balls} 坏 ${s.strikes} 好 · ${s.outs} 出局` : spectatorText(clean), 'summary'));
       const order = e.order ?? (current ? s.batterOrder : null);
       const caption = [order ? `第 ${order} 棒` : '', situation?.halfEnded ? '半局结束' : !current && situation ? `${situation.outs} 出局` : ''].filter(Boolean).join(' · ');
       if (caption) body.append(node('span', caption, 'caption'));
       summary.append(body, baseDisplay(situation?.bases)); card.append(summary);
-      const list = node('ul'); for (const d of e.details) { const li = node('li'); li.append(node('span', d.text), baseDisplay(d.situation?.bases)); list.append(li); }
+      const list = node('ul'); for (const d of e.details) { const li = node('li'); li.append(node('span', spectatorText(d.text)), baseDisplay(d.situation?.bases)); list.append(li); }
       if (!e.details.length) list.append(node('li', '尚无逐球记录'));
       card.append(list); section.append(card);
     }

@@ -188,12 +188,21 @@ struct SharedRosterChange: Codable {
     var shortName: String? = nil
     var city: String? = nil
     var player: SharedRosterPlayer? = nil
+    var players: [SharedRosterPlayer]? = nil
+    var bulkInput: String? = nil
 }
 protocol TeamRosterService {
     func updateRoster(_ change: SharedRosterChange, operationID: UUID) async throws -> SharedTeamDetail
 }
 extension TeamServiceClient: TeamRosterService {
     func updateRoster(_ change: SharedRosterChange, operationID: UUID) async throws -> SharedTeamDetail {
+        if change.kind == "players" {
+            struct Capabilities: Decodable { let capabilities: [String] }
+            let available: Capabilities = try await request("GET", path: "capabilities", body: Optional<String>.none)
+            guard available.capabilities.contains("bulkRosterImport") else {
+                throw TeamServiceError.response(426, "当前球队服务尚未支持整批名单导入。输入已保留，请等待服务更新后重试。")
+            }
+        }
         var fields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(change)) as! [String: Any]
         fields["operationID"] = operationID.uuidString
         let body = try JSONDecoder().decode(MatchJSON.self, from: JSONSerialization.data(withJSONObject: fields))

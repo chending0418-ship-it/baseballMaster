@@ -429,6 +429,21 @@ final class GameStore: ObservableObject {
         game.clockDisplayMode = gameClockDisplayMode == .elapsed ? .remaining : .elapsed
     }
 
+    private struct PostgamePromptKey: Hashable {
+        let gameID: UUID
+        let endedAt: Date?
+    }
+    private var presentedPostgamePrompts: Set<PostgamePromptKey> = []
+
+    /// Both scoring and results can observe the same saved finish, including after a navigation pop.
+    /// Claim the automatic prompt once per finish; manual upload review remains available in results.
+    func claimAutomaticPostgamePrompt(gameID: UUID) -> Bool {
+        guard let saved = activeStoredGame, saved.id == gameID, saved.sharedGameID == nil,
+              saved.status == .completed, saved.state.isFinal, !requiresDataRecovery,
+              storageErrorMessage == nil else { return false }
+        return presentedPostgamePrompts.insert(PostgamePromptKey(gameID: gameID, endedAt: saved.state.endedAt)).inserted
+    }
+
     func returnToGameHome() {
         selectedTab = 0
         gameNavigationID = UUID()
@@ -806,8 +821,14 @@ final class GameStore: ObservableObject {
 
     var statisticsTeams: [Team] {
         var result = teams + teamSharing.sharedRosterTeams + archivedTeams.filter { archived in !teams.contains { $0.id == archived.id } }
+        var seen = Set<UUID>()
+        result = result.filter { seen.insert($0.id).inserted }
         for stored in games where !stored.isObservation && stored.ourTeamID != nil && stored.sharedTeamID == nil {
-            if !result.contains(where: { $0.id == stored.ourTeam.id }) { result.append(stored.ourTeam) }
+            var team = stored.ourTeam
+            if teamSharing.teams.contains(where: { $0.id == team.id }) {
+                team = Team(id: localStatisticsScope(team.id), name: team.name + " · 本机记录", shortName: team.shortName + " · 本机", city: team.city, players: team.players)
+            }
+            if !result.contains(where: { $0.id == team.id }) { result.append(team) }
         }
         return result
     }
@@ -945,6 +966,51 @@ final class GameStore: ObservableObject {
             )
         }
         return player.id
+    }
+
+    /// Validate the entire paste and commit one transaction before publishing any new roster.
+    /// The caller retains the input string on failure, so the same batch can be corrected or retried.
+    @discardableResult
+    func bulkAddPlayers(to teamID: UUID, input: String, isOpponent: Bool = false) -> [UUID]? {
+        guard !requiresDataRecovery else {
+            actionErrorMessage = "本机资料需要先恢复或核对，尚未导入队员。"; return nil
+        }
+        let parsed = BulkRosterParser.parse(input)
+        guard parsed.canImport else {
+            actionErrorMessage = parsed.issues.map { "第 \($0.lineNumber) 行：\($0.message)" }.joined(separator: "\n")
+            return nil
+        }
+        let source = isOpponent ? opponentTeams : teams
+        guard let index = source.firstIndex(where: { $0.id == teamID }) else {
+            actionErrorMessage = "找不到这支本机球队，请返回名单后重试。"; return nil
+        }
+        var updated = source[index]
+        let players = parsed.rows.enumerated().map { offset, row in
+            var player = Player(chineseName: row.chineseName, englishName: row.englishName,
+                                numbers: row.numberText.isEmpty ? [] : [Int(row.numberText)!],
+                                primaryPosition: FieldPosition.allCases[(updated.players.count + offset) % FieldPosition.allCases.count])
+            // The nil legacy representation permits an empty number; explicit labels preserve 00.
+            player.jerseyNumbers = row.numberText.isEmpty ? nil : [row.numberText]
+            return player
+        }
+        updated.players.append(contentsOf: players)
+        var nextTeams = teams, nextOpponents = opponentTeams
+        if isOpponent { nextOpponents[index] = updated } else { nextTeams[index] = updated }
+        let before = makeRosterSnapshot()
+        let next = RosterSnapshot(teams: nextTeams, opponentTeams: nextOpponents, currentTeamID: before.currentTeamID,
+                                  seasons: before.seasons, playerGameRecords: before.playerGameRecords,
+                                  games: before.games, archivedTeams: before.archivedTeams)
+        do { try persistenceStore.replaceAll(with: next) }
+        catch {
+            storageErrorMessage = "批量队员未能保存，名单没有改变。输入内容已保留，请检查存储空间后重试。"
+            actionErrorMessage = storageErrorMessage
+            return nil
+        }
+        if isOpponent { opponentTeams = nextOpponents }
+        else { teams = nextTeams; syncCurrentTeamIfNeeded(teamID) }
+        actionErrorMessage = nil
+        storageErrorMessage = nil
+        return players.map(\.id)
     }
 
     func updatePlayer(
@@ -3050,6 +3116,21 @@ final class GameStore: ObservableObject {
         addLog("比赛结束：\(reason.rawValue)", category: .game, notation: "END")
     }
 
+    @discardableResult
+    func setPostgameUploadTarget(gameID: UUID, teamID: UUID?) -> Bool {
+        let queued = sharedMatches.pendingPostgameUploads(sourceID: gameID)
+        guard let index = games.firstIndex(where: { $0.id == gameID }), games[index].sharedGameID == nil else { return false }
+        guard queued.allSatisfy({ $0.teamID == teamID }) else {
+            actionErrorMessage = "已有确认过的终场上传等待核对，不能改投其他球队或标为仅本机。请先核对这次上传的结果。"
+            return false
+        }
+        let previous = games[index]
+        games[index].postgameUploadTeamID = teamID
+        games[index].postgameTargetConfigured = true
+        do { try persistenceStore.upsertGame(games[index]); return true }
+        catch { games[index] = previous; storageErrorMessage = "赛后上传目标未能保存，本机比赛仍会保留。"; return false }
+    }
+
     func openGame(id: UUID) {
         guard let stored = games.first(where: { $0.id == id }) else { return }
         cancelPitcherChange()
@@ -3358,18 +3439,19 @@ final class GameStore: ObservableObject {
                         let used = inningUsage.innings(for: player.id).count
                         if used > limit {
                             reachedLimits.append(RuleNotice(summary: "登板超限",
-                                detail: "\(name) 已确认登板 \(used) 局，超过 \(limit) 局限制；未投球也计一局。请按赛事规定处理。",
+                                detail: "\(name) 已确认登板 \(used) 局，超过 \(limit) 局限制；明确确认登板或实际投球计入。请按赛事规定处理。",
                                 pitcherID: player.id, limitReached: true))
                         } else if used == limit, used > 0, !inningUsage.hasIncompleteHistory {
-                            let isLastAllowedInning = isCurrent && game.halfEndedAwaitingDecision != true
+                            let isLastAllowedInning = isCurrent && inningUsage.innings(for: player.id).contains(game.inning)
+                                && game.halfEndedAwaitingDecision != true
                             let notice = RuleNotice(summary: isLastAllowedInning ? "最后登板局" : "登板达限",
-                                detail: "\(name) 已达到 \(limit) 局登板额度（已登板 \(used) / \(limit) 局，未投球也计入）。"
+                                detail: "\(name) 已达到 \(limit) 局登板额度（已登板 \(used) / \(limit) 局，明确确认登板即计入）。"
                                     + (isLastAllowedInning ? "当前是最后允许登板的这一局，不能再进入新的登板局。" : "不能再进入新的登板局。"),
                                 pitcherID: player.id, limitReached: !isLastAllowedInning, isAppearanceAdvisory: isLastAllowedInning)
                             if isLastAllowedInning { notices.append(notice) } else { reachedLimits.append(notice) }
                         } else if isCurrent, used > 0, !inningUsage.hasIncompleteHistory {
                             notices.append(RuleNotice(summary: "登板 \(used)/\(limit) 局",
-                                detail: "\(name) 已确认登板 \(used) / \(limit) 局；确认登板后即计入该局，未投球也计入，同一局不重复。统计 IP 另按实际出局数计算。",
+                                detail: "\(name) 已确认登板 \(used) / \(limit) 局，还剩 \(limit - used) 局；明确确认登板即计入，换局自动沿用投手须实际投球后才计新局，同一局不重复。统计 IP 另按实际出局数计算。",
                                 pitcherID: player.id, isAppearanceAdvisory: true))
                         }
                     }

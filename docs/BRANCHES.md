@@ -1,3 +1,23 @@
+# 2026-11-04 双平台 PR 整合
+
+用户授权依次整理 #34、合入 iOS #37，再由 Android #39 同步最新 main、解决冲突并验证后合入；旧 Android #35／#36／#38 的功能由 #39 承接，旧共享副本流程 #33 不合入。#34 已合并为 `e58ea84`，#37 已合并为 `510021b`。两平台继续在各自可见目录开发，版本分别为 iOS 3.1.2（1）与 Android 0.8.2（10），不因合入改版本、包名、签名或发布状态。
+
+以下按日期保留原阶段分支安排，其中“保持开放／不合并”已由本轮明确授权更新；商店上传、网站／服务部署及真实迁移不随 Git 合入执行。
+
+# 3.1.2 开发分支（2026-11-03）
+
+最新范围（2026-11-04）：用户恢复 Duo 适配；继续 `codex/dev-3.1.2`，保持 3.1.2（Build 1），在现有 [PR #37](https://github.com/chending0418-ship-it/baseballMaster/pull/37) 补充代码与验证，仅推送并保持开放，不合并 main。本机、对手、共享球队的批量名单与统计页落点继续保留。
+
+用户授权支持 iPad／iPhone Duo，先做 iPad，并将 3.1.1 未完成项转入 3.1.2。`codex/dev-3.1.2` 从原开发基线 `315580d` 建立，沿用同一目录和所有原本未提交资料，工程升级为 3.1.2（Build 1）。范围与验证见 [3.1.2 开发记录](releases/3.1.2/DEVELOPMENT.md)，进入 main 仍经 PR。以下旧分支说明按当时状态保留。
+
+# 3.1.1 开发分支（2026-10-22）
+
+用户已确认产品深绿 BM 开机图并授权接入 3.1.1；当前分支为 `codex/dev-3.1.1`，从当前工作区资料整理基线 `3eb09df` 建立，工程为 3.1.1（Build 1）。实现、验证与发布边界见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)，当前入口仍为 [CURRENT](CURRENT.md)。本轮不直接改 main，原迁移和版本历史记录保留如下。
+
+# 本次迁移分支（2026-10-22）
+
+目录整理在 codex/workspace-migration-20261022 进行，所有原分支和 main 提交保留。最新品牌规范已先保存为提交 6b0fc97。当前资料与工作区路径见 [CURRENT.md](CURRENT.md) 及 [迁移记录](../../../management/MIGRATION.md)。本次未直接修改 main。
+
 # iOS 与 Android 分支管理（2026-10-27）
 
 按用户确认，比赛记录大师继续使用同一个仓库和默认分支 `main`。iOS 与 Android 分别在各自开发分支上工作；验收后通过 PR 合入 `main`，不直接推送 main。两个平台可独立开发与发布，发布版本和签名分别管理。
@@ -15,24 +35,6 @@
 用户确认先备份再清理：远端 39 个历史或已完成分支已移除，保留 `main`、`codex/dev-3.1.1`、`codex/android-migration`。每个旧分支的完整名称和提交位置保存于 GitHub 标签 `archive/branches-2026-10-27` 的 [branches.json](https://github.com/chending0418-ship-it/baseballMaster/blob/44eb797a373737202f38d3052e8362c55047d69c/branches.json)；归档提交的父节点保留所有 39 个旧分支头对应的对象。本机另保存完整 bundle 和恢复说明：`output/backups/maintenance/2026-10-27-branch-archive/`。清理前分别从本机 bundle 和 GitHub 标签在独立空仓库恢复／校验；不将本机未提交资料和 output 误写为已进入 Git。
 
 历史 PR 和提交记录保留。历史 PR #2 原以被归档的 `codex/pr-history-empty-baseline` 为目标，移除该引用可能影响 GitHub 比较视图；如需恢复，按归档清单取回该分支，核实目标名未被占用后再推送。日后已完成 PR 的临时开发分支可在确认提交已安全保存后清理；历史分支清理以用户指令和实际备份为准。
-
-# 统一项目目录（2026-10-27）
-
-用户要求 Android 放回原项目并与 iOS 区分。当前项目目录为 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper`，Android 在 `android/`，iOS 保留原 `BaseballMaster/`、`BaseballMaster.xcodeproj` 和测试目录；服务、文档与对照样本归同一项目。Android 继续使用 `codex/android-migration`，iOS 分支 `codex/dev-3.1.1` 及原有未提交备案资料保留。Android 原 worktree 为此前的工作现场，下文保留历史路径；目前应使用原项目目录。 旧 worktree 仍与当前 Codex 会话绑定、处于 detached 状态，应用不允许归档该主工作区；它只保留作历史副本，后续命令须显式使用原项目目录，不能继续在旧副本开发。Android 原输出已逐文件校验迁回；旧缓存保存在 `output/backups/android/worktree-migration-2026-10-27/`，新路径按需重建。
-
-# Android 迁移分支（2026-10-27）
-
-用户要求先重新规划全功能 Android 迁移，并切新分支。已从 `codex/dev-3.1.1` 的 `40df3d2` 建立 `codex/android-migration`，使用隔离 worktree `/Users/JasonChan/.codex/worktrees/android-migration/baseball-scorekeeper`。原目录及其未提交备案迁移资料保留；这不是另一个独立仓库或磁盘分区。建立分支时仅更新计划；用户随后授权 AN01／AN02，现已安装工具链、建立工程、产出预览 APK 并完成两套模拟器验证，见 [阶段交接](releases/android/AN01-AN02.md)。iOS 版本和生产部署保持原状态。
-
-本条取代历史中的 Android 暂缓状态和早期单目录开发安排；原记录继续按日期保留。唯一计划为 [Android 全功能迁移与 APK 分发](plans/ANDROID-APK.md)，当前状态仍从 [CURRENT](CURRENT.md) 进入。Android 基线含尚未进入 main 的前置提交，后续先按各自 PR 处理前置改动，再更新 Android 分支、审查差异并创建 Android PR。本轮未推送或合并。
-
-# 3.1.1 开发分支（2026-10-22）
-
-用户已确认产品深绿 BM 开机图并授权接入 3.1.1；当前分支为 `codex/dev-3.1.1`，从当前工作区资料整理基线 `3eb09df` 建立，工程为 3.1.1（Build 1）。实现、验证与发布边界见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)，当前入口仍为 [CURRENT](CURRENT.md)。本轮不直接改 main，原迁移和版本历史记录保留如下。
-
-# 本次迁移分支（2026-10-22）
-
-目录整理在 codex/workspace-migration-20261022 进行，所有原分支和 main 提交保留。最新品牌规范已先保存为提交 6b0fc97。当前资料与工作区路径见 [CURRENT.md](CURRENT.md) 及 [迁移记录](../../../management/MIGRATION.md)。本次未直接修改 main。
 
 # 版本分支与工作目录
 
@@ -96,13 +98,3 @@
 ## 历史基线
 
 2026-09-29 建立 2.1／2.2 工作区；9 月 30 日完成 2.1 文字直播部署和审核准备，用户于 10 月 1 日确认 2.1 已上线。2.2 从 main 的 `8b7c99d` 继承 2.1。10 月 2 日用户将慢垒及小组件整体延期至单份 2.3 计划，并明确顺序开发及单目录要求。10 月 3 日直播 UI、正式服务与发布准备完成，随后收拢目录。历史归档和验证内容不改写成新的发布结论。
-
-## Android 0.8.0 对齐开发（2026-11-03）
-
-从 `codex/android-migration` 的 Build 7 交付基线 `ebdc157` 建立 `codex/android-0.8.0`，继续在现有工作现场 `/Users/JasonChan/.codex/worktrees/android-remaining/baseball-scorekeeper` 开发。iOS 3.1.1 对照固定为 `315580d`；主目录的 3.1.2 未提交工作不混入、不回退。版本 0.8.0（8）仅调整 Android，沿用预览包名及签名。验收与剩余边界见 [0.8.0](releases/android/0.8.0-DEVELOPMENT.md)。本地开发、APK 准备与模拟器验证不代表官网发布或 main 合并。
-
-## 平台可见工作目录（2026-11-04）
-
-用户要求 iOS 与 Android 分开放在可见目录。iOS 继续使用 `apps/baseball-scorekeeper/`，Android 当前工作目录从 `/Users/JasonChan/.codex/worktrees/android-remaining/baseball-scorekeeper/` 移至 `/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper-android/`，当前分支 `codex/android-0.8.2`。采用 Git worktree move 保留分支及完整历史，不改写提交，不合并 main。旧 Android 迁移 worktree 归档于 Android 的 `output/backups/worktrees/android-migration/`，只作历史备份。既有交付、日志中的旧路径不批量改写，映射见工作区 `management/MIGRATION.md`。
-
-本次目录调整与两端版本计划的仓库内交接见 [平台目录与计划维护](maintenance/2026-11-04-platform-workspaces.md)，Android 0.8.2 范围见 [发布功能计划](<plans/0.8.2 发布功能计划.md>)。

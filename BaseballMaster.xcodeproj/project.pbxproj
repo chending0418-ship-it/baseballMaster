@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000045 /* BulkRosterImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000045 /* BulkRosterImportView.swift */; };
+		A10000000000000000000044 /* BulkRosterImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000044 /* BulkRosterImport.swift */; };
 		A20000000000000000000002 /* LaunchScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* LaunchScreenTests.swift */; };
 		A10000000000000000000043 /* ConfigurableLaunchScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000043 /* ConfigurableLaunchScreen.swift */; };
 		A10000000000000000000042 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000042 /* LaunchScreen.storyboard */; };
@@ -71,6 +73,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		F10000000000000000000045 /* BulkRosterImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkRosterImportView.swift; sourceTree = "<group>"; };
+		F10000000000000000000044 /* BulkRosterImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulkRosterImport.swift; sourceTree = "<group>"; };
 		F20000000000000000000002 /* LaunchScreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchScreenTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000043 /* ConfigurableLaunchScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurableLaunchScreen.swift; sourceTree = "<group>"; };
 		F10000000000000000000042 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -158,6 +162,8 @@
 		G10000000000000000000001 /* BaseballMaster */ = {
 			isa = PBXGroup;
 			children = (
+				F10000000000000000000044 /* BulkRosterImport.swift */,
+				F10000000000000000000045 /* BulkRosterImportView.swift */,
 				F10000000000000000000043 /* ConfigurableLaunchScreen.swift */,
 				F10000000000000000000042 /* LaunchScreen.storyboard */,
 				F10000000000000000000011 /* Assets.xcassets */,
@@ -363,6 +369,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000044 /* BulkRosterImport.swift in Sources */,
+				A10000000000000000000045 /* BulkRosterImportView.swift in Sources */,
 				A10000000000000000000043 /* ConfigurableLaunchScreen.swift in Sources */,
 				A10000000000000000000001 /* BaseballMasterApp.swift in Sources */,
 				A10000000000000000000002 /* DesignSystem.swift in Sources */,
@@ -485,18 +493,19 @@
 				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 3.1.1;
+				MARKETING_VERSION = 3.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -513,18 +522,19 @@
 				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 3.1.1;
+				MARKETING_VERSION = 3.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -538,7 +548,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaseballMaster.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BaseballMaster";
 			};
 			name = Debug;
@@ -553,7 +563,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaseballMaster.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BaseballMaster";
 			};
 			name = Release;
@@ -567,7 +577,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = BaseballMaster;
 			};
 			name = Debug;
@@ -581,7 +591,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = BaseballMaster;
 			};
 			name = Release;

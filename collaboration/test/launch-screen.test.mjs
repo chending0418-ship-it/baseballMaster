@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
+import {join} from 'node:path';
+import {createEncryptedBackup,restoreEncryptedBackup} from '../backup.mjs';
 import {adminFixture} from './admin-fixture.mjs';
 import {CollaborationStore} from '../server.mjs';
 import {LaunchScreenService,defaultLaunchConfig,MAX_IMAGE_BYTES} from '../launch-screen.mjs';
@@ -69,4 +71,27 @@ test('disk reserve and upload retention keep launch assets bounded without delet
  assert.throws(()=>service.upload(png,'image/png'),e=>e.status===507);
  assert.throws(()=>service.save({...editable(service.get()),message:'不能覆盖'}),e=>e.status===507);
  assert.equal(service.get().message,defaultLaunchConfig().message);
+});
+
+test('encrypted whole-database backup preserves launch configuration and exact image bytes without bypassing recovery quarantine',async t=>{
+ const a=await setup(t),service=a.store.launchScreen,key=randomBytes(32);
+ const image=service.upload(png,'image/png');
+ const published=service.save({...editable(defaultLaunchConfig()),message:'备份中的开屏配置',displayDurationMs:1500,startsAt:a.clock()+60000,endsAt:a.clock()+120000,backgroundImage:image});
+ const counts=Object.fromEntries(['teams','members','shared_games'].map(table=>[table,a.store.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n]));
+ const archive=join(a.folder,'launch-full.sealed'),destination=join(a.folder,'launch-restored.sqlite');
+ assert.equal((await createEncryptedBackup({database:a.store.databasePath,destination:archive,key})).verified,true);
+ const sealed=readFileSync(archive);assert.equal(sealed.includes(Buffer.from(published.message)),false);assert.equal(sealed.includes(png),false);
+ service.save({...editable(service.get()),enabled:false,message:'备份之后的变更',backgroundImage:null});
+ const result=await restoreEncryptedBackup({archive,destination,key});assert.equal(result.quarantined,true);
+ const restored=new CollaborationStore({database:destination});
+ try{
+  const recovered=new LaunchScreenService(restored);
+  assert.deepEqual(recovered.get(),published);
+  const asset=restored.db.prepare('SELECT body FROM app_launch_assets WHERE sha=?').get(image.sha256);
+  assert.deepEqual(Buffer.from(asset.body),png);
+  assert.deepEqual(Object.fromEntries(Object.keys(counts).map(table=>[table,restored.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n])),counts);
+  assert.equal(restored.db.prepare("SELECT value FROM metadata WHERE key='restoreQuarantine'").get().value,'1');
+  assert.throws(()=>recovered.save({...editable(recovered.get()),message:'隔离中不得发布'}),e=>e.status===503);
+  assert.throws(()=>recovered.upload(jpeg,'image/jpeg'),e=>e.status===503);
+ }finally{restored.close();}
 });
