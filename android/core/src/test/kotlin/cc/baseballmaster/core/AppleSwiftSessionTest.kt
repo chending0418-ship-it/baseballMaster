@@ -46,7 +46,7 @@ class AppleSwiftSessionTest {
         val compiled=GameJson.parseToJsonElement(binary.parentFile.resolve("binary.json").readText()).jsonObject
         assertEquals(compiled.getValue("sha256").jsonPrimitive.content,sha(binary.readBytes()))
         val root=File(System.getProperty("parity.fixtures"))
-        val repository=root.parentFile.parentFile
+        val repository=root.parentFile.parentFile.parentFile
         val sources=GameJson.parseToJsonElement(binary.parentFile.resolve("sources.json").readText()).jsonArray
         for(raw in sources) {
             val source=raw.jsonObject
@@ -55,7 +55,7 @@ class AppleSwiftSessionTest {
             require(original.canonicalFile.toPath().startsWith(repository.canonicalFile.toPath()))
             assertEquals("Recompile the changed Swift reference: $path",source.getValue("sha256").jsonPrimitive.content,sha(original.readBytes()))
         }
-        val output=root.parentFile.parentFile.resolve("output/validation/android/an04-interactive/sessions").apply {mkdirs()}
+        val output=root.parentFile.parentFile.parentFile.resolve("output/validation/android/an04-interactive/sessions").apply {mkdirs()}
         val files=root.walkTopDown().filter {it.isFile && it.name.endsWith("-scoring.json")}.sortedBy {it.relativeTo(root).path}.toList()
         assertEquals(109,files.size)
         var frames=0;var actions=0;var historyActions=0;var reviews=0;var undos=0;var replayChecks=0;var kotlinJournalChecks=0;var sourceImportChecks=0

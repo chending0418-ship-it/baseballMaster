@@ -39,7 +39,7 @@
 
 正式实现对照和实际验收见 [直播 UI 验证](LIVE-UI-VALIDATION.md)，部署／兼容回滚见 [部署准备](../../../live/deploy/2.2-preparation.md)。证据放 `output/validation/2.2/live-ui/`。直播分享显示对阵的标题／元信息见 **E02**，可提前实施，不能以这项 UI 等待设计为由遗漏。
 
-关联：[2.2 发布功能计划](<../../plans/2.2 发布功能计划.md>) · [其余改进 TODO](PRODUCT-IMPROVEMENTS-TODO.md)。
+关联：[2.2 发布功能计划](<../../../ios/docs/plans/2.2 发布功能计划.md>) · [其余改进 TODO](PRODUCT-IMPROVEMENTS-TODO.md)。
 
 用户最新要求：先完成其他开发并提供关键页面截图，开发方负责模拟器测试。非直播 UI 的 B／E 项已完成本轮验收，见 [开发验收记录](DEVELOPMENT-VALIDATION.md)。用户提供直播 UI 要求并完成改版后，才进行审核、网页部署和最终发布安排。
 

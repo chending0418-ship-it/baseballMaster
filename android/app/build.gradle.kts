@@ -25,8 +25,8 @@ android {
     }
     buildFeatures { compose = true; buildConfig = true }
     testOptions { unitTests.isIncludeAndroidResources = true }
-    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../test-fixtures/android-parity/backup"))
-    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../test-fixtures/android-parity/team-archive"))
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../contracts/fixtures/android-parity/backup"))
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../contracts/fixtures/android-parity/team-archive"))
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../BaseballMaster/Assets.xcassets/AppIcon.appiconset"))
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
@@ -63,5 +63,5 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     outputs.dir(rootProject.file("../output/validation/android/an04-source-roundtrip/kotlin"))
     systemProperty("robolectric.dependency.repo.url", providers.gradleProperty("robolectricRepository").orElse("https://repo.maven.apache.org/maven2").get())
     systemProperty("maven.repo.local", rootProject.file("../output/cache/android/robolectric").absolutePath)
-    systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
+    systemProperty("parity.fixtures", rootProject.file("../contracts/fixtures/android-parity").absolutePath)
 }

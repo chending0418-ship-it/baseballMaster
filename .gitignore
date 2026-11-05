@@ -29,3 +29,9 @@ collaboration/.env
 /android/**/build/
 *.jks
 *.keystore
+
+# Platform release documents follow stage-one layout; generated packets stay local.
+/ios/docs/releases/**/*.zip
+/ios/docs/releases/**/*.pdf
+/android/docs/releases/**/*.zip
+/android/docs/releases/**/*.pdf

@@ -13,7 +13,7 @@ import org.junit.Test
 class AppleCommandScenarioExportTest {
     @Test fun preparesDirectCommandsFromTheFrozenIOSScenariosForOriginalSwiftExecution() {
         val root=File(System.getProperty("parity.fixtures"))
-        val output=root.parentFile.parentFile.resolve("output/validation/android/an04-command-wire/kotlin")
+        val output=root.parentFile.parentFile.parentFile.resolve("output/validation/android/an04-command-wire/kotlin")
         val inputs=output.resolve("scenarios").apply {mkdirs()}
         val all=root.walkTopDown().filter {it.isFile && it.name.endsWith("-scoring.json")}.sortedBy {it.relativeTo(root).path}.toList()
         assertEquals(109,all.size)
