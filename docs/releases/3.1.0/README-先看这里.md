@@ -1,6 +1,6 @@
 # 3.1.0 发布审核材料
 
-最终功能与发布事项见 [3.1.0 发布功能计划](<../../../3.1.0 发布功能计划.md>)；当前状态统一见 [CURRENT.md](../../CURRENT.md)。
+最终功能与发布事项见 [3.1.0 发布功能计划](<../../../3.1.0 发布功能计划.md>)；当前状态统一见 [CURRENT.md](../../../ios/docs/CURRENT.md)。
 
 1. 打开签名归档 `output/releases/3.1.0/archives/BaseballMaster-3.1.0-1-final.xcarchive`。
 2. 按 UPLOAD-GUIDE.md 在 Xcode 上传到现有 App，选择版本 3.1.0、Build 1。

@@ -7,7 +7,7 @@ dependencies {
     implementation("com.google.zxing:core:3.5.3")
     testImplementation("junit:junit:4.13.2")
 }
-tasks.test { systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath) }
+tasks.test { systemProperty("parity.fixtures", rootProject.file("../contracts/fixtures/android-parity").absolutePath) }
 
 // Generated wire files are validation artifacts, never reference-fixture replacements.
 tasks.test {
@@ -23,7 +23,7 @@ tasks.register<Test>("liveServiceTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/StandaloneLiveIntegrationTest.class")
-    systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
+    systemProperty("parity.fixtures", rootProject.file("../contracts/fixtures/android-parity").absolutePath)
     inputs.files(rootProject.file("../scripts/android/an06-local-live.mjs"))
     inputs.files(fileTree(rootProject.file("../live")) { include("*.mjs") })
 }
@@ -32,7 +32,7 @@ tasks.register<Test>("teamServiceTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/TeamDirectoryIntegrationTest.class")
-    systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
+    systemProperty("parity.fixtures", rootProject.file("../contracts/fixtures/android-parity").absolutePath)
     inputs.files(rootProject.file("../scripts/android/an05-local-service.mjs"))
     inputs.files(fileTree(rootProject.file("../collaboration")) { include("*.mjs") })
 }
@@ -43,7 +43,7 @@ tasks.register<Test>("swiftWireTest") {
     include("**/AppleSwiftWireReturnTest.class")
     inputs.dir(providers.gradleProperty("swiftWireDirectory"))
     systemProperty("swift.wire.directory", providers.gradleProperty("swiftWireDirectory").orElse("").get())
-    systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
+    systemProperty("parity.fixtures", rootProject.file("../contracts/fixtures/android-parity").absolutePath)
 }
 tasks.register<Test>("swiftCommandStateTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
@@ -58,5 +58,5 @@ tasks.register<Test>("swiftSessionTest") {
     include("**/AppleSwiftSessionTest.class")
     inputs.file(providers.gradleProperty("swiftCoreBinary"))
     systemProperty("swift.core.binary", providers.gradleProperty("swiftCoreBinary").orElse("").get())
-    systemProperty("parity.fixtures", rootProject.file("../test-fixtures/android-parity").absolutePath)
+    systemProperty("parity.fixtures", rootProject.file("../contracts/fixtures/android-parity").absolutePath)
 }

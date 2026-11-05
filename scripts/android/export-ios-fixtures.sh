@@ -12,4 +12,4 @@ xcodebuild test -project BaseballMaster.xcodeproj -scheme BaseballMaster \
   > "$BM_PARITY_EVIDENCE/test.log" 2>&1
 xcrun xcresulttool export attachments --path "$BM_PARITY_EVIDENCE/result.xcresult" --output-path "$BM_PARITY_EVIDENCE/attachments"
 python3 scripts/android/extract-ios-fixtures.py "$BM_PARITY_EVIDENCE/attachments" "$BM_PARITY_EVIDENCE/candidate-fixtures"
-print "候选样本：$BM_PARITY_EVIDENCE/candidate-fixtures；核对差异后再更新 test-fixtures。"
+print "候选样本：$BM_PARITY_EVIDENCE/candidate-fixtures；核对差异后再更新 contracts/fixtures。"

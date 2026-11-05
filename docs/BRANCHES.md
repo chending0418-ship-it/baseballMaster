@@ -1,3 +1,11 @@
+# 当前分支与目录约定（2026-11-05）
+
+共用一个 `main`；两个平台从最新 `main` 开功能／维护分支，经审查和适用验证后按用户授权合入。现行状态分别见 [iOS](../ios/docs/CURRENT.md)、[Android](../android/docs/CURRENT.md)。新分支可使用 `codex/ios/`、`codex/android/`、`codex/services/`、`codex/contracts/`、`codex/repo/` 前缀；既有分支和标签不改名、不删除、不改写。
+
+阶段一仅在独立评审 worktree `apps/baseball-scorekeeper-stage1/` 实施。原 iOS 的 `codex/dev-3.1.2` 与 Android 的 `codex/android-0.8.2` 及其未提交内容保持。新结构先作为 PR 审查，合入和两端逐个同步另行开展。下文都是对应日期的历史，不按其“当前”字样覆盖本文。
+
+现有开放 PR #40、#42、#46、#47、#48 维持原状态。它们若在本次迁移之后合入，须先对照路径映射更新文档目标，避免重新引入根 CURRENT 或旧 test-fixtures；本次不合并其业务改动。
+
 # 2026-11-04 双平台 PR 整合
 
 用户授权依次整理 #34、合入 iOS #37，再由 Android #39 同步最新 main、解决冲突并验证后合入；旧 Android #35／#36／#38 的功能由 #39 承接，旧共享副本流程 #33 不合入。#34 已合并为 `e58ea84`，#37 已合并为 `510021b`。两平台继续在各自可见目录开发，版本分别为 iOS 3.1.2（1）与 Android 0.8.2（10），不因合入改版本、包名、签名或发布状态。
@@ -8,15 +16,15 @@
 
 最新范围（2026-11-04）：用户恢复 Duo 适配；继续 `codex/dev-3.1.2`，保持 3.1.2（Build 1），在现有 [PR #37](https://github.com/chending0418-ship-it/baseballMaster/pull/37) 补充代码与验证，仅推送并保持开放，不合并 main。本机、对手、共享球队的批量名单与统计页落点继续保留。
 
-用户授权支持 iPad／iPhone Duo，先做 iPad，并将 3.1.1 未完成项转入 3.1.2。`codex/dev-3.1.2` 从原开发基线 `315580d` 建立，沿用同一目录和所有原本未提交资料，工程升级为 3.1.2（Build 1）。范围与验证见 [3.1.2 开发记录](releases/3.1.2/DEVELOPMENT.md)，进入 main 仍经 PR。以下旧分支说明按当时状态保留。
+用户授权支持 iPad／iPhone Duo，先做 iPad，并将 3.1.1 未完成项转入 3.1.2。`codex/dev-3.1.2` 从原开发基线 `315580d` 建立，沿用同一目录和所有原本未提交资料，工程升级为 3.1.2（Build 1）。范围与验证见 [3.1.2 开发记录](../ios/docs/releases/3.1.2/DEVELOPMENT.md)，进入 main 仍经 PR。以下旧分支说明按当时状态保留。
 
 # 3.1.1 开发分支（2026-10-22）
 
-用户已确认产品深绿 BM 开机图并授权接入 3.1.1；当前分支为 `codex/dev-3.1.1`，从当前工作区资料整理基线 `3eb09df` 建立，工程为 3.1.1（Build 1）。实现、验证与发布边界见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)，当前入口仍为 [CURRENT](CURRENT.md)。本轮不直接改 main，原迁移和版本历史记录保留如下。
+用户已确认产品深绿 BM 开机图并授权接入 3.1.1；当前分支为 `codex/dev-3.1.1`，从当前工作区资料整理基线 `3eb09df` 建立，工程为 3.1.1（Build 1）。实现、验证与发布边界见 [3.1.1 开发记录](releases/3.1.1/DEVELOPMENT.md)，当前入口仍为 [CURRENT](../ios/docs/CURRENT.md)。本轮不直接改 main，原迁移和版本历史记录保留如下。
 
 # 本次迁移分支（2026-10-22）
 
-目录整理在 codex/workspace-migration-20261022 进行，所有原分支和 main 提交保留。最新品牌规范已先保存为提交 6b0fc97。当前资料与工作区路径见 [CURRENT.md](CURRENT.md) 及 [迁移记录](../../../management/MIGRATION.md)。本次未直接修改 main。
+目录整理在 codex/workspace-migration-20261022 进行，所有原分支和 main 提交保留。最新品牌规范已先保存为提交 6b0fc97。当前资料与工作区路径见 [CURRENT.md](../ios/docs/CURRENT.md) 及 [迁移记录](../../../management/MIGRATION.md)。本次未直接修改 main。
 
 # iOS 与 Android 分支管理（2026-10-27）
 
@@ -57,10 +65,10 @@
 | 2.2 发布基线 | `d3d4928`（main 历史），`/Users/JasonChan/Documents/BaseballMaster.CC/apps/baseball-scorekeeper` | 2.2（Build 1），功能与回归、Web 部署、归档及商店材料完成；App 上传和提交按既有交接记录 |
 | 2.2 开发记录 | `codex/dev-2.2` | 已推送并快进合入 main，保留历史分支 |
 | 2.1 历史维护 | `codex/release-2.1` | 完整本地／远端分支保留，不反向混入 2.2 功能 |
-| 2.3 交付基线 | `8e54f23`（main 历史），根目录 [单份计划](<plans/2.3 发布功能计划.md>) | 工程 2.3（Build 1），209 项单元／集成与 72 项唯一界面验收完成，官网／兼容直播已上线，资料与归档齐备；`8e54f23` 已推送，Apple 发布由用户执行，小组件已延期 |
+| 2.3 交付基线 | `8e54f23`（main 历史），根目录 [单份计划](<../ios/docs/plans/2.3 发布功能计划.md>) | 工程 2.3（Build 1），209 项单元／集成与 72 项唯一界面验收完成，官网／兼容直播已上线，资料与归档齐备；`8e54f23` 已推送，Apple 发布由用户执行，小组件已延期 |
 | 3.1.0 交付基线 | main 历史中的 `df2cb87` | 2026-10-20 已合入并推送，工程 3.1.0（Build 1）；3.0／3.0.1 前置基线为 `82c23b4` |
 | 当前工作区 | `main`，同一项目目录 | 以 `82c23b4` 开发 3.1.0（Build 1），见 [开发交接](releases/3.1.0/DEVELOPMENT.md)；3.1.0 完成合并推送 main，签名归档和审核资料见 [发布交接](releases/3.1.0/REVIEW-HANDOFF.md)；共享服务兼容已部署，App 未上传审核 |
-| 3.0.1 修复 | [单份计划](<plans/3.0.1 发布功能计划.md>) | 已获开发授权；[验收](releases/3.0.1/ACCEPTANCE.md) 记录本机／共享隔离及其他修复，兼容服务及邀请页已部署，签名归档／审核材料已准备，App 未上传提交 |
+| 3.0.1 修复 | [单份计划](<../ios/docs/plans/3.0.1 发布功能计划.md>) | 已获开发授权；[验收](releases/3.0.1/ACCEPTANCE.md) 记录本机／共享隔离及其他修复，兼容服务及邀请页已部署，签名归档／审核材料已准备，App 未上传提交 |
 
 2.2 发布代码提交为 `433373b`，已推送到 main 与开发分支；目录及交接收尾另随 Git 保存。App 工程、源码名称和 Bundle ID 保持不变，使用 `BaseballMaster.xcodeproj`。
 
@@ -78,7 +86,7 @@
 
 ## 3.1 击球记录改版规划阶段
 
-2026-10-13 用户确认击球记录改版需要做，正式纳入 [3.1 单份规划](plans/3.1-BATTED-BALL.md)，覆盖球型／去向、打者本场／年度表现与击球图、常用局面入口。Android 记分客户端、真实跨平台验证、APK 分发与更新暂缓，后续版本待定；原方案保留在 [Android 规划](plans/ANDROID-APK.md)。本条取代 10 月 8 日的 Android 3.1 安排。
+2026-10-13 用户确认击球记录改版需要做，正式纳入 [3.1 单份规划](plans/3.1-BATTED-BALL.md)，覆盖球型／去向、打者本场／年度表现与击球图、常用局面入口。Android 记分客户端、真实跨平台验证、APK 分发与更新暂缓，后续版本待定；原方案保留在 [Android 规划](../android/docs/plans/ANDROID-APK.md)。本条取代 10 月 8 日的 Android 3.1 安排。
 
 本轮仅维护规划与入口，当前仍为 `codex/dev-3.0`、工程 3.0（Build 1）。3.1 正式业务开发、分支与工程版本在开始实施时安排；沿用唯一项目目录。
 

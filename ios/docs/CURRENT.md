@@ -1,0 +1,17 @@
+# 棒球比赛记录大师 · iOS 当前入口
+
+更新：2026-11-05。本文件是 iOS 唯一现行状态入口。
+
+| 项目 | 当前依据 |
+| --- | --- |
+| 当前发布 | **用户于 2026-11-05 确认：iOS 3.1.2 已通过审核并上架**。本轮未读取 App Store Connect，不推定实际审核通过时间或线上二进制的源码提交／Build |
+| 源码配置 | 仓库工程为 3.1.2（Build 1）；工程仍在根目录 [BaseballMaster.xcodeproj](../../BaseballMaster.xcodeproj/)，不因文档整理改变 |
+| 本版计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；[上版计划](<plans/3.1.1 发布功能计划.md>) |
+| 发布资料 | [3.1.2 材料入口](releases/3.1.2/README-先看这里.md)、[正式归档证据](releases/3.1.2/ARCHIVE.md)、[开发与验收](releases/3.1.2/DEVELOPMENT.md)；其中按日期保留的“未上传／未上架”为历史阶段 |
+| 服务状态 | 用户同日确认服务一切正常；本轮匿名只读检查球队协议 1 健康接口及直播健康接口通过，未修改或部署服务 |
+| 共享服务维护 | [collaboration](../../collaboration/PROTOCOL.md)、[live](../../live/README.md)仍由 iOS／服务工作入口管理 |
+| Android | [Android CURRENT](../../android/docs/CURRENT.md)，独立版本与发布计划，不在此复制进度 |
+| 当前维护 | [文档与契约阶段一](../../docs/maintenance/2026-11-05-docs-contracts-stage1.md)，独立分支与 PR，尚未合入；既有主工作目录与分支尚未切换 |
+| 共享资料 | [契约](../../contracts/README.md)、[设计与需求](../../docs/README.md)；[历史 3.1.0 计划](<../../3.1.0 发布功能计划.md>) |
+
+真实旧比赛原件核对等产品遗留继续按本版计划跟踪。上架不自动代表这些事项完成。本轮不重新签名或生成分发包。

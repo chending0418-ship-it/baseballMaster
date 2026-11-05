@@ -1,12 +1,12 @@
-# 项目文档入口
+# 共享文档导航
 
-当前状态与本次发布材料只从 [CURRENT.md](CURRENT.md) 进入，不在这里重复维护版本状态。全部资料的归属与放置规则见 [工作区总导航](../../../management/AGENT-GUIDE.md)。
+当前状态分别只维护在 [iOS CURRENT](../ios/docs/CURRENT.md)与 [Android CURRENT](../android/docs/CURRENT.md)，两份入口可以同时存在于同一个 `main`。
 
-- [设计与交互](design/)：以 CURRENT 指向的现行基准为准。
-- [球队比赛同步方案](plans/TEAM-MATCH-SYNC-FLOW.md)：原调查、已确认流程及 iOS 3.1.1／3.1.2 实现承接；真实旧记录和生产迁移继续按版本计划跟踪。
-- [需求与计划](plans/)：iOS／Android 每个版本分别维护单份 `docs/plans/<版本> 发布功能计划.md`，从 CURRENT 导航；详细开发和验收日志不替代计划。既有 3.1.0 根目录计划原位保留，不再复制。
-- [版本发布与审核交接](releases/)：按版本保存，历史记录不代表当前状态。
-- [研究](research/)与[维护记录](maintenance/)：保存方法、运行说明及整理依据。
-- [历史归档](archive/)：旧方案与输出中保留的编辑源稿；禁止据此自动恢复旧任务。
+- [iOS 文档](../ios/docs/README.md)、[Android 文档](../android/docs/README.md)：平台计划、发布与验收。
+- [契约与样例](../contracts/README.md)：共享规则、互导及协议验证依据。
+- [共用设计](design/)、[共享需求](plans/)、[研究](research/)、[维护记录](maintenance/)。
+- 服务实现与运维资料继续跟随 [live](../live/README.md)、[collaboration](../collaboration/PROTOCOL.md)。
+- [历史 iOS 发布材料](releases/)继续保留原位；本次仅将 3.1.2 现行材料与 Android 材料归入平台目录，旧发布生成器继续读取原有历史源稿。
+- [历史归档](archive/)、[阶段一映射](maintenance/2026-11-05-stage1-path-map.json)。根目录历史 [3.1.0 计划](<../3.1.0 发布功能计划.md>)原位保留。
 
-公共品牌与官网使用工作区真实目录，位置见总导航。本 App 不再通过 docs/brand 或 website 软链接串联目录。
+公共品牌与官网见[工作区总导航](../../../management/AGENT-GUIDE.md)。历史过程文档中的“当前”及旧路径按原日期理解，平台 CURRENT 是现行入口。
