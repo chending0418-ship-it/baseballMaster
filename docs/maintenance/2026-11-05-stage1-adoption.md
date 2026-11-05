@@ -65,3 +65,11 @@ python3 scripts/validation/verify-docs-contracts.py --layout-only \
 ```
 
 任何一步失败就保留现场和证据，停止采用该结果；使用已核验的检查点与文件副本在独立目录恢复，不覆盖正在工作的另一端。即便 #49 已合入，也可暂缓某端采用；按真实分支保留该端旧入口，记录原因与待办，不伪造已完成同步。
+
+## 本机实际执行回执（2026-11-05）
+
+用户追加授权独立 subAgent 评审后实际移动本地文件，已从核准 PR 头 `d6ba7b6ac508722e7474da6792eaf25f05c10885` 在两个正式目录执行采用。iOS 为 codex/ios/adopt-stage1-20261105，Android 为 codex/android/adopt-stage1-20261105；外层路径保持。原旧分支、preserve 引用和文件系统备份均保留；旧 CURRENT 未写入快照。
+
+README 已复核为实际工程入口，Android 分发勾选和新旧阶段语气已统一。两端布局各18/18、工作区53/53，原生构建与必要本地回归成功，独立验收未发现阻断项。94份核准归档、137份样例及原发布包保持。回执和恢复清单位于工作区 local/backups/scorekeeper-local-adoption-20261105/，独立报告为 local/validation/pr49-independent-review/final-adopted.json。
+
+PR #49 仍未合并 main；本轮未部署或上传。待审上传修复等原业务工作仍保留为本地未提交状态，没有混入目录 PR。用户随后自行关联 Codex 五个项目根目录，临时评审 worktree 不作为第六个项目。
