@@ -47,7 +47,7 @@ Robolectric 首次等待隔离 worktree 中未准备的 Maven 依赖，线程诊
 
 本轮原始日志、XML 计数、字节与资源检查位于评审 worktree `output/validation/repo-stage1/`，不进入 Git；私有保全及公网前后检查位于工作区备份目录。原有验收数字保持原日期，不冒充本轮重新执行。未触发 GitHub 模拟器工作流、长时性能或 soak 测试。
 
-本 PR 目标为 main，保持开放，不启用自动合并。
+[PR #49](https://github.com/chending0418-ship-it/baseballMaster/pull/49) 目标为 main，保持开放，未合并，不启用自动合并。公网收尾复核：0.8.2 APK 完整下载 33,257,101 bytes，SHA-256 `2c19ff1e3f5d3d1eedbd497005fee8d8178173e69eaa47f8e00aef3ca05be934` 与既有发布回执一致；球队和直播健康接口再次通过。
 
 ## 回退与后续
 
