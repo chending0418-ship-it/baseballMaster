@@ -4,6 +4,8 @@
 
 阶段一仅在独立评审 worktree `apps/baseball-scorekeeper-stage1/` 实施。原 iOS 的 `codex/dev-3.1.2` 与 Android 的 `codex/android-0.8.2` 及其未提交内容保持。新结构先作为 PR 审查，合入和两端逐个同步另行开展。下文都是对应日期的历史，不按其“当前”字样覆盖本文。
 
+旧 CURRENT 分流、归档保护与两个工作目录采用顺序见[同步步骤](maintenance/2026-11-05-stage1-adoption.md)。快照只保存基线，不能接收旧分支新增状态；合并候选结果须通过归档检查。
+
 现有开放 PR #40、#42、#46、#47、#48 维持原状态。它们若在本次迁移之后合入，须先对照路径映射更新文档目标，避免重新引入根 CURRENT 或旧 test-fixtures；本次不合并其业务改动。
 
 # 2026-11-04 双平台 PR 整合

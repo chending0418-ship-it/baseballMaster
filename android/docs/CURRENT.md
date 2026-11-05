@@ -13,3 +13,5 @@
 | 平台边界 | 完整跨端互导、正式赛后归档／旧关联更新及实体厂商设备等继续按计划跟踪，不因样例移入共享目录就标记完成；未获得应用市场上传确认 |
 | iOS／服务 | [iOS CURRENT](../../ios/docs/CURRENT.md)，共享服务继续从 iOS／服务入口维护 |
 | 当前维护 | [文档与契约阶段一](../../docs/maintenance/2026-11-05-docs-contracts-stage1.md)，[PR #49](https://github.com/chending0418-ship-it/baseballMaster/pull/49) 保持开放；原 Android 工作目录仍在原分支，待合入后另行同步 |
+
+本次审查整改及采用边界：[旧 CURRENT 分流与两个工作目录同步步骤](../../docs/maintenance/2026-11-05-stage1-adoption.md)。步骤尚未执行；归档快照不接收旧分支新增状态。
