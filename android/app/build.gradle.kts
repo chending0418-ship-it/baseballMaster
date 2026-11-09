@@ -12,8 +12,8 @@ android {
         applicationId = "cc.baseballmaster.scorekeeper.preview"
         minSdk = 31
         targetSdk = 37
-        versionCode = providers.gradleProperty("previewVersionCode").orElse("10").get().toInt()
-        versionName = "0.8.2"
+        versionCode = providers.gradleProperty("previewVersionCode").orElse("11").get().toInt()
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {

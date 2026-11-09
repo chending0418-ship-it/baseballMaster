@@ -2,6 +2,7 @@ package cc.baseballmaster.scorekeeper
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -16,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,7 +32,7 @@ import java.util.UUID
 
 /** Mirrors the existing iOS match announcement poster and uses its saved match date. */
 internal object GamePoster {
-    fun render(game: Game, headline: String, venue: String, note: String): Bitmap {
+    fun render(context: Context, game: Game, headline: String, venue: String, note: String): Bitmap {
         val bitmap = Bitmap.createBitmap(1080, 1440, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -49,7 +51,9 @@ internal object GamePoster {
             canvas.save(); canvas.clipRect(x, y, x + w, y + h); canvas.translate(x.toFloat(), y.toFloat()); l.draw(canvas); canvas.restore()
         }
         block(0f, 0f, 18f, 1440f, red)
-        text("BASEBALL MASTER  /  MATCH DAY",72,54,730,40,24f,ink,true)
+        val brand = BitmapFactory.decodeResource(context.resources, R.drawable.product_brand_horizontal)
+        canvas.drawProductBrand(brand, 72f, 55f, 48f, paint.apply { isFilterBitmap = true })
+        brand.recycle()
         block(830f,48f,178f,62f,red); text("赛事预告",838,61,162,44,29f,paper,true,true)
         text(headline,72,143,936,80,35f,ink)
         block(72f,247f,936f,5f,ink)
@@ -76,13 +80,13 @@ internal object GamePoster {
             "成人慢垒 / " + (if (game.rules.timed) "时间赛 ${game.rules.timeLimitMinutes ?: "待定"} 分钟" else "${game.rules.innings} 局") + " / 10 人守备"
         } else "${game.rules.innings} 局制  /  ${game.rules.fielders} 人守备" + (game.rules.timeLimitMinutes?.let { "  /  限时 $it 分钟" } ?: "")
         text(rules,74,1373,492,40,21f,ink)
-        text("棒球大师 · 以组织方最新通知为准",576,1373,432,40,21f,ink)
+        text("以组织方最新通知为准",576,1373,432,40,21f,ink)
         return bitmap
     }
     fun write(context: Context, game: Game, headline: String, venue: String, note: String): File {
         val dir = File(context.cacheDir, "reports"); check(dir.isDirectory || dir.mkdirs())
         val file = File(dir, "BaseballMaster-poster-${UUID.randomUUID()}.png")
-        val bitmap = render(game, headline, venue, note)
+        val bitmap = render(context, game, headline, venue, note)
         try { file.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) } } finally { bitmap.recycle() }
         return file
     }
@@ -93,7 +97,8 @@ internal fun GamePosterScreen(game: Game, dismiss: () -> Unit) {
     var headline by remember { mutableStateOf("一起到场，为球队加油") }
     var venue by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("欢迎队员、家长和朋友们到场观赛") }
-    val preview = remember(game, headline, venue, note) { GamePoster.render(game, headline, venue, note) }
+    val context = LocalContext.current
+    val preview = remember(context, game, headline, venue, note) { GamePoster.render(context, game, headline, venue, note) }
     DisposableEffect(preview) { onDispose { preview.recycle() } }
     FormPage("比赛宣传海报", false, true, "poster-close", "完成", dismiss, dismiss) {
         Image(preview.asImageBitmap(), contentDescription = "比赛海报，${game.away.name}对${game.home.name}", modifier = Modifier.fillMaxWidth().testTag("game-poster-preview"))

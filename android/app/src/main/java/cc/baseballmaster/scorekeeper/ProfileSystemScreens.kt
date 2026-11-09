@@ -1,6 +1,5 @@
 package cc.baseballmaster.scorekeeper
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -8,12 +7,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable internal fun AppSettingsScreen(model: ScorekeeperViewModel, dismiss: ()->Unit) {
     FormPage("App 设置",false,false,"","",dismiss,{},dismissLabel="返回") {
+        ProductBrand(reverse = MaterialTheme.colorScheme.surface.luminance() < .5f)
         Text("外观",fontWeight=FontWeight.Bold)
         Choices("App 外观",mapOf("system" to "跟随系统","light" to "浅色","dark" to "深色"),model.appAppearance) {model.setAppearance(it)}
         Text("辅助提示",fontWeight=FontWeight.Bold)
@@ -29,8 +29,7 @@ import androidx.compose.ui.unit.dp
     var failedUrl by remember {mutableStateOf<String?>(null)}
     fun open(url: String) {runCatching {browser.openUri(url)}.onFailure {failedUrl=url}}
     FormPage("关于",false,false,"","",dismiss,{},dismissLabel="返回") {
-        Image(painterResource(R.drawable.launch_app_icon),"棒球比赛记录大师",Modifier.size(56.dp))
-        Text("BaseballMaster",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
+        ProductBrand(reverse = MaterialTheme.colorScheme.surface.luminance() < .5f)
         Text("Android ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）")
         CardBlock {Text("为现场记分而设计",fontWeight=FontWeight.Bold);Text("帮助非专业记分员用更直观的方式记录比赛，并查看球队、球员与年度表现。")}
         CardBlock {

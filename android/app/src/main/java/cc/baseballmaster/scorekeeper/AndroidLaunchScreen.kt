@@ -16,7 +16,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -145,8 +144,7 @@ internal class AndroidLaunchScreenRepository(
         BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xff092a2a)).testTag("configurable-launch")) {
             if(current.image==null) Image(painterResource(R.drawable.launch_artwork),null,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
             else {Image(current.image.asImageBitmap(),null,Modifier.fillMaxSize(),contentScale=ContentScale.Crop);Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.66f)))}
-            Image(painterResource(R.drawable.launch_identity),"BaseballMaster 棒球比赛记录大师",Modifier.align(Alignment.TopCenter).offset(y=maxHeight*.46968f-111.5.dp).size(260.dp,223.dp).testTag("launch-fixed-bm"))
-            Image(painterResource(R.drawable.launch_app_icon),"棒球比赛记录大师 App 图标",Modifier.align(Alignment.BottomCenter).padding(bottom=81.dp).size(44.dp).clip(RoundedCornerShape(10.dp)).testTag("launch-fixed-app-icon"))
+            ProductBrand(reverse = true, modifier = Modifier.align(Alignment.Center), tile = 48.dp)
             Text(current.configuration.message,Modifier.align(Alignment.BottomCenter).padding(bottom=29.dp).widthIn(max=280.dp).padding(horizontal=8.dp).height(38.dp).testTag("launch-message"),color=Color(0xffc6d5cc),fontSize=11.sp,fontWeight=FontWeight.Medium,letterSpacing=2.42.sp,lineHeight=15.sp,textAlign=TextAlign.Center,maxLines=2)
             TextButton(onClick={model.dismissLaunch();presentation=null},modifier=Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(end=20.dp).heightIn(min=44.dp).background(Color.Black.copy(alpha=.16f),RoundedCornerShape(24.dp)).testTag("skip-launch-screen")) {Text("跳过",color=Color.White,fontSize=12.sp)}
         }

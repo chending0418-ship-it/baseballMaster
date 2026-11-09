@@ -49,6 +49,15 @@ class Product081RuleNoticeFlowTest {
             val stored = runBlocking { GameRepository.decode(database.dao().game(game.id)!!) }
             assertEquals(game, stored)
             assertFalse(stored.isFinal); assertEquals(1, stored.totalPitches)
+            click("pitch-ball")
+            val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+            var advanced = stored
+            while (advanced.totalPitches < 2 && android.os.SystemClock.uptimeMillis() < deadline) {
+                advanced = runBlocking { GameRepository.decode(database.dao().game(game.id)!!) }
+                if (advanced.totalPitches < 2) android.os.SystemClock.sleep(100)
+            }
+            assertEquals(2, advanced.totalPitches)
+            assertFalse(advanced.isFinal)
         } finally { database.close() }
     }
 }

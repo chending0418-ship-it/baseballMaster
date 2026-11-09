@@ -769,6 +769,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                 check(it.scheduledSetupPending == (entity.payloadVersion == 5))
                 check(it.revision == entity.revision)
                 it.validate()
+                it.restorePitcherInningUsage()
             }
         }
 

@@ -700,19 +700,10 @@ private fun rememberSaveableState(initial: Int) =
 
 @Composable
 private fun BrandHeader() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Image(
-            painterResource(R.drawable.app_icon),
-            "棒球比赛记录大师图标",
-            Modifier.size(42.dp).clip(RoundedCornerShape(11.dp)),
-        )
-        Column {
-            Text("棒球比赛记录大师", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-            Text("每一球 都有迹可循", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        }
+    Column {
+        ProductBrand(reverse = MaterialTheme.colorScheme.surface.luminance() < .5f, tile = 34.dp)
+        Text("每一球 都有迹可循", Modifier.padding(start = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     }
 }
 
@@ -969,7 +960,7 @@ private fun ProfileScreen(model: ScorekeeperViewModel, manageTeams: ()->Unit) {
     SectionTitle("本机数据与设置", null)
     ProfileMenuRow("本地数据", "查看存储范围与数据数量", Icons.Outlined.AccountBox, "open-local-data") { page = "data" }
     ProfileMenuRow("App 设置", "外观与辅助提示", Icons.Outlined.Settings, "open-app-settings") { page = "settings" }
-    ProfileMenuRow("关于 BaseballMaster", "版本信息与数据说明", Icons.Outlined.Info, "open-app-about") { page = "about" }
+    ProfileMenuRow("关于棒球比赛记录大师", "版本信息与数据说明", Icons.Outlined.Info, "open-app-about") { page = "about" }
     when(page) {
         "data"->LocalDataScreen(model,{page=null;manageTeams()}) {page=null}
         "settings"->AppSettingsScreen(model) {page=null}

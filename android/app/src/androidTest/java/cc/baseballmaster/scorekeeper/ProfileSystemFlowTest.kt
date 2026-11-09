@@ -33,6 +33,8 @@ class ProfileSystemFlowTest {
     private fun click(tag: String) { NativeUi.find(device, By.res(tag)).click(); device.waitForIdle() }
 
     @Test fun settingsSurviveActivityRecreationAndAboutAndDataReturnSafely() {
+        val label = context.applicationInfo.loadLabel(context.packageManager).toString()
+        assertEquals("棒球比赛记录大师", label)
         val settings = context.getSharedPreferences("baseballmaster-settings", 0)
         val appearance = settings.getString("appAppearance", "system")
         val guidance = settings.getBoolean("showPracticeGuidance", true)
@@ -40,6 +42,7 @@ class ProfileSystemFlowTest {
         try {
             launch()
             click("open-app-settings")
+            assertEquals(label, NativeUi.find(device, By.res("product-brand")).contentDescription)
             click("choice-App 外观-dark")
             val guidanceBefore = NativeUi.find(device, By.res("show-practice-guidance")).isChecked
             click("show-practice-guidance")
@@ -59,6 +62,7 @@ class ProfileSystemFlowTest {
             click("choice-App 外观-light")
             device.pressBack()
             click("open-app-about")
+            assertEquals(label, NativeUi.find(device, By.res("product-brand")).contentDescription)
             assertNotNull(NativeUi.find(device, By.text("Android ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）")))
             assertNotNull(NativeUi.find(device, By.res("about-privacy-policy")))
             assertNotNull(NativeUi.find(device, By.res("about-support")))
