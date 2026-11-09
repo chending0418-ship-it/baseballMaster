@@ -791,8 +791,10 @@ final class BaseballMasterUITests: XCTestCase {
         let pitchLimitToggle = app.switches["单投手球数限制"]
         revealStatisticsControl(pitchLimitToggle, in: app); pitchLimitToggle.tap()
         let pitchLimit = app.textFields["pitch-limit-input"]
-        revealStatisticsControl(pitchLimit, in: app); pitchLimit.tap()
-        pitchLimit.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2) + "3")
+        revealStatisticsControl(pitchLimit, in: app)
+        pitchLimit.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
+        pitchLimit.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2))
+        pitchLimit.typeText("3")
         XCTAssertEqual(pitchLimit.value as? String, "3")
         let done = app.buttons["dismiss-pitch-limit-keyboard"]
         if done.waitForExistence(timeout: 3) { done.tap() }
