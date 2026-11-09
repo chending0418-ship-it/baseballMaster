@@ -102,10 +102,13 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private var broadcastWorker: kotlinx.coroutines.Job? = null
     private var pendingBroadcast: Game? = null
     private var broadcastForeground = false
-    private val blockedBroadcastGames = mutableSetOf<String>()
+    // This binding is set by the user's confirmation, independently of team membership.
+    private var selectedLocalBroadcastGameID: String?
+        get() = settings.getString("selected_local_broadcast_game_id", null)
+        set(value) { settings.edit().putString("selected_local_broadcast_game_id", value).apply() }
 
     internal fun requestFixedBroadcast(game: Game) {
-        if (!broadcastForeground || recoveryRequired || loading || game.id in blockedBroadcastGames ||
+        if (!broadcastForeground || recoveryRequired || loading || game.id != selectedLocalBroadcastGameID ||
             game.isPregame || game.isObservation || game.practice || game.isScheduled) return
         pendingBroadcast = game
         if (broadcastWorker?.isActive == true) return
@@ -113,7 +116,12 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
             while (broadcastForeground && !recoveryRequired) {
                 val latest = pendingBroadcast ?: break
                 pendingBroadcast = null
-                try { sharing.publishBroadcast(latest) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                if (latest.id != selectedLocalBroadcastGameID) continue
+                try {
+                    val result = sharing.resumeBroadcast(latest)
+                    if (result?.selected != true && latest.id == selectedLocalBroadcastGameID)
+                        selectedLocalBroadcastGameID = null
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (_: Exception) { /* A failed broadcast never changes the local record. */ }
             }
         }
@@ -123,7 +131,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         val current = openedGame
         check(current?.id == game.id && current.revision == game.revision && !recoveryRequired && !loading) { "比赛已变化，请重新核对" }
         val status = sharing.publishBroadcast(game, selection)
-        if (status?.selected == true) blockedBroadcastGames.remove(game.id)
+        if (status?.selected == true) selectedLocalBroadcastGameID = game.id
         return status
     }
     internal fun setLiveForeground(active: Boolean) {
@@ -341,12 +349,12 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     internal suspend fun restoreDeviceBackup(bytes: ByteArray) {
         live.prepareForRestore()
         sharing.clearBroadcastBinding()
+        selectedLocalBroadcastGameID = null
         broadcastWorker?.cancel(); pendingBroadcast = null
         val selected = withContext(Dispatchers.IO) {
             repository.migrateLegacyTeamArchives(getApplication())
             repository.restoreDeviceBackup(bytes)
         }
-        blockedBroadcastGames.addAll(withContext(Dispatchers.IO) { database.dao().allGames().map { it.id } })
         rememberCurrentTeam(selected)
         live.requestSync()
     }
@@ -391,6 +399,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
 
     fun deleteGame(game: Game) = commit {
         repository.deleteGame(game.id, game.revision)
+        if (selectedLocalBroadcastGameID == game.id) selectedLocalBroadcastGameID = null
         if (live.bindings.any { it.gameID == game.id }) live.close(game.id)
         if (openedGameID == game.id) open(null)
         games = games.filterNot { it.id == game.id }

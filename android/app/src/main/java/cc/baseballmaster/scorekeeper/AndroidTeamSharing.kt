@@ -15,8 +15,9 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     suspend fun broadcastTarget(game: Game) = withContext(Dispatchers.IO) { session.broadcastTarget(game) }
     suspend fun broadcastSources(teamID: String) = withContext(Dispatchers.IO) { session.broadcastSources(teamID) }
     suspend fun rotateBroadcast(teamID: String, code: String) = withContext(Dispatchers.IO) { session.rotateBroadcast(teamID, code) }
-    suspend fun publishBroadcast(game: Game, selection: BroadcastSelection? = null) =
+    suspend fun publishBroadcast(game: Game, selection: BroadcastSelection) =
         withContext(Dispatchers.IO) { session.publishLocalBroadcast(game, selection) }
+    suspend fun resumeBroadcast(game: Game) = withContext(Dispatchers.IO) { session.resumeLocalBroadcast(game) }
     suspend fun publishSharedBroadcast(teamID: String, documentID: String, selection: BroadcastSelection) = withContext(Dispatchers.IO) {
         session.publishSharedBroadcast(teamID, documentID, selection).also { status ->
             if (status?.selected == true) sharedBroadcast = teamID to documentID
