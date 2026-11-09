@@ -49,12 +49,15 @@
       <div class="truncate secondary" id="appearances"></div>
     </div>
   </section>
-  <section class="source lineup" id="lineup" aria-label="阵容" hidden>
-    <header class="lineup-header">
-      <strong class="truncate" id="lineup-team"></strong><span class="secondary" id="lineup-title"></span>
-    </header>
-    <ol id="lineup-rows"></ol>
-    <p class="lineup-empty secondary" id="lineup-empty" hidden></p>
-  </section>
+  <section class="lineups" id="lineup" aria-label="阵容" hidden></section>
+  <template id="lineup-template">
+    <article class="source lineup">
+      <header class="lineup-header">
+        <strong class="truncate lineup-team"></strong><span class="secondary lineup-title"></span>
+      </header>
+      <ol class="lineup-rows"></ol>
+      <p class="lineup-empty secondary" hidden></p>
+    </article>
+  </template>
 </body>
 </html>

@@ -59,7 +59,11 @@ try {
   const score = await source('score', 640, 116, fragment);
   const batter = await source('batter', 600, 108, fragment);
   const lineup = await source('lineup', 440, 540, fragment, '&team=home');
-  const views = [[score, 'score', 640, 116], [batter, 'batter', 600, 108], [lineup, 'lineup', 440, 540]];
+  const both = await source('lineup', 896, 540, fragment, '&team=both');
+  const preview = await source('lineup', 600, 540, fragment, '&team=both&preview=1');
+  const views = [[score, 'score', 640, 116], [batter, 'batter', 600, 108], [lineup, 'lineup', 440, 540],
+    [both, 'lineup', 896, 540]];
+  const pages = views.map(([page]) => page);
   const loc = (page, id) => page.locator('#' + id);
   const tick = pages => Promise.all(pages.map(page => page.clock.runFor(5100)));
   async function revision(page, id, number) {
@@ -69,21 +73,28 @@ try {
     change(state);
     state.revision++;
     await publish('PUT', state);
-    await tick([score, batter, lineup]);
+    await tick(pages);
     await Promise.all(views.map(([page, id]) => revision(page, id, state.revision)));
   }
 
   for (const [page, id, width, height] of views) {
     await revision(page, id, state.revision);
     assert.deepEqual(await loc(page, id).boundingBox(), { x: 0, y: 0, width, height });
-    await expect(page.locator('.source:visible')).toHaveCount(1);
+    await expect(page.locator('body > section:visible')).toHaveCount(1);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgba(0, 0, 0, 0)');
-    await page.screenshot({ path: resolve(output, id + '.png'), omitBackground: true });
+    await page.screenshot({ path: resolve(output, (page === both ? 'lineup-both' : id) + '.png'), omitBackground: true });
   }
   await expect(loc(score, 'pitch-strikes')).toBeEmpty();
   await expect(loc(score, 'pitch-strikeouts')).toBeEmpty();
   await expect(loc(batter, 'appearances')).toHaveText('一垒安打');
-  await expect(loc(lineup, 'lineup-rows').locator('li')).toHaveCount(9);
+  await expect(lineup.locator('.lineup-rows').locator('li')).toHaveCount(9);
+  await expect(both.locator('.lineup[data-team="away"] .lineup-team')).toHaveText(state.away.name);
+  await expect(both.locator('.lineup[data-team="home"] .lineup-team')).toHaveText(state.home.name);
+  assert.deepEqual(await both.locator('.lineup[data-team="away"]').boundingBox(), { x: 0, y: 0, width: 440, height: 540 });
+  assert.deepEqual(await both.locator('.lineup[data-team="home"]').boundingBox(), { x: 456, y: 0, width: 440, height: 540 });
+  await expect(loc(preview, 'lineup')).toBeVisible();
+  const previewBox = await loc(preview, 'lineup').boundingBox();
+  assert.ok(previewBox.width <= 600 && previewBox.width > 590);
 
   await update(s => { s.pitchCount++; s.strikes++; });
   await expect(loc(score, 'count')).toHaveText('2–2');
@@ -109,7 +120,9 @@ try {
   });
   await expect(loc(score, 'pitcher-name')).toHaveText(state.pitcher.name);
   await expect(loc(score, 'pitches')).toHaveText('本场 0 球');
-  await expect(loc(lineup, 'lineup-rows').locator('li').first()).toContainText(state.pitcher.name);
+  await expect(lineup.locator('.lineup-rows').locator('li').first()).toContainText(state.pitcher.name);
+  await expect(both.locator('[data-team="home"] li').first()).toContainText(state.pitcher.name);
+  await expect(both.locator('[data-team="away"] li').first()).toContainText(state.away.lineup[0].player.name);
   for (const [page, id, width, height] of views) {
     assert.deepEqual(await loc(page, id).boundingBox(), { x: 0, y: 0, width, height });
   }
@@ -123,7 +136,7 @@ try {
   await expect(loc(score, 'inning')).toHaveText('终场');
   await expect(loc(batter, 'batter')).toBeHidden();
   await publish('DELETE');
-  await tick([score, batter, lineup]);
+  await tick(pages);
   await Promise.all(views.map(([page, id]) => expect(loc(page, id)).toBeHidden()));
 
   const deviceKey = randomBytes(32).toString('base64url');

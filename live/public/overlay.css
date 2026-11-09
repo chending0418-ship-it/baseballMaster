@@ -72,6 +72,7 @@ html, body { margin: 0; background: transparent; overflow: hidden; }
 .batter-identity strong { font-size: 32px; }
 .batter-performance { gap: 6px; }
 
+.lineups { display: grid; grid-auto-flow: column; grid-auto-columns: 440px; gap: 16px; width: max-content; }
 .lineup { width: 440px; height: 540px; }
 .lineup-header {
   height: 65px;

@@ -71,15 +71,16 @@ function showBatter(snapshot) {
   return true;
 }
 
-function showLineup(snapshot, side, page) {
+function showLineup(panel, snapshot, side, page) {
   const team = snapshot[side];
   const lineup = [...(team.lineup ?? [])].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
   const pageSize = 11;
   const pageCount = Math.max(1, Math.ceil(lineup.length / pageSize));
   const pageIndex = Math.min(page, pageCount) - 1;
-  put('lineup-team', team.name);
+  panel.querySelector('.lineup-team').textContent = team.name;
   const label = snapshot.hasStarted === false ? '先发阵容' : '当前阵容';
-  put('lineup-title', pageCount === 1 ? label : `${label} ${pageIndex + 1}/${pageCount}`);
+  const heading = (side === 'away' ? '客队' : '主队') + ' · ' + label;
+  panel.querySelector('.lineup-title').textContent = pageCount === 1 ? heading : `${heading} ${pageIndex + 1}/${pageCount}`;
   const rows = lineup.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize).map(({ order, player, position }) => {
     const row = document.createElement('li');
     for (const value of [order ?? '—', player.name, number(player), positions.get(position) ?? position]) {
@@ -90,10 +91,31 @@ function showLineup(snapshot, side, page) {
     }
     return row;
   });
-  $('lineup-rows').replaceChildren(...rows);
-  put('lineup-empty', team.lineup ? '当前阵容为空' : '直播未提供阵容');
-  $('lineup-empty').hidden = rows.length > 0;
-  return true;
+  panel.querySelector('.lineup-rows').replaceChildren(...rows);
+  const empty = panel.querySelector('.lineup-empty');
+  empty.textContent = team.lineup ? '当前阵容为空' : '直播未提供阵容';
+  empty.hidden = rows.length > 0;
+}
+
+function lineupRenderer(source, params) {
+  const team = params.get('team');
+  const sides = team === 'both' ? ['away', 'home'] : [team === 'home' ? 'home' : 'away'];
+  const page = Math.max(1, Number.parseInt(params.get('page'), 10) || 1);
+  const panels = sides.map(side => {
+    const panel = $('lineup-template').content.firstElementChild.cloneNode(true);
+    panel.dataset.team = side;
+    source.append(panel);
+    return panel;
+  });
+  if (team === 'both' && params.get('preview') === '1') {
+    const fit = () => { source.style.zoom = Math.min(1, innerWidth / 896); };
+    window.addEventListener('resize', fit);
+    fit();
+  }
+  return snapshot => {
+    panels.forEach((panel, index) => showLineup(panel, snapshot, sides[index], page));
+    return true;
+  };
 }
 
 function start() {
@@ -104,11 +126,9 @@ function start() {
   const shared = kind === 'shared';
   if (!code || !(shared ? /^[A-Za-z0-9_-]{32}$/ : /^[A-Fa-f0-9]{24}$/).test(code)) return;
   const endpoint = shared ? '/api/v3/live/' + code : '/livestreaming/novideo/api/sessions/' + code;
-  const side = params.get('team') === 'home' ? 'home' : 'away';
-  const page = Math.max(1, Number.parseInt(params.get('page'), 10) || 1);
   const source = $(component);
   const render = component === 'score' ? showScore : component === 'batter' ? showBatter
-    : snapshot => showLineup(snapshot, side, page);
+    : lineupRenderer(source, params);
   let revision, visible = false, hideTimer;
   const refresh = async () => {
     try {

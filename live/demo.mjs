@@ -30,7 +30,7 @@ try {
     console.log(`示例观赛网址：${base}/${code}`);
     if (overlay) {
       for (const [view, label, size] of [['score', '比分＋投手', '640×116'], ['batter', '当前打者', '600×108'],
-        ['lineup&team=away', '客队阵容', '440×540']]) {
+        ['lineup&team=both', '主客队阵容', '896×540']]) {
         console.log(`${label}（${size}）：${base}/overlay?view=${view}#temporary/${code}`);
       }
     }
