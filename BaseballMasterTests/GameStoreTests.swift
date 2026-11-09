@@ -1166,7 +1166,7 @@ final class GameStoreTests: XCTestCase {
         )
         let pitcher = store.currentPitcher
         store.startGameClock()
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限")
         XCTAssertEqual(store.pitchingLine(for: pitcher).inningsText, "0.0")
         store.endCurrentHalf()
         XCTAssertTrue(store.ruleNotices().contains(where: { $0.contains("达到 1 局登板额度") }))
@@ -3613,8 +3613,14 @@ extension GameStoreTests {
         for _ in 0..<3 { store.applyPlay(.groundOut) }
         XCTAssertTrue(store.ruleNotices().contains { $0.contains(other.name) && $0.contains("已达到") })
         XCTAssertFalse(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("超过 1 局限制") })
+        XCTAssertEqual(store.currentPitcher.id, pitcher.id)
         store.recordPitch(.ball)
-        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("超过 1 局限制") })
+        store.recordPitch(.calledStrike)
+        XCTAssertEqual(store.pitchingLine(for: pitcher).pitches, 5)
+        XCTAssertEqual(store.game.balls, 1)
+        XCTAssertEqual(store.game.strikes, 1)
+        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("超过 1 局限制") && $0.contains("可继续记分") })
+        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("达到 3 球限制") && $0.contains("可继续记分") })
     }
 }
 
@@ -3772,7 +3778,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.ruleNoticeSummary(), "登板 1/2 局")
         store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: first), [1, 2])
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限")
         store.game.pitching[first] = PitchingLine(pitches: 3)
         XCTAssertEqual(store.ruleNoticeSummary(), "还有 3 球")
         store.recordPitch(.ball)
@@ -3783,7 +3789,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.ruleNoticeSummary(), "球数达限")
         store.game.pitching[first]?.pitches = 0
         store.game.pitching[first]?.outsRecorded = 6
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局", "Statistical outs do not determine the appearance limit")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限", "Statistical outs do not determine the appearance limit")
         store.endCurrentHalf()
         XCTAssertNotEqual(store.currentPitcher.id, first)
         XCTAssertEqual(store.ruleNoticeSummary(), "其他达限")
@@ -5873,7 +5879,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1])
         store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1, 2])
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限")
         XCTAssertEqual(store.pitchingLine(for: homePitcher).inningsText, "0.0")
         store.endCurrentHalf(); store.endCurrentHalf()
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1, 2])
@@ -8848,7 +8854,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
         store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1, 2])
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限")
         store.undo()
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
         XCTAssertEqual(store.ruleNoticeSummary(), "登板 1/2 局")

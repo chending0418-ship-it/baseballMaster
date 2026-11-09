@@ -3430,7 +3430,7 @@ final class GameStore: ObservableObject {
                         let remaining = limit - line.pitches
                         if remaining <= 0 {
                             reachedLimits.append(RuleNotice(summary: "球数达限",
-                                detail: "\(name) 已达到 \(limit) 球限制（已投 \(line.pitches) 球）",
+                                detail: "\(name) 已达到 \(limit) 球限制（已投 \(line.pitches) 球）。可继续记分。",
                                 pitcherID: player.id, limitReached: true))
                         } else if isCurrent, let warning = stored.rules.pitchWarningRemaining, remaining <= warning {
                             notices.append(RuleNotice(summary: "还有 \(remaining) 球",
@@ -3441,16 +3441,15 @@ final class GameStore: ObservableObject {
                         let used = inningUsage.innings(for: player.id).count
                         if used > limit {
                             reachedLimits.append(RuleNotice(summary: "登板超限",
-                                detail: "\(name) 已确认登板 \(used) 局，超过 \(limit) 局限制；明确确认登板或实际投球计入。请按赛事规定处理。",
+                                detail: "\(name) 已确认登板 \(used) 局，超过 \(limit) 局限制。可继续记分，请按赛事规定处理。",
                                 pitcherID: player.id, limitReached: true))
                         } else if used == limit, used > 0, !inningUsage.hasIncompleteHistory {
-                            let isLastAllowedInning = isCurrent && inningUsage.innings(for: player.id).contains(game.inning)
+                            let isCurrentInning = isCurrent && inningUsage.innings(for: player.id).contains(game.inning)
                                 && game.halfEndedAwaitingDecision != true
-                            let notice = RuleNotice(summary: isLastAllowedInning ? "最后登板局" : "登板达限",
-                                detail: "\(name) 已达到 \(limit) 局登板额度（已登板 \(used) / \(limit) 局，明确确认登板即计入）。"
-                                    + (isLastAllowedInning ? "当前是最后允许登板的这一局，不能再进入新的登板局。" : "不能再进入新的登板局。"),
-                                pitcherID: player.id, limitReached: !isLastAllowedInning, isAppearanceAdvisory: isLastAllowedInning)
-                            if isLastAllowedInning { notices.append(notice) } else { reachedLimits.append(notice) }
+                            let notice = RuleNotice(summary: "登板达限",
+                                detail: "\(name) 已达到 \(limit) 局登板额度（已登板 \(used) / \(limit) 局）。可继续记分，请按赛事规定处理。",
+                                pitcherID: player.id, limitReached: !isCurrentInning, isAppearanceAdvisory: isCurrentInning)
+                            if isCurrentInning { notices.append(notice) } else { reachedLimits.append(notice) }
                         } else if isCurrent, used > 0, !inningUsage.hasIncompleteHistory {
                             notices.append(RuleNotice(summary: "登板 \(used)/\(limit) 局",
                                 detail: "\(name) 已确认登板 \(used) / \(limit) 局，还剩 \(limit - used) 局；明确确认登板即计入，换局自动沿用投手须实际投球后才计新局，同一局不重复。统计 IP 另按实际出局数计算。",
