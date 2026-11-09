@@ -554,17 +554,6 @@ struct ScorekeepingView: View {
                     }.tint(BMTheme.green).accessibilityIdentifier("swap-opening-sides")
                 }
                 pitchControls.disabled(!store.canEditCurrentMatch)
-                if voiceAccess.active, store.activeStoredGame != nil, !store.isHistoryReplay {
-                    Button {
-                        if store.isPregame { pendingOpeningVoice = true; confirmOpeningLineups = true }
-                        else { openVoice() }
-                    } label: {
-                        Label("语音输入", systemImage: "mic")
-                    }
-                    .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green))
-                    .disabled(!store.canRecordAction || store.requiresTiebreakRunnerPlacement)
-                    .accessibilityIdentifier("open-voice-scoring")
-                }
 
                 HStack(spacing: 10) {
                     Button {
@@ -923,20 +912,36 @@ struct ScorekeepingView: View {
                 pitchButton(.swingingStrike, color: BMTheme.brandOrange)
                 pitchButton(.foul, color: BMTheme.brandNavy)
             }
-            Button {
-                haptic(.medium)
-                illegalPlay = false
-                if store.isPregame { pendingOpeningPlay = true; confirmOpeningLineups = true }
-                else { openPlayFlow() }
-            } label: {
-                HStack {
-                    Image(systemName: "baseball.fill")
-                    Text("击球进入场内")
-                        .font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 7) {
+                Button {
+                    haptic(.medium)
+                    illegalPlay = false
+                    if store.isPregame { pendingOpeningPlay = true; confirmOpeningLineups = true }
+                    else { openPlayFlow() }
+                } label: {
+                    HStack {
+                        Image(systemName: "baseball.fill")
+                        Text("击球进入场内")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                }
+                .buttonStyle(ScoreActionButtonStyle(color: BMTheme.brandGreen, filled: true))
+                .accessibilityIdentifier("ball-in-play")
+                if voiceAccess.active, store.activeStoredGame != nil, !store.isHistoryReplay {
+                    Button {
+                        if store.isPregame { pendingOpeningVoice = true; confirmOpeningLineups = true }
+                        else { openVoice() }
+                    } label: {
+                        Image(systemName: "mic")
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                    .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green))
+                    .frame(width: 44)
+                    .disabled(!store.canRecordAction || store.requiresTiebreakRunnerPlacement)
+                    .accessibilityLabel("语音输入")
+                    .accessibilityIdentifier("open-voice-scoring")
                 }
             }
-            .buttonStyle(ScoreActionButtonStyle(color: BMTheme.brandGreen, filled: true))
-            .accessibilityIdentifier("ball-in-play")
         }
     }
 
