@@ -465,6 +465,12 @@ data class Game(
     var correctionBoundary: Int = 0,
     var statisticsIncomplete: Boolean = false,
     var pitcherInnings: MutableMap<String, Set<Int>> = mutableMapOf(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var pitcherInningUsageCurrent: Boolean = false,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var pitcherInningHistoryIncomplete: Boolean = false,
     var extraInningConfirmed: Boolean = false,
     var tiebreakStartInning: Int? = null,
     var tiebreakRunnerBases: List<Int> = listOf(2),

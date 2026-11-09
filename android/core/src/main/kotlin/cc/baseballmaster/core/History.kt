@@ -273,7 +273,7 @@ object History {
         cursor: Int,
         strict: Boolean,
     ): CorrectionPreview {
-        var state = GameJson.decodeFromString<Game>(input.checkpoint ?: error("缺少可重放的检查点"))
+        var state = GameJson.decodeFromString<Game>(input.checkpoint ?: error("缺少可重放的检查点")).apply { restorePitcherInningUsage() }
         val aliases = mutableMapOf<String, String>()
         val normalized = mutableListOf<RecordedCommand>()
         val committedCommands = if (strict) input.journal.associate { it.id to it.command } else emptyMap()

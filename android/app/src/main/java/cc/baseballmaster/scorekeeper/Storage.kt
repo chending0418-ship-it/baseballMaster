@@ -9,7 +9,13 @@ import java.util.UUID
 import java.util.Base64
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 
 @Entity(tableName = "teams")
 data class TeamEntity(
@@ -198,6 +204,34 @@ abstract class LocalDatabase : RoomDatabase() {
     }
 }
 
+internal fun matchesAppleSourceProjection(expected: Game, storedPayload: String): Boolean {
+    val saved = GameJson.parseToJsonElement(storedPayload).jsonObject
+    val canonical = GameJson.encodeToJsonElement(expected).jsonObject
+    if (saved == canonical) return true
+    if ("pitcherInningUsageCurrent" in saved) return false
+
+    // Older Android versions saved a projection of the same source with different pitcher caches.
+    val derivedFields = setOf("pitcherInnings", "pitcherInningUsageCurrent", "pitcherInningHistoryIncomplete")
+    fun checkpoint(value: JsonElement): JsonElement =
+        if (value is JsonPrimitive && value.isString) {
+            JsonObject(GameJson.parseToJsonElement(value.content).jsonObject - derivedFields)
+        } else value
+
+    fun withoutPitcherCaches(game: JsonObject): JsonObject =
+        JsonObject((game - derivedFields).mapValues { (key, value) ->
+            when (key) {
+                "checkpoint" -> checkpoint(value)
+                "historyRevisions" -> JsonArray(value.jsonArray.map { revision ->
+                    JsonObject(revision.jsonObject.mapValues { (field, part) ->
+                        if (field == "previousCheckpoint") checkpoint(part) else part
+                    })
+                })
+                else -> value
+            }
+        })
+    return withoutPitcherCaches(saved) == withoutPitcherCaches(canonical)
+}
+
 /** No destructive fallback: unreadable/future stores remain untouched. */
 class GameRepository(private val db: LocalDatabase, private val beforeCommit: () -> Unit = {}) {
     val teams
@@ -215,7 +249,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                 verifyAppleSource(existing).games(existing.id).forEach { expected ->
                     require(db.dao().appleGameSource(expected.id)?.backupID == existing.id) { "来源映射缺失，未覆盖现有资料" }
                     val saved = db.dao().game(expected.id) ?: error("来源比赛缺失，未覆盖现有资料")
-                    require(GameJson.encodeToJsonElement(expected) == GameJson.parseToJsonElement(saved.payload)) { "来源与比赛不一致，未覆盖现有资料" }
+                    require(matchesAppleSourceProjection(expected, saved.payload)) { "来源与比赛不一致，未覆盖现有资料" }
                 }
                 return@withTransaction AppleImportReceipt(existing.id, existing.gameCount, true, plan.currentTeamID)
             }
@@ -509,6 +543,15 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         }
     }
 
+    suspend fun appendRoster(expected: Team, text: String) = db.withTransaction {
+        val row = db.dao().team(expected.id) ?: error("球队已不存在")
+        val team = GameJson.decodeFromString<Team>(row.payload)
+        require(team == expected && !team.archived && team.source == "local") { "名单已变化，请重新预览" }
+        val additions = Roster.previewAppend(text, team.players.flatMap { listOf(it.name, it.englishName) }).map { it.player }
+        require(team.players.count { !it.archived } + additions.size <= 200) { "球队现役名单最多 200 人" }
+        updateRoster(team.copy(players = team.players + additions))
+    }
+
     suspend fun updateRoster(team: Team) = db.withTransaction {
         require(db.dao().allAppleBackups().none { source -> AppleSourceBackup.prepare(source.current).teams().any { it.id == team.id } }) { "iOS 导入球队的名单编辑尚未支持，原始备份及名单未修改" }
         val original = db.dao().team(team.id) ?: error("球队不存在")
@@ -686,7 +729,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             val source = db.dao().appleBackup(imported.backupID) ?: error("比赛来源缺失，原资料未修改")
             val backup = verifyAppleSource(source)
             val priorGame = backup.games(source.id).single { it.id == gameID }
-            require(GameJson.encodeToJsonElement(priorGame) == GameJson.parseToJsonElement(current.payload)) { "比赛与来源备份不一致，已停止写入" }
+            require(matchesAppleSourceProjection(priorGame, current.payload)) { "比赛与来源备份不一致，已停止写入" }
             val updated = backup.appendCommand(gameID, appleCommand.copy(at = appleCommand.at.takeIf { it > 0 } ?: System.currentTimeMillis()), operationID)
             db.dao().updateAppleBackup(source.copy(current = updated.export()))
             updated.games(source.id).single { it.id == gameID }
@@ -769,6 +812,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                 check(it.scheduledSetupPending == (entity.payloadVersion == 5))
                 check(it.revision == entity.revision)
                 it.validate()
+                it.restorePitcherInningUsage()
             }
         }
 

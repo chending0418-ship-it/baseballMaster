@@ -72,6 +72,7 @@ internal object AndroidDeviceBackup {
             require(entity.id == game.id) { "比赛编号不一致" }
             game.id to game
         }
+        val gamePayloads = snapshot.games.associate { it.id to it.payload }
         require(snapshot.appleBackups.map { it.id }.distinct().size == snapshot.appleBackups.size && snapshot.appleSources.map { it.gameID }.distinct().size == snapshot.appleSources.size) { "来源备份编号重复" }
         val links = snapshot.appleSources.associate { it.gameID to it.backupID }
         val sourceIDs = snapshot.appleBackups.map { it.id }.toSet()
@@ -91,7 +92,7 @@ internal object AndroidDeviceBackup {
             require(source.name == old.name && source.gameCount == next.games().size) { "来源摘要不一致" }
             val imported = next.games(source.id)
             require(links.filterValues { it == source.id }.keys == imported.map { it.id }.toSet()) { "来源比赛映射不完整" }
-            imported.forEach { game -> require(GameJson.encodeToJsonElement(game) == GameJson.encodeToJsonElement(games.getValue(game.id))) { "比赛与原始来源不一致" } }
+            imported.forEach { game -> require(matchesAppleSourceProjection(game, gamePayloads.getValue(game.id))) { "比赛与原始来源不一致" } }
             next.teams().forEach { team -> require(teams.any { GameJson.encodeToJsonElement(it) == GameJson.encodeToJsonElement(team) }) { "来源球队名单不一致" } }
         }
         require(snapshot.drafts.none { it.gameID in links }) { "来源比赛包含尚不支持的纠错草稿" }

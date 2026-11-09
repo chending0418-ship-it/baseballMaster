@@ -5,11 +5,36 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.serialization.json.JsonPrimitive
 
 /** App-facing suspend API. Local Room data is read only; bindings and shared
  * rosters stay in the independent encrypted directory, never imported over it.
  */
 internal class AndroidTeamSharing(private val local: GameRepository, private val session: TeamDirectorySession) {
+    @Volatile private var sharedBroadcast: Pair<String, String>? = null
+    suspend fun broadcastTarget(game: Game) = withContext(Dispatchers.IO) { session.broadcastTarget(game) }
+    suspend fun broadcastSources(teamID: String) = withContext(Dispatchers.IO) { session.broadcastSources(teamID) }
+    suspend fun rotateBroadcast(teamID: String, code: String) = withContext(Dispatchers.IO) { session.rotateBroadcast(teamID, code) }
+    suspend fun publishBroadcast(game: Game, selection: BroadcastSelection) =
+        withContext(Dispatchers.IO) { session.publishLocalBroadcast(game, selection) }
+    suspend fun resumeBroadcast(game: Game) = withContext(Dispatchers.IO) { session.resumeLocalBroadcast(game) }
+    suspend fun publishSharedBroadcast(teamID: String, documentID: String, selection: BroadcastSelection) = withContext(Dispatchers.IO) {
+        session.publishSharedBroadcast(teamID, documentID, selection).also { status ->
+            if (status?.selected == true) sharedBroadcast = teamID to documentID
+        }
+    }
+    fun clearBroadcastBinding() { sharedBroadcast = null }
+    suspend fun maintainFixedSharedBroadcast() = withContext(Dispatchers.IO) {
+        val target = sharedBroadcast ?: return@withContext
+        try {
+            val status = session.publishSharedBroadcast(target.first, target.second)
+            if (status?.selected != true && sharedBroadcast == target) sharedBroadcast = null
+        } catch (e: TeamServiceFault) {
+            if (e.status in setOf(401, 403, 404, 409) && sharedBroadcast == target) sharedBroadcast = null
+            throw e
+        }
+    }
+
     suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
     /** Complete source-backed final archives only; native Game JSON is never uploaded here. */
     suspend fun stageFinalArchive(backupID: String, gameID: String, teamID: String, confirmed: Boolean) = withContext(Dispatchers.IO) {
@@ -39,6 +64,8 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
         session.prepareCreate(team,nickname)
     }
     suspend fun prepareProfile(teamID: String, revision: Long, name: String, shortName: String, city: String) = withContext(Dispatchers.IO) { session.prepareProfile(teamID,revision,name,shortName,city) }
+    suspend fun preparePlayers(teamID: String, revision: Long, players: List<SharedRosterPlayer>) =
+        withContext(Dispatchers.IO) { session.preparePlayers(teamID, revision, players) }
     suspend fun preparePlayer(teamID: String, revision: Long, player: SharedRosterPlayer) = withContext(Dispatchers.IO) { session.preparePlayer(teamID,revision,player) }
     suspend fun prepareMember(teamID: String, member: SharedTeamMember, role: TeamRole, remove: Boolean = false) = withContext(Dispatchers.IO) { session.prepareMember(teamID,member,role,remove) }
     suspend fun prepareInvite(teamID: String, role: TeamRole) = withContext(Dispatchers.IO) { session.prepareInvite(teamID,role) }
@@ -77,7 +104,21 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     }
     suspend fun participants(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.matchParticipants(teamID,gameID) }
     suspend fun prepareHandoff(expected: SharedMatchDocument, kind: MatchControl, targetDeviceID: String? = null, confirmRisk: Boolean = false) = withContext(Dispatchers.IO) { session.prepareMatchControl(expected,kind,targetDeviceID,confirmRisk) }
-    suspend fun sendHandoff(gameID: String) = withContext(Dispatchers.IO) { session.sendMatchControl(gameID) }
+    suspend fun sendHandoff(gameID: String) = withContext(Dispatchers.IO) {
+        val receipt = session.sendMatchControl(gameID)
+        if (receipt.request.kind == MatchControl.accept || receipt.request.kind == MatchControl.force) {
+            // Handoff has already succeeded. Resume only the source already selected
+            // for this match; a broadcast problem cannot undo the transfer.
+            runCatching {
+                val team = receipt.request.teamID
+                val current = session.match(team, gameID)
+                val original = (current.payload?.get("id") as? JsonPrimitive)?.content
+                if (original != null && session.broadcastSources(team).activeGameID.equals(original, true) &&
+                    session.publishSharedBroadcast(team, gameID)?.selected == true) sharedBroadcast = team to gameID
+            }
+        }
+        receipt
+    }
     suspend fun devices(teamID: String) = withContext(Dispatchers.IO) { session.teamDevices(teamID) }
     suspend fun pairing(pairingID: String) = withContext(Dispatchers.IO) { session.pairing(pairingID) }
     suspend fun previewPairing(teamID: String, token: String) = withContext(Dispatchers.IO) { session.previewPairing(teamID,token) }

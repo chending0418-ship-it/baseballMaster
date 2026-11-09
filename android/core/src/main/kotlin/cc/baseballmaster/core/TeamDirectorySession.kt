@@ -223,6 +223,33 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         put("kind","player"); put("baseRevision",baseRevision)
         put("player",TeamDirectoryJson.format.encodeToJsonElement(player.copy(id=appleUUID(player.id),sourceID=appleUUID(player.sourceID),archived=player.archived == true)))
     }
+    fun preparePlayers(teamID: String, baseRevision: Long, players: List<SharedRosterPlayer>): String = synchronized(storage.monitor) {
+        val id = appleUUID(teamID)
+        val directory = refreshLocked()
+        require(directory.teams.any { it.id.equals(id, true) && it.role != TeamRole.member }) { "当前角色不能修改名单" }
+        val profile = checkedProfile(id, baseRevision)
+        require(directory.teams.single { it.id.equals(id, true) }.revision == baseRevision) { "名单已变化，请刷新并重新预览" }
+        require(players.size in 1..200 && profile.players.count { it.archived != true } + players.size <= 200 &&
+            profile.players.size + players.size <= 2000) { "共享球队现役名单最多 200 人" }
+        val ids = profile.players.mapTo(mutableSetOf()) { appleUUID(it.id) }
+        val sources = profile.players.mapTo(mutableSetOf()) { appleUUID(it.sourceID) }
+        val names = profile.players.flatMap { listOf(it.chineseName, it.englishName) }.filter(String::isNotBlank)
+            .mapTo(mutableSetOf(), Roster::identityName)
+        for (player in players) {
+            val normalized = listOf(player.chineseName, player.englishName).filter(String::isNotBlank).map(Roster::identityName).distinct()
+            require(player.archived != true && player.numbers.isNotEmpty() && normalized.isNotEmpty() &&
+                ids.add(appleUUID(player.id)) && sources.add(appleUUID(player.sourceID)) && normalized.none(names::contains)) {
+                "名单有重复或无效身份，请重新核对"
+            }
+            names.addAll(normalized)
+        }
+        check(client.supportsBulkRoster()) { "当前球队服务尚不支持批量名单。输入已保留，仍可使用单人新增。" }
+        prepare(DirectoryRequestKind.roster, id) {
+            put("kind", "players"); put("baseRevision", baseRevision)
+            putJsonArray("players") { players.forEach { add(TeamDirectoryJson.format.encodeToJsonElement(it.copy(archived = false))) } }
+        }
+    }
+
     private fun checkedProfile(teamID: String, baseRevision: Long): SharedTeamProfile {
         val profile = storage.load().profiles[appleUUID(teamID)]?.profile ?: error("请先读取共享名单")
         require(profile.revision == baseRevision) { "本机名单预览已更新，请核对后再保存" }
@@ -261,7 +288,11 @@ class TeamDirectorySession(internal val client: TeamDirectoryClient, internal va
         // A fresh attempt can have a different outcome. Do not leave an earlier
         // definitive rejection available as proof after a lost retry response.
         if(state.lastFailure!=null) storage.save(state.copy(lastFailure=null))
-        val response = try { client.send(pending) } catch (fault: TeamServiceFault) {
+        val response = try {
+            if (pending.kind == DirectoryRequestKind.roster && pending.body["kind"]?.jsonPrimitive?.content == "players" &&
+                (remoteTeam == null || remoteTeam.role == TeamRole.member)) throw TeamServiceFault(403, "forbidden")
+            client.send(pending)
+        } catch (fault: TeamServiceFault) {
             val failed=storage.load()
             storage.save(failed.copy(lastFailure=DirectoryFailure(pending.id,fault.status,fault.code),requiresRecoveryReview=failed.requiresRecoveryReview || fault.requiresRecoveryReview))
             throw fault

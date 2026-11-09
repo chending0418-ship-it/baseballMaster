@@ -100,7 +100,7 @@ class Product081SetupDraftFlowTest {
             assertFalse(node("start-game").isEnabled)
             shot("invalid-rule-restored")
 
-            input("rule-run-limit", "5"); input("rule-pitch-limit", "120")
+            input("rule-run-limit", "5"); input("rule-pitch-limit", "3")
             assertTrue("Correcting the same draft enables review", node("start-game").isEnabled)
             click("start-game"); node("lineup-row-away-0")
             noWrites("First lineup review")
@@ -110,7 +110,7 @@ class Product081SetupDraftFlowTest {
             expectTeam("setup-own-team", own); expectTeam("setup-opponent", opponent)
             assertEquals("7", node("rule-innings").text)
             assertEquals("5", node("rule-run-limit").text)
-            assertEquals("120", node("rule-pitch-limit").text)
+            assertEquals("3", node("rule-pitch-limit").text)
             val advancedToggle = node("rule-advanced-toggle")
             assertEquals("收起更多规则", advancedToggle.text ?: advancedToggle.findObject(By.text("收起更多规则"))?.text)
             noWrites("Returning to the original setup task")
@@ -131,7 +131,7 @@ class Product081SetupDraftFlowTest {
             }
             val game = requireNotNull(saved) { "The accepted setup must create exactly one match" }
             assertEquals(own.id, game.away.id); assertEquals(opponent.id, game.home.id)
-            assertEquals(7, game.rules.innings); assertEquals(5, game.rules.halfRunLimit); assertEquals(120, game.rules.pitchLimit)
+            assertEquals(7, game.rules.innings); assertEquals(5, game.rules.halfRunLimit); assertEquals(3, game.rules.pitchLimit)
             assertEquals(0, game.totalPitches); assertTrue(game.isPregame)
             assertTrue(game.entries.isEmpty()); assertTrue(game.journal.isEmpty()); assertNull(game.checkpoint)
             assertFalse(game.incompletePrefix); assertFalse(game.statisticsIncomplete)
@@ -151,7 +151,7 @@ class Product081SetupDraftFlowTest {
             }
             assertEquals(1, first.totalPitches); assertEquals(1, first.entries.size); assertEquals("pitch", first.entries.single().kind)
             assertEquals(1, first.journal.size); assertTrue(first.openingPitchRecorded)
-            assertEquals(5, first.rules.halfRunLimit); assertEquals(7, first.rules.innings); assertEquals(120, first.rules.pitchLimit)
+            assertEquals(5, first.rules.halfRunLimit); assertEquals(7, first.rules.innings); assertEquals(3, first.rules.pitchLimit)
             assertFalse(first.incompletePrefix); assertFalse(first.statisticsIncomplete)
             assertTrue(first.ruleNotices(System.currentTimeMillis()).isEmpty())
             UiTreeCache.refresh()

@@ -1,11 +1,13 @@
 package cc.baseballmaster.scorekeeper
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
@@ -36,6 +38,9 @@ internal data class RuleDraft(
             return value.toIntOrNull()?.takeIf { it in range }
                 ?: error("$label 请填写 ${range.first}–${range.last}")
         }
+        val normalizedPitchLimit = pitchLimit.trim().map {
+            if (it in '０'..'９') '0' + (it - '０') else it
+        }.joinToString("")
         require(!timed || timeMinutes.isNotBlank()) { "时间赛请填写比赛时限" }
         return Rules(
             mode = mode,
@@ -48,7 +53,7 @@ internal data class RuleDraft(
             timeLimitMinutes = n("比赛时限", timeMinutes, 1..600, true),
             inningsLimit = n("时间赛局数上限", inningLimit, 1..99, true),
             halfRunLimit = n("半局得分上限", runLimit, 1..99, true),
-            pitchLimit = n("投手球数上限", pitchLimit, 1..1000, true),
+            pitchLimit = n("投手球数上限", normalizedPitchLimit, 1..1_000_000, true),
             pitcherInningsLimit = n("投手局数上限", pitcherInnings, 1..99, true),
             timeWarningMinutes = n("时间提醒", timeWarning, 1..600, true),
             pitchWarningRemaining = n("球数提醒", pitchWarning, 1..1000, true),
@@ -201,8 +206,9 @@ internal fun RuleDraftForm(
     if (mode != GameMode.coachPitch) {
         OutlinedTextField(
             draft.pitchLimit,
-            { v -> update { it.copy(pitchLimit = value(v)) } },
+            { v -> update { it.copy(pitchLimit = v) } },
             label = { Text("投手球数上限（留空不限制）") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.testTag("rule-pitch-limit"),
         )
@@ -216,9 +222,15 @@ internal fun RuleDraftForm(
         OutlinedTextField(
             draft.pitcherInnings,
             { v -> update { it.copy(pitcherInnings = value(v)) } },
-            label = { Text("投手局数上限（留空不限制）") },
+            label = { Text("投手登板局数上限（留空不限制）") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.testTag("rule-pitcher-innings"),
+        )
+        Text(
+            "达到球数或登板局数上限时只提醒，可继续记分。确认登板即计一局；自动沿用投手时，实际投球才计入新局。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
     if (mode == GameMode.standard)

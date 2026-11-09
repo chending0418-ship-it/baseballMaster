@@ -28,6 +28,7 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
     var editingPlayer by rememberSaveable { mutableStateOf<String?>(null) }
     var viewingPlayer by rememberSaveable { mutableStateOf<String?>(null) }
     var removingPlayer by rememberSaveable { mutableStateOf<String?>(null) }
+    var bulk by rememberSaveable { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
     val team = model.rosters.firstOrNull { it.id == teamID }
     if (showSharing) TeamSharingScreen(model.sharing, model.teams) { showSharing = false }
@@ -123,6 +124,8 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
                 TextButton({ editingTeam = true }, Modifier.testTag("edit-team-profile")) { Text("编辑球队", fontSize = 12.sp) }
                 TextButton({ editingPlayer = "new" }, Modifier.testTag("add-player")) { Text("添加", fontSize = 13.sp) }
             }
+            if (!team.archived && team.source == "local")
+                TextButton({ bulk = true }, Modifier.testTag("add-players-bulk"), enabled = !model.busy) { Text("批量添加球员") }
             team.players.sortedWith(compareBy<Player> { it.number.toIntOrNull() ?: 0 }.thenBy { it.number }.thenBy { it.id })
                 .forEach { p ->
                     var menu by remember(p.id) { mutableStateOf(false) }
@@ -169,6 +172,10 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
                 Text(if (team.archived) "恢复球队" else "移除球队（保留历史）")
             }
         }
+        if (bulk) BulkRosterScreen(team.name, team.players.flatMap { listOf(it.name, it.englishName) }, team,
+            model.busy, !model.busy, dismiss = { bulk = false }, save = { text, _ ->
+                model.appendRoster(team, text) { bulk = false }
+            })
         viewingPlayer?.let { pid -> team.players.firstOrNull { it.id == pid }?.let { player ->
             PlayerStatisticsDetail(team, SeasonPlayerStatistics(player, currentRoster = !player.archived), model) { viewingPlayer = null }
         } }

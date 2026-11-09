@@ -93,6 +93,7 @@ internal object SharingClipboard {
     var editor by remember { mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.join) "join" else null) }; var player by remember {mutableStateOf<SharedRosterPlayer?>(null)}
     var securityPage by remember {mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.pair) "approve" else null)}
     var lifecyclePage by remember {mutableStateOf<String?>(null)}
+    var broadcastTeam by remember { mutableStateOf<String?>(null) }
     var showMatches by remember {mutableStateOf(false)}
     var confirmation by remember {mutableStateOf<SharingConfirmation?>(null)}
     var invitationToShow by remember {mutableStateOf<FixedTeamInvitation?>(null)}; var shownCard by remember {mutableStateOf<SavedManagementCard?>(null)}
@@ -164,10 +165,14 @@ internal object SharingClipboard {
             if(team==null) Text("球队不可用，请刷新核对。") else {
                 Text(team.name,fontWeight=FontWeight.Bold); Text(team.role.title())
                 TextButton(enabled=ui.enabled && !ui.busy,onClick={showMatches=true}) {Text("球队比赛与观看设置")}
+                if (team.role != TeamRole.member) TextButton(enabled = ui.enabled && !ui.busy && ui.fresh,
+                    onClick = { broadcastTeam = team.id }, modifier = Modifier.testTag("team-broadcast-sources")) { Text("球队固定转播源") }
                 TextButton(enabled=!ui.busy,onClick={securityPage="devices"}) {Text("球队设备")}
                 if(team.role==TeamRole.admin) TextButton(enabled=ui.canPrepare && profile!=null,onClick={editor="profile"}) {Text("编辑球队资料")}
                 Text("现役名单与停用档案",fontWeight=FontWeight.Bold)
                 if(team.role!=TeamRole.member) TextButton(enabled=ui.canPrepare && profile!=null,onClick={player=null;editor="player"}) {Text("新增球员")}
+                if(team.role!=TeamRole.member) TextButton(enabled=ui.canPrepare && ui.fresh && profile!=null,
+                    onClick={editor="bulk"}, modifier=Modifier.testTag("shared-bulk-roster")) {Text("批量输入名单")}
                 var visible by remember(ui.selectedID) {mutableIntStateOf(50)}
                 profile?.players?.take(visible)?.forEach {p ->
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
@@ -247,11 +252,48 @@ internal object SharingClipboard {
         }},confirmButton={TextButton(enabled=!ui.busy && reveal,onClick={ui.call(scope){api.confirmRecoveryCardSaved(card.teamID,card.version);shownCard=null;ui.refresh()}}) {Text("我已保存恢复卡")}},
             dismissButton={TextButton(enabled=!ui.busy,onClick={shownCard=null;ui.call(scope){ui.refresh()}}) {Text("稍后保存，返回球队")}})
     }
-    editor?.let {kind -> SharingEditor(api,ui,scope,kind,localTeams,player,if(kind=="join") incoming?.url.orEmpty() else "") {editor=null} }
+    editor?.let { kind ->
+        if (kind == "bulk") {
+            val profile = ui.roster
+            val pending = ui.state.pending?.takeIf {
+                it.teamID == ui.selectedID && it.body["kind"]?.jsonPrimitive?.content == "players"
+            }
+            val failure = ui.state.lastFailure
+            val recovered = pending ?: ui.state.reviewedRequests.lastOrNull { item ->
+                item.request.teamID == ui.selectedID && item.request.body["kind"]?.jsonPrimitive?.content == "players"
+            }?.request
+            val initialInput = recovered?.body?.get("players")?.jsonArray.orEmpty().mapNotNull { row ->
+                runCatching { TeamDirectoryJson.format.decodeFromJsonElement<SharedRosterPlayer>(row) }.getOrNull()
+            }.joinToString("\n") { "${it.chineseName},${it.englishName},${it.numbers.joinToString("/")}" }
+            BulkRosterScreen(profile?.name ?: ui.team?.name.orEmpty(),
+                profile?.players.orEmpty().flatMap { listOf(it.chineseName, it.englishName) },
+                profile?.revision ?: -1L, ui.busy,
+                ui.canPrepare && ui.fresh && profile != null && ui.team?.role?.let { it != TeamRole.member } == true,
+                issue = ui.error,
+                initialInput = initialInput,
+                retry = pending?.takeIf { !ui.state.credentialExpired && !ui.state.requiresRecoveryReview }?.let {
+                    { ui.retry(scope) { editor = null } }
+                },
+                recheck = if (pending == null && ui.error != null) ({ ui.call(scope) { ui.refresh() } })
+                    else pending?.takeIf { failure?.operationID == it.id && failure.status == 409 &&
+                        failure.code in setOf("roster_conflict", "revision_conflict", "identity_conflict", "capacity") }?.let {
+                        { ui.call(scope) { api.keepRejectedAsDraft(it.id); ui.refresh() } }
+                    },
+                dismiss = { editor = null },
+                save = { _, rows ->
+                    if (profile != null) ui.mutate(scope, completed = { editor = null }) {
+                        api.preparePlayers(profile.id, profile.revision, rows.map { (_, p) ->
+                            SharedRosterPlayer.new(p.chineseName.orEmpty(), p.englishName, p.jerseyNumbers)
+                        })
+                    }
+                })
+        } else SharingEditor(api,ui,scope,kind,localTeams,player,if(kind=="join") incoming?.url.orEmpty() else "") {editor=null}
+    }
     securityPage?.let {page -> TeamSecurityScreen(api,page,ui.selectedID,incoming?.takeIf {it.kind==IncomingTeamLinkKind.pair}?.url.orEmpty()) {
         securityPage=null;if(incoming?.kind==IncomingTeamLinkKind.pair) dismiss() else ui.call(scope){ui.refresh()}
     } }
     lifecyclePage?.let {page -> TeamLifecycleScreen(api,page,ui.selectedID) {lifecyclePage=null;ui.call(scope){ui.refresh()}} }
+    broadcastTeam?.let { id -> BroadcastSourcesScreen(api, id, canRotate = ui.team?.role == TeamRole.admin) { broadcastTeam = null } }
     if(showMatches) SharedMatchesScreen(api,ui.selectedID) {showMatches=false;ui.call(scope){ui.refresh()}}
 }
 
