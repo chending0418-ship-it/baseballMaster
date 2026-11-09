@@ -8,7 +8,7 @@
 | 源码配置 | 候选分支工程为 3.1.5（Build 1），见 [BaseballMaster.xcodeproj](../../BaseballMaster.xcodeproj/) 和 [草稿 PR #57](https://github.com/chending0418-ship-it/baseballMaster/pull/57) |
 | 本版计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；[上版计划](<plans/3.1.1 发布功能计划.md>) |
 | 后续版本 | [3.1.5 发布功能计划](<plans/3.1.5 发布功能计划.md>)。转播交接与重启串场已修复，待用模拟器配合 OBS 检查及部署。总 Admin 已上线语音开启码管理和发放备注，App 单局面录入已接入。主屏幕改名已核对，Duo 外屏图标文字会截断。单投手球数可直接输入，球数与登板局数到限只提醒。六项改动已整合。同一个模拟器构建的 iPhone、iPad 和 Duo 回归共 22 项通过。 |
-| 3.1.5 送审材料 | [审核文案、截图与提交清单](releases/3.1.5/APPSTORE-填写清单.md)已备妥，语音隐私更新和审核专用开启码待完成。 |
+| 3.1.5 送审材料 | [审核文案、截图与提交清单](releases/3.1.5/APPSTORE-填写清单.md)已备妥，App 已增加录音前同意流程，公开隐私政策和审核专用开启码待完成。 |
 | 发布资料 | [3.1.2 材料入口](releases/3.1.2/README-先看这里.md)、[正式归档证据](releases/3.1.2/ARCHIVE.md)、[开发与验收](releases/3.1.2/DEVELOPMENT.md)；其中按日期保留的“未上传／未上架”为历史阶段 |
 | 服务状态 | 用户同日确认服务一切正常；本轮匿名只读检查球队协议 1 健康接口及直播健康接口通过，未修改或部署服务 |
 | 共享服务维护 | [collaboration](../../collaboration/PROTOCOL.md)、[live](../../live/README.md)仍由 iOS／服务工作入口管理 |

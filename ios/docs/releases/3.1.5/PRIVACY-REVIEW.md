@@ -1,6 +1,6 @@
 # 3.1.5 语音隐私送审核对
 
-目前公开的记录大师隐私政策仍声明 App 不读取麦克风。3.1.5 的可选语音功能会录音，且在解析时发送转写和必要比赛局面，包含可能识别球员的姓名、背号或标识。当前语音面板说明音频直连腾讯和解析发送转写、局面，但未明确告知局面会交由腾讯云 TokenHub 的混元模型处理。送审前更新线上中英文政策及 App 内说明，并在资料发往第三方模型之前取得明确同意。参照 [Apple App Review Guidelines 5.1.2(i)](https://developer.apple.com/app-store/review/guidelines/#data-use-and-sharing)。
+目前公开的记录大师隐私政策仍声明 App 不读取麦克风。3.1.5 的可选语音功能会录音，且在解析时发送转写和必要比赛局面，包含可能识别球员的姓名、背号或标识。候选 App 已在每次录音前列出数据类型和接收方，用户点「同意并开始录音」后才申请麦克风权限和识别会话。送审前更新线上中英文政策。参照 [Apple App Review Guidelines 5.1.2(i)](https://developer.apple.com/app-store/review/guidelines/#data-use-and-sharing)。
 
 供隐私政策使用的语音段落草稿：
 
