@@ -65,11 +65,12 @@ async function voiceCodePanel(signal) {
  credential.type='password';credential.required=true;credential.autocomplete='current-password';
  const credentialLabel=n('label','语音后台管理凭据');credentialLabel.append(credential);login.append(credentialLabel,loginButton);login.hidden=true;
  const content=n('div');content.hidden=true;
- const generate=n('form',undefined,'filter'),count=n('input'),expiry=n('input'),generateButton=n('button','生成开启码','primary');
+ const generate=n('form',undefined,'filter'),count=n('input'),expiry=n('input'),note=n('input'),generateButton=n('button','生成开启码','primary');
  count.type='number';count.min='1';count.max='20';count.value='1';count.required=true;
  expiry.type='number';expiry.min='1';expiry.max='8760';expiry.placeholder='留空为不限期';
- const countLabel=n('label','数量'),expiryLabel=n('label','有效期（小时）');
- countLabel.append(count);expiryLabel.append(expiry);generate.append(countLabel,expiryLabel,generateButton);
+ note.type='text';note.maxLength=120;note.placeholder='例如：张教练（同批共用）';
+ const countLabel=n('label','数量'),expiryLabel=n('label','有效期（小时）'),noteLabel=n('label','发放备注（选填）');
+ countLabel.append(count);expiryLabel.append(expiry);noteLabel.append(note);generate.append(countLabel,expiryLabel,noteLabel,generateButton);
  const codes=n('section',undefined,'notice'),codeList=n('ul');
  codes.hidden=true;
  function clearCodes(){codeList.replaceChildren();codes.hidden=true;}
@@ -104,11 +105,11 @@ async function voiceCodePanel(signal) {
    const [{invites},{entitlements}]=await Promise.all([voiceApi('invites'),voiceApi('entitlements')]);
    if(signal.aborted)return;
    const now=Date.now();
-   inviteList.replaceChildren(invites.length?table(['编号','创建时间','有效期','状态','操作'],invites.map(row=>{
+   inviteList.replaceChildren(invites.length?table(['编号','发放备注','创建时间','有效期','状态','操作'],invites.map(row=>{
     const expired=row.expiresAt!==null&&row.expiresAt<=now;
     const state=row.redeemedAt?'已兑换':row.revokedAt?'已撤回':expired?'已过期':'未使用';
     const control=state==='未使用'?revoke('invites/'+encodeURIComponent(row.id)+'/revoke','撤回开启码','撤回后，这个开启码将无法兑换。确认撤回？'):'—';
-    return [row.id.slice(0,8),date(row.createdAt),row.expiresAt===null?'不限期':date(row.expiresAt),badge(state,state==='未使用'?'':'gray'),control];
+    return [row.id.slice(0,8),row.note||'—',date(row.createdAt),row.expiresAt===null?'不限期':date(row.expiresAt),badge(state,state==='未使用'?'':'gray'),control];
    })):n('p','还没有生成开启码。','muted'));
    deviceList.replaceChildren(entitlements.length?table(['设备编号','开通时间','状态','操作'],entitlements.map(row=>[
     (row.deviceId||row.id).slice(0,12),date(row.createdAt),badge(row.active?'有效':'已撤回',row.active?'':'gray'),
@@ -133,6 +134,8 @@ async function voiceCodePanel(signal) {
   try{
    const body={count:Number(count.value)};
    if(expiry.value!=='')body.expiresInHours=Number(expiry.value);
+   const recipientNote=note.value.trim();
+   if(recipientNote)body.note=recipientNote;
    const result=await voiceApi('invites',body);
    if(signal.aborted)return;
    codeList.replaceChildren(...result.codes.map(row=>{
@@ -141,6 +144,7 @@ async function voiceCodePanel(signal) {
       catch{status.textContent='请选择完整开启码后手动复制。';}});
     item.append(code,document.createTextNode(' '),copy);return item;
    }));
+   if(note.value.trim()===recipientNote)note.value='';
    codes.hidden=false;status.textContent='已生成 '+result.codes.length+' 个一次性开启码。';
    await refresh();
   }catch(error){if(!signal.aborted)status.textContent=error.message;}
