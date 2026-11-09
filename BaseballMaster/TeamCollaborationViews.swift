@@ -805,8 +805,9 @@ struct TeamBroadcastSourcesView: View {
     var body: some View {
         List {
             Section("当前转播") {
-                Text(sources?.activeMatch ?? "暂无比赛转播").accessibilityIdentifier("team-broadcast-current-match")
-                if let matchID, let sources, sources.activeGameID != matchID {
+                Text(sources?.activeMatch ?? (sources?.activeGameID == nil ? "暂无比赛转播" : "等待本场同步"))
+                    .accessibilityIdentifier("team-broadcast-current-match")
+                if let matchID, let sources, sources.activeGameID != coordinator.broadcastID(for: matchID) {
                     Button("切换到本场比赛") { confirmSwitch = true }
                 }
                 if let message { Text(message).foregroundStyle(BMTheme.orange) }

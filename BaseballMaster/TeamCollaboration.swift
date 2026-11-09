@@ -450,14 +450,20 @@ final class TeamBroadcastCoordinator {
     private var ticker: Task<Void, Never>?
     private var requested = false
     private var switching = false
-    private var automaticBlocked: Set<UUID> = []
+    private var restoredGames: Set<UUID> = []
 
-    init(store: GameStore) {
-        self.store = store
+    convenience init(store: GameStore) {
         let config = TeamSharingStore.connectionConfiguration()
-        client = try! TeamServiceClient(baseURL: config.baseURL, vault: config.vault)
-        overlayURL = config.baseURL.deletingLastPathComponent().deletingLastPathComponent()
+        let client = try! TeamServiceClient(baseURL: config.baseURL, vault: config.vault)
+        let overlayURL = config.baseURL.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("livestreaming/novideo/overlay")
+        self.init(store: store, client: client, overlayURL: overlayURL)
+    }
+
+    init(store: GameStore, client: TeamServiceClient, overlayURL: URL) {
+        self.store = store
+        self.client = client
+        self.overlayURL = overlayURL
     }
 
     func teamID(for match: StoredGame) -> UUID? {
@@ -468,6 +474,10 @@ final class TeamBroadcastCoordinator {
         let linked = store.teamSharing.state.bindings.first { $0.localTeamID == localTeam }?.cloudTeamID
         let team = match.sharedTeamID ?? linked ?? localTeam
         return store.teamSharing.teams.first { $0.id == team && $0.role != .member }?.id
+    }
+
+    func broadcastID(for localID: UUID) -> UUID {
+        store?.sharedMatches.match(localID: localID)?.wireLocalID ?? localID
     }
 
     private func path(_ team: UUID) -> String { "teams/\(team.uuidString.lowercased())/broadcast" }
@@ -502,7 +512,7 @@ final class TeamBroadcastCoordinator {
     }
 
     func suppressRestoredGames() {
-        automaticBlocked.formUnion(store?.games.map(\.id) ?? [])
+        restoredGames.formUnion(store?.games.map(\.id) ?? [])
         requested = false
     }
 
@@ -513,16 +523,12 @@ final class TeamBroadcastCoordinator {
             guard let self else { return }
             while requested && !switching {
                 requested = false
-                guard let match = store?.activeStoredGame, !automaticBlocked.contains(match.id),
+                guard let match = store?.activeStoredGame, !restoredGames.contains(match.id),
                       let team = teamID(for: match) else { continue }
                 do {
-                    if let result = try await publish(match, team: team), result.selected == false {
-                        automaticBlocked.insert(match.id)
-                    }
-                } catch TeamServiceError.response(let status, _) where [400, 403, 404, 409, 413].contains(status) {
-                    automaticBlocked.insert(match.id)
+                    _ = try await publish(match, team: team)
                 } catch {
-                    // The next committed action or foreground poll retries a temporary outage.
+                    // Recheck current write permission on the next save or foreground poll.
                 }
             }
             worker = nil
@@ -538,7 +544,7 @@ final class TeamBroadcastCoordinator {
               !match.state.isFinal else { return nil }
         let expected = expectedGameID.map { MatchJSON.string($0.uuidString) } ?? .null
         let result = try await publish(match, team: team, expected: expected)
-        if result?.selected == true { automaticBlocked.remove(matchID) }
+        if result?.selected == true { restoredGames.remove(matchID) }
         return result
     }
 
@@ -554,6 +560,10 @@ final class TeamBroadcastCoordinator {
         }
         var body: [String: MatchJSON] = ["snapshot": try JSONDecoder().decode(MatchJSON.self, from: snapshot.data())]
         if let expected { body["expectedGameID"] = expected }
+        if match.sharedGameID != nil {
+            guard let shared = store?.sharedMatches.match(localID: match.id) else { return nil }
+            body["writerEpoch"] = .number(Double(shared.writerEpoch))
+        }
         if snapshot.mode != "coachPitch", let id = snapshot.pitcher.flatMap({ UUID(uuidString: $0.id) }) {
             let line = match.state.pitching[id] ?? PitchingLine()
             body["pitching"] = .object(["strikes": .number(Double(line.strikes)), "strikeouts": .number(Double(line.strikeouts))])

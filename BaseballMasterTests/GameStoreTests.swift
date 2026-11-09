@@ -6092,6 +6092,19 @@ extension GameStoreTests {
         XCTAssertNil(ca.message)
         let match = try XCTUnwrap(ca.match(localID: sharedCopyID))
         XCTAssertTrue(ca.canEdit(sharedCopyID))
+        let overlay = URL(string: "http://127.0.0.1:18788/livestreaming/novideo/overlay")!
+        for (store, client) in [(a, admin), (b, partner)] {
+            let directory = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage())
+            directory.loadCachedDirectory()
+            try directory.persist(TeamDirectoryState(teams: try await client.teams().teams))
+            store.teamSharing = directory
+            store.teamBroadcasts = TeamBroadcastCoordinator(store: store, client: client, overlayURL: overlay)
+        }
+        let sources = try await a.teamBroadcasts.sources(team.teamID)
+        let code = try XCTUnwrap(sources.code)
+        let selected = try await a.teamBroadcasts.select(sharedCopyID, team: team.teamID, expectedGameID: nil)
+        XCTAssertEqual(selected?.activeGameID, source.id)
+        XCTAssertEqual(a.teamBroadcasts.broadcastID(for: sharedCopyID), source.id)
         await cb.synchronize(teamID: team.teamID); await cc.synchronize(teamID: team.teamID)
         XCTAssertNil(cb.message); XCTAssertNil(cc.message)
         XCTAssertEqual(b.games.first(where: { $0.id == sharedCopyID })?.state, source.state)
@@ -6107,6 +6120,18 @@ extension GameStoreTests {
         try await legacyHandoff(offered, coordinator: cb, action: "accept")
         XCTAssertNil(cb.message); XCTAssertTrue(cb.canEdit(sharedCopyID))
         b.openGame(id: sharedCopyID); b.recordPitch(.calledStrike)
+        struct Feed: Decodable { let snapshot: LiveSnapshot? }
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:18788/api/v3/broadcast/" + code)!)
+        request.setValue("1", forHTTPHeaderField: "X-BM-Protocol")
+        var broadcast: LiveSnapshot?
+        for _ in 0..<30 {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            broadcast = try JSONDecoder().decode(Feed.self, from: data).snapshot
+            if broadcast?.strikes == 1 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(broadcast?.strikes, 1, "The receiving app must push the next pitch to the original link")
+        XCTAssertEqual(broadcast.flatMap { UUID(uuidString: $0.gameID) }, source.id)
         await cb.waitForSync()
         XCTAssertTrue(cb.state.pending.isEmpty, "Ordinary legacy-cache edits are not upload consent")
         let beforeExplicitWrite = try await partner.match(teamID: team.teamID, gameID: match.id)

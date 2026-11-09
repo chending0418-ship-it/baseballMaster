@@ -75,25 +75,87 @@ test('stable team sources start empty, follow one match, switch explicitly and s
   assert.equal((await request('GET', '/broadcast/' + rotated.code)).data.snapshot.gameID, c.gameID);
 });
 
-test('team code survives a service restart while the active snapshot remains temporary', t => {
+test('restart keeps the selected match and its revision while the live payload stays temporary', t => {
   const dir = mkdtempSync(join(tmpdir(), 'team-broadcast-'));
   t.after(() => rmSync(dir, { force: true, recursive: true }));
   const database = join(dir, 'team.sqlite');
-  const first = new CollaborationStore({ database });
   const key = randomBytes(32).toString('base64url');
-  let code, teamID, deviceID;
+  let now = Date.now();
+  const options = { database, now: () => now };
+  const old = { ...uiSnapshot(), gameID: randomUUID() };
+  const selected = { ...old, gameID: randomUUID(), revision: 2, balls: 1 };
+  const next = { ...old, gameID: randomUUID() };
+  const first = new CollaborationStore(options);
+  let code, teamID, deviceID, cursor;
   try {
     ({ deviceID } = first.register(key, { label: '测试设备' }));
     ({ teamID } = first.createTeam(deviceID, { operationID: randomUUID(), name: '固定链接球队', nickname: '记录员' }));
     ({ code } = first.broadcasts.sources(teamID, deviceID));
-    const snapshot = { ...uiSnapshot(), gameID: randomUUID() };
-    first.broadcasts.publish(teamID, deviceID, { snapshot });
-    assert.equal(first.broadcasts.read(code).active, true);
+    assert.equal(first.broadcasts.publish(teamID, deviceID, { snapshot: old }).selected, true);
+    assert.equal(first.broadcasts.publish(teamID, deviceID, { snapshot: selected, expectedGameID: old.gameID }).selected, true);
+    cursor = first.broadcasts.read(code).revision;
   } finally { first.close(); }
 
-  const reopened = new CollaborationStore({ database });
+  const reopened = new CollaborationStore(options);
   try {
-    assert.equal(reopened.broadcasts.sources(teamID, deviceID).code, code);
+    assert.deepEqual(reopened.broadcasts.sources(teamID, deviceID), { code, activeGameID: selected.gameID, activeMatch: null });
     assert.equal(reopened.broadcasts.read(code).active, false);
+    const put = (snapshot, fields = {}) => reopened.broadcasts.publish(teamID, deviceID, { snapshot, ...fields });
+    assert.equal(put(old).selected, false);
+    assert.equal(put(next).selected, false);
+    assert.equal(put(old, { expectedGameID: old.gameID }).selected, false);
+    assert.throws(() => put({ ...selected, revision: 1 }), error => error.code === 'broadcast_revision');
+    assert.throws(() => put({ ...selected, balls: 0 }), error => error.code === 'broadcast_revision');
+    assert.equal(reopened.broadcasts.read(code).active, false);
+    assert.equal(put(selected).selected, true);
+    const resumed = reopened.broadcasts.read(code, cursor);
+    assert.notEqual(resumed.revision, cursor);
+    assert.equal(resumed.snapshot.gameID, selected.gameID);
+    assert.equal(resumed.snapshot.balls, 1);
+
+    const final = { ...selected, revision: 3, batterOrder: null, isFinal: true, endedAt: now };
+    assert.equal(put(final).selected, true);
   } finally { reopened.close(); }
+
+  now += 59_000;
+  const afterFinal = new CollaborationStore(options);
+  try {
+    const put = snapshot => afterFinal.broadcasts.publish(teamID, deviceID, { snapshot });
+    const final = { ...selected, revision: 3, batterOrder: null, isFinal: true, endedAt: now - 59_000 };
+    assert.equal(put(final).selected, true);
+    now += 1_001;
+    assert.equal(afterFinal.broadcasts.read(code).active, false);
+    assert.equal(put(old).selected, false);
+    assert.equal(put(next).selected, true);
+    assert.equal(afterFinal.broadcasts.publish(teamID, deviceID, { snapshot: old, expectedGameID: next.gameID }).selected, true);
+    assert.equal(afterFinal.broadcasts.read(code).snapshot.gameID, old.gameID);
+  } finally { afterFinal.close(); }
+});
+
+test('pre-upgrade links wait for explicit selection instead of airing the first reconnecting match', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'team-broadcast-legacy-'));
+  t.after(() => rmSync(dir, { force: true, recursive: true }));
+  const database = join(dir, 'team.sqlite');
+  const legacy = new CollaborationStore({ database });
+  let code, teamID, deviceID;
+  try {
+    ({ deviceID } = legacy.register(randomBytes(32).toString('base64url'), { label: '旧版设备' }));
+    ({ teamID } = legacy.createTeam(deviceID, { operationID: randomUUID(), name: '原有球队', nickname: '记录员' }));
+    ({ code } = legacy.broadcasts.sources(teamID, deviceID));
+    legacy.db.exec(`DROP TABLE team_broadcast_selection; DROP TABLE team_broadcast_displaced;
+      DROP TABLE team_broadcast_confirmation;
+      DELETE FROM metadata WHERE key='teamBroadcastSelectionV1';`);
+  } finally { legacy.close(); }
+
+  const upgraded = new CollaborationStore({ database });
+  try {
+    const old = { ...uiSnapshot(), gameID: randomUUID() };
+    const selected = { ...old, gameID: randomUUID() };
+    assert.equal(upgraded.broadcasts.sources(teamID, deviceID).code, code);
+    assert.equal(upgraded.broadcasts.publish(teamID, deviceID, { snapshot: old }).selected, false);
+    assert.equal(upgraded.broadcasts.read(code).active, false);
+    assert.equal(upgraded.broadcasts.publish(teamID, deviceID, { snapshot: selected, expectedGameID: null }).selected, true);
+    assert.equal(upgraded.broadcasts.read(code).snapshot.gameID, selected.gameID);
+    assert.equal(upgraded.broadcasts.publish(teamID, deviceID, { snapshot: selected }).selected, true);
+  } finally { upgraded.close(); }
 });
