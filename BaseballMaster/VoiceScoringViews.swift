@@ -64,6 +64,7 @@ struct VoiceScoringSheet: View {
     @State private var analysisTask: Task<Void, Never>?
     @State private var issue: String?
     @State private var submitted = false
+    @State private var confirmVoiceDataSharing = false
 
     var body: some View {
         Group {
@@ -76,7 +77,7 @@ struct VoiceScoringSheet: View {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("第 \(context.state.inning) 局\(context.state.isTop ? "上" : "下") · \(context.state.outs) 出局 · \(context.state.currentBatter.compactName)")
                                 .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
-                            Text("只说刚才发生的一个局面。录音直连腾讯语音识别，解析时发送转写和当前局面。")
+                            Text("只说刚才发生的一个局面。解析前可以核对、修改转写。")
                                 .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                             recordControl
                             if !text.isEmpty || analysis != nil || analysisTask != nil {
@@ -121,17 +122,19 @@ struct VoiceScoringSheet: View {
         switch recorder.phase {
         case .idle:
             Button {
-                guard let token = access.token, context.matches(store) else {
-                    issue = "局面或语音权限已变化，请返回记分页。"; return
-                }
-                issue = nil; analysis = nil; proposal = nil; text = ""
-                recorder.start(context: context.payload, token: token, service: access.service)
+                confirmVoiceDataSharing = true
             } label: {
                 Label(text.isEmpty ? "开始录音" : "重新录音", systemImage: "mic")
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(analysisTask != nil || !access.active)
             .accessibilityIdentifier("start-voice-recording")
+            .alert("使用语音记分", isPresented: $confirmVoiceDataSharing) {
+                Button("同意并开始录音", action: beginRecording)
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("录音将直接发送给腾讯云语音识别，当前局面会发给我们的服务。点「解析局面」后，转写和当前局面（可能含球员姓名、背号）会发给腾讯云混元 AI 生成记分建议。你也可以取消并手动记分。")
+            }
         case .connecting, .finishing:
             HStack {
                 ProgressView()
@@ -144,6 +147,19 @@ struct VoiceScoringSheet: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .accessibilityIdentifier("stop-voice-recording")
         }
+    }
+
+    private func beginRecording() {
+        guard recorder.phase == .idle, analysisTask == nil,
+              access.active, let token = access.token, context.matches(store) else {
+            issue = "局面或语音权限已变化，请返回记分页。"
+            return
+        }
+        issue = nil
+        analysis = nil
+        proposal = nil
+        text = ""
+        recorder.start(context: context.payload, token: token, service: access.service)
     }
 
     private var transcriptEditor: some View {
