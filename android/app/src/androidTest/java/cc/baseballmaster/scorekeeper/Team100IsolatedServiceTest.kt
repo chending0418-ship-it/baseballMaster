@@ -127,12 +127,21 @@ class Team100IsolatedServiceTest {
         assertTrue(owner.session.publishSharedBroadcast(team, document.id, BroadcastSelection(game.id))?.selected == true)
         assertEquals(wireID, owner.session.broadcastSources(team).activeGameID)
         val previous = owner.session.match(team, document.id)
+        val previousStream = raw("GET", "broadcast/$code", null).second.getValue("revision").jsonPrimitive.content
         owner.session.prepareMatchControl(previous, MatchControl.propose, scorer.session.snapshot().deviceID)
         owner.session.sendMatchControl(document.id)
         assertNull(owner.session.publishSharedBroadcast(team, document.id))
         scorer.session.prepareMatchControl(scorer.session.match(team, document.id), MatchControl.accept)
-        scorer.session.sendMatchControl(document.id)
-        assertTrue(scorer.session.publishSharedBroadcast(team, document.id)?.selected == true)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val db = LocalDatabase.open(context, "broadcast-test-${id()}.db")
+        try {
+            kotlinx.coroutines.runBlocking { AndroidTeamSharing(GameRepository(db), scorer.session).sendHandoff(document.id) }
+        } finally {
+            val name = db.openHelper.databaseName
+            db.close()
+            if (name != null) context.deleteDatabase(name)
+        }
+        assertNotEquals(previousStream, raw("GET", "broadcast/$code", null).second.getValue("revision").jsonPrimitive.content)
         assertNull(owner.session.publishSharedBroadcast(team, document.id))
         val delayed = buildJsonObject {
             put("writerEpoch", previous.writerEpoch)

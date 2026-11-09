@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.serialization.json.JsonPrimitive
 
 /** App-facing suspend API. Local Room data is read only; bindings and shared
  * rosters stay in the independent encrypted directory, never imported over it.
@@ -102,7 +103,21 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     }
     suspend fun participants(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.matchParticipants(teamID,gameID) }
     suspend fun prepareHandoff(expected: SharedMatchDocument, kind: MatchControl, targetDeviceID: String? = null, confirmRisk: Boolean = false) = withContext(Dispatchers.IO) { session.prepareMatchControl(expected,kind,targetDeviceID,confirmRisk) }
-    suspend fun sendHandoff(gameID: String) = withContext(Dispatchers.IO) { session.sendMatchControl(gameID) }
+    suspend fun sendHandoff(gameID: String) = withContext(Dispatchers.IO) {
+        val receipt = session.sendMatchControl(gameID)
+        if (receipt.request.kind == MatchControl.accept || receipt.request.kind == MatchControl.force) {
+            // Handoff has already succeeded. Resume only the source already selected
+            // for this match; a broadcast problem cannot undo the transfer.
+            runCatching {
+                val team = receipt.request.teamID
+                val current = session.match(team, gameID)
+                val original = (current.payload?.get("id") as? JsonPrimitive)?.content
+                if (original != null && session.broadcastSources(team).activeGameID.equals(original, true) &&
+                    session.publishSharedBroadcast(team, gameID)?.selected == true) sharedBroadcast = team to gameID
+            }
+        }
+        receipt
+    }
     suspend fun devices(teamID: String) = withContext(Dispatchers.IO) { session.teamDevices(teamID) }
     suspend fun pairing(pairingID: String) = withContext(Dispatchers.IO) { session.pairing(pairingID) }
     suspend fun previewPairing(teamID: String, token: String) = withContext(Dispatchers.IO) { session.previewPairing(teamID,token) }

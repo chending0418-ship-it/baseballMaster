@@ -68,7 +68,7 @@ internal fun BroadcastSourcesScreen(
         issue?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (current != null && select != null && currentGameID != null) {
             val same = current.activeGameID.equals(currentGameID, true)
-            if (!same || current.activeMatch == null) TextButton(onClick = {
+            TextButton(onClick = {
                 confirmation = SharingConfirmation(if (same) "确认同步本场？" else "切换当前转播？", "四条固定链接会一起显示本场比赛。") {
                     scope.launch {
                         runAction {
