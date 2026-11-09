@@ -788,6 +788,17 @@ final class BaseballMasterUITests: XCTestCase {
         pitcherInningsToggle.tap()
         XCTAssertTrue(app.staticTexts["投球局数上限"].exists)
 
+        let pitchLimitToggle = app.switches["单投手球数限制"]
+        revealStatisticsControl(pitchLimitToggle, in: app); pitchLimitToggle.tap()
+        let pitchLimit = app.textFields["pitch-limit-input"]
+        revealStatisticsControl(pitchLimit, in: app)
+        pitchLimit.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
+        pitchLimit.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2))
+        pitchLimit.typeText("3")
+        XCTAssertEqual(pitchLimit.value as? String, "3")
+        let done = app.buttons["dismiss-pitch-limit-keyboard"]
+        if done.waitForExistence(timeout: 3) { done.tap() }
+
         let next = app.buttons["continue-to-lineup"]
         for _ in 0..<5 where !next.isHittable { app.swipeUp() }
         XCTAssertTrue(next.isHittable)
@@ -802,6 +813,13 @@ final class BaseballMasterUITests: XCTestCase {
         XCTAssertTrue(confirmation.waitForExistence(timeout: 2))
         confirmation.buttons["创建比赛"].tap()
         XCTAssertTrue(app.alerts["比赛已创建"].waitForExistence(timeout: 2))
+        app.alerts.buttons["返回比赛首页"].tap()
+        let scheduled = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "scheduled-game-")).firstMatch
+        XCTAssertTrue(scheduled.waitForExistence(timeout: 5)); scheduled.tap()
+        app.buttons["prepare-scheduled-game"].tap()
+        XCTAssertTrue(app.navigationBars["赛前设置"].waitForExistence(timeout: 5))
+        revealStatisticsControl(pitchLimit, in: app)
+        XCTAssertEqual(pitchLimit.value as? String, "3", "Reopening a scheduled match must retain the custom cap")
     }
 
     func testObservedGameCanConfirmBothLineupsBeforeStarting() throws {
@@ -1658,7 +1676,7 @@ extension BaseballMasterUITests {
             let warning = app.buttons["game-rule-warning"]
             XCTAssertTrue(warning.waitForExistence(timeout: 5))
             let longName = argument.contains("long-pitcher")
-            XCTAssertEqual(warning.value as? String, longName ? "还有 3 球" : "最后登板局")
+            XCTAssertEqual(warning.value as? String, longName ? "还有 3 球" : "登板达限")
             assertV111WarningBesidePitcher(app)
             captureV111(longName ? "V1.1.1-长投手姓名提醒-dark" : "V1.1.1-投手旁最后一局-dark", app: app)
             warning.tap()
@@ -2209,7 +2227,7 @@ extension BaseballMasterUITests {
         app.launch()
         let warning = app.buttons["game-rule-warning"]
         XCTAssertTrue(warning.waitForExistence(timeout: 5))
-        XCTAssertEqual(warning.value as? String, "最后登板局")
+        XCTAssertEqual(warning.value as? String, "登板达限")
         app.buttons["open-substitutions"].tap(); app.buttons["substitution-pitcher"].tap()
         let candidate = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "高博文")).firstMatch
         XCTAssertTrue(candidate.waitForExistence(timeout: 5)); candidate.tap()
@@ -2223,7 +2241,7 @@ extension BaseballMasterUITests {
         app.buttons["返回"].tap(); app.buttons["返回比赛"].tap()
         let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
         XCTAssertTrue(pitcher.label.contains("赵一鸣"))
-        XCTAssertEqual(warning.value as? String, "最后登板局")
+        XCTAssertEqual(warning.value as? String, "登板达限")
         app.buttons["open-substitutions"].tap(); app.buttons["substitution-pitcher"].tap()
         candidate.tap(); app.buttons["confirm-current-pitcher"].firstMatch.tap()
         XCTAssertTrue(app.buttons["返回比赛"].waitForExistence(timeout: 3)); app.buttons["返回比赛"].tap()
@@ -4047,5 +4065,51 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.navigationBars["比赛结果"].waitForExistence(timeout: 5))
         XCTAssertTrue(export.exists, "Closing sharing and its preview must retain the saved result")
         captureV312Duo(app, name: "3.1.2-duo-pdf-returned-to-result")
+    }
+}
+
+extension BaseballMasterUITests {
+    @MainActor func testTeamBroadcastSourcesExistBeforeFirstPitchAndFollowPlayBall() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v30-sharing-preview", "--team-test-id=\(UUID().uuidString)",
+                               "--v30-match-fixture", "--v30-match-unstarted"]
+        app.launch()
+        let sharing = app.buttons["open-team-sharing"]
+        XCTAssertTrue(sharing.waitForExistence(timeout: 10)); sharing.tap()
+        let create = app.buttons["create-shared-team"]
+        XCTAssertTrue(create.waitForExistence(timeout: 8)); create.tap()
+        app.buttons["shared-source-team"].tap()
+        app.buttons["青岛海浪"].firstMatch.tap()
+        app.textFields["shared-nickname"].tap()
+        app.textFields["shared-nickname"].typeText("记录员")
+        let confirm = app.buttons["confirm-sharing-scope"]
+        revealStatisticsControl(confirm, in: app); confirm.tap()
+        app.buttons["submit-shared-team"].firstMatch.tap()
+        let recovery = app.buttons["defer-recovery-card"]
+        XCTAssertTrue(recovery.waitForExistence(timeout: 8)); recovery.tap()
+        let team = app.buttons["shared-team-青岛海浪"]
+        XCTAssertTrue(team.waitForExistence(timeout: 8)); team.tap()
+        let entry = app.buttons["open-team-broadcast-sources"]
+        revealStatisticsControl(entry, in: app); entry.tap()
+        for name in ["score", "batter", "away", "home"] {
+            XCTAssertTrue(app.buttons["team-broadcast-source-" + name].waitForExistence(timeout: 8))
+        }
+        XCTAssertEqual(app.staticTexts["team-broadcast-current-match"].label, "暂无比赛转播")
+
+        app.tabBars.buttons["比赛"].tap()
+        let ongoing = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "continue-game-")).firstMatch
+        XCTAssertTrue(ongoing.waitForExistence(timeout: 8)); ongoing.tap()
+        let start = app.buttons["start-game-clock"]
+        XCTAssertTrue(start.waitForExistence(timeout: 8)); start.tap()
+        let play = app.alerts.buttons["确认开赛"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5)); play.tap()
+        let pitch = app.buttons["pitch-坏球"]
+        XCTAssertTrue(pitch.waitForExistence(timeout: 8)); pitch.tap()
+
+        let broadcast = app.buttons["转播源"]
+        XCTAssertTrue(broadcast.waitForExistence(timeout: 8)); broadcast.tap()
+        let active = app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@",
+                                                          "team-broadcast-current-match", "青岛海浪")).firstMatch
+        XCTAssertTrue(active.waitForExistence(timeout: 15))
     }
 }

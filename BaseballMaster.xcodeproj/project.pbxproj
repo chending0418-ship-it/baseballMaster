@@ -53,6 +53,8 @@
 		A10000000000000000000035 /* SharedMatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000035 /* SharedMatchViews.swift */; };
 		A10000000000000000000037 /* TeamSecurityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000037 /* TeamSecurityViews.swift */; };
 		A10000000000000000000036 /* TeamSecurity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000036 /* TeamSecurity.swift */; };
+		A31500000000000000000001 /* VoiceScoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31500000000000000000001 /* VoiceScoring.swift */; };
+		A31500000000000000000002 /* VoiceScoringViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31500000000000000000002 /* VoiceScoringViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -122,6 +124,8 @@
 		F10000000000000000000035 /* SharedMatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedMatchViews.swift; sourceTree = "<group>"; };
 		F10000000000000000000037 /* TeamSecurityViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamSecurityViews.swift; sourceTree = "<group>"; };
 		F10000000000000000000036 /* TeamSecurity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamSecurity.swift; sourceTree = "<group>"; };
+		F31500000000000000000001 /* VoiceScoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceScoring.swift; sourceTree = "<group>"; };
+		F31500000000000000000002 /* VoiceScoringViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceScoringViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -201,6 +205,8 @@
 				F10000000000000000000006 /* MainViews.swift */,
 				F10000000000000000000007 /* SetupAndRosterViews.swift */,
 				F10000000000000000000008 /* ScorekeepingViews.swift */,
+				F31500000000000000000002 /* VoiceScoringViews.swift */,
+				F31500000000000000000001 /* VoiceScoring.swift */,
 				F10000000000000000000009 /* ResultsViews.swift */,
 				F10000000000000000000010 /* NoviceScoringViews.swift */,
 				F10000000000000000000040 /* BattedBall.swift */,
@@ -404,6 +410,8 @@
 				A10000000000000000000006 /* MainViews.swift in Sources */,
 				A10000000000000000000007 /* SetupAndRosterViews.swift in Sources */,
 				A10000000000000000000008 /* ScorekeepingViews.swift in Sources */,
+				A31500000000000000000002 /* VoiceScoringViews.swift in Sources */,
+				A31500000000000000000001 /* VoiceScoring.swift in Sources */,
 				A10000000000000000000009 /* ResultsViews.swift in Sources */,
 				A10000000000000000000010 /* NoviceScoringViews.swift in Sources */,
 				A10000000000000000000040 /* BattedBall.swift in Sources */,
@@ -491,7 +499,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
+				INFOPLIST_KEY_CFBundleDisplayName = "棒球比赛记录大师";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -499,7 +507,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 3.1.2;
+				MARKETING_VERSION = 3.1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -520,7 +528,7 @@
 				DEVELOPMENT_TEAM = JUTVG7XR9H;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
+				INFOPLIST_KEY_CFBundleDisplayName = "棒球比赛记录大师";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -528,7 +536,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 3.1.2;
+				MARKETING_VERSION = 3.1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

@@ -93,6 +93,12 @@ export class GameService {
     const row = this.db.prepare('SELECT * FROM shared_games WHERE team_id=? AND id=?').get(team, game);
     this.check(row, 404, 'not_found', '比赛不存在或无权查看。'); return row;
   }
+  broadcastMatch(team, game) {
+    return this.db.prepare(`SELECT g.team_id, g.source_id, g.writer_device, g.responsible_member, g.epoch, g.deleted,
+      EXISTS(SELECT 1 FROM handoffs h WHERE h.game_id=g.id) AS handoff_pending
+      FROM shared_games g WHERE g.team_id=? AND (g.id=? OR g.source_id=?)
+      ORDER BY (g.id=?) DESC LIMIT 1`).get(team, game, game, game);
+  }
   writer(row, device) {
     const m = this.store.membership(row.team_id, device);
     this.check(['admin','scorer'].includes(m.role) && row.writer_device === device && row.responsible_member === m.id,

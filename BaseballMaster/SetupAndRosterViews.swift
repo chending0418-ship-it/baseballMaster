@@ -586,7 +586,7 @@ struct NewGameSetupView: View {
     @State private var timeLimitMinutes = 90
     @State private var timeWarningMinutes = 10
     @State private var hasPitchLimit = false
-    @State private var pitchLimit = 80
+    @State private var pitchLimitText = "80"
     @State private var pitchWarningRemaining = 10
     @State private var hasPitcherInningsLimit = false
     @State private var pitcherInningsLimit = 3
@@ -635,7 +635,7 @@ struct NewGameSetupView: View {
             fieldersCount: fieldersCount,
             timeLimitMinutes: hasTimeLimit ? timeLimitMinutes : nil,
             timeWarningMinutes: hasTimeLimit ? timeWarningMinutes : nil,
-            pitchLimit: hasPitchLimit ? pitchLimit : nil,
+            pitchLimit: hasPitchLimit ? PitchLimitInput.value(pitchLimitText) : nil,
             pitchWarningRemaining: hasPitchLimit ? pitchWarningRemaining : nil,
             pitcherInningsLimit: hasPitcherInningsLimit ? pitcherInningsLimit : nil,
             usesDesignatedHitter: usesDesignatedHitter,
@@ -661,6 +661,9 @@ struct NewGameSetupView: View {
 
     private var validationMessages: [String] {
         var messages: [String] = []
+        if (!scheduleForLater || configureScheduleNow), hasPitchLimit, PitchLimitInput.value(pitchLimitText) == nil {
+            messages.append(PitchLimitInput.invalidMessage)
+        }
         if mode == .spectator {
             guard let away = spectatorAwayTeam, let home = spectatorHomeTeam else {
                 messages.append("请选择观赛的客队和主队")
@@ -928,11 +931,11 @@ struct NewGameSetupView: View {
                             if hasPitchLimit {
                                 Divider()
                                 settingPickerRow(title: "投球上限", icon: "baseball.fill") {
-                                    Picker("投球上限", selection: $pitchLimit) {
-                                        ForEach(Array(stride(from: 40, through: 120, by: 5)), id: \.self) { Text("\($0) 球").tag($0) }
-                                    }
-                                    .pickerStyle(.menu)
+                                    PitchLimitInput(text: $pitchLimitText)
                                 }
+                                Text("球数到限只提醒，可继续记分。")
+                                    .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 Divider().padding(.leading, 42)
                                 settingPickerRow(title: "提前提醒", icon: "bell.fill") {
                                     Picker("投球提醒", selection: $pitchWarningRemaining) {
@@ -951,7 +954,7 @@ struct NewGameSetupView: View {
                                 .frame(minHeight: 54)
                             if hasPitcherInningsLimit {
                                 Divider()
-                                Text("明确确认登板即计一局；换局自动沿用投手，实际投球后才计新局。同一局不重复，统计 IP 另算。")
+                                Text("达到球数或登板局数只提醒，仍可继续记分。明确确认登板即计一局，自动沿用投手时实际投球才计新局。")
                                     .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                                 settingPickerRow(title: "投球局数上限", icon: "number.circle.fill") {
                                     Picker("投球局数上限", selection: $pitcherInningsLimit) {
@@ -1372,6 +1375,7 @@ struct ScheduledGamePreparationView: View {
     let gameID: UUID
 
     @State private var rules = GameRules()
+    @State private var pitchLimitText = "80"
     @State private var didLoadRules = false
     @State private var showLineup = false
 
@@ -1399,8 +1403,15 @@ struct ScheduledGamePreparationView: View {
         return store.opponentTeam(withID: id)
     }
 
+    private var configuredRules: GameRules {
+        var result = rules
+        if rules.pitchLimit != nil { result.pitchLimit = PitchLimitInput.value(pitchLimitText) }
+        return result
+    }
+
     private var validationMessages: [String] {
         guard let stored else { return ["比赛安排不存在"] }
+        if rules.pitchLimit != nil, configuredRules.pitchLimit == nil { return [PitchLimitInput.invalidMessage] }
         let requiredPlayers = rules.fieldersCount + (rules.designatedHitterEnabled && !rules.twoWayPlayerEnabled ? 1 : 0)
         if stored.isObservation {
             guard let away = observedAwayTeam, let home = observedHomeTeam else {
@@ -1452,7 +1463,7 @@ struct ScheduledGamePreparationView: View {
                     rosterLink(team: localOpponent, role: "对手名单", isOpponent: true)
                 }
 
-                GameRulesEditor(rules: $rules)
+                GameRulesEditor(rules: $rules, pitchLimitText: $pitchLimitText)
 
                 if !validationMessages.isEmpty {
                     BMCard {
@@ -1487,10 +1498,12 @@ struct ScheduledGamePreparationView: View {
         }
         .bmScreenBackground()
         .navigationTitle("赛前设置")
+        .scrollDismissesKeyboard(.interactively)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             guard !didLoadRules, let stored else { return }
             rules = stored.rules
+            pitchLimitText = stored.rules.pitchLimit.map(String.init) ?? "80"
             didLoadRules = true
         }
         .navigationDestination(isPresented: $showLineup) {
@@ -1500,7 +1513,7 @@ struct ScheduledGamePreparationView: View {
                 ObservedGameLineupView(
                     awayTeam: away,
                     homeTeam: home,
-                    rules: rules,
+                    rules: configuredRules,
                     startImmediately: true,
                     scheduledGameID: gameID,
                     initialAwayLineup: stored.lineup,
@@ -1512,7 +1525,7 @@ struct ScheduledGamePreparationView: View {
                 ObservedGameLineupView(
                     awayTeam: stored.isHome ? opponent : team,
                     homeTeam: stored.isHome ? team : opponent,
-                    rules: rules,
+                    rules: configuredRules,
                     startImmediately: true,
                     scheduledGameID: gameID,
                     ourTeamID: team.id,
@@ -1560,8 +1573,45 @@ struct ScheduledGamePreparationView: View {
     }
 }
 
+private struct PitchLimitInput: View {
+    @Binding var text: String
+    @FocusState private var focused: Bool
+
+    static let invalidMessage = "投球上限请输入 1 至 1,000,000 的整数。"
+
+    static func value(_ text: String) -> Int? {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .applyingTransform(.fullwidthToHalfwidth, reverse: false)
+        guard let normalized, let limit = Int(normalized), (1...1_000_000).contains(limit) else { return nil }
+        return limit
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField("球数", text: $text)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 100)
+                .accessibilityLabel("投球上限")
+                .accessibilityIdentifier("pitch-limit-input")
+                .focused($focused)
+            Text("球").foregroundStyle(BMTheme.secondaryText)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                if focused {
+                    Spacer()
+                    Button("完成") { focused = false }.accessibilityIdentifier("dismiss-pitch-limit-keyboard")
+                }
+            }
+        }
+    }
+}
+
 private struct GameRulesEditor: View {
     @Binding var rules: GameRules
+    @Binding var pitchLimitText: String
 
     private var hasTimeLimit: Binding<Bool> {
         Binding(
@@ -1687,17 +1737,11 @@ private struct GameRulesEditor: View {
                 if rules.pitchLimit != nil {
                     Divider()
                     settingPickerRow(title: "投球上限", icon: "baseball.fill") {
-                        Picker(
-                            "投球上限",
-                            selection: Binding(
-                                get: { rules.pitchLimit ?? 80 },
-                                set: { rules.pitchLimit = $0 }
-                            )
-                        ) {
-                            ForEach(Array(stride(from: 40, through: 120, by: 5)), id: \.self) { Text("\($0) 球").tag($0) }
-                        }
-                        .pickerStyle(.menu)
+                        PitchLimitInput(text: $pitchLimitText)
                     }
+                    Text("球数到限只提醒，可继续记分。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Divider().padding(.leading, 42)
                     settingPickerRow(title: "提前提醒", icon: "bell.fill") {
                         Picker(
@@ -1721,7 +1765,7 @@ private struct GameRulesEditor: View {
                     .frame(minHeight: 54)
                 if rules.pitcherInningsLimit != nil {
                     Divider()
-                    Text("明确确认登板即计一局；换局自动沿用投手，实际投球后才计新局。同一局不重复，统计 IP 另算。")
+                    Text("达到球数或登板局数只提醒，仍可继续记分。明确确认登板即计一局，自动沿用投手时实际投球才计新局。")
                         .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                     settingPickerRow(title: "投球局数上限", icon: "number.circle.fill") {
                         Picker(
@@ -2102,10 +2146,10 @@ struct LineupSelectionView: View {
             parts.append("\(minutes) 分钟限制，剩余 \(rules.timeWarningMinutes ?? 0) 分钟提醒")
         }
         if let pitches = rules.pitchLimit {
-            parts.append("单投手 \(pitches) 球限制，剩余 \(rules.pitchWarningRemaining ?? 0) 球提醒")
+            parts.append("单投手 \(pitches) 球提醒上限，剩余 \(rules.pitchWarningRemaining ?? 0) 球提醒")
         }
         if let innings = rules.pitcherInningsLimit {
-            parts.append("单投手最多登板 \(innings) 局（明确确认登板或实际投球计入）")
+            parts.append("单投手登板 \(innings) 局时提醒（明确确认登板或实际投球计入）")
         }
         if rules.designatedHitterEnabled {
             parts.append(rules.twoWayPlayerEnabled ? "启用大谷条款" : "启用指定打击 DH")

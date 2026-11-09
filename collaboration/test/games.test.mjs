@@ -9,6 +9,7 @@ import { createCollaborationServer,BASE } from '../server.mjs';
 const token=()=>randomBytes(32).toString('base64url');
 const op=body=>({operationID:randomUUID(),...body});
 import { fixture } from './match-fixture.mjs';
+import { uiSnapshot } from '../../live/test/fixture.mjs';
 
 async function setup(t,options={}) {
  const app=createCollaborationServer({requestsPerMinute:10000,allowLocalViewer:true,...options});app.server.listen(0,'127.0.0.1');await once(app.server,'listening');
@@ -50,6 +51,45 @@ test('two-party handoff freezes source; only fetched revision/digest can accept;
  assert.deepEqual((await a.req(b.key,'POST',g.path+'/handoff/accept',accept)).data,accepted.data);
  assert.equal((await a.req(a.admin.key,'PUT',g.path,op({...g.fixture,baseRevision:1,writerEpoch:1}))).status,409);
  assert.equal((await a.req(b.key,'PUT',g.path,op({...g.fixture,baseRevision:1,writerEpoch:2}))).status,200);
+});
+test('fixed OBS links follow the shared writer and fence delayed requests across handoffs', async t => {
+ const a = await setup(t), scorer = await a.member('scorer');
+ const route = `/teams/${a.team}/broadcast`;
+ const { data: { code } } = await a.req(a.admin.key, 'GET', route);
+ const initial = { ...uiSnapshot(), revision: 4 };
+ const draft = fixture();
+ initial.gameID = draft.payload.id;
+ const upload = (key, snapshot, fields = {}) => a.req(key, 'PUT', route, { snapshot, ...fields });
+ const read = (cursor = '') => a.req('', 'GET', '/broadcast/' + code + cursor);
+
+ assert.equal((await upload(a.admin.key, initial)).data.selected, true);
+ const g = (await a.req(a.admin.key, 'POST', `/teams/${a.team}/games`, op(draft))).data;
+ const path = `/teams/${a.team}/games/${g.id}`;
+ const shared = { ...initial, gameID: g.id };
+ assert.equal((await upload(a.admin.key, shared, { writerEpoch: 1 })).data.selected, true);
+ const before = (await read()).data;
+ assert.equal(before.snapshot.gameID, initial.gameID.toLowerCase());
+
+ assert.equal((await a.req(a.admin.key, 'POST', path + '/handoff/propose',
+   op({ targetDeviceID: scorer.id, baseRevision: 1, writerEpoch: 1 }))).status, 200);
+ assert.equal((await upload(a.admin.key, shared, { writerEpoch: 1 })).status, 409);
+ const { data: remote } = await a.req(scorer.key, 'GET', path);
+ assert.equal((await a.req(scorer.key, 'POST', path + '/handoff/accept',
+   op({ handoffID: remote.handoff.id, digest: remote.digest, baseRevision: 1, writerEpoch: 1 }))).status, 200);
+ assert.equal((await upload(a.admin.key, { ...initial, revision: 5 }, { writerEpoch: 1 })).status, 409);
+ assert.equal((await upload(a.admin.key, { ...initial, revision: 5 })).status, 409);
+ assert.equal((await upload(scorer.key, { ...shared, balls: 2 }, { writerEpoch: 2 })).data.selected, true);
+ const after = (await read('?since=' + encodeURIComponent(before.revision))).data;
+ assert.notEqual(after.revision, before.revision);
+ assert.equal(after.snapshot.balls, 2);
+
+ assert.equal((await a.req(a.admin.key, 'POST', path + '/handoff/force',
+   op({ targetDeviceID: a.admin.id, baseRevision: 1, writerEpoch: 2, confirmRisk: true }))).status, 200);
+ assert.equal((await upload(scorer.key, { ...shared, revision: 5 }, { writerEpoch: 2 })).status, 409);
+ assert.equal((await upload(a.admin.key, { ...shared, revision: 5 }, { writerEpoch: 1 })).status, 409);
+ assert.equal((await upload(a.admin.key, { ...shared, revision: 3, balls: 1 }, { writerEpoch: 3 })).data.selected, true);
+ assert.equal((await read()).data.snapshot.balls, 1);
+ assert.equal((await a.req(a.admin.key, 'GET', route)).data.code, code);
 });
 test('administrator force takeover and role revocation fence old device; no timeout takeover',async t=>{
  const a=await setup(t),b=await a.member('scorer'),g=await a.create();

@@ -1166,7 +1166,7 @@ final class GameStoreTests: XCTestCase {
         )
         let pitcher = store.currentPitcher
         store.startGameClock()
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限")
         XCTAssertEqual(store.pitchingLine(for: pitcher).inningsText, "0.0")
         store.endCurrentHalf()
         XCTAssertTrue(store.ruleNotices().contains(where: { $0.contains("达到 1 局登板额度") }))
@@ -3613,8 +3613,14 @@ extension GameStoreTests {
         for _ in 0..<3 { store.applyPlay(.groundOut) }
         XCTAssertTrue(store.ruleNotices().contains { $0.contains(other.name) && $0.contains("已达到") })
         XCTAssertFalse(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("超过 1 局限制") })
+        XCTAssertEqual(store.currentPitcher.id, pitcher.id)
         store.recordPitch(.ball)
-        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("超过 1 局限制") })
+        store.recordPitch(.calledStrike)
+        XCTAssertEqual(store.pitchingLine(for: pitcher).pitches, 5)
+        XCTAssertEqual(store.game.balls, 1)
+        XCTAssertEqual(store.game.strikes, 1)
+        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("超过 1 局限制") && $0.contains("可继续记分") })
+        XCTAssertTrue(store.ruleNotices().contains { $0.contains(pitcher.name) && $0.contains("达到 3 球限制") && $0.contains("可继续记分") })
     }
 }
 
@@ -3772,7 +3778,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.ruleNoticeSummary(), "登板 1/2 局")
         store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: first), [1, 2])
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限")
         store.game.pitching[first] = PitchingLine(pitches: 3)
         XCTAssertEqual(store.ruleNoticeSummary(), "还有 3 球")
         store.recordPitch(.ball)
@@ -3783,7 +3789,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.ruleNoticeSummary(), "球数达限")
         store.game.pitching[first]?.pitches = 0
         store.game.pitching[first]?.outsRecorded = 6
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局", "Statistical outs do not determine the appearance limit")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限", "Statistical outs do not determine the appearance limit")
         store.endCurrentHalf()
         XCTAssertNotEqual(store.currentPitcher.id, first)
         XCTAssertEqual(store.ruleNoticeSummary(), "其他达限")
@@ -5873,7 +5879,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1])
         store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1, 2])
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限")
         XCTAssertEqual(store.pitchingLine(for: homePitcher).inningsText, "0.0")
         store.endCurrentHalf(); store.endCurrentHalf()
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: homePitcher.id), [1, 2])
@@ -6092,6 +6098,19 @@ extension GameStoreTests {
         XCTAssertNil(ca.message)
         let match = try XCTUnwrap(ca.match(localID: sharedCopyID))
         XCTAssertTrue(ca.canEdit(sharedCopyID))
+        let overlay = URL(string: "http://127.0.0.1:18788/livestreaming/novideo/overlay")!
+        for (store, client) in [(a, admin), (b, partner)] {
+            let directory = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage())
+            directory.loadCachedDirectory()
+            try directory.persist(TeamDirectoryState(teams: try await client.teams().teams))
+            store.teamSharing = directory
+            store.teamBroadcasts = TeamBroadcastCoordinator(store: store, client: client, overlayURL: overlay)
+        }
+        let sources = try await a.teamBroadcasts.sources(team.teamID)
+        let code = try XCTUnwrap(sources.code)
+        let selected = try await a.teamBroadcasts.select(sharedCopyID, team: team.teamID, expectedGameID: nil)
+        XCTAssertEqual(selected?.activeGameID, source.id)
+        XCTAssertEqual(a.teamBroadcasts.broadcastID(for: sharedCopyID), source.id)
         await cb.synchronize(teamID: team.teamID); await cc.synchronize(teamID: team.teamID)
         XCTAssertNil(cb.message); XCTAssertNil(cc.message)
         XCTAssertEqual(b.games.first(where: { $0.id == sharedCopyID })?.state, source.state)
@@ -6107,6 +6126,18 @@ extension GameStoreTests {
         try await legacyHandoff(offered, coordinator: cb, action: "accept")
         XCTAssertNil(cb.message); XCTAssertTrue(cb.canEdit(sharedCopyID))
         b.openGame(id: sharedCopyID); b.recordPitch(.calledStrike)
+        struct Feed: Decodable { let snapshot: LiveSnapshot? }
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:18788/api/v3/broadcast/" + code)!)
+        request.setValue("1", forHTTPHeaderField: "X-BM-Protocol")
+        var broadcast: LiveSnapshot?
+        for _ in 0..<30 {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            broadcast = try JSONDecoder().decode(Feed.self, from: data).snapshot
+            if broadcast?.strikes == 1 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(broadcast?.strikes, 1, "The receiving app must push the next pitch to the original link")
+        XCTAssertEqual(broadcast.flatMap { UUID(uuidString: $0.gameID) }, source.id)
         await cb.waitForSync()
         XCTAssertTrue(cb.state.pending.isEmpty, "Ordinary legacy-cache edits are not upload consent")
         let beforeExplicitWrite = try await partner.match(teamID: team.teamID, gameID: match.id)
@@ -8823,7 +8854,7 @@ extension GameStoreTests {
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
         store.recordPitch(.ball)
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1, 2])
-        XCTAssertEqual(store.ruleNoticeSummary(), "最后登板局")
+        XCTAssertEqual(store.ruleNoticeSummary(), "登板达限")
         store.undo()
         XCTAssertEqual(store.game.pitcherInningUsage.innings(for: a.id), [1])
         XCTAssertEqual(store.ruleNoticeSummary(), "登板 1/2 局")
@@ -9484,6 +9515,134 @@ extension GameStoreTests {
             let attachment = XCTAttachment(image: image)
             attachment.name = "ios-situation-field-\(mode == .landing ? "landing" : "route")"
             attachment.lifetime = .keepAlways; add(attachment)
+        }
+    }
+}
+
+extension GameStoreTests {
+    func testV315VoiceProKeepsUnknownLandingAndSavesOneUndoablePlay() throws {
+        let store = freshStore()
+        store.startGameClock()
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let batter = context.state.currentBatter.id.uuidString.lowercased()
+        let analysis = VoiceAnalysis(schemaVersion: 1, summary: "打者一垒安打",
+            ball: .init(type: "ground", region: "左外野", outcome: "single"),
+            events: [.init(sequence: 1, kind: "advance", playerId: batter, fromBase: "batter", toBase: "first",
+                           outType: nil, pitchResult: nil, evidence: "一垒安打")],
+            observations: ["未提及落点。"])
+        let proposal = VoicePlayProposal(analysis: analysis, context: context, transcript: "地滚一垒安打")
+        guard case .hit(let play)? = proposal else { return XCTFail("Expected a Pro draft awaiting a landing point") }
+        XCTAssertFalse(play.observation.hasLocation)
+        XCTAssertNil(play.observation.region)
+        XCTAssertEqual(store.game, context.state, "A parsed draft must not score a pitch")
+        var observation = play.observation
+        observation.fielding = BattedBallFielding(status: .pending)
+        XCTAssertNotNil(store.situationObservationError(observation, outcome: play.outcome, decisions: play.decisions))
+        observation.selectRegion(.left)
+        XCTAssertTrue(store.applyPlay(play.outcome, decisions: play.decisions, observation: observation))
+        XCTAssertEqual(store.game.baseRunners[.first]?.id.uuidString.lowercased(), batter)
+        XCTAssertFalse(context.matches(store), "A second confirmation must be stale after the first commit")
+        store.undo()
+        XCTAssertTrue(store.game.baseRunners.isEmpty)
+        XCTAssertFalse(context.matches(store), "Undo must not revive an old voice draft")
+    }
+
+    func testV315VoiceRejectsUnexplainedRunnerAndConflictingPitch() throws {
+        let store = freshStore()
+        store.startGameClock()
+        XCTAssertTrue(store.applyPlay(.single))
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let batter = context.state.currentBatter.id.uuidString.lowercased()
+        let advance = VoiceAnalysis.Event(sequence: 1, kind: "advance", playerId: batter, fromBase: "batter",
+                                          toBase: "second", outType: nil, pitchResult: nil, evidence: "二垒安打")
+        let hit = VoiceAnalysis(schemaVersion: 1, summary: "二垒安打",
+            ball: .init(type: "ground", region: "", outcome: "double"), events: [advance], observations: [])
+        XCTAssertNil(VoicePlayProposal(analysis: hit, context: context, transcript: "二垒安打"),
+                     "The model must not silently leave an existing runner on base")
+        let pitch = VoiceAnalysis.Event(sequence: 1, kind: "pitch", playerId: nil, fromBase: nil, toBase: nil,
+                                        outType: nil, pitchResult: "ball", evidence: "坏球")
+        let plain = VoiceAnalysis(schemaVersion: 1, summary: "坏球",
+            ball: .init(type: "unknown", region: "", outcome: "unknown"), events: [pitch], observations: [])
+        guard case .pitch(.ball)? = VoicePlayProposal(analysis: plain, context: context, transcript: "坏球") else {
+            return XCTFail("Expected a reviewable bad-pitch draft")
+        }
+        XCTAssertNil(VoicePlayProposal(analysis: plain, context: context, transcript: "好球"))
+        XCTAssertEqual(store.game, context.state)
+    }
+
+    func testV315VoiceUsesExistingInviteCookieAndHy3Contract() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [VoiceContractURLProtocol.self]
+        config.httpShouldSetCookies = false
+        let service = VoiceService(session: URLSession(configuration: config))
+        let token = try await service.redeem(code: "SYNTHETIC-TEST", device: UUID(), operation: UUID())
+        XCTAssertEqual(token, VoiceContractURLProtocol.token)
+        let active = try await service.entitlement(token)
+        XCTAssertTrue(active)
+        let store = freshStore()
+        store.startGameClock()
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let grant = try await service.grant(context.payload, token: token)
+        XCTAssertEqual(grant.url.host, "asr.cloud.tencent.com")
+        await service.end(grant.id, token: token)
+        let result = try await service.analyze("坏球", context: context.payload, token: token)
+        XCTAssertEqual(result.events.first?.pitchResult, "ball")
+    }
+}
+
+private final class VoiceContractURLProtocol: URLProtocol {
+    static let token = String(repeating: "a", count: 32)
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+    override func startLoading() {
+        guard let url = request.url, url.host == "baseballmaster.cc" else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL)); return
+        }
+        let path = url.path
+        let data: String
+        var headers = ["Content-Type": "application/json"]
+        let authenticated = request.value(forHTTPHeaderField: "Cookie") == "voice_assistant_session=" + Self.token
+        let bodyData = request.httpBody ?? request.httpBodyStream.flatMap(Self.read)
+        let body = bodyData.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        switch (path, request.httpMethod) {
+        case ("/recording/voice-assistant/api/redeem", "POST")
+            where body?["code"] as? String == "SYNTHETIC-TEST" && body?["deviceId"] is String && body?["operationId"] is String:
+            headers["Set-Cookie"] = "voice_assistant_session=\(Self.token); HttpOnly; Secure; Path=/recording/voice-assistant/"
+            data = #"{"active":true}"#
+        case ("/recording/voice-assistant/api/entitlement", "GET") where authenticated:
+            data = #"{"active":true}"#
+        case ("/recording/voice-assistant/api/asr-session", "POST") where authenticated && body?["context"] is [String: Any]:
+            data = #"{"id":"sample-grant","url":"wss://asr.cloud.tencent.com/asr/v2/123","maxRecordingSeconds":90}"#
+        case ("/recording/voice-assistant/api/asr-session/end", "POST") where authenticated && body?["id"] as? String == "sample-grant":
+            data = #"{"ok":true}"#
+        case ("/recording/voice-assistant/api/analyze", "POST") where authenticated:
+            guard body?["modelId"] as? String == "hy3", body?["thinking"] as? String == "disabled",
+                  body?["text"] as? String == "坏球", let context = body?["context"] as? [String: Any],
+                  context["schemaVersion"] as? Int == 1, context["virtualOuts"] is NSNull,
+                  context["historyComplete"] as? Bool == false, context["pendingIssues"] is [Any] else {
+                client?.urlProtocol(self, didFailWithError: URLError(.cannotParseResponse)); return
+            }
+            data = #"{"analysis":{"schemaVersion":1,"summary":"坏球","ball":{"type":"unknown","region":"","outcome":"unknown"},"events":[{"sequence":1,"kind":"pitch","pitchResult":"ball","evidence":"坏球"}],"observations":[]}}"#
+        default:
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL)); return
+        }
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: headers)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(data.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    private static func read(_ stream: InputStream) -> Data? {
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { return nil }
+            if count == 0 { return data }
+            data.append(contentsOf: buffer.prefix(count))
         }
     }
 }

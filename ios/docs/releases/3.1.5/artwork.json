@@ -1,0 +1,9 @@
+[
+  {"group":"iphone-6.3","file":"01-现场记分","source":"iphone-scoring.png","dark":true,"label":"现场记分","title":["每一球","都记得清楚"],"detail":"比分、垒况和投打信息，同屏查看。"},
+  {"group":"iphone-6.3","file":"02-投手限额","source":"iphone-limits.png","dark":false,"label":"投手限额","title":["投了多少球","随时看得见"],"detail":"球数与登板局数到限时提示，记分继续。"},
+  {"group":"iphone-6.3","file":"03-比赛结果","source":"iphone-results.png","dark":true,"label":"赛后回看","title":["打完一场","比分有迹可循"],"detail":"从分局比分到球员表现，回看本场记录。"},
+  {"group":"ipad-13","file":"01-现场记分","source":"ipad-scoring.png","dark":true,"label":"iPad 记分","title":["球场和比分","一屏掌握"],"detail":"球场、投打信息和记分操作集中呈现。"},
+  {"group":"ipad-13","file":"02-赛后回看","source":"ipad-results.png","dark":false,"label":"iPad 比赛结果","title":["从总比分","看到每一局"],"detail":"查看分局比分，继续核对球员数据。"},
+  {"group":"duo-outer","file":"01-Pro-记分","source":"duo-outer-contact.png","dark":false,"label":"iPhone Duo 外屏","title":["收起屏幕","接着记这一球"],"detail":"Pro 继续核对击球落点与守备。"},
+  {"group":"duo-inner","file":"01-展开工作台","source":"duo-inner-scoring.png","dark":true,"label":"iPhone Duo 内屏","title":["展开球场","直接记分"],"detail":"球场、分局比分和记分按钮同时可见。"}
+]

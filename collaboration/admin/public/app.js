@@ -58,6 +58,103 @@ function gameContent(data){
  const timeline=n('section',undefined,'panel'),entries=s.entries||[];timeline.append(n('h2',`比赛文字记录 · ${entries.length} 条`));let shown=0;const list=n('div'),more=action('显示更多记录',appendEntries);function appendEntries(){for(const e of entries.slice(shown,shown+50)){const item=n('details',undefined,'entry');item.append(n('summary',`${e.inning} 局${e.isTop?'上':'下'} · ${e.summary||e.label||'比赛动态'}`));for(const d of e.details||[])item.append(n('p',d.text));list.append(item);}shown+=50;more.hidden=shown>=entries.length;}timeline.append(list,more);appendEntries();if(!entries.length)timeline.append(n('p','尚无文字记录','muted'));root.append(timeline);
  const raw=n('details',undefined,'panel');raw.append(n('summary','完整比赛数据（只读）'));raw.addEventListener('toggle',()=>{if(raw.open&&raw.children.length===1)raw.append(n('pre',JSON.stringify(data,null,2)));});root.append(raw);return root;
 }
+async function voiceCodePanel(signal) {
+ const panel=n('section',undefined,'panel');
+ const status=n('p',undefined,'muted');status.setAttribute('role','status');
+ const login=n('form',undefined,'filter'),credential=n('input'),loginButton=n('button','登录语音管理','primary');
+ credential.type='password';credential.required=true;credential.autocomplete='current-password';
+ const credentialLabel=n('label','语音后台管理凭据');credentialLabel.append(credential);login.append(credentialLabel,loginButton);login.hidden=true;
+ const content=n('div');content.hidden=true;
+ const generate=n('form',undefined,'filter'),count=n('input'),expiry=n('input'),note=n('input'),generateButton=n('button','生成开启码','primary');
+ count.type='number';count.min='1';count.max='20';count.value='1';count.required=true;
+ expiry.type='number';expiry.min='1';expiry.max='8760';expiry.placeholder='留空为不限期';
+ note.type='text';note.maxLength=120;note.placeholder='例如：张教练（同批共用）';
+ const countLabel=n('label','数量'),expiryLabel=n('label','有效期（小时）'),noteLabel=n('label','发放备注（选填）');
+ countLabel.append(count);expiryLabel.append(expiry);noteLabel.append(note);generate.append(countLabel,expiryLabel,noteLabel,generateButton);
+ const codes=n('section',undefined,'notice'),codeList=n('ul');
+ codes.hidden=true;
+ function clearCodes(){codeList.replaceChildren();codes.hidden=true;}
+ codes.append(n('strong','完整开启码仅本次显示'),n('p','请复制后交给需要开通语音的记录员。每个码只能兑换一次。'),codeList,action('清除本页开启码',clearCodes));
+ const inviteList=n('div'),deviceList=n('div');
+ content.append(n('h2','手动生成开启码'),generate,codes,n('h3','开启码状态'),inviteList,n('h3','已开通设备'),deviceList);
+ panel.append(login,content,status);
+ signal.addEventListener('abort',()=>{credential.value='';clearCodes();},{once:true});
+
+ async function voiceApi(path,body){
+  const response=await fetch('/recording/voice-assistant/api/admin/'+path,{
+   cache:'no-store',credentials:'same-origin',redirect:'error',signal,
+   ...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  });
+  let data;
+  try{data=await response.json();}catch{throw new Error('语音管理暂时不可用，请稍后刷新。');}
+  if(!response.ok){const error=new Error(data.message||'语音管理请求未完成。');error.status=response.status;throw error;}
+  return data;
+ }
+ function revoke(path,label,prompt){
+  const button=action(label,async()=>{
+   if(!window.confirm(prompt))return;
+   button.disabled=true;status.textContent='';
+   try{await voiceApi(path,{});await refresh();status.textContent='已撤回。';}
+   catch(error){if(!signal.aborted)status.textContent=error.message;}
+   finally{button.disabled=false;}
+  });
+  return button;
+ }
+ async function refresh(){
+  try{
+   const [{invites},{entitlements}]=await Promise.all([voiceApi('invites'),voiceApi('entitlements')]);
+   if(signal.aborted)return;
+   const now=Date.now();
+   inviteList.replaceChildren(invites.length?table(['编号','发放备注','创建时间','有效期','状态','操作'],invites.map(row=>{
+    const expired=row.expiresAt!==null&&row.expiresAt<=now;
+    const state=row.redeemedAt?'已兑换':row.revokedAt?'已撤回':expired?'已过期':'未使用';
+    const control=state==='未使用'?revoke('invites/'+encodeURIComponent(row.id)+'/revoke','撤回开启码','撤回后，这个开启码将无法兑换。确认撤回？'):'—';
+    return [row.id.slice(0,8),row.note||'—',date(row.createdAt),row.expiresAt===null?'不限期':date(row.expiresAt),badge(state,state==='未使用'?'':'gray'),control];
+   })):n('p','还没有生成开启码。','muted'));
+   deviceList.replaceChildren(entitlements.length?table(['设备编号','开通时间','状态','操作'],entitlements.map(row=>[
+    (row.deviceId||row.id).slice(0,12),date(row.createdAt),badge(row.active?'有效':'已撤回',row.active?'':'gray'),
+    row.active?revoke('entitlements/'+encodeURIComponent(row.id)+'/revoke','撤回设备权限','确认撤回这台设备的语音记分权限？'):'—'
+   ])):n('p','还没有设备开通语音。','muted'));
+   login.hidden=true;content.hidden=false;
+  }catch(error){
+   if(signal.aborted)return;
+   if(error.status===401){login.hidden=false;content.hidden=true;clearCodes();status.textContent='请使用独立语音后台的管理凭据登录。';}
+   else{status.textContent=error.message;}
+  }
+ }
+ login.addEventListener('submit',async event=>{
+  event.preventDefault();loginButton.disabled=true;status.textContent='';
+  const token=credential.value;credential.value='';
+  try{await voiceApi('session',{token});await refresh();}
+  catch(error){if(!signal.aborted)status.textContent=error.message;}
+  finally{loginButton.disabled=false;}
+ });
+ generate.addEventListener('submit',async event=>{
+  event.preventDefault();generateButton.disabled=true;status.textContent='';
+  try{
+   const body={count:Number(count.value)};
+   if(expiry.value!=='')body.expiresInHours=Number(expiry.value);
+   const recipientNote=note.value.trim();
+   if(recipientNote)body.note=recipientNote;
+   const result=await voiceApi('invites',body);
+   if(signal.aborted)return;
+   codeList.replaceChildren(...result.codes.map(row=>{
+    const item=n('li'),code=n('code',row.code);
+    const copy=action('复制',async()=>{try{await navigator.clipboard.writeText(row.code);status.textContent='已复制开启码。';}
+      catch{status.textContent='请选择完整开启码后手动复制。';}});
+    item.append(code,document.createTextNode(' '),copy);return item;
+   }));
+   if(note.value.trim()===recipientNote)note.value='';
+   codes.hidden=false;status.textContent='已生成 '+result.codes.length+' 个一次性开启码。';
+   await refresh();
+  }catch(error){if(!signal.aborted)status.textContent=error.message;}
+  finally{generateButton.disabled=false;}
+ });
+ window.addEventListener('pagehide',clearCodes,{signal});
+ await refresh();
+ return panel;
+}
+
 async function render(){
  if(!authenticated)return;const seq=++sequence;controller?.abort();controller=new AbortController();const read=path=>api(path,{signal:controller.signal});
  const {route,query}=params(),base=route.split('/')[0],root=n('div');$('message').textContent='';$('content').setAttribute('aria-busy','true');
@@ -68,6 +165,9 @@ async function render(){
    const stats=n('div',undefined,'stats');for(const [label,value,detail,target]of [['球队',data.teams,'当前有效共享球队','teams'],['云端比赛',data.games,'不含已删除比赛','games'],['正在直播',data.live.ongoing,'两套直播服务合计','live'],['比赛资料',size(data.bytes),'正文与展示数据，不含备份','games']]){const c=link(' ',target,'stat');c.replaceChildren(n('p',label),n('strong',value),n('small',detail));stats.append(c);}root.append(stats);if(data.warning)root.append(n('p',data.warning,'notice'));
    const panel=n('section',undefined,'panel');panel.append(n('h2','按球队查看与下载'),n('p','全部云端或单支球队资料可打包为 ZIP；比赛和直播内容可单独下载为 JSON。临时直播请在有效期内单独下载。','muted'),link('打开球队资料 →','teams'));root.append(panel);
    const dataLive=await read('live?limit=8');root.append(n('h2','正在直播'));root.append(dataLive.items.length?table(['对阵','比分','状态','最近同步','操作'],matchRows(dataLive,true)):n('p','当前没有正在进行的直播','empty'));if(data.live.completed)root.append(link(`${data.live.completed} 场已终场直播仍在有效期内 →`,'live?state=completed'));
+  }else if(route==='voice-codes'){
+   root.append(header('语音开启码','在这里手动生成 App 的一次性开启码，查看兑换状态或撤回设备的语音权限。'));
+   root.append(await voiceCodePanel(controller.signal));
   }else if(route==='launch'){
    root.append(await window.BMLaunchEditor({read,api,header}));
   }else if(route==='teams'){

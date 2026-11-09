@@ -29,6 +29,10 @@ struct ScorekeepingView: View {
     @State private var confirmTimeEnd = false
     @State private var pendingOpeningPitch: PitchAction?
     @State private var pendingOpeningPlay = false
+    @State private var pendingOpeningVoice = false
+    @State private var voiceContext: VoiceSheetContext?
+    @ObservedObject private var voiceAccess = VoiceScoringAccess.shared
+    @Environment(\.scenePhase) private var voiceScenePhase
     @State private var showEndReasonSheet = false
     @State private var confirmEndHalf = false
     @State private var showLiveBroadcast = false
@@ -145,6 +149,15 @@ struct ScorekeepingView: View {
         .onChange(of: confirmOpeningLineups) { if !$0 { schedulePostgameUploadIfReady() } }
         .onChange(of: store.storageErrorMessage) { if $0 == nil { schedulePostgameUploadIfReady() } }
         .onChange(of: store.actionErrorMessage) { if $0 == nil { schedulePostgameUploadIfReady() } }
+        .task { await voiceAccess.refresh() }
+        .onChange(of: voiceScenePhase) { phase in
+            if phase == .active { Task { await voiceAccess.refresh() } }
+        }
+        .sheet(item: $voiceContext, onDismiss: recordingSheetDidDismiss) { draft in
+            VoiceScoringSheet(context: draft.context, pro: draft.pro)
+                .environmentObject(store)
+                .onAppear { recordingPresentationActive = true }
+        }
         .sheet(isPresented: $showPostgameUpload) { PostgameUploadPrompt() }
         .sheet(isPresented: $showEndReasonSheet, onDismiss: recordingSheetDidDismiss) {
             GameEndReasonSheet().environmentObject(store).onAppear { recordingPresentationActive = true }
@@ -170,6 +183,15 @@ struct ScorekeepingView: View {
                         Label("比赛首页", systemImage: "chevron.left")
                     }
                     .accessibilityIdentifier("return-game-home")
+                    .disabled(isDockedRecording)
+                }
+            }
+            if let match = store.activeStoredGame, let team = store.teamBroadcasts.teamID(for: match) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        TeamBroadcastSourcesView(coordinator: store.teamBroadcasts, teamID: team, matchID: match.id)
+                    } label: { Image(systemName: "rectangle.on.rectangle") }
+                    .accessibilityLabel("转播源")
                     .disabled(isDockedRecording)
                 }
             }
@@ -296,14 +318,15 @@ struct ScorekeepingView: View {
             Button("确认结束") { store.finishGame(reason: .timeLimit) }
         } message: { Text("仅按裁判最终决定结束比赛，保留当前比分与实际记录。") }
         .alert("确认双方阵容并开赛？", isPresented: $confirmOpeningLineups) {
-            Button("继续设置阵容") { pendingOpeningPitch = nil; pendingOpeningPlay = false; showSubstitutionSheet = true }
+            Button("继续设置阵容") { pendingOpeningPitch = nil; pendingOpeningPlay = false; pendingOpeningVoice = false; showSubstitutionSheet = true }
             Button("确认开赛") {
                 store.startGameClock()
                 if let pitch = pendingOpeningPitch { store.recordPitch(pitch) }
                 if pendingOpeningPlay { openPlayFlow() }
-                pendingOpeningPitch = nil; pendingOpeningPlay = false
+                if pendingOpeningVoice { openVoice() }
+                pendingOpeningPitch = nil; pendingOpeningPlay = false; pendingOpeningVoice = false
             }
-            Button("取消", role: .cancel) { pendingOpeningPitch = nil; pendingOpeningPlay = false }
+            Button("取消", role: .cancel) { pendingOpeningPitch = nil; pendingOpeningPlay = false; pendingOpeningVoice = false }
         } message: {
             Text("\(store.game.awayTeam.shortName) 与 \(store.game.homeTeam.shortName)的先发阵容确认后开始计时。开赛后仍可按现有方式调整阵容。")
         }
@@ -898,20 +921,36 @@ struct ScorekeepingView: View {
                 pitchButton(.swingingStrike, color: BMTheme.brandOrange)
                 pitchButton(.foul, color: BMTheme.brandNavy)
             }
-            Button {
-                haptic(.medium)
-                illegalPlay = false
-                if store.isPregame { pendingOpeningPlay = true; confirmOpeningLineups = true }
-                else { openPlayFlow() }
-            } label: {
-                HStack {
-                    Image(systemName: "baseball.fill")
-                    Text("击球进入场内")
-                        .font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 7) {
+                Button {
+                    haptic(.medium)
+                    illegalPlay = false
+                    if store.isPregame { pendingOpeningPlay = true; confirmOpeningLineups = true }
+                    else { openPlayFlow() }
+                } label: {
+                    HStack {
+                        Image(systemName: "baseball.fill")
+                        Text("击球进入场内")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                }
+                .buttonStyle(ScoreActionButtonStyle(color: BMTheme.brandGreen, filled: true))
+                .accessibilityIdentifier("ball-in-play")
+                if voiceAccess.active, store.activeStoredGame != nil, !store.isHistoryReplay {
+                    Button {
+                        if store.isPregame { pendingOpeningVoice = true; confirmOpeningLineups = true }
+                        else { openVoice() }
+                    } label: {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                    .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green))
+                    .frame(width: 56)
+                    .disabled(!store.canRecordAction || store.requiresTiebreakRunnerPlacement)
+                    .accessibilityLabel("语音输入")
+                    .accessibilityIdentifier("open-voice-scoring")
                 }
             }
-            .buttonStyle(ScoreActionButtonStyle(color: BMTheme.brandGreen, filled: true))
-            .accessibilityIdentifier("ball-in-play")
         }
     }
 
@@ -993,6 +1032,21 @@ struct ScorekeepingView: View {
         .accessibilityIdentifier("pitch-\(action.rawValue)")
     }
 
+    private func openVoice() {
+        guard let context = VoicePlayContext(store) else {
+            store.actionErrorMessage = "当前局面无法使用语音，请继续手动记分。"
+            return
+        }
+        let pro = (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation
+        voiceContext = VoiceSheetContext(context: context, pro: pro)
+    }
+
+    private struct VoiceSheetContext: Identifiable {
+        let id = UUID()
+        let context: VoicePlayContext
+        let pro: Bool
+    }
+
     private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
         UIImpactFeedbackGenerator(style: style).impactOccurred()
     }
@@ -1012,7 +1066,7 @@ struct ScorekeepingView: View {
     }
 
     private var hasRecordingPresentation: Bool {
-        recordingPresentationActive || showRuleNotices || showEndReasonSheet || showLiveBroadcast
+        recordingPresentationActive || voiceContext != nil || showRuleNotices || showEndReasonSheet || showLiveBroadcast
             || showHistoryCorrection || showBatterPerformance || situationAmendment != nil
             || showPlayFlowSheet || showRunnerEventSheet || showSpecialEventSheet || showCorrectionSheet
             || showSubstitutionSheet || store.requiresTiebreakRunnerPlacement
@@ -2155,7 +2209,7 @@ private struct PitcherChangeConfirmationModifier: ViewModifier {
                     .accessibilityIdentifier("cancel-pitcher-change")
             } message: { value in
                 Text("\(value.teamName)\n原投手：\(value.previous.lineupSelectionText)\n新投手：\(value.candidate.lineupSelectionText)\n\n请核对场上实际投手。确认后才能继续记录；取消不改变记录。"
-                     + (store.activeRules?.pitcherInningsLimit.map { "\n本场限制 \($0) 个登板局。明确确认登板即占用该局额度；换局自动沿用投手，实际投球后才计新局。同一局不重复计算，统计 IP 另按实际出局数累计。" } ?? ""))
+                     + (store.activeRules?.pitcherInningsLimit.map { "\n本场限制 \($0) 个登板局，到限只提醒，仍可继续记分。确认登板即计入该局；换局自动沿用时，实际投球才计新局。同一局只计一次，统计 IP 按实际出局数累计。" } ?? ""))
             }
             .onDisappear { if pending != nil { store.cancelPitcherChange() } }
     }
