@@ -158,6 +158,7 @@ struct SituationPlayFlowSheet: View {
     var onSave: ((PlayOutcome, DefensivePlay?, [RunnerDecision], Bool?, BattedBallObservation) -> Bool)? = nil
     var embedded = false
     var onClose: (() -> Void)? = nil
+    var voiceReview = false
     @State private var initialized = false
     @State private var sourceGame: GameState?
     @State private var sourceGameID: UUID?
@@ -200,7 +201,7 @@ struct SituationPlayFlowSheet: View {
             if embedded {
                 VStack(spacing: 0) {
                     HStack(spacing: 12) {
-                        if stage != .entry { Button("返回") { goBack() } }
+                        if stage != .entry && !(voiceReview && stage == .contact) { Button("返回") { goBack() } }
                         Text(title).font(.headline)
                         Spacer(minLength: 0)
                         if stage == .entry {
@@ -224,7 +225,7 @@ struct SituationPlayFlowSheet: View {
                         .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                if stage != .entry { Button("返回") { goBack() } }
+                                if stage != .entry && !(voiceReview && stage == .contact) { Button("返回") { goBack() } }
                             }
                             ToolbarItem(placement: .confirmationAction) {
                                 if stage == .entry {
@@ -265,9 +266,11 @@ struct SituationPlayFlowSheet: View {
                 sourcePracticeID = store.transientCorrectionID
                 if let initial {
                     outcome = initial.outcome; observation = initial.observation
-                    selectedType = initial.observation.type; fielding = initial.observation.fielding ?? BattedBallFielding(status: .pending)
+                    selectedType = voiceReview && initial.observation.type == .unknown ? nil : initial.observation.type
+                    fielding = initial.observation.fielding ?? (voiceReview ? BattedBallFielding() : BattedBallFielding(status: .pending))
                     decisions = initial.decisions; runnerDetails = initial.observation.runnerDetails ?? initial.decisions.map { BattedBallRunnerDetail(playerID: $0.id) }
-                    timing = initial.timing; stage = .review
+                    timing = initial.timing
+                    stage = voiceReview ? .contact : .review
                 }
             }
             .sheet(item: Binding(get: { extraRunner.map(RunnerRouteSelection.init) }, set: { extraRunner = $0?.id })) { selection in
@@ -286,7 +289,13 @@ struct SituationPlayFlowSheet: View {
                     outcomeGrid(processOutcomes.filter { $0 != .other })
                     Button("其他结果／全部结果") { catalogReturnStage = .processResult; stage = .catalog }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("process-all-outcomes")
                     Button("结果待确认") { choose(.other) }.buttonStyle(SecondaryButtonStyle())
-                case .contact: contact
+                case .contact:
+                    if voiceReview && !observation.hasLocation {
+                        Label("转写未包含落点，请点选球场或选择大致区域。", systemImage: "location.circle")
+                            .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
+                            .accessibilityIdentifier("voice-landing-required")
+                    }
+                    contact
                 case .review: review
                 case .timing: timingOptions
                 }
@@ -624,7 +633,7 @@ struct SituationPlayFlowSheet: View {
         case .process: stage = .entry
         case .processResult: stage = .process
         case .contact: stage = contactReturnToReview ? .review : resultReturnStage
-        case .review: contactReturnToReview = false; stage = .entry
+        case .review: contactReturnToReview = false; stage = voiceReview ? .contact : .entry
         case .timing: stage = .review
         }
     }

@@ -275,6 +275,9 @@ struct AppSettingsView: View {
                     .accessibilityIdentifier("appearance-picker")
                 }
 
+                SectionHeader(title: "语音记分")
+                VoiceScoringSettings()
+
                 SectionHeader(title: "辅助提示")
                 BMCard {
                     VStack(spacing: 0) {

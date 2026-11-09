@@ -9512,3 +9512,131 @@ extension GameStoreTests {
         }
     }
 }
+
+extension GameStoreTests {
+    func testV315VoiceProKeepsUnknownLandingAndSavesOneUndoablePlay() throws {
+        let store = freshStore()
+        store.startGameClock()
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let batter = context.state.currentBatter.id.uuidString.lowercased()
+        let analysis = VoiceAnalysis(schemaVersion: 1, summary: "打者一垒安打",
+            ball: .init(type: "ground", region: "左外野", outcome: "single"),
+            events: [.init(sequence: 1, kind: "advance", playerId: batter, fromBase: "batter", toBase: "first",
+                           outType: nil, pitchResult: nil, evidence: "一垒安打")],
+            observations: ["未提及落点。"])
+        let proposal = VoicePlayProposal(analysis: analysis, context: context, transcript: "地滚一垒安打")
+        guard case .hit(let play)? = proposal else { return XCTFail("Expected a Pro draft awaiting a landing point") }
+        XCTAssertFalse(play.observation.hasLocation)
+        XCTAssertNil(play.observation.region)
+        XCTAssertEqual(store.game, context.state, "A parsed draft must not score a pitch")
+        var observation = play.observation
+        observation.fielding = BattedBallFielding(status: .pending)
+        XCTAssertNotNil(store.situationObservationError(observation, outcome: play.outcome, decisions: play.decisions))
+        observation.selectRegion(.left)
+        XCTAssertTrue(store.applyPlay(play.outcome, decisions: play.decisions, observation: observation))
+        XCTAssertEqual(store.game.baseRunners[.first]?.id.uuidString.lowercased(), batter)
+        XCTAssertFalse(context.matches(store), "A second confirmation must be stale after the first commit")
+        store.undo()
+        XCTAssertTrue(store.game.baseRunners.isEmpty)
+        XCTAssertFalse(context.matches(store), "Undo must not revive an old voice draft")
+    }
+
+    func testV315VoiceRejectsUnexplainedRunnerAndConflictingPitch() throws {
+        let store = freshStore()
+        store.startGameClock()
+        XCTAssertTrue(store.applyPlay(.single))
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let batter = context.state.currentBatter.id.uuidString.lowercased()
+        let advance = VoiceAnalysis.Event(sequence: 1, kind: "advance", playerId: batter, fromBase: "batter",
+                                          toBase: "second", outType: nil, pitchResult: nil, evidence: "二垒安打")
+        let hit = VoiceAnalysis(schemaVersion: 1, summary: "二垒安打",
+            ball: .init(type: "ground", region: "", outcome: "double"), events: [advance], observations: [])
+        XCTAssertNil(VoicePlayProposal(analysis: hit, context: context, transcript: "二垒安打"),
+                     "The model must not silently leave an existing runner on base")
+        let pitch = VoiceAnalysis.Event(sequence: 1, kind: "pitch", playerId: nil, fromBase: nil, toBase: nil,
+                                        outType: nil, pitchResult: "ball", evidence: "坏球")
+        let plain = VoiceAnalysis(schemaVersion: 1, summary: "坏球",
+            ball: .init(type: "unknown", region: "", outcome: "unknown"), events: [pitch], observations: [])
+        guard case .pitch(.ball)? = VoicePlayProposal(analysis: plain, context: context, transcript: "坏球") else {
+            return XCTFail("Expected a reviewable bad-pitch draft")
+        }
+        XCTAssertNil(VoicePlayProposal(analysis: plain, context: context, transcript: "好球"))
+        XCTAssertEqual(store.game, context.state)
+    }
+
+    func testV315VoiceUsesExistingInviteCookieAndHy3Contract() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [VoiceContractURLProtocol.self]
+        config.httpShouldSetCookies = false
+        let service = VoiceService(session: URLSession(configuration: config))
+        let token = try await service.redeem(code: "SYNTHETIC-TEST", device: UUID(), operation: UUID())
+        XCTAssertEqual(token, VoiceContractURLProtocol.token)
+        let active = try await service.entitlement(token)
+        XCTAssertTrue(active)
+        let store = freshStore()
+        store.startGameClock()
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let grant = try await service.grant(context.payload, token: token)
+        XCTAssertEqual(grant.url.host, "asr.cloud.tencent.com")
+        await service.end(grant.id, token: token)
+        let result = try await service.analyze("坏球", context: context.payload, token: token)
+        XCTAssertEqual(result.events.first?.pitchResult, "ball")
+    }
+}
+
+private final class VoiceContractURLProtocol: URLProtocol {
+    static let token = String(repeating: "a", count: 32)
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+    override func startLoading() {
+        guard let url = request.url, url.host == "baseballmaster.cc" else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL)); return
+        }
+        let path = url.path
+        let data: String
+        var headers = ["Content-Type": "application/json"]
+        let authenticated = request.value(forHTTPHeaderField: "Cookie") == "voice_assistant_session=" + Self.token
+        let bodyData = request.httpBody ?? request.httpBodyStream.flatMap(Self.read)
+        let body = bodyData.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        switch (path, request.httpMethod) {
+        case ("/recording/voice-assistant/api/redeem", "POST")
+            where body?["code"] as? String == "SYNTHETIC-TEST" && body?["deviceId"] is String && body?["operationId"] is String:
+            headers["Set-Cookie"] = "voice_assistant_session=\(Self.token); HttpOnly; Secure; Path=/recording/voice-assistant/"
+            data = #"{"active":true}"#
+        case ("/recording/voice-assistant/api/entitlement", "GET") where authenticated:
+            data = #"{"active":true}"#
+        case ("/recording/voice-assistant/api/asr-session", "POST") where authenticated && body?["context"] is [String: Any]:
+            data = #"{"id":"sample-grant","url":"wss://asr.cloud.tencent.com/asr/v2/123","maxRecordingSeconds":90}"#
+        case ("/recording/voice-assistant/api/asr-session/end", "POST") where authenticated && body?["id"] as? String == "sample-grant":
+            data = #"{"ok":true}"#
+        case ("/recording/voice-assistant/api/analyze", "POST") where authenticated:
+            guard body?["modelId"] as? String == "hy3", body?["thinking"] as? String == "disabled",
+                  body?["text"] as? String == "坏球", let context = body?["context"] as? [String: Any],
+                  context["schemaVersion"] as? Int == 1, context["virtualOuts"] is NSNull,
+                  context["historyComplete"] as? Bool == false, context["pendingIssues"] is [Any] else {
+                client?.urlProtocol(self, didFailWithError: URLError(.cannotParseResponse)); return
+            }
+            data = #"{"analysis":{"schemaVersion":1,"summary":"坏球","ball":{"type":"unknown","region":"","outcome":"unknown"},"events":[{"sequence":1,"kind":"pitch","pitchResult":"ball","evidence":"坏球"}],"observations":[]}}"#
+        default:
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL)); return
+        }
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: headers)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(data.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    private static func read(_ stream: InputStream) -> Data? {
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { return nil }
+            if count == 0 { return data }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+    }
+}
