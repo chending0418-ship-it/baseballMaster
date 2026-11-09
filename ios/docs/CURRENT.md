@@ -11,7 +11,7 @@
 | 服务状态 | 用户同日确认服务一切正常；本轮匿名只读检查球队协议 1 健康接口及直播健康接口通过，未修改或部署服务 |
 | 共享服务维护 | [collaboration](../../collaboration/PROTOCOL.md)、[live](../../live/README.md)仍由 iOS／服务工作入口管理 |
 | Admin 实时直播 | 「打开观赛页」支持临时直播与共享球队直播。验证与上海生产部署回执见 [PR #50](https://github.com/chending0418-ship-it/baseballMaster/pull/50) |
-| OBS 转播叠加 | 三个独立浏览器源，阵容支持主客队并排。本地试用。见 [OBS 本地试用](../../live/OBS.md) |
+| OBS 转播叠加 | 四个独立浏览器源，主队和客队阵容可分别控制。本地试用。见 [OBS 本地试用](../../live/OBS.md) |
 | Android | [Android CURRENT](../../android/docs/CURRENT.md)，独立版本与发布计划，不在此复制进度 |
 | 当前维护 | [文档与契约阶段一](../../docs/maintenance/2026-11-05-docs-contracts-stage1.md)，[PR #49](https://github.com/chending0418-ship-it/baseballMaster/pull/49)，尚未合入 main；两个正式工作目录已从核准提交 `d6ba7b6` 在本机采用新布局 |
 | 共享资料 | [契约](../../contracts/README.md)、[设计与需求](../../docs/README.md)；[历史 3.1.0 计划](<plans/3.1.0 发布功能计划.md>) |

@@ -59,10 +59,11 @@ try {
   const score = await source('score', 640, 116, fragment);
   const batter = await source('batter', 600, 108, fragment);
   const lineup = await source('lineup', 440, 540, fragment, '&team=home');
+  const awayLineup = await source('lineup', 440, 540, fragment, '&team=away');
   const both = await source('lineup', 896, 540, fragment, '&team=both');
   const preview = await source('lineup', 600, 540, fragment, '&team=both&preview=1');
   const views = [[score, 'score', 640, 116], [batter, 'batter', 600, 108], [lineup, 'lineup', 440, 540],
-    [both, 'lineup', 896, 540]];
+    [awayLineup, 'lineup', 440, 540], [both, 'lineup', 896, 540]];
   const pages = views.map(([page]) => page);
   const loc = (page, id) => page.locator('#' + id);
   const tick = pages => Promise.all(pages.map(page => page.clock.runFor(5100)));
@@ -82,12 +83,15 @@ try {
     assert.deepEqual(await loc(page, id).boundingBox(), { x: 0, y: 0, width, height });
     await expect(page.locator('body > section:visible')).toHaveCount(1);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgba(0, 0, 0, 0)');
-    await page.screenshot({ path: resolve(output, (page === both ? 'lineup-both' : id) + '.png'), omitBackground: true });
+    await page.screenshot({ path: resolve(output, (page === both ? 'lineup-both' : page === awayLineup ? 'lineup-away' : id) + '.png'), omitBackground: true });
   }
   await expect(loc(score, 'pitch-strikes')).toBeEmpty();
   await expect(loc(score, 'pitch-strikeouts')).toBeEmpty();
   await expect(loc(batter, 'appearances')).toHaveText('一垒安打');
   await expect(lineup.locator('.lineup-rows').locator('li')).toHaveCount(9);
+  await expect(lineup.locator('.lineup-team')).toHaveText(state.home.name);
+  await expect(awayLineup.locator('.lineup-team')).toHaveText(state.away.name);
+  await expect(awayLineup.locator('.lineup-rows').locator('li')).toHaveCount(9);
   await expect(both.locator('.lineup[data-team="away"] .lineup-team')).toHaveText(state.away.name);
   await expect(both.locator('.lineup[data-team="home"] .lineup-team')).toHaveText(state.home.name);
   assert.deepEqual(await both.locator('.lineup[data-team="away"]').boundingBox(), { x: 0, y: 0, width: 440, height: 540 });
@@ -123,6 +127,7 @@ try {
   await expect(lineup.locator('.lineup-rows').locator('li').first()).toContainText(state.pitcher.name);
   await expect(both.locator('[data-team="home"] li').first()).toContainText(state.pitcher.name);
   await expect(both.locator('[data-team="away"] li').first()).toContainText(state.away.lineup[0].player.name);
+  await expect(awayLineup.locator('.lineup-rows li').first()).toContainText(state.away.lineup[0].player.name);
   for (const [page, id, width, height] of views) {
     assert.deepEqual(await loc(page, id).boundingBox(), { x: 0, y: 0, width, height });
   }
@@ -167,7 +172,7 @@ try {
   await tick([sharedScore]);
   await expect(loc(sharedScore, 'score')).toBeHidden();
   assert.deepEqual(errors, []);
-  console.log('PASS: three transparent sources, fixed bounds, scoring, batter, pitcher, lineup, undo, final and revocation');
+  console.log('PASS: four independent transparent sources, fixed bounds, scoring, batter, pitcher, lineup, undo, final and revocation');
 } finally {
   await browser?.close();
   await Promise.all([shutdown(temporary), shutdown(shared)]);
