@@ -27,7 +27,7 @@ class AndroidLaunchScreenTest {
     }
     private fun folder()=Files.createTempDirectory("android-launch-cache-").toFile()
     private fun image(): Pair<LaunchBackgroundImage,ByteArray> {
-        val root=requireNotNull(File(requireNotNull(System.getProperty("parity.fixtures"))).parentFile?.parentFile)
+        val root=requireNotNull(File(requireNotNull(System.getProperty("parity.fixtures"))).parentFile?.parentFile?.parentFile)
         val bytes=File(root,"BaseballMaster/Assets.xcassets/LaunchAppIcon.imageset/LaunchAppIcon@1x.png").readBytes()
         val hash=MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {"%02x".format(it)}
         return LaunchBackgroundImage("/api/v3/app/launch-assets/$hash.png",hash,"image/png",bytes.size,44,44) to bytes

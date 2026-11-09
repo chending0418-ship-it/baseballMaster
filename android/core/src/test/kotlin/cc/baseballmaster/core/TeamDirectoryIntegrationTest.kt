@@ -52,7 +52,7 @@ class TeamDirectoryIntegrationTest {
         }
     }
     private class Service : AutoCloseable {
-        private val script = File(System.getProperty("parity.fixtures")).parentFile.parentFile.resolve("scripts/android/an05-local-service.mjs")
+        private val script = File(System.getProperty("parity.fixtures")).parentFile.parentFile.parentFile.resolve("scripts/android/an05-local-service.mjs")
         private val process = ProcessBuilder("node", script.absolutePath).redirectError(ProcessBuilder.Redirect.DISCARD).start()
         private val output = process.inputStream.bufferedReader()
         private val input = process.outputStream.bufferedWriter()

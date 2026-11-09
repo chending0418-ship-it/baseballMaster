@@ -37,4 +37,4 @@ systemctl enable --now baseballmaster-certificate-renew.timer
 
 腾讯云当前这两域对应的旧证书已不再用于上海站点；自动续费可由用户在确认后关闭，不删除或吊销历史证书。证书源文件、私钥与 ACME 账户均不进 Git。
 
-本次维护源码与回执：[Draft PR #48](https://github.com/chending0418-ship-it/baseballMaster/pull/48)，已推送、未合并；线上配置已完成。
+本次维护源码与回执：[PR #48](https://github.com/chending0418-ship-it/baseballMaster/pull/48)，线上配置已于 2026-11-05 完成。

@@ -1,6 +1,6 @@
 # 本机输出文件
 
-这是棒球比赛记录大师自己的生成目录。资料位置和保存规则统一见 [工作区总导航](../../../management/AGENT-GUIDE.md)，当前发布版本与交接入口见 [CURRENT.md](../docs/CURRENT.md)。
+这是棒球比赛记录大师自己的生成目录。资料位置和保存规则统一见 [工作区总导航](../../../management/AGENT-GUIDE.md)，当前发布版本与交接入口见 [CURRENT.md](../ios/docs/CURRENT.md)。
 
 - 从 CURRENT 选定实际发布版本，再查找对应交付材料；本文件不维护另一份“当前版本”。
 - releases/ 按版本保存交付包、截图和归档；validation/ 保存验收与原始日志；marketing/ 保存产品宣传导出。

@@ -108,8 +108,8 @@ if a.scenario_directory:
     for index, path in enumerate(inputs):
         source = path.read_bytes()
         scenario = json.loads(source)
-        fixture_path = (ROOT / 'test-fixtures/android-parity' / scenario['sourceFixture']).resolve()
-        assert fixture_path.is_relative_to(ROOT / 'test-fixtures/android-parity')
+        fixture_path = (ROOT / 'contracts/fixtures/android-parity' / scenario['sourceFixture']).resolve()
+        assert fixture_path.is_relative_to(ROOT / 'contracts/fixtures/android-parity')
         fixture_bytes = fixture_path.read_bytes()
         assert hashlib.sha256(fixture_bytes).hexdigest() == scenario['sourceFixtureSHA256'], 'Frozen fixture changed'
         fixture = json.loads(fixture_bytes)
