@@ -531,7 +531,7 @@ class AppleImportTransactionTest {
         db.close()
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { sql ->
             sql.execSQL("DROP TABLE apple_original_operations"); sql.execSQL("DROP TABLE apple_game_sources"); sql.execSQL("DROP TABLE apple_backups")
-            val schema = File(requireNotNull(System.getProperty("parity.fixtures"))).parentFile!!.parentFile!!.resolve("android/app/schemas/cc.baseballmaster.scorekeeper.LocalDatabase/3.json")
+            val schema = File(requireNotNull(System.getProperty("parity.fixtures"))).parentFile!!.parentFile!!.parentFile!!.resolve("android/app/schemas/cc.baseballmaster.scorekeeper.LocalDatabase/3.json")
             val hash = GameJson.parseToJsonElement(schema.readText()).jsonObject.getValue("database").jsonObject.getValue("identityHash").jsonPrimitive.content
             sql.execSQL("UPDATE room_master_table SET identity_hash = ? WHERE id = 42", arrayOf(hash))
             sql.version = 3

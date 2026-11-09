@@ -17,7 +17,7 @@ class StandaloneLiveIntegrationTest {
         override fun save(bindings: List<LiveBinding>) {if(reject(bindings)) throw IOException("injected credential save");rows=bindings}
     }
     private class Service: AutoCloseable {
-        private val script=File(System.getProperty("parity.fixtures")).parentFile.parentFile.resolve("scripts/android/an06-local-live.mjs")
+        private val script=File(System.getProperty("parity.fixtures")).parentFile.parentFile.parentFile.resolve("scripts/android/an06-local-live.mjs")
         private val process=ProcessBuilder("node",script.absolutePath).redirectError(ProcessBuilder.Redirect.DISCARD).start()
         private val input=process.outputStream.bufferedWriter();private val output=process.inputStream.bufferedReader()
         private val initial=GameJson.parseToJsonElement(output.readLine()).jsonObject

@@ -60,7 +60,7 @@ with (a.output / 'compile.txt').open('w') as log:
 (a.output / 'sources.json').write_text(json.dumps([m for _, m in extracted], indent=2))
 (a.output / 'swift-version.txt').write_text(subprocess.check_output([compiler, '--version'], text=True))
 assert not (a.inputs and a.input_directory), 'Use --input or --input-directory'
-inputs = a.inputs or sorted((a.input_directory or ROOT / 'test-fixtures/android-parity/backup').glob('*.bmbackup'))
+inputs = a.inputs or sorted((a.input_directory or ROOT / 'contracts/fixtures/android-parity/backup').glob('*.bmbackup'))
 assert inputs, 'No backup inputs; no check was performed'
 results = []
 for index, input_path in enumerate(inputs):

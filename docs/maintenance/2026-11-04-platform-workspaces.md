@@ -1,5 +1,7 @@
 # iOS／Android 可见工作目录及版本计划维护
 
+2026-11-05 补充：本文件保留 11 月 4 日的历史安排；用户已更正 3.1.0 计划归属，新布局统一进入 [iOS 计划目录](../../ios/docs/plans/)，旧 CURRENT 的后续处理按[阶段一同步步骤](2026-11-05-stage1-adoption.md)执行。下文旧路径与根目录例外不作为新布局规则。
+
 执行日期：2026-11-04。用户要求 iOS 与 Android 分别使用可见目录，并将目录调整、版本发布功能计划随分支提交推送、更新 PR，保持不合并。本文记录产品仓库内可追溯的目录安排和验收；全局目录权威仍是品牌工作区 `management/projects.json`、`management/AGENT-GUIDE.md` 与 `management/MIGRATION.md`，不另建平行总导航。
 
 ## 当前平台入口

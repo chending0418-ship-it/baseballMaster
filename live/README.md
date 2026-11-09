@@ -1,6 +1,6 @@
 # 当前维护入口（2026-10-22）
 
-本服务随棒球比赛记录大师位于 BaseballMaster.CC/apps/baseball-scorekeeper/live/。产品现行实现和最新部署证据从 [当前入口](../docs/CURRENT.md) 查阅。下方早期 2.1／2.2 的状态描述按原日期作为历史保留。本次目录迁移未部署服务、修改数据或公网 URL。
+本服务随棒球比赛记录大师位于 BaseballMaster.CC/apps/baseball-scorekeeper/live/。产品现行实现和最新部署证据从 [当前入口](../ios/docs/CURRENT.md) 查阅。下方早期 2.1／2.2 的状态描述按原日期作为历史保留。本次目录迁移未部署服务、修改数据或公网 URL。
 
 # BaseballMaster 2.1 文字直播 · 腾讯云域名与宝塔部署
 

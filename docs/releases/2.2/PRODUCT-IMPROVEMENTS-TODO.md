@@ -2,7 +2,7 @@
 
 更新日期：2026-10-03。分支：`codex/dev-2.2`。工作区：`/Users/JasonChan/Documents/BaseballMaster-2.2`。
 
-用户要求评估新增清单的第 2–8 项并纳入 2.2 开发。以下 E01–E07 已实现并完成本轮模拟器、数据与报告回归，证据见 [开发验收记录](DEVELOPMENT-VALIDATION.md)。本版保留 [导航修复](NAVIGATION-TODO.md) 和直播 UI；慢垒及小组件按用户最新安排移至 [2.3](<../../plans/2.3 发布功能计划.md>)。本页已解除慢垒开发依赖，完整版本清单见 [2.2 开发 TODO](DEVELOPMENT-TODO.md)。
+用户要求评估新增清单的第 2–8 项并纳入 2.2 开发。以下 E01–E07 已实现并完成本轮模拟器、数据与报告回归，证据见 [开发验收记录](DEVELOPMENT-VALIDATION.md)。本版保留 [导航修复](NAVIGATION-TODO.md) 和直播 UI；慢垒及小组件按用户最新安排移至 [2.3](<../../../ios/docs/plans/2.3 发布功能计划.md>)。本页已解除慢垒开发依赖，完整版本清单见 [2.2 开发 TODO](DEVELOPMENT-TODO.md)。
 
 第 1 项直播界面 UI 是独立问题，见 [直播 UI TODO](LIVE-UI-TODO.md)，等待用户提供设计参考。用户随后明确，第 3 项是将直播网页名称改为包含双方队名的标题；E02 按该范围执行，不依赖 UI 设计。
 
@@ -121,4 +121,4 @@ E03 与 E04 作为同一批阵容流程开发。验收需同时核对停留位�
 
 后续证据分别放入 `output/validation/2.2/` 的 `export-pitcher`、`live-share-title`、`lineup-editing`、`pre-first-pitch-swap`、`export-actions`、`statistics-game-filter` 目录；公网部署记录归入 `live/deploy/`。本次仅更新规划，没有执行新功能测试或生产部署。
 
-总入口：[2.2 发布功能计划](<../../plans/2.2 发布功能计划.md>) · [开发与发布总 TODO](../../../TODO.md)。
+总入口：[2.2 发布功能计划](<../../../ios/docs/plans/2.2 发布功能计划.md>) · [开发与发布总 TODO](../../../TODO.md)。
