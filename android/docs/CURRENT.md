@@ -10,4 +10,4 @@
 | 工程及证据 | Android Studio 打开 `android/`；1.0.0 验证在本工作树 `output/validation/1.0.0/`；包名及签名配置沿用 |
 | 平台边界 | 完整跨端互导、正式赛后归档／旧关联更新及实体厂商设备等继续按计划跟踪，不因样例移入共享目录就标记完成；未获得应用市场上传确认 |
 | iOS／服务 | [iOS CURRENT](../../ios/docs/CURRENT.md)，共享服务继续从 iOS／服务入口维护 |
-| 发布阶段 | 1.0.0 首批开发验收完成；未分发、上传或部署 |
+| 发布阶段 | 1.0.0 首批开发验收完成，[草稿 PR #58](https://github.com/chending0418-ship-it/baseballMaster/pull/58)；未分发、上传或部署 |
