@@ -36,6 +36,7 @@ final class GameStore: ObservableObject {
         teams + teamSharing.sharedRosterTeams.filter { team in teamSharing.teams.contains { $0.id == team.id && $0.role != .member } }
     }
     lazy var sharedMatches = SharedMatchCoordinator.deviceStore(store: self)
+    lazy var teamBroadcasts = TeamBroadcastCoordinator(store: self)
     var readOnlyPresentation = false
     var canEditCurrentMatch: Bool { isHistoryReplay || (!readOnlyPresentation && (activeGameID.map { sharedMatches.canEdit($0) } ?? true)) }
 
@@ -726,6 +727,7 @@ final class GameStore: ObservableObject {
             try persistenceStore.upsertGame(next)
             games[index] = next
             liveBroadcasts.requestSync()
+            teamBroadcasts.requestSync()
             sharedMatches.saved(next)
             return true
         } catch {
@@ -4437,6 +4439,7 @@ final class GameStore: ObservableObject {
             if profilesChanged { try persistenceStore.replaceAll(with: makeRosterSnapshot()) }
             else { try persistenceStore.upsertGame(games[index]) }
             liveBroadcasts.requestSync()
+            teamBroadcasts.requestSync()
             if let stored = activeStoredGame { sharedMatches.saved(stored) }
         } catch {
             teams = originalTeams; opponentTeams = originalOpponents; archivedTeams = originalArchived
@@ -4775,6 +4778,7 @@ final class GameStore: ObservableObject {
         playerGameRecords = snapshot.playerGameRecords
         games = snapshot.games.sorted { $0.updatedAt > $1.updatedAt }
         liveBroadcasts.detachAfterRestore()
+        teamBroadcasts.suppressRestoredGames()
         sharedMatches.detachAfterRestore()
         if let ongoing = games.first(where: { $0.status == .ongoing }) {
             game = ongoing.state
@@ -4840,6 +4844,7 @@ final class GameStore: ObservableObject {
         do {
             try persistenceStore.upsertGame(games[index])
             liveBroadcasts.requestSync()
+            teamBroadcasts.requestSync()
             if let stored = activeStoredGame { sharedMatches.saved(stored) }
         } catch {
             games[index] = original

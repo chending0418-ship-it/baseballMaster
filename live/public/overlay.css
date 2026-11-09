@@ -1,0 +1,99 @@
+:root {
+  --pine: #092a2a;
+  --ivory: #f4f5ef;
+  --muted: #c7d6cd;
+  --active: #d7edb7;
+  --line: #f4f5ef26;
+  color: var(--ivory);
+  font: 22px/1.25 Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: transparent; overflow: hidden; }
+[hidden] { display: none !important; }
+
+.source {
+  background: var(--pine);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.truncate { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.secondary { color: var(--muted); font-size: 18px; }
+.identity { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+.number { max-width: 62px; flex-shrink: 0; color: var(--muted); font-size: 18px; }
+
+.score {
+  display: grid;
+  width: 640px;
+  height: 116px;
+  grid-template-columns: 174px 142px 1fr;
+}
+
+.teams { display: grid; grid-template-rows: repeat(2, 1fr); }
+.teams > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+}
+.teams > div + div { border-top: 1px solid var(--line); }
+.teams strong { font-size: 34px; line-height: 1; }
+.situation, .pitcher, .batter-performance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-left: 1px solid var(--line);
+}
+.situation-row { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.bases { display: grid; width: 44px; height: 27px; grid-template: repeat(2, 1fr) / repeat(3, 1fr); }
+.bases i { width: 11px; height: 11px; border: 1px solid var(--muted); transform: rotate(45deg); }
+[data-base="1"] { grid-area: 2 / 3; }
+[data-base="2"] { grid-area: 1 / 2; }
+[data-base="3"] { grid-area: 2 / 1; }
+.bases .occupied { border-color: var(--active); background: var(--active); }
+.pitcher strong { font-size: 26px; }
+.pitch-stats { display: flex; gap: 12px; color: var(--muted); font-size: 18px; white-space: nowrap; }
+.pitch-stats > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pitch-stats > span:empty { display: none; }
+
+.batter {
+  display: grid;
+  width: 600px;
+  height: 108px;
+  grid-template-columns: 188px 1fr;
+}
+.batter-identity { display: grid; grid-template-columns: minmax(0, 1fr); align-content: center; gap: 3px; padding: 0 16px; }
+.batter-identity strong { font-size: 32px; }
+.batter-performance { gap: 6px; }
+
+.lineups { display: grid; grid-auto-flow: column; grid-auto-columns: 440px; gap: 16px; width: max-content; }
+.lineup { width: 440px; height: 540px; }
+.lineup-header {
+  height: 65px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.lineup-header strong { font-size: 30px; }
+.lineup-header span { flex-shrink: 0; }
+.lineup ol { margin: 0; padding: 0 20px; list-style: none; }
+.lineup li {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 64px 98px;
+  gap: 9px;
+  height: 42px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.lineup li > :last-child { text-align: right; }
+.lineup-empty { margin: 20px; }

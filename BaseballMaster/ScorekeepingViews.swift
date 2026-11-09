@@ -173,6 +173,15 @@ struct ScorekeepingView: View {
                     .disabled(isDockedRecording)
                 }
             }
+            if let match = store.activeStoredGame, let team = store.teamBroadcasts.teamID(for: match) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        TeamBroadcastSourcesView(coordinator: store.teamBroadcasts, teamID: team, matchID: match.id)
+                    } label: { Image(systemName: "rectangle.on.rectangle") }
+                    .accessibilityLabel("转播源")
+                    .disabled(isDockedRecording)
+                }
+            }
             if let stored = store.activeStoredGame, let shared = store.sharedMatches.match(localID: stored.id) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
