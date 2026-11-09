@@ -126,8 +126,25 @@ export function createAdminHandler(store,options){
    const team=/^\/admin\/api\/teams\/([a-f0-9-]{36})(\/download)?$/i.exec(path);
    if(team){if(!team[2])return send(200,teamDetail(team[1]));return await archive(team[1],session);}
    const game=/^\/admin\/api\/games\/([a-f0-9-]{36})(\/download)?$/i.exec(path);if(game){const data=gameDetail(game[1]);return game[2]?download('Game-'+game[1],data):send(200,data);}
-   const live=/^\/admin\/api\/live\/(shared|temporary)\/([a-zA-Z0-9-]+)(\/download)?$/.exec(path);
-   if(live){let data;if(live[1]==='temporary')data=await legacy('/'+encodeURIComponent(live[2]));else{check(uid.test(live[2]));const row=store.db.prepare(`SELECT g.live_enabled,g.live_expires_at,g.deleted,g.purged FROM shared_games g WHERE g.id=? AND NOT EXISTS(SELECT 1 FROM team_deletions d WHERE d.team_id=g.team_id AND d.restored_at IS NULL)`).get(live[2]);check(row?.live_enabled&&!row.deleted&&!row.purged&&row.live_expires_at>now(),404,'直播已关闭或到期。');data=gameDetail(live[2]);}return live[3]?download('Live-'+live[2],data):send(200,data);}
+   const live=/^\/admin\/api\/live\/(shared|temporary)\/([a-zA-Z0-9-]+)(?:\/(download|watch))?$/.exec(path);
+   if(live){
+    const [,source,id,operation]=live;let data,watchPath;
+    if(source==='temporary'){
+     data=await legacy('/'+encodeURIComponent(id));
+     watchPath='/livestreaming/novideo/'+encodeURIComponent(id);
+    }else{
+     check(uid.test(id));
+     const row=store.db.prepare(`SELECT g.live_code,g.live_enabled,g.live_expires_at,g.deleted,g.purged FROM shared_games g
+      WHERE g.id=? AND NOT EXISTS(SELECT 1 FROM team_deletions d WHERE d.team_id=g.team_id AND d.restored_at IS NULL)`).get(id);
+     check(row?.live_enabled&&!row.deleted&&!row.purged&&row.live_expires_at>now(),404,'直播已关闭或到期。');
+     if(operation==='watch'){
+      check(row.live_code,404,'直播已关闭或到期。');
+      watchPath='/watch/#live/'+encodeURIComponent(row.live_code);
+     }else data=gameDetail(id);
+    }
+    if(operation==='watch'){res.writeHead(302,{Location:watchPath});res.end();return;}
+    return operation==='download'?download('Live-'+id,data):send(200,data);
+   }
    throw new AdminError(404,'页面不存在。');
   }catch(e){if(res.headersSent){res.destroy();return;}send(e instanceof AdminError||e instanceof LaunchScreenError?e.status:503,{error:e instanceof AdminError||e instanceof LaunchScreenError?e.message:'后台服务暂不可用，请稍后刷新。'});}
  };

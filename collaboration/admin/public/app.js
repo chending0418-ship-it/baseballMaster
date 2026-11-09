@@ -22,7 +22,24 @@ function teamName(row){const e=n('div');e.append(n('strong',row.name),n('small',
 function params(){const raw=location.hash.slice(1)||'overview',index=raw.indexOf('?');return {route:index<0?raw:raw.slice(0,index),query:new URLSearchParams(index<0?'':raw.slice(index+1))};}
 function filter(route,query,states){const form=n('form',undefined,'filter'),label=n('label','搜索'),input=n('input');input.name='q';input.placeholder=route==='teams'?'球队名称':'球队或对阵名称';input.maxLength=80;input.value=query.get('q')||'';label.append(input);const statusLabel=n('label','状态'),select=n('select');select.name='state';for(const [value,title]of states){const o=n('option',title);o.value=value;select.append(o);}select.value=query.get('state')||states[0][0];statusLabel.append(select);const b=n('button','筛选');b.type='submit';form.append(label,statusLabel,b);form.addEventListener('submit',event=>{event.preventDefault();const next=new URLSearchParams({q:input.value,state:select.value});if(query.get('team'))next.set('team',query.get('team'));location.hash=route+'?'+next;});return form;}
 function pagination(data,route,query){const wrap=n('div',undefined,'pager'),buttons=n('div');wrap.append(n('span',`共 ${data.total} 项 · ${data.total?data.offset+1:0}–${Math.min(data.total,data.offset+data.items.length)}`));for(const [label,offset,disabled]of [['上一页',Math.max(0,data.offset-data.limit),data.offset===0],['下一页',data.offset+data.limit,data.offset+data.limit>=data.total]]){const b=action(label,()=>{const q=new URLSearchParams(query);q.set('offset',offset);location.hash=route+'?'+q;});b.disabled=disabled;buttons.append(b);}wrap.append(buttons);return wrap;}
-function matchRows(data,live=false){return data.items.map(row=>{const name=n('div');name.append(n('strong',(row.awayName||'客队')+' vs '+(row.homeName||'主队')),n('small',live?(row.source==='shared'?'共享球队直播':'临时直播'):date(row.playedAt)));const buttons=n('div',undefined,'actions');buttons.append(action('查看内容',()=>{location.hash=live?`live/${row.source}/${row.id}`:'game/'+row.id;}));if(row.teamID)buttons.append(link(row.teamName,'games?team='+row.teamID));const status=row.deleted?'已删除':row.isFinal?'已终场':row.status===2?'待开赛':'进行中';return [name,`${row.awayRuns??0} : ${row.homeRuns??0}`,badge(status,row.deleted?'gray':row.isFinal?'orange':''),date(row.updatedAt),buttons];});}
+function matchRows(data,live=false){
+ return data.items.map(row=>{
+  const name=n('div');
+  name.append(n('strong',(row.awayName||'客队')+' vs '+(row.homeName||'主队')),n('small',live?(row.source==='shared'?'共享球队直播':'临时直播'):date(row.playedAt)));
+  const buttons=n('div',undefined,'actions');
+  buttons.append(action('查看内容',()=>{location.hash=live?`live/${row.source}/${row.id}`:'game/'+row.id;}));
+  if(live){
+   const watch=n('a','打开观赛页','watch-link');
+   watch.href=`/admin/api/live/${row.source}/${encodeURIComponent(row.id)}/watch`;
+   watch.target='_blank';
+   watch.rel='noopener noreferrer';
+   buttons.append(watch);
+  }
+  if(row.teamID)buttons.append(link(row.teamName,'games?team='+row.teamID));
+  const status=row.deleted?'已删除':row.isFinal?'已终场':row.status===2?'待开赛':'进行中';
+  return [name,`${row.awayRuns??0} : ${row.homeRuns??0}`,badge(status,row.deleted?'gray':row.isFinal?'orange':''),date(row.updatedAt),buttons];
+ });
+}
 async function download(path,button){button.disabled=true;try{await api('session');const a=n('a');a.href='/admin/api/'+path;a.download='';document.body.append(a);a.click();a.remove();$('message').textContent='已开始下载资料，请在浏览器的下载列表中查看。';}catch(e){$('message').textContent=e.message;}finally{button.disabled=false;}}
 function downloadAction(label,path){const b=action(label,()=>download(path,b),'primary');return b;}
 function downloadButton(id){return downloadAction('下载球队资料','teams/'+id+'/download');}

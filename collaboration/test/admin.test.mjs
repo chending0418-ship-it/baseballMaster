@@ -58,6 +58,34 @@ test('live overview merges both services, distinguishes final links, and removes
  assert.equal((await a.request('api/live/temporary/'+a.temporary.code,{headers})).status,404);
  assert.equal((await a.request('api/live/shared/'+a.game.id,{headers})).status,404);
 });
+test('owner can open existing live viewer pages only while the broadcast is valid',async t=>{
+ const a=await setup(t);
+ const shared=`live/shared/${a.game.id}/watch`,temporary=`live/temporary/${a.temporary.code}/watch`;
+ const originalCode=a.store.db.prepare('SELECT live_code FROM shared_games WHERE id=?').get(a.game.id).live_code;
+ const redirect=async(path,location)=>{
+  assert.equal((await a.request('api/'+path,{redirect:'manual'})).status,401);
+  const response=await a.get(path,{redirect:'manual'});
+  assert.equal(response.status,302);
+  assert.equal(response.headers.get('location'),location);
+  assert.equal(response.headers.get('cache-control'),'no-store');
+ };
+ await redirect(shared,'/watch/#live/'+originalCode);
+ await redirect(temporary,'/livestreaming/novideo/'+a.temporary.code);
+ assert.equal((await a.get(`live/shared/${a.completed.id}/watch`)).status,404);
+ const detail=await (await a.get(`live/shared/${a.game.id}`)).text();
+ assert.ok(!detail.includes(originalCode));
+ const final=uiSnapshot(2);final.isFinal=true;final.endedAt=a.clock();final.batterOrder=null;
+ assert.equal((await a.liveRequest('PUT','/'+a.temporary.code,final)).status,200);
+ await redirect(temporary,'/livestreaming/novideo/'+a.temporary.code);
+ a.store.games.live(a.team,a.game.id,a.device,op({enabled:false}));
+ assert.equal((await a.get(shared)).status,404);
+ const reopened=a.store.games.live(a.team,a.game.id,a.device,op({enabled:true}));
+ assert.notEqual(reopened.liveCode,originalCode);
+ await redirect(shared,'/watch/#live/'+reopened.liveCode);
+ a.advance(3600001);
+ const auth=await a.login(),headers={Cookie:auth.cookie.split(';')[0]};
+ for(const path of [shared,temporary])assert.equal((await a.request('api/'+path,{headers})).status,404);
+});
 test('private legacy bridge requires secret and returns business fields only',async t=>{
  const a=await setup(t),url=a.legacyBase+'/internal/admin-live';
  assert.equal((await fetch(url)).status,404);assert.equal((await fetch(url,{headers:{Authorization:'Bearer '+'a'.repeat(64)}})).status,404);
