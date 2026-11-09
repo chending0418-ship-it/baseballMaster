@@ -12,7 +12,10 @@ const assets = new Map([
   ['', ['index.html', 'text/html; charset=utf-8']],
   ['app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['app-icon.png', ['app-icon.png', 'image/png']],
-  ['style.css', ['style.css', 'text/css; charset=utf-8']]
+  ['style.css', ['style.css', 'text/css; charset=utf-8']],
+  ['overlay', ['overlay.html', 'text/html; charset=utf-8']],
+  ['overlay.css', ['overlay.css', 'text/css; charset=utf-8']],
+  ['overlay.js', ['overlay.js', 'text/javascript; charset=utf-8']]
 ]);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const escapeHTML = value => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

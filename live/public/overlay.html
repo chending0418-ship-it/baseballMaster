@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>直播叠加</title>
+  <link rel="stylesheet" href="overlay.css">
+  <script defer src="overlay.js"></script>
+</head>
+<body>
+  <section class="source score" id="score" aria-label="比分与投手" hidden>
+    <div class="teams">
+      <div><span class="truncate" id="away-name"></span><strong id="away-runs"></strong></div>
+      <div><span class="truncate" id="home-name"></span><strong id="home-runs"></strong></div>
+    </div>
+    <div class="situation">
+      <div class="situation-row">
+        <strong id="inning"></strong><span class="secondary" id="outs"></span>
+      </div>
+      <div class="situation-row" id="count-row">
+        <div class="bases" id="bases" role="img" aria-label="垒上无人">
+          <i data-base="1"></i><i data-base="2"></i><i data-base="3"></i>
+        </div>
+        <span id="count"></span>
+      </div>
+    </div>
+    <div class="pitcher">
+      <div class="identity">
+        <span class="secondary" id="pitcher-label"></span>
+        <strong class="truncate" id="pitcher-name"></strong>
+        <span class="number truncate" id="pitcher-number"></span>
+      </div>
+      <div class="pitch-stats">
+        <span id="pitches"></span><span id="pitch-strikes"></span><span id="pitch-strikeouts"></span>
+      </div>
+    </div>
+  </section>
+  <section class="source batter" id="batter" aria-label="当前打者" hidden>
+    <div class="batter-identity">
+      <div class="identity secondary">
+        <span class="truncate" id="batting-team"></span><span id="batter-order"></span>
+      </div>
+      <div class="identity">
+        <strong class="truncate" id="batter-name"></strong><span class="number truncate" id="batter-number"></span>
+      </div>
+    </div>
+    <div class="batter-performance">
+      <strong class="truncate" id="batter-stats"></strong>
+      <div class="truncate secondary" id="appearances"></div>
+    </div>
+  </section>
+  <section class="source lineup" id="lineup" aria-label="阵容" hidden>
+    <header class="lineup-header">
+      <strong class="truncate" id="lineup-team"></strong><span class="secondary" id="lineup-title"></span>
+    </header>
+    <ol id="lineup-rows"></ol>
+    <p class="lineup-empty secondary" id="lineup-empty" hidden></p>
+  </section>
+</body>
+</html>
