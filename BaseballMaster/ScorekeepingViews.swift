@@ -2155,7 +2155,7 @@ private struct PitcherChangeConfirmationModifier: ViewModifier {
                     .accessibilityIdentifier("cancel-pitcher-change")
             } message: { value in
                 Text("\(value.teamName)\n原投手：\(value.previous.lineupSelectionText)\n新投手：\(value.candidate.lineupSelectionText)\n\n请核对场上实际投手。确认后才能继续记录；取消不改变记录。"
-                     + (store.activeRules?.pitcherInningsLimit.map { "\n本场限制 \($0) 个登板局。明确确认登板即占用该局额度；换局自动沿用投手，实际投球后才计新局。同一局不重复计算，统计 IP 另按实际出局数累计。" } ?? ""))
+                     + (store.activeRules?.pitcherInningsLimit.map { "\n本场限制 \($0) 个登板局，到限只提醒，仍可继续记分。确认登板即计入该局；换局自动沿用时，实际投球才计新局。同一局只计一次，统计 IP 按实际出局数累计。" } ?? ""))
             }
             .onDisappear { if pending != nil { store.cancelPitcherChange() } }
     }

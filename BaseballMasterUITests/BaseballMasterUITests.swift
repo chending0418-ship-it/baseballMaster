@@ -788,6 +788,15 @@ final class BaseballMasterUITests: XCTestCase {
         pitcherInningsToggle.tap()
         XCTAssertTrue(app.staticTexts["投球局数上限"].exists)
 
+        let pitchLimitToggle = app.switches["单投手球数限制"]
+        revealStatisticsControl(pitchLimitToggle, in: app); pitchLimitToggle.tap()
+        let pitchLimit = app.textFields["pitch-limit-input"]
+        revealStatisticsControl(pitchLimit, in: app); pitchLimit.tap()
+        pitchLimit.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2) + "3")
+        XCTAssertEqual(pitchLimit.value as? String, "3")
+        let done = app.buttons["dismiss-pitch-limit-keyboard"]
+        if done.waitForExistence(timeout: 3) { done.tap() }
+
         let next = app.buttons["continue-to-lineup"]
         for _ in 0..<5 where !next.isHittable { app.swipeUp() }
         XCTAssertTrue(next.isHittable)
@@ -802,6 +811,13 @@ final class BaseballMasterUITests: XCTestCase {
         XCTAssertTrue(confirmation.waitForExistence(timeout: 2))
         confirmation.buttons["创建比赛"].tap()
         XCTAssertTrue(app.alerts["比赛已创建"].waitForExistence(timeout: 2))
+        app.alerts.buttons["返回比赛首页"].tap()
+        let scheduled = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "scheduled-game-")).firstMatch
+        XCTAssertTrue(scheduled.waitForExistence(timeout: 5)); scheduled.tap()
+        app.buttons["prepare-scheduled-game"].tap()
+        XCTAssertTrue(app.navigationBars["赛前设置"].waitForExistence(timeout: 5))
+        revealStatisticsControl(pitchLimit, in: app)
+        XCTAssertEqual(pitchLimit.value as? String, "3", "Reopening a scheduled match must retain the custom cap")
     }
 
     func testObservedGameCanConfirmBothLineupsBeforeStarting() throws {
@@ -1658,7 +1674,7 @@ extension BaseballMasterUITests {
             let warning = app.buttons["game-rule-warning"]
             XCTAssertTrue(warning.waitForExistence(timeout: 5))
             let longName = argument.contains("long-pitcher")
-            XCTAssertEqual(warning.value as? String, longName ? "还有 3 球" : "最后登板局")
+            XCTAssertEqual(warning.value as? String, longName ? "还有 3 球" : "登板达限")
             assertV111WarningBesidePitcher(app)
             captureV111(longName ? "V1.1.1-长投手姓名提醒-dark" : "V1.1.1-投手旁最后一局-dark", app: app)
             warning.tap()
@@ -2209,7 +2225,7 @@ extension BaseballMasterUITests {
         app.launch()
         let warning = app.buttons["game-rule-warning"]
         XCTAssertTrue(warning.waitForExistence(timeout: 5))
-        XCTAssertEqual(warning.value as? String, "最后登板局")
+        XCTAssertEqual(warning.value as? String, "登板达限")
         app.buttons["open-substitutions"].tap(); app.buttons["substitution-pitcher"].tap()
         let candidate = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "高博文")).firstMatch
         XCTAssertTrue(candidate.waitForExistence(timeout: 5)); candidate.tap()
@@ -2223,7 +2239,7 @@ extension BaseballMasterUITests {
         app.buttons["返回"].tap(); app.buttons["返回比赛"].tap()
         let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
         XCTAssertTrue(pitcher.label.contains("赵一鸣"))
-        XCTAssertEqual(warning.value as? String, "最后登板局")
+        XCTAssertEqual(warning.value as? String, "登板达限")
         app.buttons["open-substitutions"].tap(); app.buttons["substitution-pitcher"].tap()
         candidate.tap(); app.buttons["confirm-current-pitcher"].firstMatch.tap()
         XCTAssertTrue(app.buttons["返回比赛"].waitForExistence(timeout: 3)); app.buttons["返回比赛"].tap()
