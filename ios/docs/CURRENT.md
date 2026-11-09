@@ -19,3 +19,5 @@
 本次审查整改及采用边界：[旧 CURRENT 分流与两个工作目录同步步骤](../../docs/maintenance/2026-11-05-stage1-adoption.md)。本机采用已执行，远端 PR 仍未合并；归档快照不接收旧分支新增状态。
 
 本机原有维护工作已保全并恢复：开屏上传修复仍属 [PR #47](https://github.com/chending0418-ship-it/baseballMaster/pull/47)，未部署；证书维护的已执行回执与源码属于 [PR #48](https://github.com/chending0418-ship-it/baseballMaster/pull/48)，保持原已部署／未合并的阶段边界。iOS 正式工作目录中，旧 3.1.0 计划的两项本机进度勾选已迁入其新计划，原始补丁可恢复，不推定其他版本的发布状态。
+
+上海 HTTPS 证书由 Certbot 和专属定时器自动续签。线上校验和回退说明见 [证书维护回执](../../collaboration/deploy/2026-11-05-certificate-auto-renew.md)，代码及回执见 [PR #48](https://github.com/chending0418-ship-it/baseballMaster/pull/48)。
