@@ -122,19 +122,20 @@ function start() {
   const params = new URLSearchParams(location.search);
   const component = params.get('view');
   if (!['score', 'batter', 'lineup'].includes(component)) return;
-  const [, kind, code] = /^#(temporary|shared)\/([A-Za-z0-9_-]+)$/.exec(location.hash) ?? [];
+  const [, kind, code] = /^#(temporary|shared|team)\/([A-Za-z0-9_-]+)$/.exec(location.hash) ?? [];
   const shared = kind === 'shared';
-  if (!code || !(shared ? /^[A-Za-z0-9_-]{32}$/ : /^[A-Fa-f0-9]{24}$/).test(code)) return;
-  const endpoint = shared ? '/api/v3/live/' + code : '/livestreaming/novideo/api/sessions/' + code;
+  const team = kind === 'team';
+  if (!code || !(shared || team ? /^[A-Za-z0-9_-]{32}$/ : /^[A-Fa-f0-9]{24}$/).test(code)) return;
+  const endpoint = team ? '/api/v3/broadcast/' + code : shared ? '/api/v3/live/' + code : '/livestreaming/novideo/api/sessions/' + code;
   const source = $(component);
   const render = component === 'score' ? showScore : component === 'batter' ? showBatter
     : lineupRenderer(source, params);
   let revision, visible = false, hideTimer;
   const refresh = async () => {
     try {
-      const response = await fetch(endpoint + (!shared && revision !== undefined ? '?since=' + revision : ''), {
+      const response = await fetch(endpoint + (!shared && revision !== undefined ? '?since=' + encodeURIComponent(revision) : ''), {
         cache: 'no-store', credentials: 'omit',
-        headers: shared ? { 'X-BM-Protocol': '1' } : {},
+        headers: shared || team ? { 'X-BM-Protocol': '1' } : {},
         signal: AbortSignal.timeout(6000)
       });
       if ([401, 403, 404, 410].includes(response.status)) {
@@ -144,6 +145,14 @@ function start() {
       }
       if (!response.ok) throw new Error('读取直播失败');
       const data = await response.json();
+      if (team && !data.active) {
+        clearTimeout(hideTimer);
+        source.hidden = true;
+        revision = undefined;
+        visible = false;
+        setTimeout(refresh, 5000);
+        return;
+      }
       const next = shared ? data.serverRevision : data.revision;
       if (data.snapshot && next !== revision) {
         visible = render(data.snapshot, data.box);

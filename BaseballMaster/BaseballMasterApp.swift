@@ -42,7 +42,9 @@ struct BaseballMasterApp: App {
         if AppLaunchArguments.values.contains("--v30-match-fixture") {
             if let team = initialStore.currentTeam {
                 initialStore.startNewGame(opponent: initialStore.opponentTeams[0], isHome: false, innings: 6, lineup: Array(team.players.prefix(9)))
-                initialStore.startGameClock(); initialStore.recordPitch(.ball)
+                if !AppLaunchArguments.values.contains("--v30-match-unstarted") {
+                    initialStore.startGameClock(); initialStore.recordPitch(.ball)
+                }
                 if AppLaunchArguments.values.contains("--v30-match-final") { initialStore.finishGame() }
             }
         }
@@ -67,10 +69,11 @@ struct BaseballMasterApp: App {
                     store.selectedTab = 1
                     store.teamSharing.incomingInvitation = TeamInvitationLink.url(token: token).absoluteString
                 }
-                .task { store.liveBroadcasts.setForeground(true); store.sharedMatches.setForeground(true); store.teamSharing.setForeground(true) }
+                .task { store.liveBroadcasts.setForeground(true); store.teamBroadcasts.setForeground(true); store.sharedMatches.setForeground(true); store.teamSharing.setForeground(true) }
                 .onChange(of: scenePhase) { phase in
                     if phase == .background { launchScreen.dismiss() }
                     store.liveBroadcasts.setForeground(phase == .active)
+                    store.teamBroadcasts.setForeground(phase == .active)
                     store.sharedMatches.setForeground(phase == .active)
                     if phase != .inactive { store.teamSharing.setForeground(phase == .active) }
                     if phase == .background { store.createAutomaticBackup() }

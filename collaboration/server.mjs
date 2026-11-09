@@ -6,6 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { can, ROLES } from './permissions.mjs';
 import { GameService } from './games.mjs';
+import { TeamBroadcasts } from './broadcasts.mjs';
 import { TeamSecurity } from './security.mjs';
 import { RosterService } from './roster.mjs';
 import { HistoryImportService } from './imports.mjs';
@@ -104,8 +105,9 @@ export class CollaborationStore {
     this.lifecycle = new TeamLifecycle(this, requireValue);
     this.credentials = new DeviceCredentials(this, requireValue);
     this.archives = new TeamArchiveService(this, requireValue);
+    this.broadcasts = new TeamBroadcasts(this, requireValue);
   }
-  close() { this.db.close(); }
+  close() { this.broadcasts.close(); this.db.close(); }
   transaction(fn) {
     if(this.databaseDirectory && this.minimumFreeBytes>0) {
       const disk=statfsSync(this.databaseDirectory);
@@ -358,7 +360,8 @@ export function createCollaborationServer(options = {}) {
       } else { res.writeHead(status);res.end(json); }
     };
     try {
-      const path = new URL(req.url, 'http://localhost').pathname;
+      const url = new URL(req.url, 'http://localhost');
+      const path = url.pathname;
       if(admin && (path==='/admin' || path.startsWith('/admin/'))) return await admin(req,res);
       const asset = /^\/watch\/(index.html|watch.js|style.css|app-icon.png)?$/.exec(path);
       if (asset && req.method === 'GET') {
@@ -403,6 +406,10 @@ export function createCollaborationServer(options = {}) {
       }
       if (path === BASE + '/devices' && req.method === 'POST') return reply(200, store.register(token, body));
       if (path === BASE + '/devices/credential-commit' && req.method === 'POST') return reply(200,store.credentials.commit(token,body));
+      const broadcastCode = /^\/api\/v3\/broadcast\/([A-Za-z0-9_-]{32})$/.exec(path);
+      if (broadcastCode && req.method === 'GET') {
+        return reply(200, store.broadcasts.read(broadcastCode[1], url.searchParams.get('since')));
+      }
       const temporaryLive = new RegExp(`^${BASE}/live/([A-Za-z0-9_-]{32})$`).exec(path);
       if (temporaryLive && req.method === 'GET') return reply(200,store.games.publicRead(temporaryLive[1],undefined,true));
       const watch = new RegExp(`^${BASE}/watch/([A-Za-z0-9_-]{32})(?:/(apply))?$`).exec(path);
@@ -430,6 +437,13 @@ export function createCollaborationServer(options = {}) {
       }
       if(path===BASE+'/devices/credential-prepare' && req.method==='POST') return reply(200,store.credentials.prepare(deviceID,body));
       if(path===BASE+'/dissolved-teams' && req.method==='GET') return reply(200,store.lifecycle.list(deviceID));
+      const broadcast = /^\/api\/v3\/teams\/([a-f0-9-]+)\/broadcast(?:\/(rotate))?$/.exec(path);
+      if (broadcast && uuid(broadcast[1])) {
+        const [, team, action] = broadcast;
+        if (!action && req.method === 'GET') return reply(200, store.broadcasts.sources(team, deviceID));
+        if (!action && req.method === 'PUT') return reply(200, store.broadcasts.publish(team, deviceID, body));
+        if (action === 'rotate' && req.method === 'POST') return reply(200, store.broadcasts.rotate(team, deviceID, body));
+      }
       const archive = new RegExp(`^${BASE}/teams/([a-f0-9-]+)/archive(?:/([a-f0-9-]+|finish))?$`,'i').exec(path);
       if(archive && uuid(archive[1])) {
         if(!archive[2] && req.method==='GET') return reply(200,store.archives.manifest(archive[1],deviceID));

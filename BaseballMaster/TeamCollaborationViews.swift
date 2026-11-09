@@ -357,6 +357,13 @@ struct SharedTeamDetailView: View {
         NavigationLink { SharedMatchesListView(coordinator: store.sharedMatches, teamID: teamID) } label: {
             Label("球队比赛与历史", systemImage: "baseball")
         }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-shared-matches")
+        if detail.role != .member {
+            NavigationLink {
+                TeamBroadcastSourcesView(coordinator: store.teamBroadcasts, teamID: teamID, canRotate: detail.role == .admin)
+            } label: {
+                Label("转播源", systemImage: "rectangle.on.rectangle")
+            }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-team-broadcast-sources")
+        }
         NavigationLink { StatsOverviewView(initialTeamID: teamID) } label: {
             Label("球队年度统计", systemImage: "chart.bar")
         }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("shared-annual-statistics")
@@ -781,5 +788,95 @@ private struct SharedRosterEditor: View {
         .sheet(isPresented: $showBulk) {
             SharedBulkRosterEditor(directory: directory, context: RosterEditorContext(profile: latest, kind: "players"))
         }
+    }
+}
+
+struct TeamBroadcastSourcesView: View {
+    let coordinator: TeamBroadcastCoordinator
+    let teamID: UUID
+    var canRotate = false
+    var matchID: UUID?
+    @State private var sources: TeamBroadcastStatus?
+    @State private var message: String?
+    @State private var busy = false
+    @State private var confirmSwitch = false
+    @State private var confirmRotate = false
+
+    var body: some View {
+        List {
+            Section("当前转播") {
+                Text(sources?.activeMatch ?? "暂无比赛转播").accessibilityIdentifier("team-broadcast-current-match")
+                if let matchID, let sources, sources.activeGameID != matchID {
+                    Button("切换到本场比赛") { confirmSwitch = true }
+                }
+                if let message { Text(message).foregroundStyle(BMTheme.orange) }
+            }
+            if let code = sources?.code {
+                Section {
+                    source("比分＋投手", "640 × 116", code: code, view: "score")
+                    source("当前打者", "600 × 108", code: code, view: "batter")
+                    source("客队阵容", "440 × 540", code: code, view: "lineup", side: "away")
+                    source("主队阵容", "440 × 540", code: code, view: "lineup", side: "home")
+                } header: {
+                    Text("固定链接")
+                } footer: {
+                    Text("把链接分享给导播。球队开赛后会自动更新这套链接；文字直播在比赛中单独分享。")
+                }
+                if canRotate {
+                    Button("重置四条链接", role: .destructive) { confirmRotate = true }
+                }
+            }
+        }
+        .navigationTitle("转播源")
+        .disabled(busy)
+        .task { await reload() }
+        .refreshable { await reload() }
+        .alert("切换当前转播？", isPresented: $confirmSwitch) {
+            Button("切换") { Task { await select() } }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("四条固定链接会一起切换到本场比赛。")
+        }
+        .alert("重置转播链接？", isPresented: $confirmRotate) {
+            Button("重置", role: .destructive) { Task { await rotate() } }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("旧链接会失效，请把新链接发给导播。")
+        }
+    }
+
+    private func source(_ title: String, _ size: String, code: String, view: String, side: String? = nil) -> some View {
+        ShareLink(item: coordinator.url(code: code, view: view, side: side)) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(size).font(.caption).foregroundStyle(BMTheme.secondaryText)
+                Image(systemName: "square.and.arrow.up")
+            }
+        }.accessibilityIdentifier("team-broadcast-source-" + (side ?? view))
+    }
+
+    private func reload() async {
+        do { sources = try await coordinator.sources(teamID); message = nil }
+        catch { sources = nil; message = error.localizedDescription }
+    }
+
+    private func select() async {
+        guard let matchID, let sources else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let result = try await coordinator.select(matchID, team: teamID, expectedGameID: sources.activeGameID)
+            await reload()
+            if result?.selected != true { message = "请先开始比赛，或刷新后重新确认切换。" }
+        } catch { message = error.localizedDescription }
+    }
+
+    private func rotate() async {
+        guard let code = sources?.code else { return }
+        busy = true
+        defer { busy = false }
+        do { sources = try await coordinator.rotate(teamID, code: code); message = nil }
+        catch { await reload(); message = error.localizedDescription }
     }
 }

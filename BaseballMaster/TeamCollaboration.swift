@@ -433,3 +433,131 @@ actor TeamServiceClient: TeamDirectoryService {
         catch { throw TeamServiceError.message("球队资料暂时无法读取，请更新 App 或稍后重试。") }
     }
 }
+
+struct TeamBroadcastStatus: Decodable {
+    let code: String?
+    let activeGameID: UUID?
+    let activeMatch: String?
+    let selected: Bool?
+}
+
+@MainActor
+final class TeamBroadcastCoordinator {
+    private weak var store: GameStore?
+    private let client: TeamServiceClient
+    private let overlayURL: URL
+    private var worker: Task<Void, Never>?
+    private var ticker: Task<Void, Never>?
+    private var requested = false
+    private var switching = false
+    private var automaticBlocked: Set<UUID> = []
+
+    init(store: GameStore) {
+        self.store = store
+        let config = TeamSharingStore.connectionConfiguration()
+        client = try! TeamServiceClient(baseURL: config.baseURL, vault: config.vault)
+        overlayURL = config.baseURL.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("livestreaming/novideo/overlay")
+    }
+
+    func teamID(for match: StoredGame) -> UUID? {
+        guard let store, !match.isObservation, !store.requiresDataRecovery,
+              !store.teamSharing.state.requiresRecoveryReview else { return nil }
+        if match.sharedGameID != nil && !store.sharedMatches.canEdit(match.id) { return nil }
+        let localTeam = match.ourTeamID
+        let linked = store.teamSharing.state.bindings.first { $0.localTeamID == localTeam }?.cloudTeamID
+        let team = match.sharedTeamID ?? linked ?? localTeam
+        return store.teamSharing.teams.first { $0.id == team && $0.role != .member }?.id
+    }
+
+    private func path(_ team: UUID) -> String { "teams/\(team.uuidString.lowercased())/broadcast" }
+
+    func sources(_ team: UUID) async throws -> TeamBroadcastStatus {
+        try await client.request("GET", path: path(team), body: Optional<String>.none)
+    }
+
+    func rotate(_ team: UUID, code: String) async throws -> TeamBroadcastStatus {
+        try await client.request("POST", path: path(team) + "/rotate", body: ["expectedCode": code])
+    }
+
+    func url(code: String, view: String, side: String? = nil) -> URL {
+        var url = URLComponents(url: overlayURL, resolvingAgainstBaseURL: false)!
+        url.queryItems = [URLQueryItem(name: "view", value: view)]
+        if let side { url.queryItems?.append(URLQueryItem(name: "team", value: side)) }
+        url.fragment = "team/" + code
+        return url.url!
+    }
+
+    func setForeground(_ active: Bool) {
+        ticker?.cancel()
+        ticker = nil
+        guard active else { return }
+        requestSync()
+        ticker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                if !Task.isCancelled { self?.requestSync() }
+            }
+        }
+    }
+
+    func suppressRestoredGames() {
+        automaticBlocked.formUnion(store?.games.map(\.id) ?? [])
+        requested = false
+    }
+
+    func requestSync() {
+        requested = true
+        guard !switching, worker == nil else { return }
+        worker = Task { [weak self] in
+            guard let self else { return }
+            while requested && !switching {
+                requested = false
+                guard let match = store?.activeStoredGame, !automaticBlocked.contains(match.id),
+                      let team = teamID(for: match) else { continue }
+                do {
+                    if let result = try await publish(match, team: team), result.selected == false {
+                        automaticBlocked.insert(match.id)
+                    }
+                } catch TeamServiceError.response(let status, _) where [400, 403, 404, 409, 413].contains(status) {
+                    automaticBlocked.insert(match.id)
+                } catch {
+                    // The next committed action or foreground poll retries a temporary outage.
+                }
+            }
+            worker = nil
+        }
+    }
+
+    func select(_ matchID: UUID, team: UUID, expectedGameID: UUID?) async throws -> TeamBroadcastStatus? {
+        guard !switching else { return nil }
+        switching = true
+        defer { switching = false; requestSync() }
+        await worker?.value
+        guard let match = store?.games.first(where: { $0.id == matchID }), teamID(for: match) == team,
+              !match.state.isFinal else { return nil }
+        let expected = expectedGameID.map { MatchJSON.string($0.uuidString) } ?? .null
+        let result = try await publish(match, team: team, expected: expected)
+        if result?.selected == true { automaticBlocked.remove(matchID) }
+        return result
+    }
+
+    private func publish(_ match: StoredGame, team: UUID, expected: MatchJSON? = nil) async throws -> TeamBroadcastStatus? {
+        var snapshot = LiveSnapshot(match)
+        guard snapshot.hasStarted == true else { return nil }
+        snapshot.entries = snapshot.entries.filter {
+            $0.kind == "appearance" && $0.status == "completed" && $0.player?.id == snapshot.batter?.id
+        }.suffix(3).map { entry in
+            var compact = entry
+            compact.details = []
+            return compact
+        }
+        var body: [String: MatchJSON] = ["snapshot": try JSONDecoder().decode(MatchJSON.self, from: snapshot.data())]
+        if let expected { body["expectedGameID"] = expected }
+        if snapshot.mode != "coachPitch", let id = snapshot.pitcher.flatMap({ UUID(uuidString: $0.id) }) {
+            let line = match.state.pitching[id] ?? PitchingLine()
+            body["pitching"] = .object(["strikes": .number(Double(line.strikes)), "strikeouts": .number(Double(line.strikeouts))])
+        }
+        return try await client.request("PUT", path: path(team), body: body)
+    }
+}
