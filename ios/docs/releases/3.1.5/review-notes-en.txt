@@ -1,0 +1,18 @@
+App: Baseball Scorekeeper (棒球比赛记录大师)
+Version: 3.1.5 (Build 1)
+Bundle ID: com.jasonchen.baseballmaster
+
+Local scorekeeping is available without an account. The interface is in Simplified Chinese. Basic and Pro are included scorekeeping modes. There are no subscriptions or in-app purchases.
+
+Manual scoring: In Profile (我的), open Practice an Inning (练习一局), choose Basic or Pro, and start. Record a pitch, a batted ball, or a runner's advance. Pro also lets you select a landing point and a fielding route. Practice does not affect official statistics.
+
+Optional voice scoring: One-time App Review activation code: [insert an unused review code here before submission]. Redeem it in Profile > App Settings > Voice Scoring (我的 → App 设置 → 语音记分). In the live scorekeeping screen of a regular game, tap the microphone next to Ball in Play (击球进入场内). Grant microphone permission and speak one play in Mandarin. With the bases empty, say “坏球” (ball), stop recording, review the transcript, tap Analyze Play (解析局面), and confirm. For a Pro example, say “一垒安打，打者上一垒” (single; batter to first), then add the landing point on the field if prompted. A play is saved only after confirmation.
+
+Audio goes directly to Tencent Cloud Speech Recognition. When Analyze Play is tapped, our service sends the transcript and current game situation to the Hunyuan model via Tencent Cloud TokenHub. Voice scoring requires an internet connection. Manual scoring works offline.
+
+Pitcher limits: When creating a game, enable the individual pitcher pitch limit and enter a positive number, such as 3. The pitch and inning limits show warnings while scoring can continue.
+
+Shared teams and fixed broadcast sources: Create a sample team under Teams > Team Sharing (球队 → 球队共享). The shared team's Broadcast Sources (转播源) page offers four fixed links for score/pitcher, current batter, away lineup, and home lineup. Select a game and open the links in a browser. Temporary text play-by-play uses a separate link. These views have no audio or video stream.
+
+Support: https://baseballmaster.cc/scorekeeper/support-en.html
+Privacy: https://baseballmaster.cc/scorekeeper/privacy-en.html
