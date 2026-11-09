@@ -25,6 +25,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
 import okhttp3.Call
 import okhttp3.Callback
@@ -37,6 +38,17 @@ import java.io.IOException
 
 private const val cookie = "voice_assistant_session"
 private val sessionToken = Regex("[A-Za-z0-9_-]{32}")
+// Voice responses may add fields independently of the app (for example, grant expiry).
+// Keep the game's persisted and backup schemas strict.
+private val voiceResponseJson = Json(GameJson) { ignoreUnknownKeys = true }
+
+private inline fun <reified T> decodeVoiceResponse(value: JsonElement): T =
+    try {
+        voiceResponseJson.decodeFromJsonElement<T>(value)
+    } catch (_: SerializationException) {
+        // Decoding failures can include the signed URL or transcript in their message.
+        throw VoiceIssue("当前 App 无法读取语音服务响应。")
+    }
 internal class VoiceIssue(message: String, val unauthorized: Boolean = false) : IOException(message)
 
 @Serializable internal data class VoiceGrant(val id: String, val url: String, val maxRecordingSeconds: Int) {
@@ -83,7 +95,7 @@ internal class HttpVoiceService(
         request("entitlement", token).first.getValue("active").jsonPrimitive.boolean
 
     override suspend fun grant(context: JsonObject, token: String) =
-        GameJson.decodeFromJsonElement<VoiceGrant>(request("asr-session", token, buildJsonObject { put("context", context) }).first)
+        decodeVoiceResponse<VoiceGrant>(request("asr-session", token, buildJsonObject { put("context", context) }).first)
 
     override suspend fun end(id: String, token: String) {
         request("asr-session/end", token, buildJsonObject { put("id", id) })
@@ -93,7 +105,7 @@ internal class HttpVoiceService(
         val response = request("analyze", token, buildJsonObject {
             put("text", text); put("context", context); put("modelId", "hy3"); put("thinking", "disabled")
         }).first
-        return GameJson.decodeFromJsonElement<VoiceAnalysis>(response.getValue("analysis")).also {
+        return decodeVoiceResponse<VoiceAnalysis>(response["analysis"] ?: JsonNull).also {
             if (it.schemaVersion != 1) throw VoiceIssue("当前 App 无法读取此解析结果。")
         }
     }
