@@ -32,6 +32,7 @@ internal fun PlayEditor(
     dismiss: () -> Unit,
     initial: Command? = null,
     onNeedsCorrection: (() -> Unit)? = null,
+    voiceConfirmation: Boolean = false,
     save: (Command) -> Unit,
 ) {
     val pro = if (initial != null) initial.observation != null || initial.recordingMethod == "situation"
@@ -42,7 +43,7 @@ internal fun PlayEditor(
     }
     val cmd = remember(json) { GameJson.decodeFromString<Command>(json) }
     var stage by rememberSaveable(game.id, game.revision) {
-        mutableStateOf(if (initial == null) "entry" else "review")
+        mutableStateOf(if (voiceConfirmation && initial?.observation?.precision == "unknown") "contact" else if (initial == null) "entry" else "review")
     }
     var arrival by rememberSaveable(game.id, game.revision) {
         mutableIntStateOf(initial?.decisions?.firstOrNull { it.origin == 0 }?.destination ?: 1)
@@ -132,10 +133,10 @@ internal fun PlayEditor(
         issue = null
         when (stage) {
             "entry" -> dismiss()
+            "contact" -> if (voiceConfirmation && !contactFromReview) dismiss() else stage = if (contactFromReview) "review" else contactReturnStage
             "cause", "process" -> stage = "entry"
             "catalog" -> stage = catalogReturnStage
             "processResult" -> stage = "process"
-            "contact" -> stage = if (contactFromReview) "review" else contactReturnStage
             "defense" -> stage = "cause"
             else -> stage = if (pro) "contact" else if (productNeedsDefense(cmd.outcome ?: Outcome.other)) "defense" else "cause"
         }
@@ -148,7 +149,7 @@ internal fun PlayEditor(
         actionLabel = when (stage) {
             "contact" -> if (contactFromReview) "完成修改" else if (requiresProReview) "下一步 · 核对跑者" else "完成本球"
             "defense" -> if (productRequiresBasicReview(game, cmd.outcome ?: Outcome.other)) "下一步 · 核对跑者" else "确认本球"
-            "review" -> if (initial == null) "确认本球" else "保存本球修改"
+            "review" -> if (initial == null || voiceConfirmation) "确认本球" else "保存本球修改"
             else -> ""
         },
         actionEnabled = when (stage) { "contact" -> fieldIssue == null; "defense" -> defenseIssue == null; "review" -> reviewIssue == null; else -> false },
@@ -260,7 +261,7 @@ internal fun PlayEditor(
                 defenseIssue?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             "review" -> {
-                Text(if (initial == null) "尚未提交" else "修改刚才这球 · 保存后替换", fontSize = 12.sp,
+                Text(if (initial == null || voiceConfirmation) "尚未提交" else "修改刚才这球 · 保存后替换", fontSize = 12.sp,
                     fontWeight = FontWeight.Bold, color = ProductAmber)
                 Text(productOutcomeTitle(cmd.outcome ?: Outcome.other) + if (pro) " · ${ScoringOptions.ballTypes[observation.type].orEmpty()}" else "",
                     fontSize = 18.sp, fontWeight = FontWeight.Bold)

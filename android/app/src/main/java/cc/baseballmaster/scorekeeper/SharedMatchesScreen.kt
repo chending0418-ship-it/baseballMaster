@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -29,6 +30,7 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
 @Composable internal fun SharedMatchesScreen(api: AndroidTeamSharing,teamID: String,dismiss: ()->Unit) {
     val ui=remember(api,teamID) {SharingUi(api).apply {selectedID=teamID}}
     val scope=rememberCoroutineScope();val context=LocalContext.current;val owner=LocalLifecycleOwner.current
+    var showBroadcast by remember { mutableStateOf(false) }
     var selected by remember {mutableStateOf<String?>(null)};var rows by remember {mutableStateOf<List<SharedMatchDocument>>(emptyList())}
     var viewers by remember {mutableStateOf<MatchViewers?>(null)};var history by remember {mutableStateOf<JsonObject?>(null)}
     var confirmation by remember {mutableStateOf<SharingConfirmation?>(null)};var shownLink by remember {mutableStateOf<String?>(null)}
@@ -66,6 +68,8 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
             if(visible<rows.size) TextButton(onClick={visible+=50}) {Text("显示更多（已显示 $visible／${rows.size}）")}
         } else if(document==null || document.deleted || ui.state.credentialExpired) Text("当前无法访问这场比赛，请刷新核对。")
         else {
+            if (document.canWrite && document.handoff == null && !document.finalForWatching)
+                TextButton({ showBroadcast = true }, enabled = canAct, modifier = Modifier.testTag("shared-match-broadcast")) { Text("球队固定转播源") }
             Text(document.matchTitle(),fontWeight=FontWeight.Bold)
             document.payload?.get("state")?.jsonObject?.let {state ->
                 val away=state["awayRunsByInning"]?.jsonArray?.sumOf {it.jsonPrimitive.int} ?: 0
@@ -129,6 +133,11 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
     history?.let {stored -> ArchiveGameHistory(stored,secure=true) {history=null}}
     confirmation?.let {value -> AlertDialog(onDismissRequest={confirmation=null},properties=DialogProperties(securePolicy=SecureFlagPolicy.SecureOn),title={Text(value.title)},text={Text(value.message)},
         confirmButton={TextButton(onClick={confirmation=null;value.action()}) {Text("确认")}},dismissButton={TextButton(onClick={confirmation=null}) {Text("取消")}})}
+    if (showBroadcast && document != null && document.canWrite && document.handoff == null) {
+        val originalID = document.payload?.get("id")?.jsonPrimitive?.content
+        BroadcastSourcesScreen(api, teamID, currentGameID = originalID,
+            select = { api.publishSharedBroadcast(teamID, document.id, it) }, dismiss = { showBroadcast = false })
+    }
     shownLink?.let {url -> FormPage("观赛链接",false,false,"unused","",{shownLink=null},{},secure=true,dismissLabel="完成") {
         val bitmap=remember(url) {val qr=watchViewQr(url);Bitmap.createBitmap(qr.pixels,qr.width,qr.height,Bitmap.Config.ARGB_8888).asImageBitmap()}
         Image(bitmap,"观赛链接二维码",Modifier.size(208.dp),filterQuality=FilterQuality.None);Text(url)

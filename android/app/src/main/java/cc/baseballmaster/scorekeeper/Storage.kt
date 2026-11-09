@@ -509,6 +509,15 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         }
     }
 
+    suspend fun appendRoster(expected: Team, text: String) = db.withTransaction {
+        val row = db.dao().team(expected.id) ?: error("球队已不存在")
+        val team = GameJson.decodeFromString<Team>(row.payload)
+        require(team == expected && !team.archived && team.source == "local") { "名单已变化，请重新预览" }
+        val additions = Roster.previewAppend(text, team.players.flatMap { listOf(it.name, it.englishName) }).map { it.player }
+        require(team.players.count { !it.archived } + additions.size <= 200) { "球队现役名单最多 200 人" }
+        updateRoster(team.copy(players = team.players + additions))
+    }
+
     suspend fun updateRoster(team: Team) = db.withTransaction {
         require(db.dao().allAppleBackups().none { source -> AppleSourceBackup.prepare(source.current).teams().any { it.id == team.id } }) { "iOS 导入球队的名单编辑尚未支持，原始备份及名单未修改" }
         val original = db.dao().team(team.id) ?: error("球队不存在")

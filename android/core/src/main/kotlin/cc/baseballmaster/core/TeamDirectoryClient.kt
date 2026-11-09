@@ -39,7 +39,7 @@ class TeamServiceFault(val status: Int, val code: String) : IOException(when (st
     404 -> "球队暂不可用，或当前设备无权访问"
     409 -> if (code == "admin_limit") "每支球队最多三名管理员" else "资料已有变化，请核对后重试；本机操作已保留"
     410 -> "邀请或操作已失效，请重新核对；本机操作已保留"
-    426 -> "请更新 App 后重试"
+    426 -> if (code == "unsupported_bulk_roster") "当前球队服务尚不支持批量名单，原批次已保留" else "请更新 App 后重试"
     429 -> "操作过于频繁，请稍后重试"
     else -> "球队服务暂时不可用；本机操作已保留"
 })
@@ -133,7 +133,13 @@ class TeamDirectoryClient(transport: TeamTransport) {
     }
     fun invitations(teamID: String): List<TeamInvitation> = TeamDirectoryJson.format.decodeFromJsonElement<Invitations>(
         transport.request("GET", "teams/${appleUUID(teamID)}/invitations", null)).invitations
+    fun supportsBulkRoster(): Boolean =
+        (transport.request("GET", "capabilities", null)["capabilities"] as? JsonArray)
+            .orEmpty().any { (it as? JsonPrimitive)?.contentOrNull == "bulkRosterImport" }
+
     internal fun send(pending: PendingDirectoryRequest): JsonObject {
+        if (pending.kind == DirectoryRequestKind.roster && pending.body["kind"]?.jsonPrimitive?.content == "players" && !supportsBulkRoster())
+            throw TeamServiceFault(426, "unsupported_bulk_roster")
         val response = transport.request(pending.method, pending.path, pending.body)
         when (pending.kind) {
             DirectoryRequestKind.create, DirectoryRequestKind.join -> TeamDirectoryJson.format.decodeFromJsonElement<TeamMembership>(response)

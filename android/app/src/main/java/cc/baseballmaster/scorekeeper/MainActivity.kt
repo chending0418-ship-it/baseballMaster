@@ -99,11 +99,44 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     /** Recording task snapshots contain the full journal and must never enter the Activity Bundle. */
     internal var scoringTaskSource by mutableStateOf<Game?>(null)
     private var sharedPresence: kotlinx.coroutines.Job?=null
+    private var broadcastWorker: kotlinx.coroutines.Job? = null
+    private var pendingBroadcast: Game? = null
+    private var broadcastForeground = false
+    private val blockedBroadcastGames = mutableSetOf<String>()
+
+    internal fun requestFixedBroadcast(game: Game) {
+        if (!broadcastForeground || recoveryRequired || loading || game.id in blockedBroadcastGames ||
+            game.isPregame || game.isObservation || game.practice || game.isScheduled) return
+        pendingBroadcast = game
+        if (broadcastWorker?.isActive == true) return
+        broadcastWorker = viewModelScope.launch {
+            while (broadcastForeground && !recoveryRequired) {
+                val latest = pendingBroadcast ?: break
+                pendingBroadcast = null
+                try { sharing.publishBroadcast(latest) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (_: Exception) { /* A failed broadcast never changes the local record. */ }
+            }
+        }
+    }
+
+    internal suspend fun selectFixedBroadcast(game: Game, selection: BroadcastSelection): TeamBroadcastStatus? {
+        val current = openedGame
+        check(current?.id == game.id && current.revision == game.revision && !recoveryRequired && !loading) { "比赛已变化，请重新核对" }
+        val status = sharing.publishBroadcast(game, selection)
+        if (status?.selected == true) blockedBroadcastGames.remove(game.id)
+        return status
+    }
     internal fun setLiveForeground(active: Boolean) {
         live.setForeground(active);sharedPresence?.cancel();sharedPresence=null
+        broadcastForeground = active
+        if (!active) { broadcastWorker?.cancel(); broadcastWorker = null; pendingBroadcast = null }
         if(active) sharedPresence=viewModelScope.launch {
             while(true) {
-                if(!loading && !recoveryRequired) runCatching {sharing.maintainSharedLive()}.onFailure {if(it is kotlinx.coroutines.CancellationException) throw it}
+                if(!loading && !recoveryRequired) {
+                    openedGame?.let(::requestFixedBroadcast)
+                    runCatching { sharing.maintainFixedSharedBroadcast(); sharing.maintainSharedLive() }
+                        .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                }
                 kotlinx.coroutines.delay(10_000)
             }
         }
@@ -141,6 +174,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
             catch(_: Exception) {error="链接状态尚未保存，原链接仍保留，请重试。"}
         }}
     }
+    internal val voice = VoiceAccess(SealedVoiceDevice(application))
     private val settings = application.getSharedPreferences("baseballmaster-settings", 0)
     internal var appAppearance by mutableStateOf(settings.getString("appAppearance","system")?.takeIf {it in setOf("system","light","dark")} ?: "system")
         private set
@@ -306,10 +340,13 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
 
     internal suspend fun restoreDeviceBackup(bytes: ByteArray) {
         live.prepareForRestore()
+        sharing.clearBroadcastBinding()
+        broadcastWorker?.cancel(); pendingBroadcast = null
         val selected = withContext(Dispatchers.IO) {
             repository.migrateLegacyTeamArchives(getApplication())
             repository.restoreDeviceBackup(bytes)
         }
+        blockedBroadcastGames.addAll(withContext(Dispatchers.IO) { database.dao().allGames().map { it.id } })
         rememberCurrentTeam(selected)
         live.requestSync()
     }
@@ -346,7 +383,10 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private fun accept(game: Game) {
         if (game.practice) practiceGame = game
         else games = listOf(game) + games.filter { it.id != game.id }
-        if(!game.practice) live.requestSync()
+        if(!game.practice) {
+            live.requestSync()
+            requestFixedBroadcast(game)
+        }
     }
 
     fun deleteGame(game: Game) = commit {
@@ -479,6 +519,11 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         }
         historyDraft = null
         historyDraftSaved = false
+        done()
+    }
+
+    fun appendRoster(expected: Team, text: String, done: () -> Unit) = commit {
+        repository.appendRoster(expected, text)
         done()
     }
 
@@ -1111,6 +1156,7 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                                 DropdownMenu(menu, { menu = false }) {
                                     listOf("比赛结果" to "results", "文字直播" to "live", "双方阵容与打序" to "lineup", "比赛计时" to "clock",
                                         "比赛时间／预告" to "time", "本场比赛规则" to "rules", "完整记录与纠错" to "history", "报告与更多操作" to "more")
+                                        .let { if (!game.isObservation && !game.practice) it + ("球队固定转播源" to "team-broadcast") else it }
                                         .forEach { (label, target) -> DropdownMenuItem(text = { Text(label) }, enabled = !locked,
                                             onClick = { menu = false; requestedPanel = target }) }
                                 }

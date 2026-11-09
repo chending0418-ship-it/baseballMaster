@@ -1,0 +1,156 @@
+package cc.baseballmaster.scorekeeper
+
+import android.Manifest
+import androidx.activity.compose.setContent
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.runtime.*
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.rule.ActivityTestRule
+import androidx.test.rule.GrantPermissionRule
+import androidx.test.uiautomator.*
+import cc.baseballmaster.core.*
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class Voice100FlowTest {
+    @get:Rule val activity = ActivityTestRule(MainActivity::class.java)
+    @get:Rule val microphone = GrantPermissionRule.grant(Manifest.permission.RECORD_AUDIO)
+    private fun game(pro: Boolean = false): Game {
+        fun roster(name: String) = Team(UUID.randomUUID().toString(), name,
+            (1..9).map { Player(UUID.randomUUID().toString(), "$name$it", "$it") })
+        val home = roster("测试主队")
+        return MatchEngine.apply(MatchFactory.create(UUID.randomUUID().toString(), home, roster("测试客队"),
+            Rules(recordingMethod = if (pro) "situation" else "traditional"), home.id), Command("pitch", pitch = PitchAction.ball))
+    }
+
+    private class Memory(var state: VoiceDevice = VoiceDevice()) : VoiceDeviceStore {
+        override fun read() = state
+        override fun write(device: VoiceDevice) { state = device }
+    }
+    private class FakeService : VoiceService {
+        val operations = mutableListOf<String>()
+        var fail = false
+        var active = true
+        var observed = ""
+        var analysis = VoiceAnalysis(1, "记一个好球", VoiceAnalysis.Ball("unknown", "unknown", "unknown"),
+            listOf(VoiceAnalysis.Event(1, "pitch", "好球", pitchResult = "called_strike")), emptyList())
+        override suspend fun redeem(code: String, device: String, operation: String): String {
+            operations += operation
+            if (fail) throw VoiceIssue("模拟丢响应")
+            return "T".repeat(32)
+        }
+        override suspend fun entitlement(token: String) = active
+        override suspend fun grant(context: JsonObject, token: String): VoiceGrant = error("Synthetic recorder uses no network")
+        override suspend fun end(id: String, token: String) = Unit
+        override suspend fun analyze(text: String, context: JsonObject, token: String): VoiceAnalysis {
+            observed = text
+            return analysis
+        }
+    }
+
+    @Test fun redemptionRetriesSameOperationAndRevocationClearsSealedState() = runBlocking {
+        val store = Memory()
+        val service = FakeService()
+        val access = VoiceAccess(store, service)
+        service.fail = true
+        assertTrue(runCatching { access.redeem(" DEMO-1 ") }.isFailure)
+        assertNull(access.token)
+        assertNotNull(store.state.pendingOperation)
+        service.fail = false
+        access.redeem("demo-1")
+        assertEquals(2, service.operations.size)
+        assertEquals(service.operations.first(), service.operations.last())
+        assertNull(store.state.pendingOperation)
+        assertEquals("T".repeat(32), store.state.token)
+        service.active = false
+        access.refresh()
+        assertNull(access.token); assertNull(store.state.token)
+    }
+
+    @Test fun consentCancellationSendsNothingThenSyntheticTranscriptCanBeEditedAndConfirmedOnce() {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(inst)
+        Configurator.getInstance().setWaitForIdleTimeout(500).setWaitForSelectorTimeout(3000)
+        val fake = FakeService()
+        val access = VoiceAccess(Memory(VoiceDevice(token = "T".repeat(32))), fake)
+        runBlocking { access.refresh() }
+        val original = game()
+        val saved = AtomicReference(original)
+        val writes = AtomicInteger()
+        val recordings = AtomicInteger()
+        val recorder = object : VoiceRecording {
+            override suspend fun run(context: JsonObject, token: String, stop: AtomicBoolean,
+                phase: (VoicePhase) -> Unit, transcript: (String) -> Unit): String {
+                recordings.incrementAndGet()
+                phase(VoicePhase.finishing)
+                return "好球"
+            }
+        }
+        inst.runOnMainSync { activity.activity.setContent {
+            BaseballTheme {
+                var current by remember { mutableStateOf(original) }
+                if (current.revision != original.revision) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("已确认本球") } else
+                    VoiceScoringScreen(original, access, { current.revision == original.revision }, false, {},
+                        confirm = { command ->
+                            current = MatchEngine.apply(current, command)
+                            saved.set(current)
+                            writes.incrementAndGet()
+                        }, recording = recorder)
+            }
+        } }
+        fun tap(tag: String) = NativeUi.find(device, By.res(tag)).click()
+        tap("start-voice-recording")
+        tap("cancel-voice-consent")
+        assertEquals(0, recordings.get())
+        assertEquals("", fake.observed)
+        tap("start-voice-recording")
+        tap("accept-voice-consent")
+        val field = NativeUi.find(device, By.res("voice-transcript"))
+        field.click()
+        field.text = "确认好球"
+        inst.runOnMainSync {
+            val manager = inst.targetContext.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+            android.view.inspector.WindowInspector.getGlobalWindowViews().forEach { manager.hideSoftInputFromWindow(it.windowToken, 0) }
+        }
+        tap("analyze-voice-play")
+        assertEquals(0, writes.get())
+        tap("confirm-voice-play")
+        assertTrue(device.wait(Until.hasObject(By.text("已确认本球")), 10_000))
+        assertEquals(1, recordings.get())
+        assertEquals("确认好球", fake.observed)
+        assertEquals(1, writes.get())
+        val after = saved.get()
+        assertEquals(original.revision + 1, after.revision)
+        assertEquals(original.totalPitches, MatchEngine.undo(after).totalPitches)
+    }
+
+    @Test fun missingLocationCanBecomeAProDraftButMissingRunnerResolutionCannotCommit() {
+        val g = game(pro = true)
+        val analysis = VoiceAnalysis(1, "一垒安打", VoiceAnalysis.Ball("ground", "unknown", "single"),
+            listOf(VoiceAnalysis.Event(1, "advance", "安打", playerId = g.batter.id, fromBase = "batter", toBase = "first")),
+            listOf("未提及落点"))
+        val command = requireNotNull(voiceProposal(analysis, g, "安打"))
+        assertEquals(Outcome.single, command.outcome)
+        assertEquals("unknown", command.observation?.precision)
+        assertNull(voiceProposal(analysis, g.copy(bases = listOf(g.battingTeam.players[2].id, null, null)), "安打"))
+        assertNull(voiceProposal(analysis, g, "没有证据"))
+        val packet = TencentTranscript()
+        assertFalse(packet.accept("""{"code":0,"result":{"index":1,"voice_text_str":"球"}}"""))
+        assertTrue(packet.accept("""{"code":0,"final":1,"result":{"index":0,"voice_text_str":"好"}}"""))
+        assertEquals("好球", packet.text)
+    }
+}

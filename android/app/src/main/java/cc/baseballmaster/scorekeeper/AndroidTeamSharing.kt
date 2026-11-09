@@ -10,6 +10,29 @@ import kotlinx.coroutines.ensureActive
  * rosters stay in the independent encrypted directory, never imported over it.
  */
 internal class AndroidTeamSharing(private val local: GameRepository, private val session: TeamDirectorySession) {
+    @Volatile private var sharedBroadcast: Pair<String, String>? = null
+    suspend fun broadcastTarget(game: Game) = withContext(Dispatchers.IO) { session.broadcastTarget(game) }
+    suspend fun broadcastSources(teamID: String) = withContext(Dispatchers.IO) { session.broadcastSources(teamID) }
+    suspend fun rotateBroadcast(teamID: String, code: String) = withContext(Dispatchers.IO) { session.rotateBroadcast(teamID, code) }
+    suspend fun publishBroadcast(game: Game, selection: BroadcastSelection? = null) =
+        withContext(Dispatchers.IO) { session.publishLocalBroadcast(game, selection) }
+    suspend fun publishSharedBroadcast(teamID: String, documentID: String, selection: BroadcastSelection) = withContext(Dispatchers.IO) {
+        session.publishSharedBroadcast(teamID, documentID, selection).also { status ->
+            if (status?.selected == true) sharedBroadcast = teamID to documentID
+        }
+    }
+    fun clearBroadcastBinding() { sharedBroadcast = null }
+    suspend fun maintainFixedSharedBroadcast() = withContext(Dispatchers.IO) {
+        val target = sharedBroadcast ?: return@withContext
+        try {
+            val status = session.publishSharedBroadcast(target.first, target.second)
+            if (status?.selected != true && sharedBroadcast == target) sharedBroadcast = null
+        } catch (e: TeamServiceFault) {
+            if (e.status in setOf(401, 403, 404, 409) && sharedBroadcast == target) sharedBroadcast = null
+            throw e
+        }
+    }
+
     suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
     /** Complete source-backed final archives only; native Game JSON is never uploaded here. */
     suspend fun stageFinalArchive(backupID: String, gameID: String, teamID: String, confirmed: Boolean) = withContext(Dispatchers.IO) {
@@ -39,6 +62,8 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
         session.prepareCreate(team,nickname)
     }
     suspend fun prepareProfile(teamID: String, revision: Long, name: String, shortName: String, city: String) = withContext(Dispatchers.IO) { session.prepareProfile(teamID,revision,name,shortName,city) }
+    suspend fun preparePlayers(teamID: String, revision: Long, players: List<SharedRosterPlayer>) =
+        withContext(Dispatchers.IO) { session.preparePlayers(teamID, revision, players) }
     suspend fun preparePlayer(teamID: String, revision: Long, player: SharedRosterPlayer) = withContext(Dispatchers.IO) { session.preparePlayer(teamID,revision,player) }
     suspend fun prepareMember(teamID: String, member: SharedTeamMember, role: TeamRole, remove: Boolean = false) = withContext(Dispatchers.IO) { session.prepareMember(teamID,member,role,remove) }
     suspend fun prepareInvite(teamID: String, role: TeamRole) = withContext(Dispatchers.IO) { session.prepareInvite(teamID,role) }

@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +39,11 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
     // stale draft if a process restart loads a newer persisted match.
     val source = model.scoringTaskSource?.takeIf { it.id == game.id && it.revision == sourceRevision } ?: game
     val wide = LocalWorkbenchWide.current
+    var voiceDraft by remember(game.id) { mutableStateOf<Command?>(null) }
+    LaunchedEffect(model.voice, game.id) {
+        try { model.voice.refresh() } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { /* Network trouble leaves manual scoring available. */ }
+    }
     var inlineTask by rememberSaveable(game.id) { mutableStateOf(false) }
     fun open(name: String) {
         returnPanel = ""
@@ -54,8 +60,15 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
     var confirmEndHalf by rememberSaveable(game.id) { mutableStateOf(false) }
     val controls: @Composable () -> Unit = {
     if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
-        ScoreControl("击球进入场内", "record-play", Modifier.fillMaxWidth(), enabled && panel.isEmpty(), filled = true) {
-            if (!game.openingPitchRecorded && !game.practice) openingPlay = true else open("play")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            ScoreControl("击球进入场内", "record-play", Modifier.weight(1f), enabled && panel.isEmpty(), filled = true) {
+                if (!game.openingPitchRecorded && !game.practice) openingPlay = true else open("play")
+            }
+            if (model.voice.token != null && game.voiceEligible())
+                FilledTonalIconButton({ open("voice") }, modifier = Modifier.size(48.dp).testTag("open-voice-scoring"),
+                    enabled = enabled && panel.isEmpty()) {
+                    Icon(painterResource(R.drawable.ic_voice_mic), "语音输入")
+                }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ScoreControl("跑者 / 出局", "record-runner", Modifier.weight(1f), enabled && panel.isEmpty()) { open("runner") }
@@ -182,6 +195,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
     if (panel.isNotEmpty()) {
         val snapshot = source.copy(revision = sourceRevision)
         val close = {
+            voiceDraft = null
             model.scoringTaskSource = model.openedGame ?: game
             sourceRevision = (model.openedGame ?: game).revision
             panel = returnPanel
@@ -189,10 +203,48 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
         }
         val save: (Command) -> Unit = { model.command(it, snapshot.revision, close) }
         when (panel) {
+            "team-broadcast" -> {
+                var target by remember(snapshot.id) { mutableStateOf<BroadcastTarget?>(null) }
+                var loaded by remember(snapshot.id) { mutableStateOf(false) }
+                LaunchedEffect(snapshot.id) {
+                    try { target = model.sharing.broadcastTarget(snapshot) }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (_: Exception) { }
+                    finally { loaded = true }
+                }
+                val selected = target
+                if (selected == null) ProductPage("球队固定转播源", onBack = close, backLabel = "返回比赛", modal = true) {
+                    Text(if (!loaded) "正在读取球队授权…" else "本场没有可用的球队转播源。请用管理员或记录员身份连接球队后重试。")
+                } else BroadcastSourcesScreen(model.sharing, selected.teamID, currentGameID = selected.gameID,
+                    select = if (snapshot.isPregame || snapshot.isFinal) null else { selection -> model.selectFixedBroadcast(snapshot, selection) },
+                    dismiss = close)
+            }
             "rule-notices" -> ProductPage("比赛规则提醒", onBack = close, backLabel = "返回比赛", modal = true) {
                 game.ruleNotices(System.currentTimeMillis()).forEach { notice -> CardBlock { Text(notice, fontSize = 14.sp) } }
             }
             "play" -> PlayEditor(snapshot, model.busy, close, onNeedsCorrection = { panel = "correction" }, save = save)
+            "voice" -> VoiceScoringScreen(snapshot, model.voice, matches = {
+                model.openedGame?.let { it.id == snapshot.id && it.revision == snapshot.revision && it.voiceEligible() } == true
+            }, busy = model.busy, dismiss = close, confirm = { candidate ->
+                val current = model.openedGame
+                if (!model.busy && current?.id == snapshot.id && current.revision == snapshot.revision &&
+                    current.voiceEligible() && model.voice.token != null) {
+                    if (candidate.kind == "play" && snapshot.rules.recordingMethod == "situation") {
+                        voiceDraft = candidate
+                        panel = "voice-play"
+                    } else save(candidate)
+                }
+            })
+            "voice-play" -> {
+                val draft = voiceDraft
+                if (draft == null) ProductPage("语音记分", onBack = close, backLabel = "返回比赛", modal = true) {
+                    Text("语音草稿已结束，请返回记分。")
+                } else PlayEditor(snapshot, model.busy, close, initial = draft, voiceConfirmation = true, save = { candidate ->
+                    val current = model.openedGame
+                    if (!model.busy && current?.id == snapshot.id && current.revision == snapshot.revision &&
+                        current.voiceEligible() && model.voice.token != null) save(candidate)
+                })
+            }
             "runner" -> ProductRunnerEditor(snapshot, model.busy, close, save = save)
             "amend-observation" -> {
                 val index = snapshot.journal.take(snapshot.cursor).indexOfLast { it.command.kind == "play" }
