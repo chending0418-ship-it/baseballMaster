@@ -491,7 +491,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
+				INFOPLIST_KEY_CFBundleDisplayName = "棒球比赛记录大师";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -520,7 +520,7 @@
 				DEVELOPMENT_TEAM = JUTVG7XR9H;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "棒球大师";
+				INFOPLIST_KEY_CFBundleDisplayName = "棒球比赛记录大师";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
