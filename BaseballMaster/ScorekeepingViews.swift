@@ -932,11 +932,11 @@ struct ScorekeepingView: View {
                         if store.isPregame { pendingOpeningVoice = true; confirmOpeningLineups = true }
                         else { openVoice() }
                     } label: {
-                        Image(systemName: "mic")
+                        Image(systemName: "mic.fill")
                             .font(.system(size: 18, weight: .semibold))
                     }
                     .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green))
-                    .frame(width: 44)
+                    .frame(width: 56)
                     .disabled(!store.canRecordAction || store.requiresTiebreakRunnerPlacement)
                     .accessibilityLabel("语音输入")
                     .accessibilityIdentifier("open-voice-scoring")
