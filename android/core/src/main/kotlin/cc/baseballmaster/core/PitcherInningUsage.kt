@@ -24,7 +24,7 @@ internal fun Game.includeMoundAppearance(situation: Situation?) {
 /** Old Android snapshots counted automatically inherited half innings. Rebuild
  * only what the saved events prove; do not derive mound usage from statistical IP. */
 fun Game.restorePitcherInningUsage() {
-    if (pitcherInningUsageCurrent) return
+    if (scheduledSetupPending || pitcherInningUsageCurrent) return
     val oldUsage = pitcherInnings.toMap()
     pitcherInnings.clear()
     pitcherInningUsageCurrent = true
