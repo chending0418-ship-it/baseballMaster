@@ -9520,6 +9520,45 @@ extension GameStoreTests {
 }
 
 extension GameStoreTests {
+    func testV315VoiceOpeningDraftLeavesClockStoppedUntilFirstPitch() throws {
+        let store = freshStore()
+        XCTAssertTrue(store.isPregame)
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        XCTAssertTrue(context.matches(store))
+        XCTAssertNil(store.activeStoredGame?.startedAt)
+        XCTAssertFalse(store.hasStartedGameClock)
+        XCTAssertTrue(store.game.scoringEvents?.isEmpty ?? true)
+
+        store.recordPitch(.ball)
+        XCTAssertEqual(store.game.balls, 1)
+        XCTAssertTrue(store.isGameClockRunning)
+        XCTAssertNotNil(store.activeStoredGame?.startedAt)
+        XCTAssertEqual(store.activeStoredGame?.openingPitchRecorded, true)
+        XCTAssertFalse(context.matches(store))
+    }
+
+    func testV315VoicePracticeContextSupportsBothModesAndExpiresOnReset() throws {
+        let store = GameStore(persistenceURL: nil)
+        XCTAssertNil(VoicePlayContext(store), "An empty store is not a practice session")
+        for method in RecordingMethod.allCases {
+            store.resetPracticeInning(method: method)
+            let draft = try XCTUnwrap(VoicePlayContext(store))
+            XCTAssertEqual(draft.state.rulesSnapshot?.effectiveRecordingMethod, method)
+            XCTAssertTrue(draft.matches(store))
+            store.recordPitch(.ball)
+            XCTAssertEqual(store.game.balls, 1)
+            XCTAssertFalse(store.hasStartedGameClock)
+            XCTAssertNil(store.activeStoredGame)
+            XCTAssertTrue(store.games.isEmpty)
+            XCTAssertFalse(draft.matches(store))
+
+            store.resetPracticeInning(method: method)
+            let reset = try XCTUnwrap(VoicePlayContext(store))
+            XCTAssertNotEqual(draft.gameID, reset.gameID)
+            XCTAssertFalse(draft.matches(store))
+        }
+    }
+
     func testV315VoiceProKeepsUnknownLandingAndSavesOneUndoablePlay() throws {
         let store = freshStore()
         store.startGameClock()

@@ -61,6 +61,7 @@ final class GameStore: ObservableObject {
     var isHistoryReplay = false
     var historyReplayDate: Date?
     var transientCorrectionID = UUID()
+    private(set) var practiceSessionID: UUID?
     var historyPendingCommand: HistoryCommand?
     var historySuppressCapture = false
     private var actionDepth = 0
@@ -739,6 +740,7 @@ final class GameStore: ObservableObject {
 
     func resetPracticeInning(method: RecordingMethod = .traditional) {
         transientCorrectionID = UUID()
+        practiceSessionID = transientCorrectionID
         cancelPitcherChange()
         activeGameID = nil
         let awayTeam = teams.first(where: { $0.players.count >= 9 }) ?? Self.makeWaves()

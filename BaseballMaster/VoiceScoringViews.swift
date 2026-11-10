@@ -12,10 +12,10 @@ struct VoiceScoringSettings: View {
                 if access.active {
                     Label("语音记分已开通", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(BMTheme.green)
-                    Text("在现场记分页点「语音输入」，一次记录一个局面。")
+                    Text("在现场记分或练习时点「语音输入」，一次记录一个局面。")
                         .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
                 } else {
-                    Text("输入管理员发给你的开启码。开通后，基础版和 Pro 都可在现场记分时选用语音。")
+                    Text("输入管理员发给你的开启码。开通后，基础版和 Pro 都可在现场记分或练习时选用语音。")
                         .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
                     SecureField("语音开启码", text: $code)
                         .textInputAutocapitalization(.characters)

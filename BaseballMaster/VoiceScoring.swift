@@ -152,6 +152,12 @@ final class VoiceScoringAccess: ObservableObject {
     ]
 
     private init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--voice-access-preview") {
+            active = true
+            return
+        }
+        #endif
         if let saved = try? read().token {
             token = saved
             active = true
@@ -159,6 +165,9 @@ final class VoiceScoringAccess: ObservableObject {
     }
 
     func refresh() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--voice-access-preview") { return }
+        #endif
         guard !redeeming, let saved = try? read().token else { return }
         do {
             let enabled = try await service.entitlement(saved)
@@ -242,13 +251,17 @@ struct VoicePlayContext {
     let state: GameState
     let payload: MatchJSON
 
+    @MainActor static func sessionID(for store: GameStore) -> UUID? {
+        store.activeStoredGame?.id ?? store.practiceSessionID
+    }
+
     @MainActor init?(_ store: GameStore) {
-        guard let match = store.activeStoredGame, store.canRecordAction,
-              !store.isPregame, !store.requiresTiebreakRunnerPlacement, !store.isHistoryReplay,
+        guard let id = Self.sessionID(for: store), store.canRecordAction,
+              !store.requiresTiebreakRunnerPlacement, !store.isHistoryReplay,
               store.game.inning <= 99, store.game.outs <= 2,
               (0...3).contains(store.game.balls), (0...2).contains(store.game.strikes) else { return nil }
-        gameID = match.id
-        revision = match.revision ?? 0
+        gameID = id
+        revision = store.activeStoredGame?.revision ?? 0
         state = store.game
         let batter = state.currentBatter
         let active = store.activeFielders.filter { $0.primaryPosition.rawValue <= 9 }
@@ -262,8 +275,8 @@ struct VoicePlayContext {
         }
         let rulesProfile = store.isSlowPitch ? "BM-slowPitch" : store.isCoachPitch ? "BM-coachPitch" : "OBR-2026"
         payload = .object([
-            "schemaVersion": .number(1), "gameId": .uuid(match.id), "revision": .number(Double(revision)),
-            "plateAppearanceId": .string(state.currentPlateAppearanceID?.uuidString.lowercased() ?? "\(match.id.uuidString.lowercased())-\(revision)"),
+            "schemaVersion": .number(1), "gameId": .uuid(gameID), "revision": .number(Double(revision)),
+            "plateAppearanceId": .string(state.currentPlateAppearanceID?.uuidString.lowercased() ?? "\(gameID.uuidString.lowercased())-\(revision)"),
             "rulesProfile": .string(rulesProfile), "inning": .number(Double(state.inning)),
             "half": .string(state.isTop ? "top" : "bottom"), "outs": .number(Double(state.outs)),
             "balls": .number(Double(state.balls)), "strikes": .number(Double(state.strikes)),
@@ -277,7 +290,7 @@ struct VoicePlayContext {
 
     @MainActor func matches(_ store: GameStore) -> Bool {
         store.canRecordAction && !store.isHistoryReplay && !store.requiresTiebreakRunnerPlacement
-            && gameID == store.activeStoredGame?.id && revision == (store.activeStoredGame?.revision ?? 0) && state == store.game
+            && gameID == Self.sessionID(for: store) && revision == (store.activeStoredGame?.revision ?? 0) && state == store.game
     }
 }
 
