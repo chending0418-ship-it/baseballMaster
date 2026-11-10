@@ -1,14 +1,14 @@
 App: Baseball Scorekeeper (棒球比赛记录大师)
-Version: 3.1.5 (Build 1)
+Version: 3.1.5 (next candidate, add the build number before submission)
 Bundle ID: com.jasonchen.baseballmaster
 
 Local scorekeeping is available without an account. The interface is in Simplified Chinese. Basic and Pro are included scorekeeping modes. There are no subscriptions or in-app purchases.
 
 Manual scoring: In Profile (我的), open Practice an Inning (练习一局), choose Basic or Pro, and start. Record a pitch, a batted ball, or a runner's advance. Pro also lets you select a landing point and a fielding route. Practice does not affect official statistics.
 
-Optional voice scoring: One-time App Review activation code: [insert an unused review code here before submission]. Redeem it in Profile > App Settings > Voice Scoring (我的 → App 设置 → 语音记分). In the live scorekeeping screen of a regular game, tap the microphone next to Ball in Play (击球进入场内). Tap Start Recording (开始录音), read the disclosure, choose Agree and Start Recording (同意并开始录音), then grant microphone permission and speak one play in Mandarin. With the bases empty, say “坏球” (ball), stop recording, review the transcript, tap Analyze Play (解析局面), and confirm. For a Pro example, say “一垒安打，打者上一垒” (single; batter to first), then add the landing point on the field if prompted. A play is saved only after confirmation.
+Optional voice scoring. One-time App Review activation code: [insert an unused review code here before submission]. Redeem it in Profile > App Settings > Voice Scoring (我的 → App 设置 → 语音记分). In live scorekeeping, tap the microphone beside Ball in Play (击球进入场内). Read the disclosure, tap Agree and Start Recording (同意并开始录音), grant microphone permission, then speak one play in Mandarin when recording starts. Tap Finish and Generate Suggestion (结束并生成建议), check the result and any runner movements, and tap Confirm and Record This Play (确认记入本球). You can also choose Finish and Review Transcript First (结束，先核对转写), edit the text, then request analysis. In Pro, you can optionally add a missing landing point. Complete any required fielding details if prompted.
 
-Audio goes directly to Tencent Cloud Speech Recognition. When Analyze Play is tapped, our service sends the transcript and current game situation to the Hunyuan model via Tencent Cloud TokenHub. Voice scoring requires an internet connection. Manual scoring works offline.
+Audio goes directly to Tencent Cloud Speech Recognition. When Finish and Generate Suggestion (结束并生成建议) or Analyze Play (解析局面) is tapped, our service sends the transcript and the necessary game situation to the Hunyuan model via Tencent Cloud TokenHub. Voice scoring requires an internet connection. Manual scoring works offline.
 
 Pitcher limits: When creating a game, enable the individual pitcher pitch limit and enter a positive number, such as 3. The pitch and inning limits show warnings while scoring can continue.
 

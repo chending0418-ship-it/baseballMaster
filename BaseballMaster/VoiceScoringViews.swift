@@ -12,10 +12,10 @@ struct VoiceScoringSettings: View {
                 if access.active {
                     Label("语音记分已开通", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(BMTheme.green)
-                    Text("在现场记分页点「语音输入」，一次记录一个局面。")
+                    Text("在现场记分或练习时点「语音输入」，一次记录一个局面。")
                         .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
                 } else {
-                    Text("输入管理员发给你的开启码。开通后，基础版和 Pro 都可在现场记分时选用语音。")
+                    Text("输入管理员发给你的开启码。开通后，基础版和 Pro 都可在现场记分或练习时选用语音。")
                         .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
                     SecureField("语音开启码", text: $code)
                         .textInputAutocapitalization(.characters)
@@ -58,50 +58,81 @@ struct VoiceScoringSheet: View {
     let pro: Bool
 
     @State private var text = ""
-    @State private var analysis: VoiceAnalysis?
-    @State private var proposal: VoicePlayProposal?
+    @State private var reviewResult: VoicePlayReview?
+    @State private var showTranscript = false
+    @State private var recordingAuthorized = false
+    @State private var generateWhenFinalized = false
+    @State private var hasRequestedAnalysis = false
     @State private var proDraft: SituationExistingPlay?
     @State private var analysisTask: Task<Void, Never>?
     @State private var issue: String?
     @State private var submitted = false
-    @State private var confirmVoiceDataSharing = false
+
+    init(context: VoicePlayContext, pro: Bool) {
+        self.context = context
+        self.pro = pro
+    }
+
+    #if DEBUG
+    init(context: VoicePlayContext, pro: Bool, previewTranscript: String, previewReview: VoicePlayReview) {
+        self.init(context: context, pro: pro)
+        _text = State(initialValue: previewTranscript)
+        _reviewResult = State(initialValue: previewReview)
+    }
+    #endif
 
     var body: some View {
         Group {
             if let proDraft {
                 SituationPlayFlowSheet(illegalPitch: false, initial: proDraft, onSave: savePro,
-                                       onClose: { dismiss() }, voiceReview: true)
+                                       onClose: returnToManual, voiceReview: true)
             } else {
                 NavigationStack {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("第 \(context.state.inning) 局\(context.state.isTop ? "上" : "下") · \(context.state.outs) 出局 · \(context.state.currentBatter.compactName)")
                                 .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
-                            Text("只说刚才发生的一个局面。解析前可以核对、修改转写。")
-                                .font(.footnote).foregroundStyle(BMTheme.secondaryText)
-                            recordControl
-                            if !text.isEmpty || analysis != nil || analysisTask != nil {
-                                transcriptEditor
+                            if let reviewResult { review(reviewResult) }
+                            if let issue {
+                                Text(issue).font(.footnote).foregroundStyle(BMTheme.red).accessibilityIdentifier("voice-issue")
                             }
-                            if let analysis { review(analysis) }
-                            if let issue { Text(issue).font(.footnote).foregroundStyle(BMTheme.red).accessibilityIdentifier("voice-issue") }
+                            if analysisTask != nil { analysisProgress }
+                            if recorder.phase != .idle || (text.isEmpty && !showTranscript && reviewResult == nil && analysisTask == nil) {
+                                recordControl
+                            }
+                            if recorder.phase == .idle, showTranscript || !text.isEmpty {
+                                transcriptControl
+                            }
                         }
                         .frame(maxWidth: 560)
                         .padding(16)
                         .frame(maxWidth: .infinity)
                     }
+                    .scrollDismissesKeyboard(.interactively)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { confirmationBar }
                     .bmScreenBackground()
                     .navigationTitle("语音输入")
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("返回手动记分", action: returnToManual)
+                                .accessibilityIdentifier("voice-return-manual")
+                        }
+                    }
                 }
             }
         }
         .gameActionErrorAlert(store)
         .onChange(of: recorder.transcript) { text = $0 }
+        .onChange(of: recorder.finalized) { _ in finishRecordingIfReady() }
+        .onChange(of: recorder.phase) { _ in finishRecordingIfReady() }
         .onReceive(recorder.$error) { error in
             guard let error else { return }
             if let token = access.token { access.report(error, for: token) }
+            generateWhenFinalized = false
+            if !recorder.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                showTranscript = true
+            }
             issue = error.localizedDescription
         }
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
@@ -114,38 +145,57 @@ struct VoiceScoringSheet: View {
                 recorder.interrupt()
             }
         }
-        .onChange(of: scenePhase) { if $0 == .background { recorder.interrupt() } }
+        .onChange(of: scenePhase) {
+            if $0 == .background {
+                generateWhenFinalized = false
+                recorder.interrupt()
+            }
+        }
         .onDisappear { recorder.cancel(); cancelAnalysis() }
     }
 
     @ViewBuilder private var recordControl: some View {
         switch recorder.phase {
         case .idle:
-            Button {
-                confirmVoiceDataSharing = true
-            } label: {
-                Label(text.isEmpty ? "开始录音" : "重新录音", systemImage: "mic")
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(analysisTask != nil || !access.active)
-            .accessibilityIdentifier("start-voice-recording")
-            .alert("使用语音记分", isPresented: $confirmVoiceDataSharing) {
-                Button("同意并开始录音", action: beginRecording)
-                Button("取消", role: .cancel) {}
-            } message: {
-                Text("录音将直接发送给腾讯云语音识别，当前局面会发给我们的服务。点「解析局面」后，转写和当前局面（可能含球员姓名、背号）会发给腾讯云混元 AI 生成记分建议。你也可以取消并手动记分。")
+            VStack(alignment: .leading, spacing: 10) {
+                Text("录音直传腾讯云做语音识别，连接时我们的服务接收必要比赛局面。选择「结束并生成建议」或「解析局面」后，转写和必要局面（可能含球员姓名、背号）会经本服务发给腾讯云混元 AI。")
+                    .font(.footnote)
+                    .foregroundStyle(BMTheme.secondaryText)
+                    .accessibilityIdentifier("voice-recording-disclosure")
+                Button(action: beginRecording) {
+                    Label(text.isEmpty ? "同意并开始录音" : "同意并重新录音", systemImage: "mic")
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(analysisTask != nil || !access.active)
+                .accessibilityIdentifier("start-voice-recording")
             }
         case .connecting, .finishing:
             HStack {
                 ProgressView()
-                Text(recorder.phase == .connecting ? "正在连接麦克风…" : "正在接收最终转写…")
+                Text(recorder.phase == .connecting ? "正在连接，请稍候再说" : "正在接收最终转写…")
                 Spacer()
-                Button("取消录音") { recorder.cancel(); text = "" }
+                Button("停止等待") {
+                    generateWhenFinalized = false
+                    recorder.cancel()
+                    showTranscript = !text.isEmpty
+                }
             }
         case .recording:
-            Button { recorder.stop() } label: { Label("结束录音", systemImage: "stop.circle") }
+            VStack(alignment: .leading, spacing: 10) {
+                Text("正在录音，现在可以说。")
+                    .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
+                Button { endRecording(generateSuggestion: true) } label: {
+                    Label("结束并生成建议", systemImage: "stop.circle")
+                }
                 .buttonStyle(PrimaryButtonStyle())
                 .accessibilityIdentifier("stop-voice-recording")
+                Button("结束，先核对转写") { endRecording(generateSuggestion: false) }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("stop-voice-review-transcript")
+                if !text.isEmpty {
+                    Text(text).font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                }
+            }
         }
     }
 
@@ -156,119 +206,275 @@ struct VoiceScoringSheet: View {
             return
         }
         issue = nil
-        analysis = nil
-        proposal = nil
+        reviewResult = nil
+        showTranscript = false
+        hasRequestedAnalysis = false
+        generateWhenFinalized = false
+        recordingAuthorized = true
         text = ""
         recorder.start(context: context.payload, token: token, service: access.service)
     }
 
-    private var transcriptEditor: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("语音转写").font(.headline)
-            TextEditor(text: Binding(get: { text }, set: {
-                text = $0
-                analysis = nil
-                proposal = nil
-            }))
-            .frame(minHeight: 86)
-            .padding(6)
-            .background(BMTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .disabled(recorder.phase != .idle || analysisTask != nil)
-            .accessibilityLabel("语音转写")
-            .accessibilityIdentifier("voice-transcript")
+    private func endRecording(generateSuggestion: Bool) {
+        generateWhenFinalized = generateSuggestion
+        showTranscript = !generateSuggestion
+        recorder.stop()
+    }
 
-            if analysisTask != nil {
-                HStack {
-                    ProgressView()
-                    Text("正在解析本球…")
-                    Spacer()
-                    Button("取消解析", action: cancelAnalysis)
-                }
-            } else {
-                Button("解析局面", action: parse)
-                    .buttonStyle(SecondaryButtonStyle())
-                    .disabled(!recorder.finalized || recorder.phase != .idle || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityIdentifier("analyze-voice-play")
+    private func finishRecordingIfReady() {
+        guard generateWhenFinalized, recorder.phase == .idle else { return }
+        generateWhenFinalized = false
+        guard recorder.finalized, scenePhase == .active else {
+            showTranscript = !recorder.transcript.isEmpty
+            return
+        }
+        requestAnalysis(recorder.transcript)
+    }
+
+    private var analysisProgress: some View {
+        HStack {
+            ProgressView()
+            Text("正在解析本球…")
+            Spacer()
+            Button("停止等待") {
+                cancelAnalysis()
+                showTranscript = true
             }
         }
     }
 
-    private func review(_ analysis: VoiceAnalysis) -> some View {
+    private var transcriptControl: some View {
+        DisclosureGroup("查看或修改转写", isExpanded: $showTranscript) {
+            VStack(alignment: .leading, spacing: 12) {
+                TextEditor(text: Binding(get: { text }, set: {
+                    text = $0
+                    if case .ready? = reviewResult { reviewResult = nil }
+                }))
+                .frame(minHeight: 86)
+                .padding(6)
+                .background(BMTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .disabled(analysisTask != nil)
+                .accessibilityLabel("语音转写")
+                .accessibilityIdentifier("voice-transcript")
+                if analysisTask == nil {
+                    Button(hasRequestedAnalysis ? "重新解析" : "解析局面") { requestAnalysis(text) }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(!recordingAuthorized || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("analyze-voice-play")
+                    recordControl
+                }
+            }
+            .padding(.top, 8)
+        }
+        .accessibilityIdentifier("voice-edit-transcript")
+        .tint(BMTheme.navy)
+    }
+
+    private func review(_ result: VoicePlayReview) -> some View {
         BMCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("核对本球").font(.headline)
-                Text(analysis.summary)
-                ForEach(Array(analysis.observations.enumerated()), id: \.offset) { entry in
-                    Text(entry.element).font(.footnote).foregroundStyle(BMTheme.secondaryText)
-                }
-                if let proposal {
-                    Text(proposal.title).font(.subheadline.bold())
+                switch result {
+                case .ready(let proposal, let suggested):
+                    Text(suggested ? "建议记为\(proposal.title)" : proposal.title)
+                        .font(.title3.bold())
+                        .accessibilityIdentifier("voice-review-result")
+                    Text("本球尚未记录").font(.caption).foregroundStyle(BMTheme.secondaryText)
                     if case .hit(let play) = proposal {
+                        ForEach(Array(play.decisions.enumerated()), id: \.element.id) { index, decision in
+                            runnerRow(index: index, decision: decision, play: play, suggested: suggested)
+                        }
+                        if pro {
+                            Text(play.observation.hasLocation ? play.observation.summary : play.observation.type.title)
+                                .font(.subheadline)
+                                .accessibilityIdentifier("voice-pro-contact-summary")
+                            if !play.observation.hasLocation {
+                                Label("落点未记录，可补录", systemImage: "location.circle")
+                                    .font(.footnote)
+                                    .foregroundStyle(BMTheme.secondaryText)
+                                    .accessibilityIdentifier("voice-missing-landing")
+                            }
+                        }
                         if let fielding = play.observation.fielding {
-                            Text(fielding.description).font(.subheadline)
+                            Text(fielding.description).font(.footnote).foregroundStyle(BMTheme.secondaryText)
                         }
-                        ForEach(play.decisions) { item in
-                            Text("\(item.origin.title) · \(item.player.compactName) · \(item.destination.title)").font(.subheadline)
-                        }
-                        if pro && !play.observation.hasLocation {
-                            Label("转写未包含落点，请在球场补录。", systemImage: "location.circle")
-                                .foregroundStyle(BMTheme.secondaryText)
-                                .accessibilityIdentifier("voice-missing-landing")
+                        if let runnerIssue = runnerIssue(play.decisions) {
+                            Text(runnerIssue).font(.footnote).foregroundStyle(BMTheme.red)
+                                .accessibilityIdentifier("voice-runner-issue")
+                        } else if pro {
+                            if let missing = proIssue(play) {
+                                Label(missing, systemImage: "location.circle")
+                                    .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                                    .accessibilityIdentifier("voice-pro-missing-field")
+                            } else if !store.situationNeedsTimingDecision(play.outcome, decisions: play.decisions) || play.timing != nil {
+                                Button(play.observation.hasLocation ? "修改球场记录" : "补录落点") { proDraft = play }
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(minHeight: 44)
+                                    .accessibilityIdentifier("voice-edit-pro-contact")
+                            }
                         }
                     }
-                    Button(reviewActionTitle(proposal)) { confirm(proposal) }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .disabled(submitted)
-                        .accessibilityIdentifier("confirm-voice-play")
-                } else {
-                    Text("这个局面需要手动核对，请返回记分页继续记录。")
-                        .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
-                    Button("返回手动记分") { dismiss() }.buttonStyle(SecondaryButtonStyle())
+                case .needsDetails(let prompts):
+                    Text("本球还需核对").font(.headline)
+                    ForEach(prompts, id: \.self) { prompt in
+                        Text(prompt).font(.subheadline).foregroundStyle(BMTheme.secondaryText)
+                    }
+                    Text("可以改转写后重新解析，或返回手动记分。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func reviewActionTitle(_ proposal: VoicePlayProposal) -> String {
-        if pro, case .hit(let play) = proposal {
-            return play.observation.hasLocation ? "到球场核对" : "到球场补落点"
+    @ViewBuilder
+    private func runnerRow(index: Int, decision: RunnerDecision, play: SituationExistingPlay, suggested: Bool) -> some View {
+        if decision.origin != .batter, play.outcome.isHit, play.outcome != .homeRun {
+            Menu {
+                ForEach(store.availableDestinations(for: decision).filter { $0 != .out }, id: \.self) { destination in
+                    Button {
+                        var edited = play
+                        edited.decisions[index].destination = destination
+                        edited.timing = nil
+                        reviewResult = .ready(.hit(edited), suggested: suggested)
+                    } label: {
+                        if destination == decision.destination {
+                            Label(destination.title, systemImage: "checkmark")
+                        } else {
+                            Text(destination.title)
+                        }
+                    }
+                    .accessibilityIdentifier("voice-destination-\(index)-\(destination.title)")
+                }
+            } label: {
+                runnerLabel(decision, editable: true)
+            }
+            .accessibilityIdentifier("voice-runner-\(index)")
+            .accessibilityLabel("\(decision.origin.title)，\(decision.player.compactName)，\(decision.destination.title)，修改去向")
+        } else {
+            runnerLabel(decision, editable: false)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("voice-runner-\(index)")
         }
-        return "确认记录"
     }
 
-    private func parse() {
-        guard analysisTask == nil, recorder.phase == .idle, recorder.finalized, let token = access.token, context.matches(store) else {
-            issue = "局面或语音权限已变化，请返回记分页。"; return
+    private func runnerLabel(_ decision: RunnerDecision, editable: Bool) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(decision.origin.title).font(.caption).foregroundStyle(BMTheme.secondaryText)
+                Text(decision.player.compactName).font(.subheadline).foregroundStyle(BMTheme.navy)
+            }
+            Spacer(minLength: 4)
+            Text(decision.destination.title).font(.subheadline.bold()).foregroundStyle(editable ? BMTheme.green : BMTheme.navy)
+            if editable {
+                Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(BMTheme.green)
+            }
         }
-        let transcript = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        issue = nil; analysis = nil; proposal = nil
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private var confirmationBar: some View {
+        if case .ready(let proposal, _)? = reviewResult {
+            Button(reviewActionTitle(proposal)) { confirm(proposal) }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(submitted || !access.active || !context.matches(store) || proposalHasRunnerIssue(proposal))
+                .accessibilityIdentifier("confirm-voice-play")
+                .frame(maxWidth: 560)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity)
+                .background(BMTheme.background)
+        }
+    }
+
+    private func proposalHasRunnerIssue(_ proposal: VoicePlayProposal) -> Bool {
+        if case .hit(let play) = proposal { return runnerIssue(play.decisions) != nil }
+        return false
+    }
+
+    private func runnerIssue(_ decisions: [RunnerDecision]) -> String? {
+        if let error = store.runnerDecisionValidationError(decisions, includesBatter: true) { return error }
+        let ranks = decisions.compactMap { decision -> Int? in
+            switch decision.destination {
+            case .base(let base): return base.rawValue
+            case .hold:
+                if case .base(let base) = decision.origin { return base.rawValue }
+                return nil
+            case .score: return 4
+            case .out: return nil
+            }
+        }
+        guard zip(ranks, ranks.dropFirst()).allSatisfy({ $0 < $1 || ($0 == 4 && $1 == 4) }) else {
+            return "请核对跑者去向，跑者不能占用同一垒或越过前面的跑者。"
+        }
+        return nil
+    }
+
+    private func proIssue(_ play: SituationExistingPlay) -> String? {
+        if play.observation.type == .unknown { return "请补录球型。" }
+        if play.observation.fielding == nil { return "请补录守备处理。" }
+        return store.situationObservationError(play.observation, outcome: play.outcome,
+                                               decisions: play.decisions, allowsMissingLanding: true)
+    }
+
+    private func reviewActionTitle(_ proposal: VoicePlayProposal) -> String {
+        if pro, case .hit(let play) = proposal {
+            if proIssue(play) != nil {
+                return "补录本球"
+            }
+            if store.situationNeedsTimingDecision(play.outcome, decisions: play.decisions), play.timing == nil {
+                return "核对得分先后"
+            }
+        }
+        return "确认记入本球"
+    }
+
+    private func requestAnalysis(_ input: String) {
+        guard analysisTask == nil, recorder.phase == .idle, recordingAuthorized,
+              access.active, let token = access.token, context.matches(store) else {
+            issue = "局面或语音权限已变化，请返回记分页。"
+            return
+        }
+        let transcript = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else { return }
+        issue = nil
+        reviewResult = nil
+        hasRequestedAnalysis = true
+        showTranscript = false
         analysisTask = Task {
+            defer { if !Task.isCancelled { analysisTask = nil } }
             do {
                 let result = try await access.service.analyze(transcript, context: context.payload, token: token)
                 try Task.checkCancellation()
                 guard context.matches(store), access.token == token else {
-                    issue = "局面或语音权限已变化，请返回记分页。"; analysisTask = nil; return
+                    issue = "局面或语音权限已变化，请返回记分页。"
+                    showTranscript = true
+                    return
                 }
-                analysis = result
-                let candidate = VoicePlayProposal(analysis: result, context: context, transcript: transcript)
-                if case .hit(let play)? = candidate, (!pro && !play.outcome.isHit && play.observation.fielding == nil)
-                    || (store.isSlowPitch && play.observation.type == .bunt) {
-                    proposal = nil
-                } else { proposal = candidate }
+                let review = VoicePlayReview(analysis: result, context: context, transcript: transcript,
+                                            pro: pro, slowPitch: store.isSlowPitch)
+                reviewResult = review
+                if case .needsDetails = review { showTranscript = true }
             } catch {
                 guard !Task.isCancelled else { return }
                 access.report(error, for: token)
                 issue = error.localizedDescription
+                showTranscript = true
             }
-            analysisTask = nil
         }
     }
 
     private func cancelAnalysis() {
         analysisTask?.cancel()
         analysisTask = nil
+    }
+
+    private func returnToManual() {
+        generateWhenFinalized = false
+        recorder.cancel()
+        cancelAnalysis()
+        dismiss()
     }
 
     private func confirm(_ proposal: VoicePlayProposal) {
@@ -282,16 +488,27 @@ struct VoiceScoringSheet: View {
             if store.storageErrorMessage == nil && store.actionErrorMessage == nil { dismiss() }
             else { submitted = false; issue = store.storageErrorMessage }
         case .hit(let play):
+            if let error = runnerIssue(play.decisions) {
+                issue = error
+                return
+            }
+            let defense = situationDefensivePlay(outcome: play.outcome, observation: play.observation, decisions: play.decisions)
             if pro {
-                proDraft = play
+                if proIssue(play) != nil || (store.situationNeedsTimingDecision(play.outcome, decisions: play.decisions) && play.timing == nil) {
+                    proDraft = play
+                } else if savePro(play.outcome, defense, play.decisions, play.timing, play.observation) {
+                    dismiss()
+                }
             } else {
                 submitted = true
-                let defense = situationDefensivePlay(outcome: play.outcome, observation: play.observation, decisions: play.decisions)
                 var observation = play.observation
                 observation.fielding = nil
                 if store.applyPlay(play.outcome, defensivePlay: defense, decisions: play.decisions, observation: observation),
                    store.storageErrorMessage == nil { dismiss() }
-                else { submitted = false; issue = store.storageErrorMessage }
+                else {
+                    submitted = false
+                    issue = store.storageErrorMessage ?? store.actionErrorMessage ?? "本球未能保存，请重新核对。"
+                }
             }
         }
     }
@@ -301,10 +518,18 @@ struct VoiceScoringSheet: View {
         guard !submitted, access.active, context.matches(store) else {
             store.actionErrorMessage = "局面或语音权限已变化，本球未记录。"; return false
         }
+        if let error = runnerIssue(decisions) {
+            store.actionErrorMessage = error
+            return false
+        }
         submitted = true
         let saved = store.applyPlay(outcome, defensivePlay: defense, decisions: decisions,
-                                   timingRunCounts: timing, observation: observation) && store.storageErrorMessage == nil
-        if !saved { submitted = false }
+                                   timingRunCounts: timing, observation: observation,
+                                   allowsMissingLanding: true) && store.storageErrorMessage == nil
+        if !saved {
+            submitted = false
+            issue = store.storageErrorMessage ?? store.actionErrorMessage ?? "本球未能保存，请重新核对。"
+        }
         return saved
     }
 }

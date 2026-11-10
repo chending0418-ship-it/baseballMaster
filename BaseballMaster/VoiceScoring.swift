@@ -152,6 +152,12 @@ final class VoiceScoringAccess: ObservableObject {
     ]
 
     private init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--voice-access-preview") {
+            active = true
+            return
+        }
+        #endif
         if let saved = try? read().token {
             token = saved
             active = true
@@ -159,6 +165,9 @@ final class VoiceScoringAccess: ObservableObject {
     }
 
     func refresh() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--voice-access-preview") { return }
+        #endif
         guard !redeeming, let saved = try? read().token else { return }
         do {
             let enabled = try await service.entitlement(saved)
@@ -242,13 +251,17 @@ struct VoicePlayContext {
     let state: GameState
     let payload: MatchJSON
 
+    @MainActor static func sessionID(for store: GameStore) -> UUID? {
+        store.activeStoredGame?.id ?? store.practiceSessionID
+    }
+
     @MainActor init?(_ store: GameStore) {
-        guard let match = store.activeStoredGame, store.canRecordAction,
-              !store.isPregame, !store.requiresTiebreakRunnerPlacement, !store.isHistoryReplay,
+        guard let id = Self.sessionID(for: store), store.canRecordAction,
+              !store.requiresTiebreakRunnerPlacement, !store.isHistoryReplay,
               store.game.inning <= 99, store.game.outs <= 2,
               (0...3).contains(store.game.balls), (0...2).contains(store.game.strikes) else { return nil }
-        gameID = match.id
-        revision = match.revision ?? 0
+        gameID = id
+        revision = store.activeStoredGame?.revision ?? 0
         state = store.game
         let batter = state.currentBatter
         let active = store.activeFielders.filter { $0.primaryPosition.rawValue <= 9 }
@@ -262,8 +275,8 @@ struct VoicePlayContext {
         }
         let rulesProfile = store.isSlowPitch ? "BM-slowPitch" : store.isCoachPitch ? "BM-coachPitch" : "OBR-2026"
         payload = .object([
-            "schemaVersion": .number(1), "gameId": .uuid(match.id), "revision": .number(Double(revision)),
-            "plateAppearanceId": .string(state.currentPlateAppearanceID?.uuidString.lowercased() ?? "\(match.id.uuidString.lowercased())-\(revision)"),
+            "schemaVersion": .number(1), "gameId": .uuid(gameID), "revision": .number(Double(revision)),
+            "plateAppearanceId": .string(state.currentPlateAppearanceID?.uuidString.lowercased() ?? "\(gameID.uuidString.lowercased())-\(revision)"),
             "rulesProfile": .string(rulesProfile), "inning": .number(Double(state.inning)),
             "half": .string(state.isTop ? "top" : "bottom"), "outs": .number(Double(state.outs)),
             "balls": .number(Double(state.balls)), "strikes": .number(Double(state.strikes)),
@@ -277,13 +290,61 @@ struct VoicePlayContext {
 
     @MainActor func matches(_ store: GameStore) -> Bool {
         store.canRecordAction && !store.isHistoryReplay && !store.requiresTiebreakRunnerPlacement
-            && gameID == store.activeStoredGame?.id && revision == (store.activeStoredGame?.revision ?? 0) && state == store.game
+            && gameID == Self.sessionID(for: store) && revision == (store.activeStoredGame?.revision ?? 0) && state == store.game
     }
 }
 
 private extension Base {
     var voiceName: String {
         switch self { case .first: "first"; case .second: "second"; case .third: "third" }
+    }
+}
+
+struct VoiceASRTranscript {
+    private struct Segment {
+        let text: String
+        let committed: Bool
+    }
+
+    private var segments: [Int: Segment] = [:]
+
+    var text: String {
+        segments.keys.sorted().compactMap { segments[$0]?.text }.joined()
+    }
+
+    mutating func receive(_ payload: String) throws -> Bool {
+        guard let message = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any],
+              message["code"] == nil || message["code"] as? Int == 0 else {
+            throw VoiceScoringError.message("腾讯语音识别未完成，请检查网络后重试。")
+        }
+
+        if let result = message["result"] as? [String: Any], let text = result["voice_text_str"] as? String {
+            update(text, at: Self.integer(result["index"]) ?? 0,
+                   committed: Self.integer(result["slice_type"]) == 2)
+        } else {
+            let container = message["sentences"]
+            let group = container as? [String: Any]
+            let sentences = container as? [[String: Any]] ?? group?["sentence_list"] as? [[String: Any]] ?? group.map { [$0] } ?? []
+            for (index, sentence) in sentences.enumerated() {
+                let nested = sentence["sentence"] as? [String: Any] ?? sentence
+                let id = Self.integer(sentence["sentence_id"] ?? nested["sentence_id"]) ?? index
+                let committed = Self.integer(sentence["sentence_type"] ?? nested["sentence_type"]) == 1
+                if let text = sentence["sentence"] as? String ?? nested["text"] as? String ?? nested["voice_text_str"] as? String {
+                    update(text, at: id, committed: committed)
+                }
+            }
+        }
+        return Self.integer(message["final"]) == 1
+    }
+
+    private mutating func update(_ text: String, at index: Int, committed: Bool) {
+        guard index >= 0, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              committed || segments[index]?.committed != true else { return }
+        segments[index] = Segment(text: text, committed: committed)
+    }
+
+    private static func integer(_ value: Any?) -> Int? {
+        (value as? Int) ?? (value as? String).flatMap(Int.init)
     }
 }
 
@@ -306,15 +367,19 @@ final class VoiceScoringRecorder: ObservableObject {
     private var deadline: Task<Void, Never>?
     private var recordingLimit = 90
     private var releaseGrant: (() -> Void)?
-    private var parts: [Int: String] = [:]
+    private var recognition = VoiceASRTranscript()
     private var sentEnd = false
+
+    var hasUsableDraft: Bool {
+        phase == .idle && !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     func start(context: MatchJSON, token: String, service: VoiceService) {
         guard phase == .idle else { return }
         error = nil
         transcript = ""
         finalized = false
-        parts = [:]
+        recognition = VoiceASRTranscript()
         sentEnd = false
         phase = .connecting
         let attempt = generation
@@ -326,6 +391,7 @@ final class VoiceScoringRecorder: ObservableObject {
                 }
                 guard generation == attempt else { return }
                 guard allowed else { throw VoiceScoringError.message("请在系统设置中允许麦克风，或继续手动记分。") }
+                scheduleDeadline(seconds: 15) { [weak self] in self?.fail("语音连接未就绪，请重试。") }
                 let grant = try await service.grant(context, token: token)
                 guard generation == attempt else {
                     await service.end(grant.id, token: token)
@@ -341,7 +407,6 @@ final class VoiceScoringRecorder: ObservableObject {
                 let connection = socketSession.webSocketTask(with: grant.url)
                 socket = connection
                 connection.resume()
-                scheduleDeadline(seconds: 15) { [weak self] in self?.fail("语音连接未就绪，请重试。") }
                 while generation == attempt {
                     let message = try await connection.receive()
                     guard generation == attempt else { return }
@@ -352,7 +417,7 @@ final class VoiceScoringRecorder: ObservableObject {
                 }
             } catch {
                 guard generation == attempt else { return }
-                if error is VoiceScoringError { cancel(); self.error = error }
+                if let error = error as? VoiceScoringError { fail(error) }
                 else { fail("语音连接中断，请重试或继续手动记分。") }
             }
         }
@@ -384,8 +449,15 @@ final class VoiceScoringRecorder: ObservableObject {
     }
 
     private func fail(_ message: String) {
+        fail(.message(message))
+    }
+
+    private func fail(_ failure: VoiceScoringError) {
+        finalized = false
         cancel()
-        error = VoiceScoringError.message(message)
+        error = hasUsableDraft
+            ? VoiceScoringError.message("语音识别未完整结束，已保留转写。请核对后再生成建议。")
+            : failure
     }
 
     private func scheduleDeadline(seconds: Int, action: @escaping @MainActor () -> Void) {
@@ -397,33 +469,19 @@ final class VoiceScoringRecorder: ObservableObject {
     }
 
     private func receive(_ text: String, attempt: UUID) throws {
-        guard let message = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
-              (message["code"] == nil || message["code"] as? Int == 0) else {
-            throw VoiceScoringError.message("腾讯语音识别未完成，请检查网络后重试。")
-        }
-        let final = (message["final"] as? Int) == 1
-        if final && !sentEnd { throw VoiceScoringError.message("识别提前结束，请重新录音。") }
-        if phase == .connecting { try startAudio(attempt: attempt) }
-        if let result = message["result"] as? [String: Any], let text = result["voice_text_str"] as? String {
-            parts[result["index"] as? Int ?? 0] = text
-        } else {
-            let container = message["sentences"]
-            let group = container as? [String: Any]
-            let sentences = container as? [[String: Any]] ?? group?["sentence_list"] as? [[String: Any]] ?? group.map { [$0] } ?? []
-            for (index, sentence) in sentences.enumerated() {
-                let nested = sentence["sentence"] as? [String: Any] ?? sentence
-                let rawID = sentence["sentence_id"] ?? nested["sentence_id"]
-                let id = (rawID as? Int) ?? (rawID as? String).flatMap(Int.init) ?? index
-                if let text = sentence["sentence"] as? String ?? nested["text"] as? String ?? nested["voice_text_str"] as? String {
-                    parts[id] = text
-                }
-            }
-        }
-        transcript = parts.keys.sorted().compactMap { parts[$0] }.joined()
+        let final = try recognition.receive(text)
+        let draft = recognition.text
+        if transcript != draft { transcript = draft }
         if final {
+            guard sentEnd else {
+                fail("识别提前结束，请重新录音。")
+                return
+            }
             finalized = !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             cancel()
             if !finalized { error = VoiceScoringError.message("没有听到清楚的口述，请重新录音。") }
+        } else if phase == .connecting {
+            try startAudio(attempt: attempt)
         }
     }
 
@@ -503,6 +561,50 @@ final class VoiceScoringRecorder: ObservableObject {
     }
 }
 
+enum VoicePlayReview {
+    case ready(VoicePlayProposal, suggested: Bool)
+    case needsDetails([String])
+
+    init(analysis: VoiceAnalysis, context: VoicePlayContext, transcript: String, pro: Bool, slowPitch: Bool) {
+        if let proposal = VoicePlayProposal(analysis: analysis, context: context, transcript: transcript) {
+            if case .hit(let play) = proposal,
+               (!pro && !play.outcome.isHit && play.observation.fielding == nil) || (slowPitch && play.observation.type == .bunt) {
+                self = .needsDetails(["请补充击球结果、参与守备的球员和跑者去向，或返回手动记分。"])
+            } else {
+                self = .ready(proposal, suggested: false)
+            }
+        } else if let proposal = VoicePlayProposal.suggestedSingle(analysis: analysis, context: context, transcript: transcript),
+                  !(slowPitch && analysis.ball.type == BattedBallType.bunt.rawValue) {
+            self = .ready(proposal, suggested: true)
+        } else {
+            self = .needsDetails(Self.prompts(analysis: analysis, state: context.state))
+        }
+    }
+
+    private static func prompts(analysis: VoiceAnalysis, state: GameState) -> [String] {
+        let movements = analysis.events.filter { ["advance", "out", "score"].contains($0.kind) }
+        let players = Set([state.currentBatter.id] + state.baseRunners.values.map(\.id))
+        let notes = analysis.observations.joined(separator: " ")
+        var prompts: [String] = []
+        if movements.contains(where: { $0.playerId.flatMap(UUID.init(uuidString:)).map { players.contains($0) } != true })
+            || ["身份", "未绑定", "人名", "名字", "姓名"].contains(where: { notes.contains($0) }) {
+            prompts.append("请核对转写中的人名，说明谁是打者、谁是原垒上跑者。")
+        }
+        if analysis.ball.outcome == "unknown" || ["上垒原因", "如何上垒", "安打", "失误", "野手选择"].contains(where: { notes.contains($0) }) {
+            prompts.append("请补充打者的结果，例如「打出一垒安打」或「因失误上一垒」。")
+        }
+        if !state.baseRunners.isEmpty,
+           state.baseRunners.contains(where: { base, _ in !movements.contains { $0.fromBase == base.voiceName } })
+               || ["触杀", "封杀", "跑者去向", "是否出局"].contains(where: { notes.contains($0) }) {
+            prompts.append("请补充原垒上跑者最后到了几垒、得分还是出局。")
+        }
+        if prompts.isEmpty {
+            prompts.append("请核对转写，并补充这球最终是怎么判的、跑者最后到了哪里。")
+        }
+        return prompts
+    }
+}
+
 enum VoicePlayProposal {
     case pitch(PitchAction)
     case hit(SituationExistingPlay)
@@ -515,6 +617,23 @@ enum VoicePlayProposal {
     }
 
     init?(analysis: VoiceAnalysis, context: VoicePlayContext, transcript: String) {
+        self.init(analysis: analysis, context: context, transcript: transcript, suggestingSingle: false)
+    }
+
+    static func suggestedSingle(analysis: VoiceAnalysis, context: VoicePlayContext, transcript: String) -> Self? {
+        guard ["unknown", "single"].contains(analysis.ball.outcome),
+              analysis.events.allSatisfy({ ["pitch", "field", "throw", "advance"].contains($0.kind) }),
+              !["失误", "野手选择", "守备选择", "封杀", "触杀", "接杀", "接住飞球", "出局", "保送", "触身", "牺牲"].contains(where: { transcript.contains($0) }) else { return nil }
+
+        let events = analysis.events
+        let hasContact = events.contains { $0.kind == "pitch" && $0.pitchResult == "in_play" }
+            || (events.contains { $0.kind == "field" || $0.kind == "throw" }
+                && events.contains { $0.kind == "advance" && $0.cause == "batted_ball" })
+        guard hasContact else { return nil }
+        return Self(analysis: analysis, context: context, transcript: transcript, suggestingSingle: true)
+    }
+
+    private init?(analysis: VoiceAnalysis, context: VoicePlayContext, transcript: String, suggestingSingle: Bool) {
         let events = analysis.events.sorted { $0.sequence < $1.sequence }
         guard !events.isEmpty, Set(events.map(\.sequence)).count == events.count,
               events.allSatisfy({ !$0.evidence.isEmpty && transcript.contains($0.evidence) }) else { return nil }
@@ -531,7 +650,7 @@ enum VoicePlayProposal {
         }
         // Support straightforward batted balls. Compound outs, errors and uncertain runner actions stay manual.
         let onlyMissingLocation = analysis.observations.allSatisfy(Self.isMissingLocation)
-        guard onlyMissingLocation, analysis.ball.intent != "sacrifice",
+        guard onlyMissingLocation || suggestingSingle, analysis.ball.intent != "sacrifice",
               events.allSatisfy({ ["field", "throw", "advance", "out", "score"].contains($0.kind)
                   || ($0.kind == "pitch" && $0.pitchResult == "in_play") }),
               events.filter({ $0.kind == "pitch" }).count <= 1 else { return nil }
@@ -539,13 +658,15 @@ enum VoicePlayProposal {
         let batter = context.state.currentBatter
         let outcome: PlayOutcome
         let batterDestination: RunnerDestination
-        switch analysis.ball.outcome {
+        switch suggestingSingle ? "single" : analysis.ball.outcome {
         case "single": (outcome, batterDestination) = (.single, .base(.first))
         case "double": (outcome, batterDestination) = (.double, .base(.second))
         case "triple": (outcome, batterDestination) = (.triple, .base(.third))
         case "home_run": (outcome, batterDestination) = (.homeRun, .score)
         case "out":
-            guard let out = events.first(where: { $0.kind == "out" }), out.playerId.flatMap(UUID.init(uuidString:)) == batter.id else { return nil }
+            guard let out = events.first(where: { $0.kind == "out" }),
+                  out.playerId.flatMap(UUID.init(uuidString:)) == batter.id,
+                  Self.isAffirmativeAction(out.evidence, in: transcript) else { return nil }
             switch (type, out.outType) {
             case (.ground, "batter_before_first"): outcome = .groundOut
             case (.line, "catch"): outcome = .lineOut
@@ -561,16 +682,24 @@ enum VoicePlayProposal {
             if let player = context.state.baseRunners[base] { players.append((player, .base(base))) }
         }
         let movements = events.filter { ["advance", "out", "score"].contains($0.kind) }
+        func sourceBase(_ origin: RunnerOrigin) -> String {
+            switch origin { case .batter: "batter"; case .base(let base): base.voiceName }
+        }
+        func playerID(_ event: VoiceAnalysis.Event) -> UUID? {
+            if let id = event.playerId { return UUID(uuidString: id) }
+            guard suggestingSingle else { return nil }
+            // In a suggested single the occupied starting base identifies the runner.
+            return players.first { sourceBase($0.1) == event.fromBase }?.0.id
+        }
         guard movements.allSatisfy({ event in
             (event.cause == nil || event.cause == "batted_ball")
-                && players.contains { $0.0.id == event.playerId.flatMap(UUID.init(uuidString:)) }
+                && players.contains { $0.0.id == playerID(event) }
         }) else { return nil }
         var decisions: [RunnerDecision] = []
         for (player, origin) in players {
-            let legs = movements.filter { $0.playerId.flatMap(UUID.init(uuidString:)) == player.id }
-            guard !legs.isEmpty else { return nil }
-            var from: String
-            switch origin { case .batter: from = "batter"; case .base(let base): from = base.voiceName }
+            let legs = movements.filter { playerID($0) == player.id }
+            guard !legs.isEmpty, !suggestingSingle || legs.count == 1 else { return nil }
+            var from = sourceBase(origin)
             var destination: RunnerDestination?
             for leg in legs {
                 guard leg.fromBase == from, from != "home", destination != .out else { return nil }
@@ -607,36 +736,129 @@ enum VoicePlayProposal {
               !(context.state.outs == 2 && outcome.recordedOuts == 1 && decisions.contains { $0.destination == .score }) else { return nil }
 
         var observation = BattedBallObservation(type: type)
-        if analysis.observations.isEmpty {
+        if !analysis.observations.contains(where: Self.isMissingLocation) {
             observation.selectRegion(Self.region(analysis.ball.region, transcript: transcript))
         }
-        if outcome.recordedOuts == 1 {
-            observation.fielding = Self.defense(for: outcome, events: events, state: context.state)
+        if var fielding = Self.defense(for: outcome, events: events, state: context.state, transcript: transcript) {
+            fielding.capture(in: context.state)
+            observation.fielding = fielding
         }
         self = .hit(SituationExistingPlay(outcome: outcome, observation: observation, decisions: decisions, timing: nil))
     }
 
-    private static func defense(for outcome: PlayOutcome, events: [VoiceAnalysis.Event], state: GameState) -> BattedBallFielding? {
+    private static func defense(for outcome: PlayOutcome, events: [VoiceAnalysis.Event], state: GameState, transcript: String) -> BattedBallFielding? {
         let active = Set(state.fieldingTeam.players.filter { state.fieldingPlayerIDs.contains($0.id) }.map(\.primaryPosition))
         func position(_ number: Int?) -> FieldPosition? {
-            guard let value = number.flatMap(FieldPosition.init(rawValue:)), active.contains(value) else { return nil }
+            guard let value = number.flatMap(FieldPosition.init(rawValue:)), value != .free, active.contains(value) else { return nil }
             return value
         }
-        guard let out = events.first(where: { $0.kind == "out" }), let putout = position(out.toFielder) else { return nil }
         let handling = events.filter { $0.kind == "field" || $0.kind == "throw" }
+        func endpoints(_ event: VoiceAnalysis.Event, requireSpokenPositions: Bool = false) -> (FieldPosition, FieldPosition)? {
+            let spoken = spokenThrows(event.evidence)
+            guard spoken.count <= 1 else { return nil }
+            if let (from, to, _) = spoken.first {
+                guard active.contains(from), active.contains(to), from != to,
+                      event.fromFielder == nil || event.fromFielder == from.rawValue,
+                      event.toFielder == nil || event.toFielder == to.rawValue else { return nil }
+                return (from, to)
+            }
+            guard !requireSpokenPositions, let from = position(event.fromFielder),
+                  let to = position(event.toFielder), from != to else { return nil }
+            return (from, to)
+        }
+        func relayRoute() -> [FieldPosition]? {
+            guard handling.count <= 50,
+                  handling.allSatisfy({ isAffirmativeAction($0.evidence, in: transcript) }) else { return nil }
+            if handling.allSatisfy({ $0.kind == "field" }) {
+                let spoken = spokenThrows(transcript)
+                // A second throwing verb may denote a relay whose second sender was omitted.
+                let transfers = transcript.replacingOccurrences(of: "传杀", with: "").filter { $0 == "传" }
+                guard handling.count <= 1, spoken.count == 1, transfers.count == 1,
+                      let (from, to, evidence) = spoken.first, from != to,
+                      active.contains(from), active.contains(to), isAffirmativeAction(evidence, in: transcript),
+                      !["说错", "改口", "其实没传", "其实没有传", "再传", "又传", "转传"].contains(where: { transcript.contains($0) }) else { return nil }
+                if let field = handling.first {
+                    guard field.fromFielder == nil, position(field.toFielder) == from else { return nil }
+                }
+                return [from, to]
+            }
+            guard let first = handling.first else { return nil }
+            var route: [FieldPosition]
+            if first.kind == "field", first.fromFielder == nil, let initial = position(first.toFielder) {
+                route = [initial]
+            } else if first.kind == "throw", let (from, to) = endpoints(first, requireSpokenPositions: true) {
+                // An explicitly spoken throw establishes its two participants even when no pickup event was returned.
+                route = [from, to]
+            } else {
+                return nil
+            }
+            for leg in handling.dropFirst() {
+                guard leg.kind == "throw", let (from, to) = endpoints(leg), from == route.last else { return nil }
+                route.append(to)
+            }
+            return route
+        }
+        if outcome.isHit {
+            // A fielder touching the ball alone does not establish whether a throw followed.
+            guard let route = relayRoute(), route.count >= 2 else { return nil }
+            return BattedBallFielding(status: .recorded, route: route)
+        }
+        guard let out = events.first(where: { $0.kind == "out" }) else { return nil }
         if outcome == .flyOut || outcome == .lineOut {
-            guard handling.allSatisfy({ $0.kind == "field" && $0.sequence < out.sequence && position($0.toFielder) == putout }) else { return nil }
+            guard let putout = position(out.toFielder),
+                  handling.allSatisfy({ $0.kind == "field" && $0.sequence < out.sequence && position($0.toFielder) == putout }) else { return nil }
             return BattedBallFielding(status: .recorded, route: [putout])
         }
-        guard let first = handling.first, first.kind == "field", let initial = position(first.toFielder),
-              first.sequence < out.sequence, handling.count <= 50 else { return nil }
-        var route = [initial]
-        for leg in handling.dropFirst() {
-            guard leg.kind == "throw", leg.sequence < out.sequence, position(leg.fromFielder) == route.last,
-                  let target = position(leg.toFielder), target != route.last else { return nil }
-            route.append(target)
+        guard handling.allSatisfy({ $0.sequence < out.sequence }), let route = relayRoute() else { return nil }
+        if let fielder = out.toFielder {
+            guard route.last == position(fielder) else { return nil }
+        } else {
+            guard outcome == .groundOut, out.toBase == "first", route.last == .firstBase else { return nil }
         }
-        return route.last == putout ? BattedBallFielding(status: .recorded, route: route) : nil
+        return BattedBallFielding(status: .recorded, route: route)
+    }
+
+    private static let spokenFielderAliases: [String: FieldPosition] = {
+        var aliases: [String: FieldPosition] = [:]
+        for position in FieldPosition.allCases where position != .free {
+            aliases[position.fullName] = position
+            if position != .pitcher && position != .catcher { aliases[position.shortName] = position }
+            if position.rawValue >= FieldPosition.leftField.rawValue { aliases[position.shortName + "野"] = position }
+        }
+        for (number, position) in [("1", FieldPosition.firstBase), ("2", .secondBase), ("3", .thirdBase)] {
+            aliases[number + "垒"] = position
+            aliases[number + "垒手"] = position
+        }
+        return aliases
+    }()
+
+    private static let spokenThrowPattern: NSRegularExpression? = {
+        let roles = spokenFielderAliases.keys.sorted { $0.count > $1.count }
+            .map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+        let transfer = #"\s*(?:接到球|接住球|捡到球|拿到球|接球|捡球|拿球)?(?:后|再)?[，,]?\s*(?:把球|将球)?\s*传(?:球)?(?:给|到|向|往)?\s*"#
+        return try? NSRegularExpression(pattern: "(" + roles + ")" + transfer + "(" + roles + ")")
+    }()
+
+    private static func spokenThrows(_ text: String) -> [(FieldPosition, FieldPosition, String)] {
+        let matches = spokenThrowPattern?.matches(in: text, range: NSRange(text.startIndex..., in: text)) ?? []
+        return matches.compactMap { match in
+            guard let mention = Range(match.range, in: text),
+                  let start = Range(match.range(at: 1), in: text), let end = Range(match.range(at: 2), in: text),
+                  let from = spokenFielderAliases[String(text[start])], let to = spokenFielderAliases[String(text[end])] else { return nil }
+            return (from, to, String(text[mention]))
+        }
+    }
+
+    private static func isAffirmativeAction(_ evidence: String, in transcript: String) -> Bool {
+        guard let range = transcript.range(of: evidence),
+              transcript[range.upperBound...].range(of: evidence) == nil else { return false }
+        let separators = "，。！？；、,.!?;\n"
+        let before = transcript[..<range.lowerBound]
+        let start = before.lastIndex(where: { separators.contains($0) }).map { transcript.index(after: $0) } ?? transcript.startIndex
+        let end = transcript[range.upperBound...].firstIndex(where: { separators.contains($0) }) ?? transcript.endIndex
+        let clause = transcript[start..<end]
+        let uncertain = ["没接", "未接", "没拿", "未拿", "没传", "未传", "没有", "不是", "并非", "传偏", "失误", "差点", "想传", "要传", "打算传", "补位", "未出局", "没出局", "不出局", "可能", "也许"]
+        return !uncertain.contains { clause.contains($0) }
     }
 
     private static func isMissingLocation(_ text: String) -> Bool {

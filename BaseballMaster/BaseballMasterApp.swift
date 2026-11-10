@@ -147,6 +147,9 @@ struct LaunchRouterView: View {
                 PendingReviewFixtureView()
             } else if arguments.contains("--tiebreak-preview") {
                 TiebreakPreviewFixtureView()
+            } else if arguments.contains("--voice-review-preview") {
+                V11ScorekeepingFixture(mode: .standard, openingPreview: true,
+                                       voiceReviewMethod: arguments.contains("--voice-review-pro") ? .situation : .traditional)
             } else if arguments.contains("--v22-opening-preview") {
                 V11ScorekeepingFixture(mode: .standard, showsHome: true, openingPreview: true)
             } else if arguments.contains("--v22-coach-opening-preview") {
@@ -533,6 +536,7 @@ private struct V11ScorekeepingFixture: View {
     var longPitcherName = false
     var startsAfterRunners = false
     var openingPreview = false
+    var voiceReviewMethod: RecordingMethod?
     var body: some View {
         Group {
             if showsHome { RootTabView() }
@@ -543,12 +547,17 @@ private struct V11ScorekeepingFixture: View {
                 prepared = true
                 var rules = GameRules()
                 rules.mode = mode; rules.coachPitchLimit = 6
-                rules.halfInningRunLimit = mode == .standard ? 1 : nil
+                rules.halfInningRunLimit = voiceReviewMethod == nil && mode == .standard ? 1 : nil
+                if let voiceReviewMethod { rules.recordingMethod = voiceReviewMethod }
                 if limitPreview { rules.pitchLimit = 6; rules.pitchWarningRemaining = 3; rules.pitcherInningsLimit = 2 }
                 let lineup = team.players.prefix(9).enumerated().map {
                     LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: $0.element.primaryPosition)
                 }
                 store.startNewGame(opponent: store.opponentTeams[0], isHome: false, rules: rules, lineup: lineup)
+                if voiceReviewMethod != nil && !AppLaunchArguments.values.contains("--voice-review-infield-route") {
+                    store.applyPlay(.single)
+                    store.applyPlay(.single)
+                }
                 if limitPreview {
                     // Limits are based on mound appearances, not a fabricated IP
                     // total. Move through a real recorded first inning.
