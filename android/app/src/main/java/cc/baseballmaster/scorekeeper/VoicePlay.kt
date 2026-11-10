@@ -57,6 +57,63 @@ internal fun explicitVoicePitch(transcript: String): Command? {
     return Command("pitch", pitch = action)
 }
 
+/** Partial AI output supplies suggestions to the editor, never a command ready to save. */
+internal fun voiceBattedDraft(analysis: VoiceAnalysis, game: Game, transcript: String): Command? {
+    if (analysis.schemaVersion != 1 || analysis.events.size !in 1..100) return null
+    val events = analysis.events.filter { it.evidence.isNotBlank() && it.evidence in transcript }
+    if (events.isEmpty() || analysis.events.count { it.kind == "pitch" } > 1 ||
+        analysis.events.any { it.kind == "pitch" && it.pitchResult != "in_play" }) return null
+    val battedBall = analysis.ball.outcome in setOf("single", "double", "triple", "home_run", "out") ||
+        events.any { it.kind == "pitch" || it.kind in setOf("advance", "out", "score") && it.cause == "batted_ball" } ||
+        (events.any { it.kind in setOf("field", "throw") } &&
+            events.any { it.kind in setOf("advance", "out", "score") })
+    if (!battedBall) return null
+
+    val decisions = (listOf(game.batter.id) + game.bases).mapIndexedNotNull { origin, player ->
+        if (player == null) return@mapIndexedNotNull null
+        val legs = events.filter {
+            it.kind in setOf("advance", "out", "score") &&
+                (it.playerId == player || it.playerId == null && it.fromBase == baseNames[origin])
+        }
+        val leg = legs.singleOrNull() ?: return@mapIndexedNotNull null
+        if (leg.fromBase != baseNames[origin] || leg.cause != null && leg.cause != "batted_ball")
+            return@mapIndexedNotNull null
+        val destination = when (leg.kind) {
+            "advance" -> baseNames.indexOf(leg.toBase).takeIf { it in (origin + 1)..3 }
+            "score" -> 4.takeIf { leg.toBase == "home" }
+            else -> -1
+        } ?: return@mapIndexedNotNull null
+        Decision(player, origin, destination)
+    }.toMutableList()
+    // With only the first-base runner already placed at second, an explicit safe
+    // arrival at first can fill the unassigned batter slot for human review.
+    val reachedFirst = Regex("(?:最终|安全|成功)(?:上到|上了|到达)(?:一垒|1垒|1类)(?=[，。；,.！!]|$)")
+    if (decisions.singleOrNull()?.let { it.origin == 1 && it.destination == 2 } == true &&
+        game.bases.count { it != null } == 1 &&
+        events.none { it.kind in setOf("out", "score") || it.kind == "advance" && it.fromBase == "batter" } &&
+        reachedFirst.findAll(transcript).count() == 1 &&
+        listOf("不", "没能", "没有", "未能", "差点", "险些", "以为", "疑似", "可能", "尝试").none { it in transcript }
+    ) decisions.add(0, Decision(game.batter.id, 0, 1))
+    val pro = game.rules.recordingMethod == "situation"
+    val region = (regions + ("中外方向" to "center")).filterKeys { it in transcript }.values.distinct().singleOrNull()
+    return Command("play", decisions = decisions, recordingMethod = game.rules.recordingMethod,
+        observation = if (pro) Observation(precision = if (region == null) "unknown" else "region", region = region) else null)
+}
+
+internal fun suggestedVoiceSingle(analysis: VoiceAnalysis, draft: Command, game: Game, transcript: String): Command? {
+    if (game.rules.recordingMethod == "situation" || analysis.ball.outcome !in setOf("unknown", "single") ||
+        analysis.ball.intent == "sacrifice" ||
+        analysis.events.any { it.kind !in setOf("pitch", "field", "throw", "advance", "score") } ||
+        listOf("失误", "野手选择", "封杀", "触杀", "接杀", "出局", "传球失误", "保送", "触身", "牺牲").any { it in transcript }
+    ) return null
+    val decisions = draft.decisions.orEmpty()
+    if (decisions.size != game.bases.count { it != null } + 1 ||
+        decisions.none { it.origin == 0 && it.destination == 1 } || decisions.any { it.destination < 0 }
+    ) return null
+    val suggestion = draft.copy(outcome = Outcome.single)
+    return suggestion.takeIf { runCatching { MatchEngine.apply(game, it) }.isSuccess }
+}
+
 /** Treat the model output as a proposal. Unclear plays remain manual and never mutate a match. */
 internal fun voiceProposal(analysis: VoiceAnalysis, game: Game, transcript: String): Command? {
     if (analysis.schemaVersion != 1) return null

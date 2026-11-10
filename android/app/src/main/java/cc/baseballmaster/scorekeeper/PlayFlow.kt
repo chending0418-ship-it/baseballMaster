@@ -33,22 +33,31 @@ internal fun PlayEditor(
     initial: Command? = null,
     onNeedsCorrection: (() -> Unit)? = null,
     voiceConfirmation: Boolean = false,
+    voiceTranscript: String? = null,
     save: (Command) -> Unit,
 ) {
     val pro = if (initial != null) initial.observation != null || initial.recordingMethod == "situation"
         else game.rules.recordingMethod == "situation"
+    val partialVoice = voiceConfirmation && initial != null && initial.outcome == null
     var json by rememberSaveable(game.id, game.revision) {
         mutableStateOf(GameJson.encodeToString(initial ?: Command("play", outcome = Outcome.single,
             decisions = MatchEngine.suggested(game, Outcome.single))))
     }
     val cmd = remember(json) { GameJson.decodeFromString<Command>(json) }
     var stage by rememberSaveable(game.id, game.revision) {
-        mutableStateOf(if (voiceConfirmation && initial?.observation?.precision == "unknown") "contact" else if (initial == null) "entry" else "review")
+        mutableStateOf(when {
+            partialVoice -> "voiceOutcome"
+            voiceConfirmation && initial?.observation?.precision == "unknown" -> "contact"
+            initial == null -> "entry"
+            else -> "review"
+        })
     }
     var arrival by rememberSaveable(game.id, game.revision) {
         mutableIntStateOf(initial?.decisions?.firstOrNull { it.origin == 0 }?.destination ?: 1)
     }
-    var typeChosen by rememberSaveable(game.id, game.revision) { mutableStateOf(initial?.observation != null) }
+    var typeChosen by rememberSaveable(game.id, game.revision) {
+        mutableStateOf(initial?.observation?.let { !partialVoice || it.type != "unknown" } == true)
+    }
     var issue by rememberSaveable(game.id, game.revision) { mutableStateOf<String?>(null) }
     var catalogReturnStage by rememberSaveable(game.id, game.revision) { mutableStateOf("entry") }
     var contactReturnStage by rememberSaveable(game.id, game.revision) { mutableStateOf("entry") }
@@ -87,10 +96,16 @@ internal fun PlayEditor(
         if (pro) typeChosen = selectedType != null
         val chosen = cmd.copy(
             outcome = outcome,
-            observation = if (pro) Observation(type = selectedType ?: "unknown") else null,
+            observation = if (pro) (initial?.observation?.takeIf { partialVoice } ?: Observation())
+                .copy(type = selectedType ?: "unknown") else null,
             fielding = if (!pro && productNeedsDefense(outcome)) Fielding(status = "") else null,
             decisions = MatchEngine.suggested(game, outcome).sortedBy { it.origin }.map { decision ->
-                if (!pro && decision.origin == 0) decision.copy(destination = arrival) else decision
+                when {
+                    partialVoice && decision.origin != 0 -> initial?.decisions.orEmpty()
+                        .firstOrNull { it.origin == decision.origin && it.playerID == decision.playerID } ?: decision
+                    !partialVoice && !pro && decision.origin == 0 -> decision.copy(destination = arrival)
+                    else -> decision
+                }
             },
             timingRunCounts = null,
         )
@@ -98,10 +113,10 @@ internal fun PlayEditor(
         stage = when {
             pro -> "contact"
             productNeedsDefense(outcome) -> "defense"
-            productRequiresBasicReview(game, outcome) -> "review"
+            partialVoice || productRequiresBasicReview(game, outcome) -> "review"
             else -> "cause"
         }
-        if (!pro && !productNeedsDefense(outcome) && !productRequiresBasicReview(game, outcome)) submit(chosen)
+        if (stage == "cause") submit(chosen)
     }
 
     val observation = cmd.observation ?: Observation()
@@ -121,6 +136,7 @@ internal fun PlayEditor(
             Outcome.pending, Outcome.pendingOut, Outcome.other)
     val title = when (stage) {
         "entry" -> "记录击球"
+        "voiceOutcome" -> "补选击球结果"
         "cause" -> "发生了什么？"
         "defense" -> "${cmd.outcome?.title.orEmpty()} · 守备"
         "contact" -> productOutcomeTitle(cmd.outcome ?: Outcome.other)
@@ -133,12 +149,13 @@ internal fun PlayEditor(
         issue = null
         when (stage) {
             "entry" -> dismiss()
-            "contact" -> if (voiceConfirmation && !contactFromReview) dismiss() else stage = if (contactFromReview) "review" else contactReturnStage
+            "voiceOutcome" -> dismiss()
+            "contact" -> if (voiceConfirmation && !partialVoice && !contactFromReview) dismiss() else stage = if (contactFromReview) "review" else contactReturnStage
             "cause", "process" -> stage = "entry"
             "catalog" -> stage = catalogReturnStage
             "processResult" -> stage = "process"
-            "defense" -> stage = "cause"
-            else -> stage = if (pro) "contact" else if (productNeedsDefense(cmd.outcome ?: Outcome.other)) "defense" else "cause"
+            "defense" -> stage = if (partialVoice) contactReturnStage else "cause"
+            else -> stage = if (pro) "contact" else if (productNeedsDefense(cmd.outcome ?: Outcome.other)) "defense" else if (partialVoice) contactReturnStage else "cause"
         }
     }
     ProductPage(
@@ -148,7 +165,7 @@ internal fun PlayEditor(
         backLabel = if (stage == "entry") "取消" else "返回",
         actionLabel = when (stage) {
             "contact" -> if (contactFromReview) "完成修改" else if (requiresProReview) "下一步 · 核对跑者" else "完成本球"
-            "defense" -> if (productRequiresBasicReview(game, cmd.outcome ?: Outcome.other)) "下一步 · 核对跑者" else "确认本球"
+            "defense" -> if (partialVoice || productRequiresBasicReview(game, cmd.outcome ?: Outcome.other)) "下一步 · 核对跑者" else "确认本球"
             "review" -> if (initial == null || voiceConfirmation) "确认本球" else "保存本球修改"
             else -> ""
         },
@@ -157,7 +174,7 @@ internal fun PlayEditor(
         onAction = {
             when (stage) {
                 "contact" -> if (fieldIssue != null) issue = fieldIssue else if (contactFromReview || requiresProReview) stage = "review" else submit()
-                "defense" -> if (defenseIssue != null) issue = defenseIssue else if (productRequiresBasicReview(game, cmd.outcome ?: Outcome.other)) stage = "review" else submit()
+                "defense" -> if (defenseIssue != null) issue = defenseIssue else if (partialVoice || productRequiresBasicReview(game, cmd.outcome ?: Outcome.other)) stage = "review" else submit()
                 "review" -> submit()
             }
         },
@@ -165,6 +182,17 @@ internal fun PlayEditor(
         scrollKey = stage,
     ) {
         when (stage) {
+            "voiceOutcome" -> {
+                ProductPlayContext(game)
+                voiceTranscript?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Text("选择结果后可核对并修改跑者去向。")
+                ProductOutcomeGrid(game, listOf(Outcome.single, Outcome.error, Outcome.fieldersChoice, Outcome.pending),
+                    "voice-outcome", ::choose)
+                ProductAuxiliaryAction("其他击球结果", "voice-all-outcomes") {
+                    catalogReturnStage = "voiceOutcome"
+                    stage = "catalog"
+                }
+            }
             "entry" -> {
                 ProductPlayContext(game)
                 if (pro) {
