@@ -300,6 +300,54 @@ private extension Base {
     }
 }
 
+struct VoiceASRTranscript {
+    private struct Segment {
+        let text: String
+        let committed: Bool
+    }
+
+    private var segments: [Int: Segment] = [:]
+
+    var text: String {
+        segments.keys.sorted().compactMap { segments[$0]?.text }.joined()
+    }
+
+    mutating func receive(_ payload: String) throws -> Bool {
+        guard let message = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any],
+              message["code"] == nil || message["code"] as? Int == 0 else {
+            throw VoiceScoringError.message("腾讯语音识别未完成，请检查网络后重试。")
+        }
+
+        if let result = message["result"] as? [String: Any], let text = result["voice_text_str"] as? String {
+            update(text, at: Self.integer(result["index"]) ?? 0,
+                   committed: Self.integer(result["slice_type"]) == 2)
+        } else {
+            let container = message["sentences"]
+            let group = container as? [String: Any]
+            let sentences = container as? [[String: Any]] ?? group?["sentence_list"] as? [[String: Any]] ?? group.map { [$0] } ?? []
+            for (index, sentence) in sentences.enumerated() {
+                let nested = sentence["sentence"] as? [String: Any] ?? sentence
+                let id = Self.integer(sentence["sentence_id"] ?? nested["sentence_id"]) ?? index
+                let committed = Self.integer(sentence["sentence_type"] ?? nested["sentence_type"]) == 1
+                if let text = sentence["sentence"] as? String ?? nested["text"] as? String ?? nested["voice_text_str"] as? String {
+                    update(text, at: id, committed: committed)
+                }
+            }
+        }
+        return Self.integer(message["final"]) == 1
+    }
+
+    private mutating func update(_ text: String, at index: Int, committed: Bool) {
+        guard index >= 0, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              committed || segments[index]?.committed != true else { return }
+        segments[index] = Segment(text: text, committed: committed)
+    }
+
+    private static func integer(_ value: Any?) -> Int? {
+        (value as? Int) ?? (value as? String).flatMap(Int.init)
+    }
+}
+
 @MainActor
 final class VoiceScoringRecorder: ObservableObject {
     enum Phase: Equatable { case idle, connecting, recording, finishing }
@@ -319,15 +367,19 @@ final class VoiceScoringRecorder: ObservableObject {
     private var deadline: Task<Void, Never>?
     private var recordingLimit = 90
     private var releaseGrant: (() -> Void)?
-    private var parts: [Int: String] = [:]
+    private var recognition = VoiceASRTranscript()
     private var sentEnd = false
+
+    var hasUsableDraft: Bool {
+        phase == .idle && !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     func start(context: MatchJSON, token: String, service: VoiceService) {
         guard phase == .idle else { return }
         error = nil
         transcript = ""
         finalized = false
-        parts = [:]
+        recognition = VoiceASRTranscript()
         sentEnd = false
         phase = .connecting
         let attempt = generation
@@ -339,6 +391,7 @@ final class VoiceScoringRecorder: ObservableObject {
                 }
                 guard generation == attempt else { return }
                 guard allowed else { throw VoiceScoringError.message("请在系统设置中允许麦克风，或继续手动记分。") }
+                scheduleDeadline(seconds: 15) { [weak self] in self?.fail("语音连接未就绪，请重试。") }
                 let grant = try await service.grant(context, token: token)
                 guard generation == attempt else {
                     await service.end(grant.id, token: token)
@@ -354,7 +407,6 @@ final class VoiceScoringRecorder: ObservableObject {
                 let connection = socketSession.webSocketTask(with: grant.url)
                 socket = connection
                 connection.resume()
-                scheduleDeadline(seconds: 15) { [weak self] in self?.fail("语音连接未就绪，请重试。") }
                 while generation == attempt {
                     let message = try await connection.receive()
                     guard generation == attempt else { return }
@@ -365,7 +417,7 @@ final class VoiceScoringRecorder: ObservableObject {
                 }
             } catch {
                 guard generation == attempt else { return }
-                if error is VoiceScoringError { cancel(); self.error = error }
+                if let error = error as? VoiceScoringError { fail(error) }
                 else { fail("语音连接中断，请重试或继续手动记分。") }
             }
         }
@@ -397,8 +449,15 @@ final class VoiceScoringRecorder: ObservableObject {
     }
 
     private func fail(_ message: String) {
+        fail(.message(message))
+    }
+
+    private func fail(_ failure: VoiceScoringError) {
+        finalized = false
         cancel()
-        error = VoiceScoringError.message(message)
+        error = hasUsableDraft
+            ? VoiceScoringError.message("语音识别未完整结束，已保留转写。请核对后再生成建议。")
+            : failure
     }
 
     private func scheduleDeadline(seconds: Int, action: @escaping @MainActor () -> Void) {
@@ -410,33 +469,19 @@ final class VoiceScoringRecorder: ObservableObject {
     }
 
     private func receive(_ text: String, attempt: UUID) throws {
-        guard let message = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
-              (message["code"] == nil || message["code"] as? Int == 0) else {
-            throw VoiceScoringError.message("腾讯语音识别未完成，请检查网络后重试。")
-        }
-        let final = (message["final"] as? Int) == 1
-        if final && !sentEnd { throw VoiceScoringError.message("识别提前结束，请重新录音。") }
-        if phase == .connecting { try startAudio(attempt: attempt) }
-        if let result = message["result"] as? [String: Any], let text = result["voice_text_str"] as? String {
-            parts[result["index"] as? Int ?? 0] = text
-        } else {
-            let container = message["sentences"]
-            let group = container as? [String: Any]
-            let sentences = container as? [[String: Any]] ?? group?["sentence_list"] as? [[String: Any]] ?? group.map { [$0] } ?? []
-            for (index, sentence) in sentences.enumerated() {
-                let nested = sentence["sentence"] as? [String: Any] ?? sentence
-                let rawID = sentence["sentence_id"] ?? nested["sentence_id"]
-                let id = (rawID as? Int) ?? (rawID as? String).flatMap(Int.init) ?? index
-                if let text = sentence["sentence"] as? String ?? nested["text"] as? String ?? nested["voice_text_str"] as? String {
-                    parts[id] = text
-                }
-            }
-        }
-        transcript = parts.keys.sorted().compactMap { parts[$0] }.joined()
+        let final = try recognition.receive(text)
+        let draft = recognition.text
+        if transcript != draft { transcript = draft }
         if final {
+            guard sentEnd else {
+                fail("识别提前结束，请重新录音。")
+                return
+            }
             finalized = !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             cancel()
             if !finalized { error = VoiceScoringError.message("没有听到清楚的口述，请重新录音。") }
+        } else if phase == .connecting {
+            try startAudio(attempt: attempt)
         }
     }
 
@@ -692,8 +737,9 @@ enum VoicePlayProposal {
         if !analysis.observations.contains(where: Self.isMissingLocation) {
             observation.selectRegion(Self.region(analysis.ball.region, transcript: transcript))
         }
-        if outcome.recordedOuts == 1 {
-            observation.fielding = Self.defense(for: outcome, events: events, state: context.state)
+        if var fielding = Self.defense(for: outcome, events: events, state: context.state) {
+            fielding.capture(in: context.state)
+            observation.fielding = fielding
         }
         self = .hit(SituationExistingPlay(outcome: outcome, observation: observation, decisions: decisions, timing: nil))
     }
@@ -701,24 +747,36 @@ enum VoicePlayProposal {
     private static func defense(for outcome: PlayOutcome, events: [VoiceAnalysis.Event], state: GameState) -> BattedBallFielding? {
         let active = Set(state.fieldingTeam.players.filter { state.fieldingPlayerIDs.contains($0.id) }.map(\.primaryPosition))
         func position(_ number: Int?) -> FieldPosition? {
-            guard let value = number.flatMap(FieldPosition.init(rawValue:)), active.contains(value) else { return nil }
+            guard let value = number.flatMap(FieldPosition.init(rawValue:)), value != .free, active.contains(value) else { return nil }
             return value
         }
-        guard let out = events.first(where: { $0.kind == "out" }), let putout = position(out.toFielder) else { return nil }
         let handling = events.filter { $0.kind == "field" || $0.kind == "throw" }
+        func relayRoute() -> [FieldPosition]? {
+            guard let first = handling.first, first.kind == "field", let initial = position(first.toFielder),
+                  handling.count <= 50 else { return nil }
+            var route = [initial]
+            for leg in handling.dropFirst() {
+                guard leg.kind == "throw", position(leg.fromFielder) == route.last,
+                      let target = position(leg.toFielder), target != route.last else { return nil }
+                route.append(target)
+            }
+            return route
+        }
+        if outcome.isHit {
+            // A fielder touching the ball alone does not establish whether a throw followed.
+            let uncertainHandling = ["没接", "未接", "没拿", "未拿", "没传", "未传", "没有", "不是", "传偏", "失误", "差点", "想传", "要传", "打算传"]
+            guard handling.count >= 2, handling.first?.fromFielder == nil,
+                  !handling.contains(where: { leg in uncertainHandling.contains { leg.evidence.contains($0) } }),
+                  let route = relayRoute() else { return nil }
+            return BattedBallFielding(status: .recorded, route: route)
+        }
+        guard let out = events.first(where: { $0.kind == "out" }), let putout = position(out.toFielder) else { return nil }
         if outcome == .flyOut || outcome == .lineOut {
             guard handling.allSatisfy({ $0.kind == "field" && $0.sequence < out.sequence && position($0.toFielder) == putout }) else { return nil }
             return BattedBallFielding(status: .recorded, route: [putout])
         }
-        guard let first = handling.first, first.kind == "field", let initial = position(first.toFielder),
-              first.sequence < out.sequence, handling.count <= 50 else { return nil }
-        var route = [initial]
-        for leg in handling.dropFirst() {
-            guard leg.kind == "throw", leg.sequence < out.sequence, position(leg.fromFielder) == route.last,
-                  let target = position(leg.toFielder), target != route.last else { return nil }
-            route.append(target)
-        }
-        return route.last == putout ? BattedBallFielding(status: .recorded, route: route) : nil
+        guard handling.allSatisfy({ $0.sequence < out.sequence }), let route = relayRoute(), route.last == putout else { return nil }
+        return BattedBallFielding(status: .recorded, route: route)
     }
 
     private static func isMissingLocation(_ text: String) -> Bool {

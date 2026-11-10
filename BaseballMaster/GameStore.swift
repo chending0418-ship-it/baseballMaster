@@ -1311,7 +1311,7 @@ final class GameStore: ObservableObject {
         return nil
     }
 
-    private func runnerDecisionValidationError(
+    func runnerDecisionValidationError(
         _ decisions: [RunnerDecision],
         includesBatter: Bool
     ) -> String? {

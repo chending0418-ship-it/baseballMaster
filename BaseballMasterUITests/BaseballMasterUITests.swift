@@ -636,11 +636,10 @@ final class BaseballMasterUITests: XCTestCase {
         let record = app.buttons["start-voice-recording"]
         XCTAssertTrue(record.waitForExistence(timeout: 5))
         captureV111("voice-pregame-sheet", app: app)
-        record.tap()
-        XCTAssertTrue(app.buttons["同意并开始录音"].waitForExistence(timeout: 5))
+        XCTAssertTrue(record.label.contains("同意并开始录音"))
+        XCTAssertTrue(app.staticTexts["voice-recording-disclosure"].exists)
         captureV111("voice-recording-consent", app: app)
-        app.alerts.buttons["取消"].tap()
-        app.navigationBars["语音输入"].buttons["取消"].tap()
+        app.buttons["voice-return-manual"].tap()
         XCTAssertTrue(voice.waitForExistence(timeout: 5))
         XCTAssertTrue(clock.exists)
         XCTAssertTrue(app.buttons["swap-opening-sides"].exists)
@@ -669,9 +668,108 @@ final class BaseballMasterUITests: XCTestCase {
             voice.tap()
             XCTAssertTrue(app.buttons["start-voice-recording"].waitForExistence(timeout: 5))
             captureV111("voice-practice-\(mode)-sheet", app: app)
-            app.navigationBars["语音输入"].buttons["取消"].tap()
+            app.buttons["voice-return-manual"].tap()
             XCTAssertTrue(app.buttons["reset-practice-inning"].waitForExistence(timeout: 5))
         }
+    }
+
+    func testV315VoiceComplexReviewEditsOneRunnerAndRecordsOnce() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--voice-review-preview", "--voice-access-preview", "-appAppearance", "light"]
+        app.launch()
+        let voice = app.buttons["open-voice-scoring"]
+        XCTAssertTrue(voice.waitForExistence(timeout: 8))
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+
+        voice.tap()
+        let result = app.staticTexts["voice-review-result"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        XCTAssertTrue(result.label.contains("一垒安打"))
+        XCTAssertFalse(app.textViews["voice-transcript"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["voice-edit-transcript"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["voice-return-manual"].exists)
+        captureV111("voice-complex-review-first-screen", app: app)
+
+        let runner = app.buttons["voice-runner-1"]
+        XCTAssertTrue(runner.isHittable)
+        runner.tap()
+        app.descendants(matching: .any)["voice-destination-1-停留"].firstMatch.tap()
+        let confirm = app.buttons["confirm-voice-play"]
+        XCTAssertFalse(confirm.isEnabled, "The batter and runner cannot occupy the same base")
+        XCTAssertTrue(app.staticTexts["voice-runner-issue"].exists)
+        runner.tap()
+        app.descendants(matching: .any)["voice-destination-1-到三垒"].firstMatch.tap()
+        XCTAssertTrue(runner.label.contains("三垒"))
+        XCTAssertTrue(confirm.isEnabled)
+        confirm.tap()
+
+        XCTAssertTrue(result.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(voice.waitForExistence(timeout: 5))
+        XCTAssertNotEqual(batter.label, before)
+        app.buttons["undo-last-play"].tap()
+        XCTAssertEqual(batter.label, before)
+    }
+
+    func testV315VoiceProCompleteReviewSavesWithoutOpeningFieldEditor() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--voice-review-preview", "--voice-review-pro", "--voice-access-preview"]
+        app.launch()
+        let voice = app.buttons["open-voice-scoring"]
+        XCTAssertTrue(voice.waitForExistence(timeout: 8))
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+        voice.tap()
+
+        let confirm = app.buttons["confirm-voice-play"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        let contact = app.staticTexts["voice-pro-contact-summary"]
+        XCTAssertTrue(contact.exists)
+        XCTAssertTrue(contact.label.contains("平飞"))
+        XCTAssertTrue(contact.label.contains("中外野"))
+        XCTAssertTrue(app.buttons["voice-edit-pro-contact"].exists)
+        XCTAssertFalse(app.otherElements["contact-field"].exists)
+        captureV111("voice-pro-complete-review", app: app)
+        confirm.tap()
+
+        XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(voice.waitForExistence(timeout: 5))
+        XCTAssertNotEqual(batter.label, before)
+        app.buttons["undo-last-play"].tap()
+        XCTAssertEqual(batter.label, before)
+    }
+
+    func testV315VoiceProOnlyMissingLandingSavesWithoutRepeatingRunnerReview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--voice-review-preview", "--voice-review-pro", "--voice-review-missing-landing",
+                               "--voice-access-preview"]
+        app.launch()
+        let voice = app.buttons["open-voice-scoring"]
+        XCTAssertTrue(voice.waitForExistence(timeout: 8))
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+        voice.tap()
+        let confirm = app.buttons["confirm-voice-play"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertTrue(confirm.label.contains("落点"))
+        confirm.tap()
+
+        let field = app.descendants(matching: .any)["contact-field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let finish = app.buttons["finish-situation-field"]
+        XCTAssertFalse(finish.isEnabled)
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.34)).tap()
+        XCTAssertTrue(finish.isEnabled)
+        XCTAssertEqual(finish.label, "确认记入本球")
+        captureV111("voice-pro-only-landing-missing", app: app)
+        finish.tap()
+
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(voice.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["confirm-situation-play"].exists)
+        XCTAssertNotEqual(batter.label, before)
+        app.buttons["undo-last-play"].tap()
+        XCTAssertEqual(batter.label, before)
     }
 
     func testPracticeModeStartsAndResets() throws {

@@ -1,6 +1,6 @@
 # 棒球比赛记录大师 3.1.5 送审材料
 
-适用候选构建 3.1.5（Build 1），Bundle ID 为 `com.jasonchen.baseballmaster`。构建已于 2026-11-10 上传到 App Store Connect 供 TestFlight 测试，上传回执显示 Apple 正在处理。App Store 审核表单待填写。
+Bundle ID 为 `com.jasonchen.baseballmaster`。3.1.5（Build 1）已于 2026-11-10 上传到 App Store Connect，作为 TestFlight 对照。本页审核备注按下一候选的语音流程准备，归档后再填写实际 Build 编号和审核表单。
 
 - 「此版本的新增内容」取 [简体中文更新说明](whats-new-zh-Hans.txt)。
 - 「App 审核信息 → 备注」取 [中文审核备注](review-notes-zh-Hans.txt) 或 [英文审核备注](review-notes-en.txt)。提交前由管理员在总 Admin 手动生成未兑换、有效期覆盖审核的审核码，替换私有审核备注中的占位符。重审时另发一个未兑换的码。测试码只放私有审核信息。

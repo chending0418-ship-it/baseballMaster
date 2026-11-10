@@ -9646,6 +9646,57 @@ extension GameStoreTests {
         XCTAssertNil(VoicePlayProposal.suggestedSingle(analysis: analysis, context: context, transcript: "打者上到1类。"))
     }
 
+    func testV315VoiceProHitPrefillsOnlyGroundedDefenseRoutes() throws {
+        let store = freshStore()
+        XCTAssertTrue(store.applyPlay(.single))
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let runner = try XCTUnwrap(context.state.baseRunners[.first])
+        let batter = context.state.currentBatter
+        let field = VoiceAnalysis.Event(sequence: 1, kind: "field", playerId: nil, fromBase: nil,
+            toBase: nil, outType: nil, pitchResult: nil, evidence: "中外野手捡到球", toFielder: 8)
+        func relay(from: Int, to: Int, evidence: String = "中外野手传给二垒手") -> VoiceAnalysis.Event {
+            .init(sequence: 2, kind: "throw", playerId: nil, fromBase: nil, toBase: nil,
+                  outType: nil, pitchResult: nil, evidence: evidence, fromFielder: from, toFielder: to)
+        }
+        let movements = [
+            VoiceAnalysis.Event(sequence: 3, kind: "advance", playerId: batter.id.uuidString,
+                fromBase: "batter", toBase: "first", outType: nil, pitchResult: nil,
+                evidence: "打者上一垒", cause: "batted_ball"),
+            VoiceAnalysis.Event(sequence: 4, kind: "advance", playerId: runner.id.uuidString,
+                fromBase: "first", toBase: "second", outType: nil, pitchResult: nil,
+                evidence: "原一垒跑者上二垒", cause: "batted_ball")
+        ]
+        func review(handling: [VoiceAnalysis.Event], relayWords: String = "中外野手传给二垒手") -> VoicePlayProposal? {
+            let transcript = "平飞球落在中外野，中外野手捡到球，\(relayWords)。打者上一垒，原一垒跑者上二垒。"
+            let analysis = VoiceAnalysis(schemaVersion: 1, summary: "平飞一垒安打",
+                ball: .init(type: "line", region: "中外野", outcome: "single"),
+                events: handling + movements, observations: [])
+            return VoicePlayProposal(analysis: analysis, context: context, transcript: transcript)
+        }
+
+        guard case .hit(let complete)? = review(handling: [field, relay(from: 8, to: 4)]) else {
+            return XCTFail("An explicit continuous route should prepare the Pro review")
+        }
+        XCTAssertEqual(complete.observation.region, .center)
+        XCTAssertEqual(complete.observation.fielding?.route, [.centerField, .secondBase])
+        XCTAssertEqual(complete.observation.fielding?.status, .recorded)
+        XCTAssertNil(store.situationObservationError(complete.observation, outcome: complete.outcome, decisions: complete.decisions))
+        XCTAssertEqual(complete.decisions.map(\.destination), [.base(.first), .base(.second)])
+        XCTAssertEqual(store.game, context.state)
+
+        for handling in [[field], [field, relay(from: 9, to: 4)], [field, relay(from: 8, to: 10)]] {
+            guard case .hit(let incomplete)? = review(handling: handling) else {
+                return XCTFail("A missing defense route should leave the scored facts available")
+            }
+            XCTAssertNil(incomplete.observation.fielding)
+        }
+        let negated = "中外野手没传给二垒手"
+        guard case .hit(let incomplete)? = review(handling: [field, relay(from: 8, to: 4, evidence: negated)], relayWords: negated) else {
+            return XCTFail("A negated throw must remain editable")
+        }
+        XCTAssertNil(incomplete.observation.fielding)
+    }
+
     func testV315VoiceIncompleteReviewOffersOnlyChinesePrompts() throws {
         let store = freshStore()
         XCTAssertTrue(store.applyPlay(.single))
@@ -9668,6 +9719,32 @@ extension GameStoreTests {
             "请补充原垒上跑者最后到了几垒、得分还是出局。"
         ])
         XCTAssertEqual(store.game, context.state)
+    }
+
+    func testV315VoiceASRKeepsSettledSentencesWhenPartialOrEmptyPacketsArrive() throws {
+        var transcript = VoiceASRTranscript()
+        XCTAssertFalse(try transcript.receive(#"{"code":0,"voice_id":"sample"}"#))
+        XCTAssertFalse(try transcript.receive(#"{"code":0,"sentences":{"sentence_id":1,"sentence_type":0,"sentence":"跑者到二类"}}"#))
+        XCTAssertFalse(try transcript.receive(#"{"code":0,"sentences":{"sentence_id":1,"sentence_type":1,"sentence":"跑者到二垒。"} }"#))
+        XCTAssertFalse(try transcript.receive(#"{"code":0,"sentences":{"sentence_id":1,"sentence_type":0,"sentence":"跑者到三垒"}}"#))
+        XCTAssertFalse(try transcript.receive(#"{"code":0,"sentences":{"sentence_id":1,"sentence_type":1,"sentence":""}}"#))
+        XCTAssertFalse(try transcript.receive(#"{"code":0,"sentences":{"sentence_id":0,"sentence_type":1,"sentence":"中外野安打。"} }"#))
+        XCTAssertEqual(transcript.text, "中外野安打。跑者到二垒。")
+        XCTAssertTrue(try transcript.receive(#"{"code":0,"final":1}"#))
+        XCTAssertEqual(transcript.text, "中外野安打。跑者到二垒。")
+    }
+
+    func testV315VoiceASRPreservesDraftAfterTransportErrorAndReadsFinalPacketTail() throws {
+        var transcript = VoiceASRTranscript()
+        XCTAssertFalse(try transcript.receive(#"{"code":0,"result":{"index":0,"slice_type":2,"voice_text_str":"打者上一垒，"}}"#))
+        XCTAssertFalse(try transcript.receive(#"{"code":0,"result":{"index":1,"slice_type":1,"voice_text_str":"跑者到三"}}"#))
+        XCTAssertThrowsError(try transcript.receive(#"{"code":4008}"#))
+        XCTAssertEqual(transcript.text, "打者上一垒，跑者到三")
+
+        var complete = transcript
+        XCTAssertTrue(try complete.receive(#"{"code":0,"final":1,"sentences":{"sentence_list":[{"sentence":{"sentence_id":"1","sentence_type":1,"text":"跑者到三垒。"}}]}}"#))
+        XCTAssertEqual(complete.text, "打者上一垒，跑者到三垒。")
+        XCTAssertEqual(transcript.text, "打者上一垒，跑者到三")
     }
 
     func testV315VoiceUsesExistingInviteCookieAndHy3Contract() async throws {

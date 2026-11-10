@@ -225,15 +225,21 @@ struct SituationPlayFlowSheet: View {
                         .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                if stage != .entry && !(voiceReview && stage == .contact) { Button("返回") { goBack() } }
+                                if voiceReview {
+                                    Button("返回手动记分", action: close).accessibilityIdentifier("voice-return-manual")
+                                } else if stage != .entry {
+                                    Button("返回") { goBack() }
+                                }
                             }
                             ToolbarItem(placement: .confirmationAction) {
                                 if stage == .entry {
                                     Button("全部击球") { catalogReturnStage = .entry; stage = .catalog }
                                         .accessibilityIdentifier("all-batted-outcomes")
                                 }
-                                Button(action: close) { Image(systemName: "xmark") }
-                                    .accessibilityLabel("取消本球").accessibilityIdentifier("cancel-situation-play")
+                                if !voiceReview {
+                                    Button(action: close) { Image(systemName: "xmark") }
+                                        .accessibilityLabel("取消本球").accessibilityIdentifier("cancel-situation-play")
+                                }
                             }
                         }
                 }
@@ -270,7 +276,13 @@ struct SituationPlayFlowSheet: View {
                     fielding = initial.observation.fielding ?? (voiceReview ? BattedBallFielding() : BattedBallFielding(status: .pending))
                     decisions = initial.decisions; runnerDetails = initial.observation.runnerDetails ?? initial.decisions.map { BattedBallRunnerDetail(playerID: $0.id) }
                     timing = initial.timing
-                    stage = voiceReview ? .contact : .review
+                    if voiceReview {
+                        fieldMode = observation.hasLocation ? .defense : .landing
+                        stage = fieldIssue == nil && store.situationNeedsTimingDecision(outcome, decisions: decisions) && timing == nil
+                            ? .timing : .contact
+                    } else {
+                        stage = .review
+                    }
                 }
             }
             .sheet(item: Binding(get: { extraRunner.map(RunnerRouteSelection.init) }, set: { extraRunner = $0?.id })) { selection in
@@ -400,12 +412,28 @@ struct SituationPlayFlowSheet: View {
     }
     private var contact: some View {
         VStack(alignment: .leading, spacing: 10) {
-            typeGrid()
+            if voiceReview, initial?.observation.type != .unknown, let selectedType {
+                DisclosureGroup("球型 · \(selectedType.title)") { typeGrid() }
+            } else {
+                typeGrid()
+            }
+            if voiceReview, let initial, initial.observation.type == .unknown, initial.observation.fielding != nil,
+               store.situationObservationError(initial.observation, outcome: initial.outcome, decisions: initial.decisions) == nil {
+                DisclosureGroup("落点与守备") { contactField }
+            } else {
+                contactField
+            }
+        }
+    }
+
+    private var contactField: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Picker("球场记录内容", selection: $fieldMode) {
                 ForEach(SituationFieldMode.allCases.filter { $0 != .error || outcome == .error }) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented).accessibilityIdentifier("situation-field-mode")
             SituationFieldView(game: store.game, observation: observation, fielding: $fielding, mode: fieldMode) { point in
-                observation.selectPoint(point); fieldMode = .defense
+                observation.selectPoint(point)
+                if !voiceReview || fielding.status == nil { fieldMode = .defense }
             }
             routeStrip
             Text((fieldMode == .landing ? "点选落点" : fieldMode == .error ? "点选失误责任人" : fielding.route.isEmpty ? "点第一位处理球的人" : "继续点传球对象") + " · " + observation.summary)
@@ -417,7 +445,10 @@ struct SituationPlayFlowSheet: View {
             DisclosureGroup("区域选择／其他处理") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 7) {
                     ForEach(BattedBallRegion.allCases) { region in
-                        Button(region.title) { observation.selectRegion(region); fieldMode = .defense }
+                        Button(region.title) {
+                            observation.selectRegion(region)
+                            if !voiceReview || fielding.status == nil { fieldMode = .defense }
+                        }
                             .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("contact-region-\(region.rawValue)")
                     }
                 }
@@ -457,19 +488,27 @@ struct SituationPlayFlowSheet: View {
         if stage == .contact {
             VStack(spacing: 6) {
                 if let fieldIssue { Text(fieldIssue).font(.caption).foregroundStyle(BMTheme.secondaryText) }
-                Button(contactReturnToReview ? "完成修改" : requiresReview ? "下一步 · 核对跑者" : "完成本球") { finishContact() }
+                Button(contactButtonTitle) { finishContact() }
                     .buttonStyle(PrimaryButtonStyle()).disabled(fieldIssue != nil).accessibilityIdentifier("finish-situation-field")
             }.padding(12).background(BMTheme.surface)
         } else if stage == .review {
             VStack(spacing: 6) {
                 Text(previewText).font(.caption.bold())
-                Button(initial == nil ? "确认本球" : "保存本球修改") { submit() }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("confirm-situation-play")
+                Button(voiceReview ? "确认记入本球" : initial == nil ? "确认本球" : "保存本球修改") { submit() }
+                    .buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("confirm-situation-play")
             }.padding(12).background(BMTheme.surface)
         }
     }
+    private var contactButtonTitle: String {
+        if contactReturnToReview { return "完成修改" }
+        if voiceReview { return "确认记入本球" }
+        return requiresReview ? "下一步 · 核对跑者" : "完成本球"
+    }
+
     private var review: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(initial == nil ? "尚未提交" : "修改刚才这球 · 保存后替换").font(.caption.bold()).foregroundStyle(BMTheme.orange)
+            Text(voiceReview ? "本球尚未记录" : initial == nil ? "尚未提交" : "修改刚才这球 · 保存后替换")
+                .font(.caption.bold()).foregroundStyle(BMTheme.orange)
             Text("\(outcome.rawValue) · \(observation.type.title)").font(.headline)
             Text(fielding.description).font(.caption).accessibilityIdentifier("situation-defense-description")
             if let position = fielding.errorPosition { Text("失误责任：" + fielding.name(position)).font(.caption).foregroundStyle(BMTheme.red).accessibilityIdentifier("situation-error-responsibility") }
@@ -592,8 +631,14 @@ struct SituationPlayFlowSheet: View {
     private func finishContact() {
         guard fieldIssue == nil else { issue = fieldIssue; return }
         fielding.capture(in: store.game)
-        if initial != nil || contactReturnToReview || requiresReview { stage = .review; contactReturnToReview = false }
-        else { submit() }
+        if voiceReview && !contactReturnToReview {
+            submit()
+        } else if initial != nil || contactReturnToReview || requiresReview {
+            stage = .review
+            contactReturnToReview = false
+        } else {
+            submit()
+        }
     }
     private func submit() {
         guard sourceGame == store.game, sourceGameID == store.activeGameID,
@@ -617,7 +662,9 @@ struct SituationPlayFlowSheet: View {
         let defense = situationDefensivePlay(outcome: outcome, observation: observation, decisions: decisions)
         if let onSave {
             if onSave(outcome, defense, decisions, timing, observation) { close() }
-            else { issue = "修改未保存，请核对比赛是否已变化。" }
+            else if voiceReview {
+                issue = store.storageErrorMessage ?? store.actionErrorMessage ?? "本球未能保存，请重新核对。"
+            } else { issue = "修改未保存，请核对比赛是否已变化。" }
             return
         }
         let result = illegalPitch
