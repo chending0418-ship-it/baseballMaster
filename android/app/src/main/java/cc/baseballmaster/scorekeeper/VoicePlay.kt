@@ -6,7 +6,7 @@ import kotlinx.serialization.json.*
 private val baseNames = listOf("batter", "first", "second", "third", "home")
 
 internal fun Game.voiceEligible() =
-    !practice && !isScheduled && !isFinal && !isPregame && pendingDecision == null &&
+    !isScheduled && !isFinal && pendingDecision == null &&
         !requiresTiebreakPlacement && inning in 1..99 && outs in 0..2 && balls in 0..3 && strikes in 0..2
 
 internal fun Game.voiceContext(): JsonObject = buildJsonObject {
@@ -42,6 +42,20 @@ private val regions = mapOf(
     "左外野" to "left", "中外野" to "center", "右外野" to "right",
     "左侧界外" to "foulLeft", "右侧界外" to "foulRight",
 )
+
+internal fun explicitVoicePitch(transcript: String): Command? {
+    // Only accept a complete, unambiguous single-pitch phrase. Bare “好球”
+    // leaves the difference between a called strike and a swing unresolved.
+    val phrase = transcript.trim().trimEnd('。', '！', '.', '!').trim()
+    val action = when (phrase) {
+        "坏球", "一颗坏球", "一个坏球", "这球是坏球" -> PitchAction.ball
+        "看着好球", "看球好球", "看振", "没挥棒的好球", "这球没挥棒，裁判判好球" -> PitchAction.calledStrike
+        "挥棒落空", "挥空", "挥空好球", "挥棒落空好球" -> PitchAction.swingingStrike
+        "界外", "界外球", "这球是界外球" -> PitchAction.foul
+        else -> return null
+    }
+    return Command("pitch", pitch = action)
+}
 
 /** Treat the model output as a proposal. Unclear plays remain manual and never mutate a match. */
 internal fun voiceProposal(analysis: VoiceAnalysis, game: Game, transcript: String): Command? {
