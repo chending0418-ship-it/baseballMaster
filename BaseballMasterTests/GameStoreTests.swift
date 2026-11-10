@@ -9609,6 +9609,67 @@ extension GameStoreTests {
         XCTAssertEqual(store.game, context.state)
     }
 
+    func testV315VoiceSuggestsSingleFromGroundedContactAndBothRunnerDestinations() throws {
+        let store = freshStore()
+        XCTAssertTrue(store.applyPlay(.single))
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let runner = try XCTUnwrap(context.state.baseRunners[.first])
+        let batter = context.state.currentBatter
+        let transcript = "飞球到中外方向，中外拿球传给二垒。原一垒跑者上了2类，打者上到1类。"
+        let contact = VoiceAnalysis.Event(sequence: 1, kind: "field", playerId: nil, fromBase: nil,
+            toBase: nil, outType: nil, pitchResult: nil, evidence: "中外拿球")
+        let runnerAdvance = VoiceAnalysis.Event(sequence: 2, kind: "advance", playerId: runner.id.uuidString,
+            fromBase: "first", toBase: "second", outType: nil, pitchResult: nil, evidence: "原一垒跑者上了2类",
+            cause: "batted_ball")
+        let batterAdvance = VoiceAnalysis.Event(sequence: 3, kind: "advance", playerId: nil,
+            fromBase: "batter", toBase: "first", outType: nil, pitchResult: nil, evidence: "打者上到1类",
+            cause: "batted_ball")
+        let analysis = VoiceAnalysis(schemaVersion: 1, summary: "sourceText " + batter.id.uuidString,
+            ball: .init(type: "fly", region: "中外方向", outcome: "unknown"),
+            events: [contact, runnerAdvance, batterAdvance],
+            observations: ["未说明是安打还是失误。", "打者名字未绑定具体球员 ID。"])
+
+        XCTAssertNil(VoicePlayProposal(analysis: analysis, context: context, transcript: transcript))
+        for pro in [false, true] {
+            let review = VoicePlayReview(analysis: analysis, context: context, transcript: transcript, pro: pro, slowPitch: false)
+            guard case .ready(.hit(let play), suggested: true) = review else { return XCTFail("Expected a reviewable single") }
+            XCTAssertEqual(play.outcome, .single)
+            XCTAssertEqual(play.decisions.map(\.player.id), [batter.id, runner.id])
+            XCTAssertEqual(play.decisions.map(\.destination), [.base(.first), .base(.second)])
+            XCTAssertFalse(play.observation.hasLocation)
+        }
+        XCTAssertEqual(store.game, context.state)
+
+        for incompatible in ["守备失误", "野手选择", "接杀", "跑者出局"] {
+            XCTAssertNil(VoicePlayProposal.suggestedSingle(analysis: analysis, context: context, transcript: transcript + incompatible))
+        }
+        XCTAssertNil(VoicePlayProposal.suggestedSingle(analysis: analysis, context: context, transcript: "打者上到1类。"))
+    }
+
+    func testV315VoiceIncompleteReviewOffersOnlyChinesePrompts() throws {
+        let store = freshStore()
+        XCTAssertTrue(store.applyPlay(.single))
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let unrecognizedID = UUID().uuidString
+        let analysis = VoiceAnalysis(schemaVersion: 1, summary: "sourceText " + unrecognizedID,
+            ball: .init(type: "fly", region: "", outcome: "unknown"),
+            events: [
+                .init(sequence: 1, kind: "pitch", playerId: nil, fromBase: nil, toBase: nil,
+                      outType: nil, pitchResult: "in_play", evidence: "击球"),
+                .init(sequence: 2, kind: "advance", playerId: unrecognizedID, fromBase: "batter", toBase: "first",
+                      outType: nil, pitchResult: nil, evidence: "到一垒")
+            ],
+            observations: ["sourceText中的身份未绑定，runnerId=" + unrecognizedID])
+        let review = VoicePlayReview(analysis: analysis, context: context, transcript: "击球后到一垒。", pro: true, slowPitch: false)
+        guard case .needsDetails(let prompts) = review else { return XCTFail("Incomplete play must stay in review") }
+        XCTAssertEqual(prompts, [
+            "请核对转写中的人名，说明谁是打者、谁是原垒上跑者。",
+            "请补充打者的结果，例如「打出一垒安打」或「因失误上一垒」。",
+            "请补充原垒上跑者最后到了几垒、得分还是出局。"
+        ])
+        XCTAssertEqual(store.game, context.state)
+    }
+
     func testV315VoiceUsesExistingInviteCookieAndHy3Contract() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [VoiceContractURLProtocol.self]

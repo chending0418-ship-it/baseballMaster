@@ -516,6 +516,50 @@ final class VoiceScoringRecorder: ObservableObject {
     }
 }
 
+enum VoicePlayReview {
+    case ready(VoicePlayProposal, suggested: Bool)
+    case needsDetails([String])
+
+    init(analysis: VoiceAnalysis, context: VoicePlayContext, transcript: String, pro: Bool, slowPitch: Bool) {
+        if let proposal = VoicePlayProposal(analysis: analysis, context: context, transcript: transcript) {
+            if case .hit(let play) = proposal,
+               (!pro && !play.outcome.isHit && play.observation.fielding == nil) || (slowPitch && play.observation.type == .bunt) {
+                self = .needsDetails(["请补充击球结果、参与守备的球员和跑者去向，或返回手动记分。"])
+            } else {
+                self = .ready(proposal, suggested: false)
+            }
+        } else if let proposal = VoicePlayProposal.suggestedSingle(analysis: analysis, context: context, transcript: transcript),
+                  !(slowPitch && analysis.ball.type == BattedBallType.bunt.rawValue) {
+            self = .ready(proposal, suggested: true)
+        } else {
+            self = .needsDetails(Self.prompts(analysis: analysis, state: context.state))
+        }
+    }
+
+    private static func prompts(analysis: VoiceAnalysis, state: GameState) -> [String] {
+        let movements = analysis.events.filter { ["advance", "out", "score"].contains($0.kind) }
+        let players = Set([state.currentBatter.id] + state.baseRunners.values.map(\.id))
+        let notes = analysis.observations.joined(separator: " ")
+        var prompts: [String] = []
+        if movements.contains(where: { $0.playerId.flatMap(UUID.init(uuidString:)).map { players.contains($0) } != true })
+            || ["身份", "未绑定", "人名", "名字", "姓名"].contains(where: { notes.contains($0) }) {
+            prompts.append("请核对转写中的人名，说明谁是打者、谁是原垒上跑者。")
+        }
+        if analysis.ball.outcome == "unknown" || ["上垒原因", "如何上垒", "安打", "失误", "野手选择"].contains(where: { notes.contains($0) }) {
+            prompts.append("请补充打者的结果，例如「打出一垒安打」或「因失误上一垒」。")
+        }
+        if !state.baseRunners.isEmpty,
+           state.baseRunners.contains(where: { base, _ in !movements.contains { $0.fromBase == base.voiceName } })
+               || ["触杀", "封杀", "跑者去向", "是否出局"].contains(where: { notes.contains($0) }) {
+            prompts.append("请补充原垒上跑者最后到了几垒、得分还是出局。")
+        }
+        if prompts.isEmpty {
+            prompts.append("请核对转写，并补充这球最终是怎么判的、跑者最后到了哪里。")
+        }
+        return prompts
+    }
+}
+
 enum VoicePlayProposal {
     case pitch(PitchAction)
     case hit(SituationExistingPlay)
@@ -528,6 +572,23 @@ enum VoicePlayProposal {
     }
 
     init?(analysis: VoiceAnalysis, context: VoicePlayContext, transcript: String) {
+        self.init(analysis: analysis, context: context, transcript: transcript, suggestingSingle: false)
+    }
+
+    static func suggestedSingle(analysis: VoiceAnalysis, context: VoicePlayContext, transcript: String) -> Self? {
+        guard ["unknown", "single"].contains(analysis.ball.outcome),
+              analysis.events.allSatisfy({ ["pitch", "field", "throw", "advance"].contains($0.kind) }),
+              !["失误", "野手选择", "守备选择", "封杀", "触杀", "接杀", "接住飞球", "出局", "保送", "触身", "牺牲"].contains(where: { transcript.contains($0) }) else { return nil }
+
+        let events = analysis.events
+        let hasContact = events.contains { $0.kind == "pitch" && $0.pitchResult == "in_play" }
+            || (events.contains { $0.kind == "field" || $0.kind == "throw" }
+                && events.contains { $0.kind == "advance" && $0.cause == "batted_ball" })
+        guard hasContact else { return nil }
+        return Self(analysis: analysis, context: context, transcript: transcript, suggestingSingle: true)
+    }
+
+    private init?(analysis: VoiceAnalysis, context: VoicePlayContext, transcript: String, suggestingSingle: Bool) {
         let events = analysis.events.sorted { $0.sequence < $1.sequence }
         guard !events.isEmpty, Set(events.map(\.sequence)).count == events.count,
               events.allSatisfy({ !$0.evidence.isEmpty && transcript.contains($0.evidence) }) else { return nil }
@@ -544,7 +605,7 @@ enum VoicePlayProposal {
         }
         // Support straightforward batted balls. Compound outs, errors and uncertain runner actions stay manual.
         let onlyMissingLocation = analysis.observations.allSatisfy(Self.isMissingLocation)
-        guard onlyMissingLocation, analysis.ball.intent != "sacrifice",
+        guard onlyMissingLocation || suggestingSingle, analysis.ball.intent != "sacrifice",
               events.allSatisfy({ ["field", "throw", "advance", "out", "score"].contains($0.kind)
                   || ($0.kind == "pitch" && $0.pitchResult == "in_play") }),
               events.filter({ $0.kind == "pitch" }).count <= 1 else { return nil }
@@ -552,7 +613,7 @@ enum VoicePlayProposal {
         let batter = context.state.currentBatter
         let outcome: PlayOutcome
         let batterDestination: RunnerDestination
-        switch analysis.ball.outcome {
+        switch suggestingSingle ? "single" : analysis.ball.outcome {
         case "single": (outcome, batterDestination) = (.single, .base(.first))
         case "double": (outcome, batterDestination) = (.double, .base(.second))
         case "triple": (outcome, batterDestination) = (.triple, .base(.third))
@@ -574,16 +635,24 @@ enum VoicePlayProposal {
             if let player = context.state.baseRunners[base] { players.append((player, .base(base))) }
         }
         let movements = events.filter { ["advance", "out", "score"].contains($0.kind) }
+        func sourceBase(_ origin: RunnerOrigin) -> String {
+            switch origin { case .batter: "batter"; case .base(let base): base.voiceName }
+        }
+        func playerID(_ event: VoiceAnalysis.Event) -> UUID? {
+            if let id = event.playerId { return UUID(uuidString: id) }
+            guard suggestingSingle else { return nil }
+            // In a suggested single the occupied starting base identifies the runner.
+            return players.first { sourceBase($0.1) == event.fromBase }?.0.id
+        }
         guard movements.allSatisfy({ event in
             (event.cause == nil || event.cause == "batted_ball")
-                && players.contains { $0.0.id == event.playerId.flatMap(UUID.init(uuidString:)) }
+                && players.contains { $0.0.id == playerID(event) }
         }) else { return nil }
         var decisions: [RunnerDecision] = []
         for (player, origin) in players {
-            let legs = movements.filter { $0.playerId.flatMap(UUID.init(uuidString:)) == player.id }
-            guard !legs.isEmpty else { return nil }
-            var from: String
-            switch origin { case .batter: from = "batter"; case .base(let base): from = base.voiceName }
+            let legs = movements.filter { playerID($0) == player.id }
+            guard !legs.isEmpty, !suggestingSingle || legs.count == 1 else { return nil }
+            var from = sourceBase(origin)
             var destination: RunnerDestination?
             for leg in legs {
                 guard leg.fromBase == from, from != "home", destination != .out else { return nil }
@@ -620,7 +689,7 @@ enum VoicePlayProposal {
               !(context.state.outs == 2 && outcome.recordedOuts == 1 && decisions.contains { $0.destination == .score }) else { return nil }
 
         var observation = BattedBallObservation(type: type)
-        if analysis.observations.isEmpty {
+        if !analysis.observations.contains(where: Self.isMissingLocation) {
             observation.selectRegion(Self.region(analysis.ball.region, transcript: transcript))
         }
         if outcome.recordedOuts == 1 {

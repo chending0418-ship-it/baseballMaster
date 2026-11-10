@@ -58,8 +58,8 @@ struct VoiceScoringSheet: View {
     let pro: Bool
 
     @State private var text = ""
-    @State private var analysis: VoiceAnalysis?
-    @State private var proposal: VoicePlayProposal?
+    @State private var reviewResult: VoicePlayReview?
+    @State private var hasRequestedAnalysis = false
     @State private var proDraft: SituationExistingPlay?
     @State private var analysisTask: Task<Void, Never>?
     @State private var issue: String?
@@ -80,10 +80,10 @@ struct VoiceScoringSheet: View {
                             Text("只说刚才发生的一个局面。解析前可以核对、修改转写。")
                                 .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                             recordControl
-                            if !text.isEmpty || analysis != nil || analysisTask != nil {
+                            if !text.isEmpty || reviewResult != nil || analysisTask != nil {
                                 transcriptEditor
                             }
-                            if let analysis { review(analysis) }
+                            if let reviewResult { review(reviewResult) }
                             if let issue { Text(issue).font(.footnote).foregroundStyle(BMTheme.red).accessibilityIdentifier("voice-issue") }
                         }
                         .frame(maxWidth: 560)
@@ -156,8 +156,8 @@ struct VoiceScoringSheet: View {
             return
         }
         issue = nil
-        analysis = nil
-        proposal = nil
+        reviewResult = nil
+        hasRequestedAnalysis = false
         text = ""
         recorder.start(context: context.payload, token: token, service: access.service)
     }
@@ -167,8 +167,7 @@ struct VoiceScoringSheet: View {
             Text("语音转写").font(.headline)
             TextEditor(text: Binding(get: { text }, set: {
                 text = $0
-                analysis = nil
-                proposal = nil
+                if case .ready? = reviewResult { reviewResult = nil }
             }))
             .frame(minHeight: 86)
             .padding(6)
@@ -186,7 +185,7 @@ struct VoiceScoringSheet: View {
                     Button("取消解析", action: cancelAnalysis)
                 }
             } else {
-                Button("解析局面", action: parse)
+                Button(hasRequestedAnalysis ? "重新解析" : "解析局面", action: parse)
                     .buttonStyle(SecondaryButtonStyle())
                     .disabled(!recorder.finalized || recorder.phase != .idle || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("analyze-voice-play")
@@ -194,16 +193,13 @@ struct VoiceScoringSheet: View {
         }
     }
 
-    private func review(_ analysis: VoiceAnalysis) -> some View {
+    private func review(_ result: VoicePlayReview) -> some View {
         BMCard {
             VStack(alignment: .leading, spacing: 10) {
                 Text("核对本球").font(.headline)
-                Text(analysis.summary)
-                ForEach(Array(analysis.observations.enumerated()), id: \.offset) { entry in
-                    Text(entry.element).font(.footnote).foregroundStyle(BMTheme.secondaryText)
-                }
-                if let proposal {
-                    Text(proposal.title).font(.subheadline.bold())
+                switch result {
+                case .ready(let proposal, let suggested):
+                    Text(suggested ? "建议记为\(proposal.title)" : proposal.title).font(.subheadline.bold())
                     if case .hit(let play) = proposal {
                         if let fielding = play.observation.fielding {
                             Text(fielding.description).font(.subheadline)
@@ -221,9 +217,12 @@ struct VoiceScoringSheet: View {
                         .buttonStyle(PrimaryButtonStyle())
                         .disabled(submitted)
                         .accessibilityIdentifier("confirm-voice-play")
-                } else {
-                    Text("这个局面需要手动核对，请返回记分页继续记录。")
-                        .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
+                case .needsDetails(let prompts):
+                    ForEach(prompts, id: \.self) { prompt in
+                        Text(prompt).font(.subheadline).foregroundStyle(BMTheme.secondaryText)
+                    }
+                    Text("可修改上方转写后重新解析。")
+                        .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                     Button("返回手动记分") { dismiss() }.buttonStyle(SecondaryButtonStyle())
                 }
             }
@@ -243,7 +242,9 @@ struct VoiceScoringSheet: View {
             issue = "局面或语音权限已变化，请返回记分页。"; return
         }
         let transcript = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        issue = nil; analysis = nil; proposal = nil
+        issue = nil
+        reviewResult = nil
+        hasRequestedAnalysis = true
         analysisTask = Task {
             do {
                 let result = try await access.service.analyze(transcript, context: context.payload, token: token)
@@ -251,12 +252,8 @@ struct VoiceScoringSheet: View {
                 guard context.matches(store), access.token == token else {
                     issue = "局面或语音权限已变化，请返回记分页。"; analysisTask = nil; return
                 }
-                analysis = result
-                let candidate = VoicePlayProposal(analysis: result, context: context, transcript: transcript)
-                if case .hit(let play)? = candidate, (!pro && !play.outcome.isHit && play.observation.fielding == nil)
-                    || (store.isSlowPitch && play.observation.type == .bunt) {
-                    proposal = nil
-                } else { proposal = candidate }
+                reviewResult = VoicePlayReview(analysis: result, context: context, transcript: transcript,
+                                               pro: pro, slowPitch: store.isSlowPitch)
             } catch {
                 guard !Task.isCancelled else { return }
                 access.report(error, for: token)
