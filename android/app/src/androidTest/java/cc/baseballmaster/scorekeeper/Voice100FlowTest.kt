@@ -149,6 +149,85 @@ class Voice100FlowTest {
         assertEquals(PitchAction.foul, explicitVoicePitch("界外球")?.pitch)
     }
 
+    @Test fun noisyBattedBallWithSafeRunnersOffersSingleAndRecordsOnce() =
+        confirmBattedBall(missingBatter = false)
+
+    @Test fun incompleteBattedBallKeepsKnownRunnerWhenScorerChoosesOutcome() =
+        confirmBattedBall(missingBatter = true)
+
+    private fun confirmBattedBall(missingBatter: Boolean) {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(inst)
+        Configurator.getInstance().setWaitForIdleTimeout(500).setWaitForSelectorTimeout(3000)
+        val original = MatchEngine.apply(game(pregame = true), Command("play", outcome = Outcome.single))
+        val runner = requireNotNull(original.bases.first())
+        val batter = original.batter.id
+        val runnerPhrase = if (missingBatter) "甲已经成功上了3类" else "甲已经成功上了2类"
+        val runnerBase = if (missingBatter) "third" else "second"
+        val transcript = "气球到中外方向，中外拿球传给二垒。$runnerPhrase。" +
+            if (missingBatter) "乙的去向不清楚。" else "乙最终上到1类。"
+        val fake = FakeService().apply {
+            analysis = VoiceAnalysis(1, "内部编号 $runner", VoiceAnalysis.Ball("unknown", "中外方向", "unknown"),
+                listOfNotNull(
+                    VoiceAnalysis.Event(1, "field", "中外拿球", toFielder = 8),
+                    VoiceAnalysis.Event(2, "throw", "传给二垒", fromFielder = 8, toFielder = 4),
+                    VoiceAnalysis.Event(3, "advance", runnerPhrase, runner, "first", runnerBase),
+                ), listOf("未明确上垒判定，runnerId 为 $runner"))
+        }
+        val access = VoiceAccess(Memory(VoiceDevice(token = "T".repeat(32))), fake)
+        runBlocking { access.refresh() }
+        val saved = AtomicReference(original)
+        val writes = AtomicInteger()
+        val recorder = object : VoiceRecording {
+            override suspend fun run(context: JsonObject, token: String, stop: AtomicBoolean,
+                phase: (VoicePhase) -> Unit, transcript: (String) -> Unit): String = transcriptText
+            val transcriptText = transcript
+        }
+        inst.runOnMainSync { activity.activity.setContent {
+            BaseballTheme {
+                var current by remember { mutableStateOf(original) }
+                var draft by remember { mutableStateOf<Pair<Command, String>?>(null) }
+                val save: (Command) -> Unit = { command ->
+                    current = MatchEngine.apply(current, command)
+                    saved.set(current)
+                    writes.incrementAndGet()
+                }
+                val review = draft
+                when {
+                    current.revision != original.revision ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("已记入比赛") }
+                    review != null -> PlayEditor(original, false, { draft = null }, initial = review.first,
+                        voiceConfirmation = true, voiceTranscript = review.second, save = save)
+                    else -> VoiceScoringScreen(original, access, { true }, false, {}, confirm = save,
+                        recording = recorder, reviewBattedBall = { command, source -> draft = command to source })
+                }
+            }
+        } }
+        fun tap(tag: String) = NativeUi.find(device, By.res(tag)).click()
+        tap("start-voice-recording")
+        tap("accept-voice-consent")
+        val runnerName = original.battingTeam.players.single { it.id == runner }.name
+        NativeUi.find(device, By.text("$runnerName · ${if (missingBatter) "三垒" else "二垒"}"))
+        assertFalse(device.hasObject(By.textContains(runner)))
+        assertEquals(0, writes.get())
+        if (missingBatter) {
+            assertFalse(device.hasObject(By.res("confirm-voice-play")))
+            tap("review-voice-batted-ball")
+            tap("voice-outcome-single")
+            assertEquals(0, writes.get())
+            tap("save-play")
+        } else {
+            NativeUi.find(device, By.text("一垒安打"))
+            tap("confirm-voice-play")
+        }
+        assertTrue(device.wait(Until.hasObject(By.text("已记入比赛")), 10_000))
+        assertEquals(1, writes.get())
+        val after = saved.get()
+        assertEquals(if (missingBatter) listOf(batter, null, runner) else listOf(batter, runner, null), after.bases)
+        assertEquals(Outcome.single, after.journal.last().command.outcome)
+        assertEquals(original.revision + 1, after.revision)
+    }
+
     private fun confirmSyntheticPitch(
         recorded: String, edited: String?, expectedRemoteText: String, expectedAction: PitchAction,
         duplicate: Boolean = false, practice: Boolean = false,

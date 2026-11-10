@@ -84,6 +84,7 @@ internal fun VoiceScoringScreen(
     dismiss: () -> Unit,
     confirm: (Command) -> Unit,
     recording: VoiceRecording = remember(access) { TencentVoiceRecording(access.service) },
+    reviewBattedBall: ((Command, String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val owner = LocalLifecycleOwner.current
@@ -95,6 +96,7 @@ internal fun VoiceScoringScreen(
     var finalized by remember { mutableStateOf(false) }
     var analysis by remember { mutableStateOf<VoiceAnalysis?>(null) }
     var proposal by remember { mutableStateOf<Command?>(null) }
+    var partial by remember { mutableStateOf<Command?>(null) }
     var consent by remember { mutableStateOf(false) }
     var permissionPending by remember { mutableStateOf(false) }
     var issue by remember { mutableStateOf<String?>(null) }
@@ -151,6 +153,10 @@ internal fun VoiceScoringScreen(
         if (!currentMatches() || access.token != credential)
             throw VoiceIssue("比赛局面或语音权限已变化，建议仅供人工核对。")
         proposal = voiceProposal(response, game, sent)
+        if (proposal == null) {
+            partial = voiceBattedDraft(response, game, sent)
+            partial?.let { proposal = suggestedVoiceSingle(response, it, game, sent) }
+        }
     }
 
     fun start() {
@@ -161,6 +167,7 @@ internal fun VoiceScoringScreen(
         text = ""
         analysis = null
         proposal = null
+        partial = null
         val thisStop = AtomicBoolean(false)
         stop = thisStop
         phase = VoicePhase.connecting
@@ -190,42 +197,31 @@ internal fun VoiceScoringScreen(
         issue = null
         analysis = null
         proposal = null
+        partial = null
         launch(credential, onFinish = { analyzing = false }) { prepareProposal(sent, credential) }
     }
 
     ProductPage("语音记分", busy = busy, onBack = dismiss, backLabel = "返回比赛", modal = true) {
         if (game.practice) Text("练习记分 · 不保存为正式比赛")
         Text("${game.inning}局${if (game.isTop) "上" else "下"} · ${game.outs} 出局 · 打者 ${game.batter.name}")
-        when (phase) {
-            VoicePhase.connecting -> Text("正在连接语音识别…")
-            VoicePhase.recording -> Button({ stop.set(true) }, Modifier.testTag("stop-voice-recording")) { Text("结束录音") }
-            VoicePhase.finishing -> Text("正在接收最终转写…")
-            null -> Button({ consent = true }, Modifier.testTag("start-voice-recording"),
-                enabled = !busy && !analyzing && !permissionPending && access.token != null && currentMatches()) {
-                Text(if (text.isEmpty()) "开始录音" else "重新录音")
-            }
-        }
-        if (phase != null || analyzing) TextButton({ cancel() }) { Text(if (analyzing) "取消解析" else "取消录音") }
-        OutlinedTextField(text, { text = it.take(4000); analysis = null; proposal = null },
-            Modifier.fillMaxWidth().testTag("voice-transcript"), label = { Text("语音转写") },
-            readOnly = !finalized || analyzing || phase != null, minLines = 3, maxLines = 8)
-        if (analyzing) Text("正在解析本球…")
-        else if (finalized && proposal == null) TextButton(::analyze, Modifier.testTag("analyze-voice-play"),
-            enabled = text.isNotBlank() && task == null && access.token != null && currentMatches()) {
-            Text("重新解析")
-        }
-        issue?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         val result = analysis
         val candidate = proposal
+        val draft = partial
+        val canReview = currentMatches() && access.token != null && task == null
         if (result != null || candidate != null) CardBlock {
             Text("核对本球", style = MaterialTheme.typography.titleMedium)
-            if (result != null) {
-                Text(result.summary)
-                result.observations.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
-            }
-            if (candidate == null || !currentMatches() || access.token == null) {
+            if (candidate == null && draft != null && canReview && reviewBattedBall != null) {
+                if (draft.decisions.orEmpty().isNotEmpty()) {
+                    Text("已提取以下去向。请核对，并补选击球结果。")
+                    VoiceDestinations(game, draft.decisions.orEmpty())
+                } else Text("请补选击球结果，并核对打者和跑者的去向。")
+                Button({ if (currentMatches() && access.token != null && task == null && !busy)
+                    reviewBattedBall(draft, text.trim()) }, Modifier.testTag("review-voice-batted-ball"), enabled = !busy) {
+                    Text("补选击球结果")
+                }
+            } else if (candidate == null || !canReview) {
                 Text("这次没有生成可直接记入的建议。可修改转写后重新解析。")
-                if (candidate == null && currentMatches() && access.token != null && task == null) {
+                if (candidate == null && canReview) {
                     Text("如果是单球判定，可在这里选择。其他局面可返回比赛手动记分。")
                     PitchAction.entries.chunked(2).forEach { pair ->
                         Row(Modifier.fillMaxWidth()) {
@@ -244,19 +240,40 @@ internal fun VoiceScoringScreen(
                 }
             } else {
                 Text(candidate.pitch?.title ?: candidate.outcome?.title.orEmpty())
-                candidate.decisions.orEmpty().forEach {
-                    val player = game.battingTeam.players.firstOrNull { p -> p.id == it.playerID }
-                    val destination = listOf("出局", "留在原垒", "一垒", "二垒", "三垒", "得分")[it.destination + 1]
-                    Text("${player?.name.orEmpty()} · $destination")
-                }
+                VoiceDestinations(game, candidate.decisions.orEmpty())
                 val pro = candidate.kind == "play" && game.rules.recordingMethod == "situation"
                 val missing = candidate.observation?.precision == "unknown"
                 Button({ if (currentMatches() && !busy && access.token != null) confirm(candidate) },
                     Modifier.testTag("confirm-voice-play"), enabled = !busy) {
                     Text(if (!pro) "确认记录" else if (missing) "到球场补落点" else "到球场核对")
                 }
+                if (draft != null && reviewBattedBall != null) {
+                    TextButton({ if (currentMatches() && !busy && access.token != null && task == null)
+                        reviewBattedBall(draft, text.trim()) }, Modifier.testTag("edit-voice-batted-ball"), enabled = !busy) {
+                        Text("修改击球结果")
+                    }
+                }
             }
         }
+        when (phase) {
+            VoicePhase.connecting -> Text("正在连接语音识别…")
+            VoicePhase.recording -> Button({ stop.set(true) }, Modifier.testTag("stop-voice-recording")) { Text("结束录音") }
+            VoicePhase.finishing -> Text("正在接收最终转写…")
+            null -> Button({ consent = true }, Modifier.testTag("start-voice-recording"),
+                enabled = !busy && !analyzing && !permissionPending && access.token != null && currentMatches()) {
+                Text(if (text.isEmpty()) "开始录音" else "重新录音")
+            }
+        }
+        if (phase != null || analyzing) TextButton({ cancel() }) { Text(if (analyzing) "取消解析" else "取消录音") }
+        OutlinedTextField(text, { text = it.take(4000); analysis = null; proposal = null; partial = null },
+            Modifier.fillMaxWidth().testTag("voice-transcript"), label = { Text("语音转写") },
+            readOnly = !finalized || analyzing || phase != null, minLines = 3, maxLines = 8)
+        if (analyzing) Text("正在解析本球…")
+        else if (finalized && proposal == null) TextButton(::analyze, Modifier.testTag("analyze-voice-play"),
+            enabled = text.isNotBlank() && task == null && access.token != null && currentMatches()) {
+            Text("重新解析")
+        }
+        issue?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
     if (consent) AlertDialog(
         modifier = Modifier.semantics { testTagsAsResourceId = true },
@@ -271,4 +288,13 @@ internal fun VoiceScoringScreen(
         }, Modifier.testTag("accept-voice-consent")) { Text("同意并开始录音") } },
         dismissButton = { TextButton({ consent = false }, Modifier.testTag("cancel-voice-consent")) { Text("取消") } },
     )
+}
+
+@Composable
+private fun VoiceDestinations(game: Game, decisions: List<Decision>) {
+    decisions.forEach { decision ->
+        val player = game.battingTeam.players.firstOrNull { it.id == decision.playerID }
+        val destination = listOf("出局", "留在原垒", "一垒", "二垒", "三垒", "得分")[decision.destination + 1]
+        Text("${player?.name.orEmpty()} · $destination")
+    }
 }

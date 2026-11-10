@@ -41,6 +41,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
     val source = model.scoringTaskSource?.takeIf { it.id == game.id && it.revision == sourceRevision } ?: game
     val wide = LocalWorkbenchWide.current
     var voiceDraft by remember(game.id) { mutableStateOf<Command?>(null) }
+    var voiceDraftTranscript by remember(game.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(voiceAccess, game.id) {
         try { voiceAccess.refresh() } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) { /* Network trouble leaves manual scoring available. */ }
@@ -215,12 +216,17 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
         val snapshot = source.copy(revision = sourceRevision)
         val close = {
             voiceDraft = null
+            voiceDraftTranscript = null
             model.scoringTaskSource = model.openedGame ?: game
             sourceRevision = (model.openedGame ?: game).revision
             panel = returnPanel
             returnPanel = ""
         }
         val save: (Command) -> Unit = { model.command(it, snapshot.revision, close) }
+        fun voiceMatches() = model.openedGame?.let {
+            it.id == snapshot.id && it.revision == snapshot.revision && it.voiceEligible()
+        } == true
+        fun canSaveVoice() = !model.busy && voiceMatches() && voiceAccess.token != null
         when (panel) {
             "team-broadcast" -> {
                 var target by remember(snapshot.id) { mutableStateOf<BroadcastTarget?>(null) }
@@ -242,26 +248,28 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
                 game.ruleNotices(System.currentTimeMillis()).forEach { notice -> CardBlock { Text(notice, fontSize = 14.sp) } }
             }
             "play" -> PlayEditor(snapshot, model.busy, close, onNeedsCorrection = { panel = "correction" }, save = save)
-            "voice" -> VoiceScoringScreen(snapshot, voiceAccess, matches = {
-                model.openedGame?.let { it.id == snapshot.id && it.revision == snapshot.revision && it.voiceEligible() } == true
-            }, busy = model.busy, dismiss = close, confirm = { candidate ->
-                val current = model.openedGame
-                if (!model.busy && current?.id == snapshot.id && current.revision == snapshot.revision &&
-                    current.voiceEligible() && voiceAccess.token != null) {
+            "voice" -> VoiceScoringScreen(snapshot, voiceAccess, matches = ::voiceMatches, busy = model.busy, dismiss = close,
+                confirm = { candidate ->
+                if (canSaveVoice()) {
                     if (candidate.kind == "play" && snapshot.rules.recordingMethod == "situation") {
                         voiceDraft = candidate
                         panel = "voice-play"
                     } else save(candidate)
+                }
+            }, reviewBattedBall = { draft, transcript ->
+                if (canSaveVoice()) {
+                    voiceDraft = draft
+                    voiceDraftTranscript = transcript
+                    panel = "voice-play"
                 }
             })
             "voice-play" -> {
                 val draft = voiceDraft
                 if (draft == null) ProductPage("语音记分", onBack = close, backLabel = "返回比赛", modal = true) {
                     Text("语音草稿已结束，请返回记分。")
-                } else PlayEditor(snapshot, model.busy, close, initial = draft, voiceConfirmation = true, save = { candidate ->
-                    val current = model.openedGame
-                    if (!model.busy && current?.id == snapshot.id && current.revision == snapshot.revision &&
-                        current.voiceEligible() && voiceAccess.token != null) save(candidate)
+                } else PlayEditor(snapshot, model.busy, close, initial = draft, voiceConfirmation = true,
+                    voiceTranscript = voiceDraftTranscript, save = { candidate ->
+                    if (canSaveVoice()) save(candidate)
                 })
             }
             "runner" -> ProductRunnerEditor(snapshot, model.busy, close, save = save)
