@@ -4,9 +4,14 @@ import android.Manifest
 import androidx.activity.compose.setContent
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.lifecycle.SavedStateHandle
 import androidx.compose.runtime.*
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -29,12 +34,41 @@ import org.junit.runner.RunWith
 class Voice100FlowTest {
     @get:Rule val activity = ActivityTestRule(MainActivity::class.java)
     @get:Rule val microphone = GrantPermissionRule.grant(Manifest.permission.RECORD_AUDIO)
-    private fun game(pro: Boolean = false): Game {
+    private fun game(pro: Boolean = false, pregame: Boolean = false): Game {
         fun roster(name: String) = Team(UUID.randomUUID().toString(), name,
             (1..9).map { Player(UUID.randomUUID().toString(), "$name$it", "$it") })
         val home = roster("测试主队")
-        return MatchEngine.apply(MatchFactory.create(UUID.randomUUID().toString(), home, roster("测试客队"),
-            Rules(recordingMethod = if (pro) "situation" else "traditional"), home.id), Command("pitch", pitch = PitchAction.ball))
+        val game = MatchFactory.create(UUID.randomUUID().toString(), home, roster("测试客队"),
+            Rules(recordingMethod = if (pro) "situation" else "traditional"), home.id)
+        return if (pregame) game else MatchEngine.apply(game, Command("pitch", pitch = PitchAction.ball))
+    }
+
+    @Test fun activatedVoiceIsVisibleBeforeFirstPitchAndAsksForLineups() {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(inst)
+        Configurator.getInstance().setWaitForIdleTimeout(500).setWaitForSelectorTimeout(3000)
+        val access = VoiceAccess(Memory(VoiceDevice(token = "T".repeat(32))), FakeService())
+        val original = game(pregame = true)
+        assertTrue(original.isPregame)
+        inst.runOnMainSync {
+            val model = ScorekeeperViewModel(activity.activity.application, SavedStateHandle())
+            activity.activity.setContent {
+                BaseballTheme {
+                    Box(Modifier.fillMaxSize().safeDrawingPadding().semantics { testTagsAsResourceId = true }) {
+                        ScoringPanels(original, model, host = { controls, task, _, locked ->
+                            if (locked) task() else Column { controls() }
+                        }, voiceAccess = access)
+                    }
+                }
+            }
+        }
+        fun tap(tag: String) = NativeUi.find(device, By.res(tag)).click()
+        tap("open-voice-scoring")
+        NativeUi.find(device, By.text("确认双方先发阵容"))
+        device.pressBack()
+        tap("open-voice-scoring")
+        tap("confirm-opening-voice")
+        NativeUi.find(device, By.res("start-voice-recording"))
     }
 
     private class Memory(var state: VoiceDevice = VoiceDevice()) : VoiceDeviceStore {
@@ -88,7 +122,7 @@ class Voice100FlowTest {
         val fake = FakeService()
         val access = VoiceAccess(Memory(VoiceDevice(token = "T".repeat(32))), fake)
         runBlocking { access.refresh() }
-        val original = game()
+        val original = game(pregame = true)
         val saved = AtomicReference(original)
         val writes = AtomicInteger()
         val recordings = AtomicInteger()
@@ -135,6 +169,9 @@ class Voice100FlowTest {
         assertEquals(1, writes.get())
         val after = saved.get()
         assertEquals(original.revision + 1, after.revision)
+        assertTrue(after.openingPitchRecorded)
+        assertTrue(after.clockHasStarted)
+        assertEquals(1, after.totalPitches)
         assertEquals(original.totalPitches, MatchEngine.undo(after).totalPitches)
     }
 
