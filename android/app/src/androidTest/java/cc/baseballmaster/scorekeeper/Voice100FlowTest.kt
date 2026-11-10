@@ -45,15 +45,23 @@ class Voice100FlowTest {
         return if (pregame) game else MatchEngine.apply(game, Command("pitch", pitch = PitchAction.ball))
     }
 
-    @Test fun activatedVoiceIsVisibleBeforeFirstPitchAndAsksForLineups() {
+    @Test fun activatedVoiceIsVisibleBeforeFirstPitchAndAsksForLineups() =
+        checkOpeningVoice(practice = false)
+
+    @Test fun practiceVoiceOpensWithoutTheFormalLineupPrompt() =
+        checkOpeningVoice(practice = true)
+
+    private fun checkOpeningVoice(practice: Boolean) {
         val inst = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(inst)
         Configurator.getInstance().setWaitForIdleTimeout(500).setWaitForSelectorTimeout(3000)
         val access = VoiceAccess(Memory(VoiceDevice(token = "T".repeat(32))), FakeService())
-        val original = game(pregame = true)
-        assertTrue(original.isPregame)
         inst.runOnMainSync {
             val model = ScorekeeperViewModel(activity.activity.application, SavedStateHandle())
+            val original = if (practice) {
+                model.practice()
+                requireNotNull(model.openedGame)
+            } else game(pregame = true).also { assertTrue(it.isPregame) }
             activity.activity.setContent {
                 BaseballTheme {
                     Box(Modifier.fillMaxSize().safeDrawingPadding().semantics { testTagsAsResourceId = true }) {
@@ -66,11 +74,14 @@ class Voice100FlowTest {
         }
         fun tap(tag: String) = NativeUi.find(device, By.res(tag)).click()
         tap("open-voice-scoring")
-        NativeUi.find(device, By.text("确认双方先发阵容"))
-        device.pressBack()
-        tap("open-voice-scoring")
-        tap("confirm-opening-voice")
+        if (!practice) {
+            NativeUi.find(device, By.text("确认双方先发阵容"))
+            device.pressBack()
+            tap("open-voice-scoring")
+            tap("confirm-opening-voice")
+        }
         NativeUi.find(device, By.res("start-voice-recording"))
+        if (practice) NativeUi.find(device, By.text("练习记分 · 不保存为正式比赛"))
     }
 
     private class Memory(var state: VoiceDevice = VoiceDevice()) : VoiceDeviceStore {
@@ -123,6 +134,12 @@ class Voice100FlowTest {
     @Test fun explicitPitchShowsConfirmationAutomaticallyWithoutCallingAnalysisService() =
         confirmSyntheticPitch("这球是坏球。", null, "", PitchAction.ball)
 
+    @Test fun confirmingPracticeVoiceChangesOnlyTheInMemoryMatch() =
+        confirmSyntheticPitch("界外球", null, "", PitchAction.foul, practice = true)
+
+    @Test fun duplicateModelPitchCanBeResolvedWithoutLeavingVoiceReview() =
+        confirmSyntheticPitch("裁判判定好球", null, "裁判判定好球", PitchAction.calledStrike, duplicate = true)
+
     @Test fun ambiguousAndMultiPitchPhrasesStillRequireAnalysis() {
         listOf("好球", "不是坏球", "先坏球再界外", "坏球还是好球", "两个坏球").forEach {
             assertNull(it, explicitVoicePitch(it))
@@ -132,14 +149,25 @@ class Voice100FlowTest {
         assertEquals(PitchAction.foul, explicitVoicePitch("界外球")?.pitch)
     }
 
-    private fun confirmSyntheticPitch(recorded: String, edited: String?, expectedRemoteText: String, expectedAction: PitchAction) {
+    private fun confirmSyntheticPitch(
+        recorded: String, edited: String?, expectedRemoteText: String, expectedAction: PitchAction,
+        duplicate: Boolean = false, practice: Boolean = false,
+    ) {
         val inst = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(inst)
         Configurator.getInstance().setWaitForIdleTimeout(500).setWaitForSelectorTimeout(3000)
         val fake = FakeService()
+        if (duplicate) {
+            val event = fake.analysis.events.single()
+            fake.analysis = fake.analysis.copy(events = listOf(event, event.copy(sequence = 2)))
+        }
         val access = VoiceAccess(Memory(VoiceDevice(token = "T".repeat(32))), fake)
         runBlocking { access.refresh() }
-        val original = game(pregame = true)
+        var practiceModel: ScorekeeperViewModel? = null
+        if (practice) inst.runOnMainSync {
+            practiceModel = ScorekeeperViewModel(activity.activity.application, SavedStateHandle()).also { it.practice() }
+        }
+        val original = practiceModel?.openedGame ?: game(pregame = true)
         val saved = AtomicReference(original)
         val writes = AtomicInteger()
         val recordings = AtomicInteger()
@@ -157,9 +185,14 @@ class Voice100FlowTest {
                 if (current.revision != original.revision) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("已确认本球") } else
                     VoiceScoringScreen(original, access, { current.revision == original.revision }, false, {},
                         confirm = { command ->
-                            current = MatchEngine.apply(current, command)
-                            saved.set(current)
-                            writes.incrementAndGet()
+                            fun accept(next: Game) {
+                                current = next
+                                saved.set(next)
+                                writes.incrementAndGet()
+                            }
+                            val model = practiceModel
+                            if (model == null) accept(MatchEngine.apply(current, command))
+                            else model.command(command, original.revision) { accept(requireNotNull(model.openedGame)) }
                         }, recording = recorder)
             }
         } }
@@ -170,6 +203,11 @@ class Voice100FlowTest {
         assertEquals("", fake.observed)
         tap("start-voice-recording")
         tap("accept-voice-consent")
+        if (duplicate) {
+            val choice = NativeUi.find(device, By.res("review-voice-${expectedAction.name}"))
+            assertFalse(device.hasObject(By.res("confirm-voice-play")))
+            choice.click()
+        }
         NativeUi.find(device, By.res("confirm-voice-play"))
         inst.runOnMainSync {
             val window = WindowInspector.getGlobalWindowViews().single { it.hasWindowFocus() }
@@ -198,9 +236,13 @@ class Voice100FlowTest {
         assertEquals(expectedAction, after.journal.last().command.pitch)
         assertEquals(original.revision + 1, after.revision)
         assertTrue(after.openingPitchRecorded)
-        assertTrue(after.clockHasStarted)
+        assertEquals(!practice, after.clockHasStarted)
         assertEquals(1, after.totalPitches)
         assertEquals(original.totalPitches, MatchEngine.undo(after).totalPitches)
+        if (practice) runBlocking {
+            val db = LocalDatabase.open(inst.targetContext)
+            try { assertNull(db.dao().game(original.id)) } finally { db.close() }
+        }
     }
 
     @Test fun missingLocationCanBecomeAProDraftButMissingRunnerResolutionCannotCommit() {

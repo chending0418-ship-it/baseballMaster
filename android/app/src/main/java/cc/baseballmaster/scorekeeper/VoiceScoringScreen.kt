@@ -39,7 +39,7 @@ internal fun VoiceSettings(access: VoiceAccess) {
     }
     Text("语音记分", style = MaterialTheme.typography.titleSmall)
     CardBlock {
-        Text(if (access.token == null) "未开通 · 使用一次性开启码开通" else "已开通 · 在现场记分时可使用语音")
+        Text(if (access.token == null) "未开通 · 使用一次性开启码开通" else "已开通 · 可在现场记分和练习中使用语音")
         TextButton({ editing = true; issue = null }, Modifier.testTag("open-voice-settings"), enabled = !busy) {
             Text(if (access.token == null) "输入开启码" else "更换开启码")
         }
@@ -194,6 +194,7 @@ internal fun VoiceScoringScreen(
     }
 
     ProductPage("语音记分", busy = busy, onBack = dismiss, backLabel = "返回比赛", modal = true) {
+        if (game.practice) Text("练习记分 · 不保存为正式比赛")
         Text("${game.inning}局${if (game.isTop) "上" else "下"} · ${game.outs} 出局 · 打者 ${game.batter.name}")
         when (phase) {
             VoicePhase.connecting -> Text("正在连接语音识别…")
@@ -223,7 +224,24 @@ internal fun VoiceScoringScreen(
                 result.observations.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
             if (candidate == null || !currentMatches() || access.token == null) {
-                Text("这次没有生成可直接记入的建议。可修改转写后重新解析，或返回比赛手动记分。")
+                Text("这次没有生成可直接记入的建议。可修改转写后重新解析。")
+                if (candidate == null && currentMatches() && access.token != null && task == null) {
+                    Text("如果是单球判定，可在这里选择。其他局面可返回比赛手动记分。")
+                    PitchAction.entries.chunked(2).forEach { pair ->
+                        Row(Modifier.fillMaxWidth()) {
+                            pair.forEach { action ->
+                                TextButton({
+                                    if (!busy && currentMatches() && access.token != null && task == null) {
+                                        analysis = null
+                                        proposal = Command("pitch", pitch = action)
+                                    }
+                                }, Modifier.weight(1f).testTag("review-voice-${action.name}"), enabled = !busy) {
+                                    Text(action.title)
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 Text(candidate.pitch?.title ?: candidate.outcome?.title.orEmpty())
                 candidate.decisions.orEmpty().forEach {

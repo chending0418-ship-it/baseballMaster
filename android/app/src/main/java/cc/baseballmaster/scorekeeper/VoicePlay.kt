@@ -6,7 +6,7 @@ import kotlinx.serialization.json.*
 private val baseNames = listOf("batter", "first", "second", "third", "home")
 
 internal fun Game.voiceEligible() =
-    !practice && !isScheduled && !isFinal && pendingDecision == null &&
+    !isScheduled && !isFinal && pendingDecision == null &&
         !requiresTiebreakPlacement && inning in 1..99 && outs in 0..2 && balls in 0..3 && strikes in 0..2
 
 internal fun Game.voiceContext(): JsonObject = buildJsonObject {

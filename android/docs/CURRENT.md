@@ -4,7 +4,8 @@
 
 | 项目 | 当前依据 |
 | --- | --- |
-| 当前版本 | Android 1.0.0（Build 11），以 [Gradle 配置](../app/build.gradle.kts)为准；[PR #58](https://github.com/chending0418-ship-it/baseballMaster/pull/58) 已合入 `main` |
+| 已合并版本 | Android 1.0.0（Build 11），[PR #58](https://github.com/chending0418-ship-it/baseballMaster/pull/58) 已合入 `main` |
+| 维护候选 | Android 1.0.1（Build 12），首球与练习语音、自动建议、截图和计时可见性。见[版本计划](<plans/1.0.1 发布功能计划.md>)和 [Gradle 配置](../app/build.gradle.kts) |
 | 1.0.0 计划 | [发布功能计划](<plans/1.0.0 发布功能计划.md>)：投手限额、品牌 1.3、原生语音、球队固定转播及名单批量提交已实现；模拟器专项与候选验收证据见计划 |
 | 官网分发 | **1.0.0（Build 11）**，2026-11-10 已发布[签名 APK](https://baseballmaster.cc/assets/android/1.0.0-build11/BaseballMaster-Android-1.0.0-build11.apk)，[下载入口](https://baseballmaster.cc/scorekeeper#download)与[隐私说明](https://baseballmaster.cc/privacy.html)已同步 |
 | 工程及证据 | Android Studio 打开 `android/`；1.0.0 验证在本工作树 `output/validation/1.0.0/`；包名及签名配置沿用 |
@@ -12,4 +13,4 @@
 | iOS／服务 | [iOS CURRENT](../../ios/docs/CURRENT.md)，共享服务继续从 iOS／服务入口维护 |
 | 发布阶段 | 上海球队服务已发布 PR #52 的转播交接与恢复修复，公网核验通过。签名 APK 已打包；真实腾讯 ASR、混元和覆盖升级的模拟器证据已记录。 |
 
-首球语音入口、录音结束自动分析和语音页截图已通过同批模拟器专项，待合并及发布。见[修复 PR #60](https://github.com/chending0418-ship-it/baseballMaster/pull/60)。
+1.0.1 以[修复 PR #60](https://github.com/chending0418-ship-it/baseballMaster/pull/60)验收及交付。

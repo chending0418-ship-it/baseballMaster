@@ -1174,13 +1174,14 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                     },
                     scoreboard = {
                         val timer: @Composable () -> Unit = {
-                            if (game.clockHasStarted || game.rules.timed) {
-                                val seconds = (if (game.clockDisplayMode == "remaining") game.remainingTime(now) ?: game.elapsed(now) else game.elapsed(now)) / 1000
+                            if (game.clockHasStarted || !game.practice && !game.isScheduled && !game.isFinal) {
+                                val remaining = game.remainingTime(now).takeIf { game.clockDisplayMode == "remaining" }
+                                val seconds = (remaining ?: game.elapsed(now)) / 1000
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("${if (game.clockDisplayMode == "remaining") "倒" else "正"} ${seconds / 60}:${"%02d".format(kotlin.math.abs(seconds % 60))}",
+                                    Text("${if (remaining != null) "倒" else "正"} ${seconds / 60}:${"%02d".format(kotlin.math.abs(seconds % 60))}",
                                         Modifier.testTag("game-clock").clickable(enabled = !locked) { requestedPanel = "clock" },
                                         fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
-                                    if (!game.isFinal) TextButton({ model.command(Command("clock", text = if (game.clockRunningSince == null) "resume" else "pause")) },
+                                    if (!game.isFinal && !game.isScheduled) TextButton({ model.command(Command("clock", text = if (game.clockRunningSince == null) "resume" else "pause")) },
                                         enabled = !locked && !model.busy, modifier = Modifier.size(28.dp).testTag("toggle-game-clock"), contentPadding = PaddingValues(0.dp)) {
                                         Text(if (game.clockRunningSince == null) "▶" else "Ⅱ", fontSize = 10.sp)
                                     }

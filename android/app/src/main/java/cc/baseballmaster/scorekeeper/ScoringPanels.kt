@@ -67,7 +67,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
             }
             if (voiceAccess.token != null && game.voiceEligible())
                 FilledTonalIconButton({
-                    if (!game.openingPitchRecorded) openingPanel = "voice" else open("voice")
+                    if (!game.openingPitchRecorded && !game.practice) openingPanel = "voice" else open("voice")
                 }, modifier = Modifier.size(48.dp).testTag("open-voice-scoring"),
                     enabled = enabled && panel.isEmpty()) {
                     Icon(painterResource(R.drawable.ic_voice_mic), "语音输入")
