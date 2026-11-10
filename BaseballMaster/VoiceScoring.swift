@@ -664,7 +664,9 @@ enum VoicePlayProposal {
         case "triple": (outcome, batterDestination) = (.triple, .base(.third))
         case "home_run": (outcome, batterDestination) = (.homeRun, .score)
         case "out":
-            guard let out = events.first(where: { $0.kind == "out" }), out.playerId.flatMap(UUID.init(uuidString:)) == batter.id else { return nil }
+            guard let out = events.first(where: { $0.kind == "out" }),
+                  out.playerId.flatMap(UUID.init(uuidString:)) == batter.id,
+                  Self.isAffirmativeAction(out.evidence, in: transcript) else { return nil }
             switch (type, out.outType) {
             case (.ground, "batter_before_first"): outcome = .groundOut
             case (.line, "catch"): outcome = .lineOut
@@ -737,46 +739,126 @@ enum VoicePlayProposal {
         if !analysis.observations.contains(where: Self.isMissingLocation) {
             observation.selectRegion(Self.region(analysis.ball.region, transcript: transcript))
         }
-        if var fielding = Self.defense(for: outcome, events: events, state: context.state) {
+        if var fielding = Self.defense(for: outcome, events: events, state: context.state, transcript: transcript) {
             fielding.capture(in: context.state)
             observation.fielding = fielding
         }
         self = .hit(SituationExistingPlay(outcome: outcome, observation: observation, decisions: decisions, timing: nil))
     }
 
-    private static func defense(for outcome: PlayOutcome, events: [VoiceAnalysis.Event], state: GameState) -> BattedBallFielding? {
+    private static func defense(for outcome: PlayOutcome, events: [VoiceAnalysis.Event], state: GameState, transcript: String) -> BattedBallFielding? {
         let active = Set(state.fieldingTeam.players.filter { state.fieldingPlayerIDs.contains($0.id) }.map(\.primaryPosition))
         func position(_ number: Int?) -> FieldPosition? {
             guard let value = number.flatMap(FieldPosition.init(rawValue:)), value != .free, active.contains(value) else { return nil }
             return value
         }
         let handling = events.filter { $0.kind == "field" || $0.kind == "throw" }
+        func endpoints(_ event: VoiceAnalysis.Event, requireSpokenPositions: Bool = false) -> (FieldPosition, FieldPosition)? {
+            let spoken = spokenThrows(event.evidence)
+            guard spoken.count <= 1 else { return nil }
+            if let (from, to, _) = spoken.first {
+                guard active.contains(from), active.contains(to), from != to,
+                      event.fromFielder == nil || event.fromFielder == from.rawValue,
+                      event.toFielder == nil || event.toFielder == to.rawValue else { return nil }
+                return (from, to)
+            }
+            guard !requireSpokenPositions, let from = position(event.fromFielder),
+                  let to = position(event.toFielder), from != to else { return nil }
+            return (from, to)
+        }
         func relayRoute() -> [FieldPosition]? {
-            guard let first = handling.first, first.kind == "field", let initial = position(first.toFielder),
-                  handling.count <= 50 else { return nil }
-            var route = [initial]
+            guard handling.count <= 50,
+                  handling.allSatisfy({ isAffirmativeAction($0.evidence, in: transcript) }) else { return nil }
+            if handling.allSatisfy({ $0.kind == "field" }) {
+                let spoken = spokenThrows(transcript)
+                // A second throwing verb may denote a relay whose second sender was omitted.
+                let transfers = transcript.replacingOccurrences(of: "传杀", with: "").filter { $0 == "传" }
+                guard handling.count <= 1, spoken.count == 1, transfers.count == 1,
+                      let (from, to, evidence) = spoken.first, from != to,
+                      active.contains(from), active.contains(to), isAffirmativeAction(evidence, in: transcript),
+                      !["说错", "改口", "其实没传", "其实没有传", "再传", "又传", "转传"].contains(where: { transcript.contains($0) }) else { return nil }
+                if let field = handling.first {
+                    guard field.fromFielder == nil, position(field.toFielder) == from else { return nil }
+                }
+                return [from, to]
+            }
+            guard let first = handling.first else { return nil }
+            var route: [FieldPosition]
+            if first.kind == "field", first.fromFielder == nil, let initial = position(first.toFielder) {
+                route = [initial]
+            } else if first.kind == "throw", let (from, to) = endpoints(first, requireSpokenPositions: true) {
+                // An explicitly spoken throw establishes its two participants even when no pickup event was returned.
+                route = [from, to]
+            } else {
+                return nil
+            }
             for leg in handling.dropFirst() {
-                guard leg.kind == "throw", position(leg.fromFielder) == route.last,
-                      let target = position(leg.toFielder), target != route.last else { return nil }
-                route.append(target)
+                guard leg.kind == "throw", let (from, to) = endpoints(leg), from == route.last else { return nil }
+                route.append(to)
             }
             return route
         }
         if outcome.isHit {
             // A fielder touching the ball alone does not establish whether a throw followed.
-            let uncertainHandling = ["没接", "未接", "没拿", "未拿", "没传", "未传", "没有", "不是", "传偏", "失误", "差点", "想传", "要传", "打算传"]
-            guard handling.count >= 2, handling.first?.fromFielder == nil,
-                  !handling.contains(where: { leg in uncertainHandling.contains { leg.evidence.contains($0) } }),
-                  let route = relayRoute() else { return nil }
+            guard let route = relayRoute(), route.count >= 2 else { return nil }
             return BattedBallFielding(status: .recorded, route: route)
         }
-        guard let out = events.first(where: { $0.kind == "out" }), let putout = position(out.toFielder) else { return nil }
+        guard let out = events.first(where: { $0.kind == "out" }) else { return nil }
         if outcome == .flyOut || outcome == .lineOut {
-            guard handling.allSatisfy({ $0.kind == "field" && $0.sequence < out.sequence && position($0.toFielder) == putout }) else { return nil }
+            guard let putout = position(out.toFielder),
+                  handling.allSatisfy({ $0.kind == "field" && $0.sequence < out.sequence && position($0.toFielder) == putout }) else { return nil }
             return BattedBallFielding(status: .recorded, route: [putout])
         }
-        guard handling.allSatisfy({ $0.sequence < out.sequence }), let route = relayRoute(), route.last == putout else { return nil }
+        guard handling.allSatisfy({ $0.sequence < out.sequence }), let route = relayRoute() else { return nil }
+        if let fielder = out.toFielder {
+            guard route.last == position(fielder) else { return nil }
+        } else {
+            guard outcome == .groundOut, out.toBase == "first", route.last == .firstBase else { return nil }
+        }
         return BattedBallFielding(status: .recorded, route: route)
+    }
+
+    private static let spokenFielderAliases: [String: FieldPosition] = {
+        var aliases: [String: FieldPosition] = [:]
+        for position in FieldPosition.allCases where position != .free {
+            aliases[position.fullName] = position
+            if position != .pitcher && position != .catcher { aliases[position.shortName] = position }
+            if position.rawValue >= FieldPosition.leftField.rawValue { aliases[position.shortName + "野"] = position }
+        }
+        for (number, position) in [("1", FieldPosition.firstBase), ("2", .secondBase), ("3", .thirdBase)] {
+            aliases[number + "垒"] = position
+            aliases[number + "垒手"] = position
+        }
+        return aliases
+    }()
+
+    private static let spokenThrowPattern: NSRegularExpression? = {
+        let roles = spokenFielderAliases.keys.sorted { $0.count > $1.count }
+            .map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+        let transfer = #"\s*(?:接到球|接住球|捡到球|拿到球|接球|捡球|拿球)?(?:后|再)?[，,]?\s*(?:把球|将球)?\s*传(?:球)?(?:给|到|向|往)?\s*"#
+        return try? NSRegularExpression(pattern: "(" + roles + ")" + transfer + "(" + roles + ")")
+    }()
+
+    private static func spokenThrows(_ text: String) -> [(FieldPosition, FieldPosition, String)] {
+        let matches = spokenThrowPattern?.matches(in: text, range: NSRange(text.startIndex..., in: text)) ?? []
+        return matches.compactMap { match in
+            guard let mention = Range(match.range, in: text),
+                  let start = Range(match.range(at: 1), in: text), let end = Range(match.range(at: 2), in: text),
+                  let from = spokenFielderAliases[String(text[start])], let to = spokenFielderAliases[String(text[end])] else { return nil }
+            return (from, to, String(text[mention]))
+        }
+    }
+
+    private static func isAffirmativeAction(_ evidence: String, in transcript: String) -> Bool {
+        guard let range = transcript.range(of: evidence),
+              transcript[range.upperBound...].range(of: evidence) == nil else { return false }
+        let separators = "，。！？；、,.!?;\n"
+        let before = transcript[..<range.lowerBound]
+        let start = before.lastIndex(where: { separators.contains($0) }).map { transcript.index(after: $0) } ?? transcript.startIndex
+        let end = transcript[range.upperBound...].firstIndex(where: { separators.contains($0) }) ?? transcript.endIndex
+        let clause = transcript[start..<end]
+        let uncertain = ["没接", "未接", "没拿", "未拿", "没传", "未传", "没有", "不是", "并非", "传偏", "失误", "差点", "想传", "要传", "打算传", "补位", "未出局", "没出局", "不出局", "可能", "也许"]
+        return !uncertain.contains { clause.contains($0) }
     }
 
     private static func isMissingLocation(_ text: String) -> Bool {

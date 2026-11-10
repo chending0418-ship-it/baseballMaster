@@ -285,9 +285,15 @@ struct VoiceScoringSheet: View {
                             runnerRow(index: index, decision: decision, play: play, suggested: suggested)
                         }
                         if pro {
-                            Text(play.observation.summary)
+                            Text(play.observation.hasLocation ? play.observation.summary : play.observation.type.title)
                                 .font(.subheadline)
                                 .accessibilityIdentifier("voice-pro-contact-summary")
+                            if !play.observation.hasLocation {
+                                Label("落点未记录，可补录", systemImage: "location.circle")
+                                    .font(.footnote)
+                                    .foregroundStyle(BMTheme.secondaryText)
+                                    .accessibilityIdentifier("voice-missing-landing")
+                            }
                         }
                         if let fielding = play.observation.fielding {
                             Text(fielding.description).font(.footnote).foregroundStyle(BMTheme.secondaryText)
@@ -299,9 +305,9 @@ struct VoiceScoringSheet: View {
                             if let missing = proIssue(play) {
                                 Label(missing, systemImage: "location.circle")
                                     .font(.footnote).foregroundStyle(BMTheme.secondaryText)
-                                    .accessibilityIdentifier(play.observation.hasLocation ? "voice-pro-missing-field" : "voice-missing-landing")
+                                    .accessibilityIdentifier("voice-pro-missing-field")
                             } else if !store.situationNeedsTimingDecision(play.outcome, decisions: play.decisions) || play.timing != nil {
-                                Button("修改球场记录") { proDraft = play }
+                                Button(play.observation.hasLocation ? "修改球场记录" : "补录落点") { proDraft = play }
                                     .font(.subheadline.weight(.semibold))
                                     .frame(minHeight: 44)
                                     .accessibilityIdentifier("voice-edit-pro-contact")
@@ -406,16 +412,16 @@ struct VoiceScoringSheet: View {
     }
 
     private func proIssue(_ play: SituationExistingPlay) -> String? {
-        if !play.observation.hasLocation { return "请补录落点或大致区域。" }
         if play.observation.type == .unknown { return "请补录球型。" }
         if play.observation.fielding == nil { return "请补录守备处理。" }
-        return store.situationObservationError(play.observation, outcome: play.outcome, decisions: play.decisions)
+        return store.situationObservationError(play.observation, outcome: play.outcome,
+                                               decisions: play.decisions, allowsMissingLanding: true)
     }
 
     private func reviewActionTitle(_ proposal: VoicePlayProposal) -> String {
         if pro, case .hit(let play) = proposal {
             if proIssue(play) != nil {
-                return !play.observation.hasLocation ? "补录落点" : "补录本球"
+                return "补录本球"
             }
             if store.situationNeedsTimingDecision(play.outcome, decisions: play.decisions), play.timing == nil {
                 return "核对得分先后"
@@ -518,7 +524,8 @@ struct VoiceScoringSheet: View {
         }
         submitted = true
         let saved = store.applyPlay(outcome, defensivePlay: defense, decisions: decisions,
-                                   timingRunCounts: timing, observation: observation) && store.storageErrorMessage == nil
+                                   timingRunCounts: timing, observation: observation,
+                                   allowsMissingLanding: true) && store.storageErrorMessage == nil
         if !saved {
             submitted = false
             issue = store.storageErrorMessage ?? store.actionErrorMessage ?? "本球未能保存，请重新核对。"

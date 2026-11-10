@@ -9685,7 +9685,8 @@ extension GameStoreTests {
         XCTAssertEqual(store.game, context.state)
 
         for handling in [[field], [field, relay(from: 9, to: 4)], [field, relay(from: 8, to: 10)]] {
-            guard case .hit(let incomplete)? = review(handling: handling) else {
+            let relayWords = handling.count == 1 ? "" : "中外野手传给二垒手"
+            guard case .hit(let incomplete)? = review(handling: handling, relayWords: relayWords) else {
                 return XCTFail("A missing defense route should leave the scored facts available")
             }
             XCTAssertNil(incomplete.observation.fielding)
@@ -9695,6 +9696,74 @@ extension GameStoreTests {
             return XCTFail("A negated throw must remain editable")
         }
         XCTAssertNil(incomplete.observation.fielding)
+    }
+
+    func testV315VoiceProPreservesExplicitInfieldThrowWithoutSeparatePickup() throws {
+        let store = freshStore()
+        let context = try XCTUnwrap(VoicePlayContext(store))
+        let batter = context.state.currentBatter.id.uuidString
+        func proposal(_ transcript: String, throwEvidence: String, from: Int? = nil, to: Int? = nil,
+                      putout: Int? = nil, includeOut: Bool = true, includeThrow: Bool = true,
+                      pickup: Int? = nil) -> VoicePlayProposal? {
+            var events: [VoiceAnalysis.Event] = []
+            if let pickup {
+                events.append(.init(sequence: 0, kind: "field", playerId: nil, fromBase: nil,
+                    toBase: nil, outType: nil, pitchResult: nil, evidence: "接到球", toFielder: pickup))
+            }
+            if includeThrow {
+                events.append(.init(sequence: 1, kind: "throw", playerId: nil, fromBase: nil,
+                    toBase: nil, outType: nil, pitchResult: nil, evidence: throwEvidence, fromFielder: from, toFielder: to))
+            }
+            if includeOut {
+                events.append(.init(sequence: 2, kind: "out", playerId: batter, fromBase: "batter",
+                    toBase: "first", outType: "batter_before_first", pitchResult: nil,
+                    evidence: "打者出局", toFielder: putout, cause: "batted_ball"))
+            }
+            let analysis = VoiceAnalysis(schemaVersion: 1, summary: "打者出局",
+                ball: .init(type: "ground", region: "", outcome: "out"), events: events, observations: ["未提及落点"])
+            return VoicePlayProposal(analysis: analysis, context: context, transcript: transcript)
+        }
+
+        guard case .hit(let thirdToFirst)? = proposal("滚地球，三垒传一垒，打者出局。",
+                                                       throwEvidence: "三垒传一垒", from: 5, to: 3) else {
+            return XCTFail("The explicitly spoken 5-to-3 route should survive a missing pickup event")
+        }
+        XCTAssertEqual(thirdToFirst.outcome, .groundOut)
+        XCTAssertEqual(thirdToFirst.observation.fielding?.route, [.thirdBase, .firstBase])
+        XCTAssertFalse(thirdToFirst.observation.hasLocation)
+        XCTAssertEqual(thirdToFirst.decisions.map(\.destination), [.out])
+
+        let alternate = "游击手把球传给一垒手"
+        guard case .hit(let shortToFirst)? = proposal("滚地球，\(alternate)，打者出局。",
+                                                      throwEvidence: alternate, putout: 3) else {
+            return XCTFail("Named fielders should fill omitted model position values")
+        }
+        XCTAssertEqual(shortToFirst.observation.fielding?.route, [.shortstop, .firstBase])
+
+        let exact = "滚地球，三垒传一垒，打者出局。"
+        guard case .hit(let omittedThrow)? = proposal(exact, throwEvidence: "三垒传一垒", includeThrow: false) else {
+            return XCTFail("A single literal named throw should survive an omitted throw event")
+        }
+        XCTAssertEqual(omittedThrow.observation.fielding?.route, [.thirdBase, .firstBase])
+        XCTAssertFalse(omittedThrow.observation.hasLocation)
+
+        for uncertain in [
+            proposal("滚地球，没有三垒传一垒，打者出局。", throwEvidence: "三垒传一垒", from: 5, to: 3, putout: 3),
+            proposal(exact, throwEvidence: "三垒传一垒", from: 6, to: 3, putout: 3),
+            proposal(exact, throwEvidence: "三垒传一垒", from: 5, to: 3, putout: 4),
+            proposal("滚地球，三垒传一垒、游击传一垒，打者出局。", throwEvidence: "三垒传一垒、游击传一垒", from: 5, to: 3, putout: 3),
+            proposal(exact, throwEvidence: "三垒传一垒", putout: 4, includeThrow: false),
+            proposal("滚地球，接到球，三垒传一垒，打者出局。", throwEvidence: "三垒传一垒", includeThrow: false, pickup: 6),
+            proposal("滚地球，没有三垒传一垒，打者出局。", throwEvidence: "三垒传一垒", includeThrow: false),
+            proposal("滚地球，三垒传二垒再传一垒，打者出局。", throwEvidence: "三垒传一垒", includeThrow: false),
+            proposal("滚地球，三垒传一垒、游击传一垒，打者出局。", throwEvidence: "三垒传一垒", includeThrow: false)
+        ] {
+            guard case .hit(let draft)? = uncertain else { return XCTFail("The confirmed out should remain reviewable") }
+            XCTAssertNil(draft.observation.fielding)
+        }
+        XCTAssertNil(proposal("滚地球，三垒传一垒。", throwEvidence: "三垒传一垒", from: 5, to: 3, includeOut: false))
+        XCTAssertNil(proposal("滚地球，三垒传一垒，不是打者出局。", throwEvidence: "三垒传一垒", from: 5, to: 3))
+        XCTAssertEqual(store.game, context.state)
     }
 
     func testV315VoiceIncompleteReviewOffersOnlyChinesePrompts() throws {
@@ -9745,6 +9814,48 @@ extension GameStoreTests {
         XCTAssertTrue(try complete.receive(#"{"code":0,"final":1,"sentences":{"sentence_list":[{"sentence":{"sentence_id":"1","sentence_type":1,"text":"跑者到三垒。"}}]}}"#))
         XCTAssertEqual(complete.text, "打者上一垒，跑者到三垒。")
         XCTAssertEqual(transcript.text, "打者上一垒，跑者到三")
+    }
+
+    func testV315VoiceSavesKnownDefenseWithUnknownLandingAndReplaysIt() throws {
+        let store = freshStore()
+        let decisions = [RunnerDecision(player: store.game.currentBatter, origin: .batter, destination: .out)]
+        var observation = BattedBallObservation(type: .ground)
+        observation.fielding = BattedBallFielding(status: .recorded, route: [.thirdBase, .firstBase])
+
+        XCTAssertFalse(store.applyPlay(.groundOut, decisions: decisions, observation: observation))
+        XCTAssertEqual(store.game.outs, 0)
+        XCTAssertTrue(store.applyPlay(.groundOut, decisions: decisions, observation: observation, allowsMissingLanding: true))
+        XCTAssertEqual(store.game.outs, 1)
+
+        let event = try XCTUnwrap(store.game.scoringEvents?.last { $0.category == .battedBall })
+        XCTAssertEqual(event.battedBall?.precision, .unknown)
+        XCTAssertNil(event.battedBall?.illustration)
+        XCTAssertTrue(event.defensiveRoute?.contains("5-3") == true)
+        let snapshot = store.makeRosterSnapshot()
+        XCTAssertNoThrow(try LocalBackup.validate(snapshot))
+
+        let draft = try store.makeCorrectionDraft()
+        let operation = try XCTUnwrap(draft.journal.operations.last { $0.eventIDs.contains(event.id) })
+        guard case .play(_, let defense, _, _) = operation.command else { return XCTFail("Missing scoring command") }
+        XCTAssertEqual(defense?.routePositions, [.thirdBase, .firstBase])
+        XCTAssertEqual(defense?.fieldingWithoutLanding?.route, [.thirdBase, .firstBase])
+        let replay = store.previewCorrection(draft)
+        XCTAssertTrue(replay.game.historyScoreEquivalent(to: store.game))
+        XCTAssertTrue(replay.game.scoringEvents?.last(where: { $0.category == .battedBall })?.defensiveRoute?.contains("5-3") == true)
+
+        observation.fielding?.status = .pending
+        let next = [RunnerDecision(player: store.game.currentBatter, origin: .batter, destination: .out)]
+        XCTAssertTrue(store.applyPlay(.groundOut, decisions: next, observation: observation, allowsMissingLanding: true))
+        let pending = try XCTUnwrap(store.game.scoringEvents?.last { $0.category == .battedBall })
+        XCTAssertEqual(pending.needsReview, true)
+        XCTAssertNoThrow(try LocalBackup.validate(store.makeRosterSnapshot()))
+        let pendingDraft = try store.makeCorrectionDraft()
+        let pendingOperation = try XCTUnwrap(pendingDraft.journal.operations.last { $0.eventIDs.contains(pending.id) })
+        guard case .play(_, let partialDefense, _, _) = pendingOperation.command else { return XCTFail("Missing partial defense") }
+        XCTAssertEqual(partialDefense?.fieldingWithoutLanding?.status, .pending)
+        XCTAssertEqual(partialDefense?.fieldingWithoutLanding?.route, [.thirdBase, .firstBase])
+        let replayedPending = store.previewCorrection(pendingDraft)
+        XCTAssertEqual(replayedPending.game.scoringEvents?.last(where: { $0.category == .battedBall })?.needsReview, true)
     }
 
     func testV315VoiceUsesExistingInviteCookieAndHy3Contract() async throws {

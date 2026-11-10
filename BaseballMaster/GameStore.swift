@@ -1389,7 +1389,9 @@ final class GameStore: ObservableObject {
     }
 
     @discardableResult
-    func applyPlay(_ outcome: PlayOutcome, defensivePlay: DefensivePlay? = nil, decisions: [RunnerDecision]? = nil, timingRunCounts: Bool? = nil, observation: BattedBallObservation? = nil) -> Bool {
+    func applyPlay(_ outcome: PlayOutcome, defensivePlay: DefensivePlay? = nil,
+                   decisions: [RunnerDecision]? = nil, timingRunCounts: Bool? = nil,
+                   observation: BattedBallObservation? = nil, allowsMissingLanding: Bool = false) -> Bool {
         beginAtomicAction()
         if let observation, !observation.isValid || (isSlowPitch && observation.type == .bunt) {
             actionErrorMessage = "请核对击球观察；成人慢垒不能记录触击。"
@@ -1401,14 +1403,26 @@ final class GameStore: ObservableObject {
             prepared?.runnerDetails = details.map { item in var copy = item; copy.fielding?.capture(in: game); return copy }
         }
         let proposed = decisions ?? suggestedRunnerDecisions(for: outcome)
-        if let issue = situationObservationError(prepared, outcome: outcome, decisions: proposed) {
+        if let issue = situationObservationError(prepared, outcome: outcome, decisions: proposed,
+                                                  allowsMissingLanding: allowsMissingLanding) {
             actionErrorMessage = issue; commitAtomicAction(); return false
         }
         let beforeIDs = Set((game.scoringEvents ?? []).map(\.id))
-        let resolvedDefense = prepared?.fielding != nil ? situationDefensivePlay(outcome: outcome, observation: prepared!, decisions: proposed) : defensivePlay
+        let storesSeparateDefense = allowsMissingLanding && prepared?.hasLocation == false && prepared?.fielding != nil
+        let resolvedDefense: DefensivePlay?
+        if let prepared, prepared.fielding != nil {
+            resolvedDefense = situationDefensivePlay(outcome: outcome, observation: prepared, decisions: proposed,
+                                                    withoutLanding: storesSeparateDefense)
+        } else {
+            resolvedDefense = defensivePlay
+        }
         let result = applyPlayOperation(outcome, defensivePlay: resolvedDefense, decisions: decisions, timingRunCounts: timingRunCounts, observation: prepared)
         if result, let index = game.scoringEvents?.firstIndex(where: { !beforeIDs.contains($0.id) && $0.category == .battedBall }) {
-            attachBattedBall(prepared, at: index)
+            // Existing backup readers require a landing for embedded fielding. The
+            // history command retains the defense and the event retains its route.
+            let defensePending = resolvedDefense?.id == DefensivePlay.pendingSituationWithoutLandingID
+            if storesSeparateDefense { prepared?.fielding = nil }
+            attachBattedBall(prepared, at: index, defensePending: defensePending)
         }
         commitAtomicAction()
         return result && actionErrorMessage == nil
@@ -1436,7 +1450,10 @@ final class GameStore: ObservableObject {
             actionErrorMessage = issue
             return false
         }
-        if (observation?.fielding == nil ? playNeedsTimingDecision(outcome, decisions: proposedDecisions) : situationNeedsTimingDecision(outcome, decisions: proposedDecisions)), timingRunCounts == nil {
+        let hasSituationDefense = observation?.fielding != nil || defensivePlay?.fieldingWithoutLanding != nil
+        let needsTiming = hasSituationDefense ? situationNeedsTimingDecision(outcome, decisions: proposedDecisions)
+            : playNeedsTimingDecision(outcome, decisions: proposedDecisions)
+        if needsTiming, timingRunCounts == nil {
             actionErrorMessage = "第三出局同时发生得分，请先确认得分与触杀的先后。"
             return false
         }
@@ -1492,13 +1509,13 @@ final class GameStore: ObservableObject {
         let reachesThirdOut = game.outs + resolution.outs >= 3
         let thirdOutCancelsRuns = reachesThirdOut && (
             (game.outs == 2 && batterIsOut)
-                || (observation?.fielding == nil && [.groundOut, .fieldersChoice, .doublePlay, .triplePlay, .pendingOut].contains(outcome))
+                || (!hasSituationDefense && [.groundOut, .fieldersChoice, .doublePlay, .triplePlay, .pendingOut].contains(outcome))
         )
         if thirdOutCancelsRuns {
             resolution = (runs: 0, outs: resolution.outs, scorers: [])
             actionEffectiveScorers = []
         }
-        if (outcome == .runnerTagOut || observation?.fielding != nil), timingRunCounts == false {
+        if (outcome == .runnerTagOut || hasSituationDefense), timingRunCounts == false {
             resolution = (runs: 0, outs: resolution.outs, scorers: [])
             actionEffectiveScorers = []
         }
@@ -1514,7 +1531,7 @@ final class GameStore: ObservableObject {
         }
         addRuns(resolution.runs)
         applyDefensiveCredits(defensivePlay, outcome: outcome)
-        if observation?.fielding != nil, outcome == .error, defensivePlay?.errorPosition == nil {
+        if hasSituationDefense, outcome == .error, defensivePlay?.errorPosition == nil {
             if game.isTop { game.homeErrors += 1 } else { game.awayErrors += 1 }
         }
         let extraErrors = Set((observation?.runnerDetails ?? []).filter { detail in finalDecisions.contains { $0.id == detail.playerID && $0.hasActualMovement } }.compactMap { $0.cause == .error ? $0.fielding?.errorPosition : nil }).subtracting(Set([defensivePlay?.errorPosition].compactMap { $0 }))

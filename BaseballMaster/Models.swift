@@ -989,6 +989,9 @@ enum ViolationKind: String, CaseIterable, Identifiable, Codable {
 }
 
 struct DefensivePlay: Identifiable, Hashable, Codable {
+    static let situationWithoutLandingID = "SITUATION-WITHOUT-LANDING"
+    static let pendingSituationWithoutLandingID = "SITUATION-PENDING-WITHOUT-LANDING"
+
     let id: String
     let title: String
     let notation: String

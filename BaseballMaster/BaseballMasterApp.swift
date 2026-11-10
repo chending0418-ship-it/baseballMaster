@@ -554,7 +554,7 @@ private struct V11ScorekeepingFixture: View {
                     LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: $0.element.primaryPosition)
                 }
                 store.startNewGame(opponent: store.opponentTeams[0], isHome: false, rules: rules, lineup: lineup)
-                if voiceReviewMethod != nil {
+                if voiceReviewMethod != nil && !AppLaunchArguments.values.contains("--voice-review-infield-route") {
                     store.applyPlay(.single)
                     store.applyPlay(.single)
                 }

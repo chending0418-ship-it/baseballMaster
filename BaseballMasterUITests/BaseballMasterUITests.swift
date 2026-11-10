@@ -739,7 +739,7 @@ final class BaseballMasterUITests: XCTestCase {
         XCTAssertEqual(batter.label, before)
     }
 
-    func testV315VoiceProOnlyMissingLandingSavesWithoutRepeatingRunnerReview() {
+    func testV315VoiceProOptionalLandingCanBeAddedWithoutRepeatingRunnerReview() {
         let app = XCUIApplication()
         app.launchArguments = ["--voice-review-preview", "--voice-review-pro", "--voice-review-missing-landing",
                                "--voice-access-preview"]
@@ -751,13 +751,15 @@ final class BaseballMasterUITests: XCTestCase {
         voice.tap()
         let confirm = app.buttons["confirm-voice-play"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-        XCTAssertTrue(confirm.label.contains("落点"))
-        confirm.tap()
+        XCTAssertEqual(confirm.label, "确认记入本球")
+        XCTAssertTrue(confirm.isEnabled)
+        XCTAssertTrue(app.descendants(matching: .any)["voice-missing-landing"].firstMatch.exists)
+        app.buttons["voice-edit-pro-contact"].tap()
 
         let field = app.descendants(matching: .any)["contact-field"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         let finish = app.buttons["finish-situation-field"]
-        XCTAssertFalse(finish.isEnabled)
+        XCTAssertTrue(finish.isEnabled)
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.34)).tap()
         XCTAssertTrue(finish.isEnabled)
         XCTAssertEqual(finish.label, "确认记入本球")
@@ -767,6 +769,33 @@ final class BaseballMasterUITests: XCTestCase {
         XCTAssertTrue(field.waitForNonExistence(timeout: 5))
         XCTAssertTrue(voice.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["confirm-situation-play"].exists)
+        XCTAssertNotEqual(batter.label, before)
+        app.buttons["undo-last-play"].tap()
+        XCTAssertEqual(batter.label, before)
+    }
+
+    func testV315VoiceProInfieldRouteSavesWithoutLanding() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--voice-review-preview", "--voice-review-pro", "--voice-review-infield-route",
+                               "--voice-access-preview"]
+        app.launch()
+        let voice = app.buttons["open-voice-scoring"]
+        XCTAssertTrue(voice.waitForExistence(timeout: 8))
+        let batter = app.descendants(matching: .any)["current-batter"].firstMatch
+        let before = batter.label
+        voice.tap()
+
+        let confirm = app.buttons["confirm-voice-play"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertEqual(confirm.label, "确认记入本球")
+        XCTAssertTrue(confirm.isEnabled)
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "5-3")).firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["voice-missing-landing"].firstMatch.exists)
+        captureV111("voice-pro-5-3-optional-landing", app: app)
+        confirm.tap()
+
+        XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(voice.waitForExistence(timeout: 5))
         XCTAssertNotEqual(batter.label, before)
         app.buttons["undo-last-play"].tap()
         XCTAssertEqual(batter.label, before)

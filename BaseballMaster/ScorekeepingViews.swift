@@ -1039,6 +1039,22 @@ struct ScorekeepingView: View {
     private func voiceScoringSheet(_ draft: VoiceSheetContext) -> VoiceScoringSheet {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--voice-review-preview"), arguments.contains("--voice-review-infield-route") {
+            let transcript = "滚地球，三垒传一垒，打者出局。"
+            let analysis = VoiceAnalysis(
+                schemaVersion: 1, summary: "", ball: .init(type: "ground", region: "", outcome: "out"),
+                events: [
+                    .init(sequence: 1, kind: "out", playerId: draft.context.state.currentBatter.id.uuidString,
+                          fromBase: "batter", toBase: "first", outType: "batter_before_first",
+                          pitchResult: nil, evidence: "打者出局")
+                ],
+                observations: []
+            )
+            let review = VoicePlayReview(analysis: analysis, context: draft.context, transcript: transcript,
+                                         pro: draft.pro, slowPitch: false)
+            return VoiceScoringSheet(context: draft.context, pro: draft.pro, previewTranscript: transcript,
+                                     previewReview: review)
+        }
         if arguments.contains("--voice-review-preview"),
            let first = draft.context.state.baseRunners[.first],
            let second = draft.context.state.baseRunners[.second] {

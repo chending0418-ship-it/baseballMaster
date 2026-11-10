@@ -273,7 +273,7 @@ struct BatterPerformance {
 
 @MainActor
 extension GameStore {
-    func attachBattedBall(_ observation: BattedBallObservation?, at index: Int) {
+    func attachBattedBall(_ observation: BattedBallObservation?, at index: Int, defensePending: Bool = false) {
         guard let observation, let event = game.scoringEvents?[index] else { return }
         game.scoringEvents?[index].battedBall = observation
         let runners = (observation.runnerDetails ?? []).filter { $0.cause != .hit }.map { detail in
@@ -281,7 +281,7 @@ extension GameStore {
             return (player?.name ?? "跑者") + "：" + detail.cause.title + (detail.fielding.map { "，" + $0.description } ?? "")
         }.joined(separator: "；")
         let text = event.title + "；击球观察：" + observation.summary + (runners.isEmpty ? "" : "；" + runners)
-        if observation.fielding?.status == .pending || (observation.runnerDetails ?? []).contains(where: { $0.cause == .pending || $0.fielding?.status == .pending }) {
+        if defensePending || observation.fielding?.status == .pending || (observation.runnerDetails ?? []).contains(where: { $0.cause == .pending || $0.fielding?.status == .pending }) {
             game.scoringEvents?[index].needsReview = true
             if let id = event.logEntryID, let log = game.playLog.firstIndex(where: { $0.id == id }) { game.playLog[log].isIncomplete = true }
         }
