@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
         CardBlock {
             Text("隐私与数据",fontWeight=FontWeight.Bold)
             Text("本机使用无需注册账号。你确认共享的球队资料和名单上传到 baseballmaster.cc 自有服务，队内成员按授权访问；本机原稿保持独立。报表与备份由你主动导出或分享。应用启动时异步检查公共开屏配置，失败使用本机缓存或内置内容。")
-            Text("仅在你同意并开始语音记分时使用麦克风。录音直连腾讯云语音识别，App 不保存原始录音。选择解析后，转写及必要局面可能含姓名、背号，会经本服务交给腾讯云混元生成建议；确认前不会写入比赛。")
+            Text("仅在你同意并开始语音记分时使用麦克风。录音直连腾讯云语音识别，App 不保存原始录音。录音结束后自动分析。简单的单球口令在手机上处理，其他转写及必要局面（可能含姓名和背号）会经本服务交给腾讯云混元。确认后才会记入比赛。")
             TextButton(onClick={open("https://baseballmaster.cc/privacy.html")},modifier=Modifier.testTag("about-privacy-policy")) {Text("查看完整隐私政策")}
             TextButton(onClick={open("https://baseballmaster.cc/support.html")},modifier=Modifier.testTag("about-support")) {Text("技术支持与使用指南")}
             failedUrl?.let {url -> Text("无法打开浏览器，请复制链接后用浏览器打开：");SelectionContainer {Text(url)}}

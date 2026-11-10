@@ -43,6 +43,20 @@ private val regions = mapOf(
     "左侧界外" to "foulLeft", "右侧界外" to "foulRight",
 )
 
+internal fun explicitVoicePitch(transcript: String): Command? {
+    // Only accept a complete, unambiguous single-pitch phrase. Bare “好球”
+    // leaves the difference between a called strike and a swing unresolved.
+    val phrase = transcript.trim().trimEnd('。', '！', '.', '!').trim()
+    val action = when (phrase) {
+        "坏球", "一颗坏球", "一个坏球", "这球是坏球" -> PitchAction.ball
+        "看着好球", "看球好球", "看振", "没挥棒的好球", "这球没挥棒，裁判判好球" -> PitchAction.calledStrike
+        "挥棒落空", "挥空", "挥空好球", "挥棒落空好球" -> PitchAction.swingingStrike
+        "界外", "界外球", "这球是界外球" -> PitchAction.foul
+        else -> return null
+    }
+    return Command("pitch", pitch = action)
+}
+
 /** Treat the model output as a proposal. Unclear plays remain manual and never mutate a match. */
 internal fun voiceProposal(analysis: VoiceAnalysis, game: Game, transcript: String): Command? {
     if (analysis.schemaVersion != 1) return null

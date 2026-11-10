@@ -139,6 +139,20 @@ internal fun VoiceScoringScreen(
         job.start()
     }
 
+    suspend fun prepareProposal(sent: String, credential: String) {
+        val direct = explicitVoicePitch(sent)
+        if (direct != null) {
+            proposal = direct
+            return
+        }
+        analyzing = true
+        val response = access.service.analyze(sent, payload, credential)
+        analysis = response
+        if (!currentMatches() || access.token != credential)
+            throw VoiceIssue("比赛局面或语音权限已变化，建议仅供人工核对。")
+        proposal = voiceProposal(response, game, sent)
+    }
+
     fun start() {
         val credential = access.token ?: return
         if (!currentMatches() || task != null) { issue = "比赛局面已变化，请返回记分。"; return }
@@ -150,11 +164,13 @@ internal fun VoiceScoringScreen(
         val thisStop = AtomicBoolean(false)
         stop = thisStop
         phase = VoicePhase.connecting
-        launch(credential, onFinish = { phase = null }) {
+        launch(credential, onFinish = { phase = null; analyzing = false }) {
             val result = recording.run(payload, credential, thisStop, { phase = it }, { text = it.take(4000) })
             if (!currentMatches() || access.token != credential) throw VoiceIssue("比赛局面或语音权限已变化，请返回记分。")
             text = result.take(4000)
             finalized = text.isNotBlank()
+            phase = null
+            if (finalized) prepareProposal(text.trim(), credential)
         }
     }
 
@@ -171,19 +187,13 @@ internal fun VoiceScoringScreen(
         if (!currentMatches() || task != null || !finalized) return
         val sent = text.trim()
         if (sent.isEmpty()) return
-        analyzing = true
         issue = null
         analysis = null
         proposal = null
-        launch(credential, onFinish = { analyzing = false }) {
-            val response = access.service.analyze(sent, payload, credential)
-            analysis = response
-            if (!currentMatches() || access.token != credential) throw VoiceIssue("比赛局面或语音权限已变化，建议仅供人工核对。")
-            proposal = voiceProposal(response, game, sent)
-        }
+        launch(credential, onFinish = { analyzing = false }) { prepareProposal(sent, credential) }
     }
 
-    ProductPage("语音记分", busy = busy, onBack = dismiss, backLabel = "返回比赛", modal = true, secure = true) {
+    ProductPage("语音记分", busy = busy, onBack = dismiss, backLabel = "返回比赛", modal = true) {
         Text("${game.inning}局${if (game.isTop) "上" else "下"} · ${game.outs} 出局 · 打者 ${game.batter.name}")
         when (phase) {
             VoicePhase.connecting -> Text("正在连接语音识别…")
@@ -198,18 +208,22 @@ internal fun VoiceScoringScreen(
         OutlinedTextField(text, { text = it.take(4000); analysis = null; proposal = null },
             Modifier.fillMaxWidth().testTag("voice-transcript"), label = { Text("语音转写") },
             readOnly = !finalized || analyzing || phase != null, minLines = 3, maxLines = 8)
-        TextButton(::analyze, Modifier.testTag("analyze-voice-play"),
-            enabled = finalized && text.isNotBlank() && task == null && access.token != null && currentMatches()) {
-            Text(if (analyzing) "正在解析本球…" else "解析局面")
+        if (analyzing) Text("正在解析本球…")
+        else if (finalized && proposal == null) TextButton(::analyze, Modifier.testTag("analyze-voice-play"),
+            enabled = text.isNotBlank() && task == null && access.token != null && currentMatches()) {
+            Text("重新解析")
         }
         issue?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        analysis?.let { result -> CardBlock {
+        val result = analysis
+        val candidate = proposal
+        if (result != null || candidate != null) CardBlock {
             Text("核对本球", style = MaterialTheme.typography.titleMedium)
-            Text(result.summary)
-            result.observations.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
-            val candidate = proposal
+            if (result != null) {
+                Text(result.summary)
+                result.observations.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
             if (candidate == null || !currentMatches() || access.token == null) {
-                Text("请人工核对这个局面，然后返回手动记分。")
+                Text("这次没有生成可直接记入的建议。可修改转写后重新解析，或返回比赛手动记分。")
             } else {
                 Text(candidate.pitch?.title ?: candidate.outcome?.title.orEmpty())
                 candidate.decisions.orEmpty().forEach {
@@ -224,12 +238,12 @@ internal fun VoiceScoringScreen(
                     Text(if (!pro) "确认记录" else if (missing) "到球场补落点" else "到球场核对")
                 }
             }
-        } }
+        }
     }
     if (consent) AlertDialog(
         modifier = Modifier.semantics { testTagsAsResourceId = true },
         onDismissRequest = { consent = false }, title = { Text("使用语音记分") },
-        text = { Text("录音将直接发送给腾讯云语音识别，当前局面会发给我们的服务。点「解析局面」后，转写和当前局面（可能含球员姓名、背号）会发给腾讯云混元 AI 生成记分建议。你也可以取消并手动记分。") },
+        text = { Text("录音将直接发送给腾讯云语音识别，当前局面会发给我们的服务。录音结束后自动分析。简单明确的单球口令在手机上处理，其他转写和当前局面（可能含球员姓名、背号）会发给腾讯云混元 AI 生成记分建议。你确认后才会记入比赛。") },
         confirmButton = { TextButton({
             consent = false
             if (currentMatches() && access.token != null) {

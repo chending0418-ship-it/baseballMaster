@@ -1,6 +1,8 @@
 package cc.baseballmaster.scorekeeper
 
 import android.Manifest
+import android.view.WindowManager
+import android.view.inspector.WindowInspector
 import androidx.activity.compose.setContent
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Box
@@ -115,7 +117,22 @@ class Voice100FlowTest {
         assertNull(access.token); assertNull(store.state.token)
     }
 
-    @Test fun consentCancellationSendsNothingThenSyntheticTranscriptCanBeEditedAndConfirmedOnce() {
+    @Test fun consentCancellationSendsNothingThenSyntheticTranscriptCanBeEditedAndConfirmedOnce() =
+        confirmSyntheticPitch("好球", "确认好球", "确认好球", PitchAction.calledStrike)
+
+    @Test fun explicitPitchShowsConfirmationAutomaticallyWithoutCallingAnalysisService() =
+        confirmSyntheticPitch("这球是坏球。", null, "", PitchAction.ball)
+
+    @Test fun ambiguousAndMultiPitchPhrasesStillRequireAnalysis() {
+        listOf("好球", "不是坏球", "先坏球再界外", "坏球还是好球", "两个坏球").forEach {
+            assertNull(it, explicitVoicePitch(it))
+        }
+        assertEquals(PitchAction.calledStrike, explicitVoicePitch("没挥棒的好球！")?.pitch)
+        assertEquals(PitchAction.swingingStrike, explicitVoicePitch("挥棒落空")?.pitch)
+        assertEquals(PitchAction.foul, explicitVoicePitch("界外球")?.pitch)
+    }
+
+    private fun confirmSyntheticPitch(recorded: String, edited: String?, expectedRemoteText: String, expectedAction: PitchAction) {
         val inst = InstrumentationRegistry.getInstrumentation()
         val device = UiDevice.getInstance(inst)
         Configurator.getInstance().setWaitForIdleTimeout(500).setWaitForSelectorTimeout(3000)
@@ -131,7 +148,7 @@ class Voice100FlowTest {
                 phase: (VoicePhase) -> Unit, transcript: (String) -> Unit): String {
                 recordings.incrementAndGet()
                 phase(VoicePhase.finishing)
-                return "好球"
+                return recorded
             }
         }
         inst.runOnMainSync { activity.activity.setContent {
@@ -153,21 +170,32 @@ class Voice100FlowTest {
         assertEquals("", fake.observed)
         tap("start-voice-recording")
         tap("accept-voice-consent")
-        val field = NativeUi.find(device, By.res("voice-transcript"))
-        field.click()
-        field.text = "确认好球"
+        NativeUi.find(device, By.res("confirm-voice-play"))
         inst.runOnMainSync {
-            val manager = inst.targetContext.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
-            android.view.inspector.WindowInspector.getGlobalWindowViews().forEach { manager.hideSoftInputFromWindow(it.windowToken, 0) }
+            val window = WindowInspector.getGlobalWindowViews().single { it.hasWindowFocus() }
+            val flags = (window.layoutParams as WindowManager.LayoutParams).flags
+            assertEquals(0, flags and WindowManager.LayoutParams.FLAG_SECURE)
         }
-        tap("analyze-voice-play")
+        assertEquals(0, writes.get())
+        if (edited != null) {
+            val field = NativeUi.find(device, By.res("voice-transcript"))
+            field.click()
+            field.text = edited
+            inst.runOnMainSync {
+                val manager = inst.targetContext.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+                android.view.inspector.WindowInspector.getGlobalWindowViews().forEach { manager.hideSoftInputFromWindow(it.windowToken, 0) }
+            }
+            assertTrue(device.wait(Until.gone(By.res("confirm-voice-play")), 3_000))
+            tap("analyze-voice-play")
+        }
         assertEquals(0, writes.get())
         tap("confirm-voice-play")
         assertTrue(device.wait(Until.hasObject(By.text("已确认本球")), 10_000))
         assertEquals(1, recordings.get())
-        assertEquals("确认好球", fake.observed)
+        assertEquals(expectedRemoteText, fake.observed)
         assertEquals(1, writes.get())
         val after = saved.get()
+        assertEquals(expectedAction, after.journal.last().command.pitch)
         assertEquals(original.revision + 1, after.revision)
         assertTrue(after.openingPitchRecorded)
         assertTrue(after.clockHasStarted)
