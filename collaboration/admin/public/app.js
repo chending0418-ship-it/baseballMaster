@@ -36,7 +36,7 @@ function matchRows(data,live=false){
    buttons.append(watch);
   }
   if(row.teamID)buttons.append(link(row.teamName,'games?team='+row.teamID));
-  const status=row.deleted?'已删除':row.isFinal?'已终场':row.status===2?'待开赛':'进行中';
+  const status=row.deleted?'已归档':row.isFinal?'已终场':row.status===2?'待开赛':'进行中';
   return [name,`${row.awayRuns??0} : ${row.homeRuns??0}`,badge(status,row.deleted?'gray':row.isFinal?'orange':''),date(row.updatedAt),buttons];
  });
 }
@@ -47,7 +47,7 @@ function gameContent(data){
  const root=n('div'),s=data.snapshot,g=data.game||{};if(!s){root.append(n('p','这场比赛暂时没有可展示的正文。'));return root;}
  const panel=n('section',undefined,'panel'),score=n('div',undefined,'score');
  for(const [name,value,side]of [[s.away.name,null,'客队'],[null,`${s.away.runs} : ${s.home.runs}`,s.isFinal?'终场':`${s.inning} 局${s.isTop?'上':'下'}`],[s.home.name,null,'主队']]){const x=n('div');x.append(n('strong',name??value,value?'digits':''),n('small',side));score.append(x);}panel.append(score);
- const meta=n('div',undefined,'metadata');meta.append(badge(s.mode==='slowPitch'?'成人慢垒':s.mode==='coachPitch'?'教练投手':'普通比赛'),n('span',`最近同步 ${date(g.updatedAt)}`));if(data.playedAt)meta.append(n('span','比赛时间 '+date(data.playedAt)));if(g.accessMode)meta.append(n('span',access[g.accessMode]));if(g.deleted)meta.append(badge('已删除 · 保留期内','orange'));panel.append(meta);
+ const meta=n('div',undefined,'metadata');meta.append(badge(s.mode==='slowPitch'?'成人慢垒':s.mode==='coachPitch'?'教练投手':'普通比赛'),n('span',`最近同步 ${date(g.updatedAt)}`));if(data.playedAt)meta.append(n('span','比赛时间 '+date(data.playedAt)));if(g.accessMode)meta.append(n('span',access[g.accessMode]));if(g.deleted)meta.append(badge('已归档','orange'));panel.append(meta);
  const count=Math.max(s.home.innings.length,s.away.innings.length);panel.append(table(['球队',...Array.from({length:count},(_,i)=>i+1),'R','H','E'],[s.away,s.home].map(team=>[team.name,...Array.from({length:count},(_,i)=>team.innings[i]??'—'),team.runs,team.hits,team.errors])));
  panel.append(n('p',`${s.balls} 坏球 · ${s.strikes} 好球 · ${s.outs} 出局`,'muted'));
  const player=p=>p?`${p.number?'#'+p.number+' ':''}${p.name}`:'—';panel.append(n('p',`当前打者：${player(s.batter)}　当前投手：${player(s.pitcher)}`,'muted'));if(s.notice)panel.append(n('p',s.notice,'notice'));root.append(panel);
@@ -162,7 +162,7 @@ async function render(){
  try{
   if(route==='overview'){
    const data=await read('overview');const h=header('云端资料总览','网站总后台 · 登录后可查看和下载全部业务资料，与队内角色无关。');h.append(downloadAction('下载全部云端资料','export'));root.append(h);
-   const stats=n('div',undefined,'stats');for(const [label,value,detail,target]of [['球队',data.teams,'当前有效共享球队','teams'],['云端比赛',data.games,'不含已删除比赛','games'],['正在直播',data.live.ongoing,'两套直播服务合计','live'],['比赛资料',size(data.bytes),'正文与展示数据，不含备份','games']]){const c=link(' ',target,'stat');c.replaceChildren(n('p',label),n('strong',value),n('small',detail));stats.append(c);}root.append(stats);if(data.warning)root.append(n('p',data.warning,'notice'));
+   const stats=n('div',undefined,'stats');for(const [label,value,detail,target]of [['球队',data.teams,'当前有效共享球队','teams'],['云端比赛',data.games,'当前有效共享比赛','games'],['正在直播',data.live.ongoing,'两套直播服务合计','live'],['比赛资料',size(data.bytes),'含归档的比赛正文与展示数据','games']]){const c=link(' ',target,'stat');c.replaceChildren(n('p',label),n('strong',value),n('small',detail));stats.append(c);}root.append(stats);if(data.warning)root.append(n('p',data.warning,'notice'));
    const panel=n('section',undefined,'panel');panel.append(n('h2','按球队查看与下载'),n('p','全部云端或单支球队资料可打包为 ZIP；比赛和直播内容可单独下载为 JSON。临时直播请在有效期内单独下载。','muted'),link('打开球队资料 →','teams'));root.append(panel);
    const dataLive=await read('live?limit=8');root.append(n('h2','正在直播'));root.append(dataLive.items.length?table(['对阵','比分','状态','最近同步','操作'],matchRows(dataLive,true)):n('p','当前没有正在进行的直播','empty'));if(data.live.completed)root.append(link(`${data.live.completed} 场已终场直播仍在有效期内 →`,'live?state=completed'));
   }else if(route==='voice-codes'){
@@ -178,7 +178,7 @@ async function render(){
    const players=n('section',undefined,'panel');players.append(n('h2','球员资料'));players.append(t.players?.length?table(['姓名','英文名','背号','状态'],t.players.map(p=>[p.chineseName||'—',p.englishName||'—',(p.numbers||[]).join(' / '),badge(p.archived?'已停用':'现役',p.archived?'gray':'')])):n('p','还没有球员','muted'));root.append(players);const members=n('section',undefined,'panel');members.append(n('h2','队内成员'),table(['称呼','角色','状态','有效设备'],data.members.map(m=>[m.nickname,roles[m.role]||m.role,m.active?'有效':'已移除',m.devices])));root.append(members);
   }else if(route==='games'||route==='live'){
    const live=route==='live',data=await read(route+'?'+query);let title=live?'实时直播':'云端比赛';if(query.get('team')){const team=await read('teams/'+query.get('team'));title=team.team.name+' · 比赛';root.append(link('← 查看球队资料','teams/'+team.team.id,'back'));}
-   root.append(header(title,live?'合并展示共享球队直播与原临时直播，列表每 15 秒刷新。':'查看比赛日期、比分、完整记录与统计。可从球队资料进入对应比赛列表。'),filter(route,query,live?[['ongoing','正在进行'],['completed','已终场 · 链接有效'],['all','全部有效直播']]:[['all','全部比赛'],['ongoing','进行中'],['completed','已结束'],['scheduled','待开赛'],['deleted','已删除 · 保留期内']]));if(data.warning)root.append(n('p',data.warning,'notice'));root.append(data.items.length?table(['对阵','比分','状态','最近同步','操作'],matchRows(data,live)):n('p',live?'当前没有符合条件的有效直播':'没有符合条件的云端比赛','empty'));root.append(pagination(data,route,query));
+   root.append(header(title,live?'合并展示共享球队直播与原临时直播，列表每 15 秒刷新。':'查看比赛日期、比分、完整记录与统计。可从球队资料进入对应比赛列表。'),filter(route,query,live?[['ongoing','正在进行'],['completed','已终场 · 链接有效'],['all','全部有效直播']]:[['all','全部比赛'],['ongoing','进行中'],['completed','已结束'],['scheduled','待开赛'],['deleted','已归档']]));if(data.warning)root.append(n('p',data.warning,'notice'));root.append(data.items.length?table(['对阵','比分','状态','最近同步','操作'],matchRows(data,live)):n('p',live?'当前没有符合条件的有效直播':'没有符合条件的云端比赛','empty'));root.append(pagination(data,route,query));
   }else if(route.startsWith('game/')||route.startsWith('live/')){
    const live=route.startsWith('live/'),data=await read(live?route:'games/'+route.slice(5));const h=header(live?'直播内容':'比赛内容',data.game?.teamName?`所属球队：${data.game.teamName}`:'当前临时直播');h.append(downloadAction(live?'下载直播内容':'下载比赛内容',(live?route:'games/'+route.slice(5))+'/download'));root.append(link('← 返回列表',live?'live':'games','back'),h);root.append(gameContent(data));
   }else{location.hash='overview';return;}

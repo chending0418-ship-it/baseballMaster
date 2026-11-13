@@ -66,9 +66,13 @@ test('independent journal failure rolls back the database; a denial written befo
  const destination=join(a.folder,'conservative.sqlite');await restoreEncryptedBackup({archive:a.archive,destination,key:a.key,journalDirectory:a.journalDirectory});
  const restored=new CollaborationStore({database:destination});assert.equal(restored.games.document(a.team,a.completed.id,a.admin).deleted,true);restored.close();
 });
-test('restoration does not extend deletion retention; expiry removes payload and the backup cannot revive the old source',async t=>{
+test('an expired archive stays deleted with its contents intact after backup recovery',async t=>{
  const a=await setup(t);a.s.games.deleteOrRestore(a.team,a.completed.id,a.admin,op({deleted:true,baseRevision:1,writerEpoch:1}));
  const destination=join(a.folder,'expired.sqlite');await restoreEncryptedBackup({archive:a.archive,destination,key:a.key,journalDirectory:a.journalDirectory});
  const restored=new CollaborationStore({database:destination,now:()=>Date.now()+31*86400000});
- maintain(restored);assert.equal(restored.db.prepare('SELECT payload FROM shared_games WHERE id=?').get(a.completed.id).payload,'{}');restored.close();
+ t.after(()=>restored.close());
+ assert.equal(maintain(restored).purgedGames,0);
+ const sql='SELECT payload,projection,deleted,purged FROM shared_games WHERE id=?';
+ assert.deepEqual(restored.db.prepare(sql).get(a.completed.id),a.s.db.prepare(sql).get(a.completed.id));
+ assert.throws(()=>restored.games.publicRead(a.completed.viewCode));
 });

@@ -2,10 +2,13 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 
-export function maintain(store) {
+export function maintain(store, testGameIDs = process.env.BM_TEAM_PURGE_TEST_GAME_IDS?.split(',') ?? []) {
   const db=store.db,cutoff=store.now()-30*86400000;
   const result=store.transaction(()=>{
-    const games=db.prepare('SELECT id,team_id FROM shared_games WHERE deleted=1 AND purged=0 AND updated_at<=?').all(cutoff);
+    // Only explicitly identified synthetic matches may lose their contents.
+    const games=db.prepare(`SELECT id,team_id FROM shared_games
+      WHERE id IN (SELECT trim(value) FROM json_each(?)) AND deleted=1 AND purged=0 AND updated_at<=?`)
+      .all(JSON.stringify(testGameIDs),cutoff);
     for(const g of games) {
       db.prepare("UPDATE operations SET result='{}',retired=1 WHERE json_extract(result,'$.id')=?").run(g.id);
       db.prepare("UPDATE shared_games SET payload='{}',projection='{}',digest=?,purged=1,revision=revision+1 WHERE id=?").run(createHash('sha256').update('{}').digest('hex'),g.id);

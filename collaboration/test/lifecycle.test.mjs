@@ -59,7 +59,10 @@ test('daily maintenance purges expired contents while retaining deletion and ope
  const {maintain}=await import('../maintenance.mjs'),a=setup(t);
  const body=op(fixture(true)),created=a.s.games.create(a.team,a.admin,body);
  a.s.games.deleteOrRestore(a.team,created.id,a.admin,op({deleted:true,baseRevision:1,writerEpoch:1}));
- a.later(30);assert.equal(maintain(a.s).purgedGames,1);
+ assert.equal(maintain(a.s,[created.id]).purgedGames,0);
+ a.later(30);assert.equal(maintain(a.s,[created.id,a.g.id]).purgedGames,1);
+ assert.equal(maintain(a.s,[created.id]).purgedGames,0);
+ assert.equal(a.s.db.prepare('SELECT purged FROM shared_games WHERE id=?').get(a.g.id).purged,0);
  const tombstone=a.s.db.prepare('SELECT * FROM shared_games WHERE id=?').get(created.id);
  assert.equal(tombstone.payload,'{}');assert.equal(tombstone.projection,'{}');assert.equal(tombstone.purged,1);
  rejected(()=>a.s.games.create(a.team,a.admin,body),'operation_expired');

@@ -35,7 +35,7 @@ export async function exportTeam(database,teamID,res,now=Date.now()) {
       files.push({path:name,bytes:data.length,sha256:createHash('sha256').update(data).digest('hex')});
     }
     const start=Date.now();
-    await entry('README.txt',Buffer.from('BaseballMaster 云端资料导出\n\n包含球队资料、球员姓名和背号、成员称呼与角色、云端比赛完整正文和展示统计。\n已删除但尚在保留期的比赛带 deleted 标记；已清理比赛只保留目录记录。\n不含登录密码、设备凭证、管理恢复码、邀请秘密和观看授权。\n临时直播请在后台直播内容页面单独下载。\n这是供查看和自行保存的 ZIP，不是 App 的 .bmbackup 或球队档案导入文件。\n文件未加密，请妥善保管。\n'));
+    await entry('README.txt',Buffer.from('BaseballMaster 云端资料导出\n\n包含球队资料、球员姓名和背号、成员称呼与角色、云端比赛完整正文和展示统计。\n已归档的比赛带 deleted 标记；正文已清理的比赛只保留目录记录。\n不含登录密码、设备凭证、管理恢复码、邀请秘密和观看授权。\n临时直播请在后台直播内容页面单独下载。\n这是供查看和自行保存的 ZIP，不是 App 的 .bmbackup 或球队档案导入文件。\n文件未加密，请妥善保管。\n'));
     const catalog=[];
     for(const row of teams){
       const {profile,...team}=row,prefix=teamID?'':'teams/'+team.id+'/';
