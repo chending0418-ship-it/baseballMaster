@@ -11,6 +11,7 @@
 | 3.1.5 送审材料 | [审核文案、截图与提交清单](releases/3.1.5/APPSTORE-填写清单.md)已备妥，App 已增加录音前同意流程，公开隐私政策和审核专用开启码待完成。 |
 | 发布资料 | [3.1.2 材料入口](releases/3.1.2/README-先看这里.md)、[正式归档证据](releases/3.1.2/ARCHIVE.md)、[开发与验收](releases/3.1.2/DEVELOPMENT.md)；其中按日期保留的“未上传／未上架”为历史阶段 |
 | 服务状态 | 用户同日确认服务一切正常；本轮匿名只读检查球队协议 1 健康接口及直播健康接口通过，未修改或部署服务 |
+| 云端比赛归档 | 上海生产于 2026-11-13 10:24:54（北京时间）启用。正式比赛删除或球队解散后保留正文和展示数据，只有逐场登记且到期的内部测试比赛可清理。部署前后 21 场有效比赛与 14 场归档内容一致。见 [3.1.2 服务维护记录](<plans/3.1.2 发布功能计划.md#2026-11-13-云端比赛归档>)。 |
 | 共享服务维护 | [collaboration](../../collaboration/PROTOCOL.md)、[live](../../live/README.md)仍由 iOS／服务工作入口管理 |
 | Admin 实时直播 | 「打开观赛页」支持临时直播与共享球队直播。验证与上海生产部署回执见 [PR #50](https://github.com/chending0418-ship-it/baseballMaster/pull/50) |
 | Android | [Android CURRENT](../../android/docs/CURRENT.md)，独立版本与发布计划，不在此复制进度 |

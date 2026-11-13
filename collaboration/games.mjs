@@ -78,6 +78,7 @@ export class GameService {
       this.check(body.baseRevision===row.revision && body.writerEpoch===row.epoch,409,'revision_conflict','比赛已有变化，请刷新核对。');
       this.check(!row.purged,410,'restore_expired','比赛已超过保留期限，无法恢复。');
       this.check(body.deleted || this.store.now()-row.updated_at <= 30*86400000,410,'restore_expired','已超过恢复期限。');
+      if (body.deleted && row.deleted) return this.metadata(row,device);
       this.db.prepare("UPDATE shared_games SET deleted=?,revision=revision+1,epoch=epoch+1,access_mode='closed',access_version=access_version+1,live_enabled=0,updated_at=? WHERE id=?")
         .run(body.deleted?1:0,this.store.now(),game);
       this.db.prepare('DELETE FROM handoffs WHERE game_id=?').run(game);this.revokeAll(game);

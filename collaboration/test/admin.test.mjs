@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
 import {inflateRawSync} from 'node:zlib';
 import {adminFixture,op} from './admin-fixture.mjs';
+import {maintain} from '../maintenance.mjs';
 import {uiSnapshot} from '../../live/test/fixture.mjs';
 async function setup(t,options){const a=await adminFixture(options);t.after(a.close);const auth=await a.login();assert.equal(auth.status,200);const get=(path,options={})=>a.request('api/'+path,{...options,headers:{Cookie:auth.cookie.split(';')[0],...options.headers}});return {...a,auth,get};}
 function unzip(data){const files={};let at=0;while(data.readUInt32LE(at)===0x04034b50){const length=data.readUInt32LE(at+18),nameLength=data.readUInt16LE(at+26),extra=data.readUInt16LE(at+28),start=at+30+nameLength+extra;files[data.subarray(at+30,at+30+nameLength).toString()]=inflateRawSync(data.subarray(start,start+length));at=start+length;}assert.equal(data.readUInt32LE(at),0x02014b50);assert.equal(data.readUInt32LE(data.length-22),0x06054b50);return files;}
@@ -103,12 +104,26 @@ test('team ZIP includes complete own matches and stable number labels, hashes en
  for(const content of Object.values(files)){assert.ok(!content.includes(a.key));assert.ok(!content.includes(a.config.passwordHash));assert.ok(!content.includes(a.config.legacyToken));assert.doesNotMatch(content.toString(),/credential_hash|session_hash|recoveryToken|token_hash/);}
  assert.equal((await a.get('teams/'+randomUUID()+'/download')).status,404);
 });
-test('deleted matches remain explicitly marked until purge; dissolved team is separate from active lists',async t=>{
+test('archives of dissolved teams stay viewable and downloadable after the recovery period',async t=>{
  const a=await setup(t);a.store.games.deleteOrRestore(a.team,a.completed.id,a.device,op({deleted:true,baseRevision:1,writerEpoch:1}));
  assert.equal((await (await a.get('games?team='+a.team)).json()).total,1);assert.equal((await (await a.get('games?team='+a.team+'&state=deleted')).json()).total,1);
  const files=unzip(Buffer.from(await (await a.get('teams/'+a.team+'/download')).arrayBuffer()));assert.equal(JSON.parse(files['matches/'+a.completed.id+'.json']).deleted,true);
+ const detail=await (await a.get('games/'+a.completed.id)).json();
  a.store.lifecycle.dissolve(a.team,a.device,op({name:'上海海浪',confirm:true,baseRevision:1}));
- assert.equal((await (await a.get('teams')).json()).total,1);assert.equal((await (await a.get('teams?state=dissolved')).json()).items[0].id,a.team);assert.equal((await (await a.get('live')).json()).items.some(g=>g.teamID===a.team),false);
+ a.advance(31*86400000);
+ assert.equal(maintain(a.store).purgedGames,0);
+ const auth=await a.login(),headers={Cookie:auth.cookie.split(';')[0]};
+ assert.equal((await (await a.get('teams',{headers})).json()).total,1);
+ assert.equal((await (await a.get('teams?state=dissolved',{headers})).json()).items[0].id,a.team);
+ assert.equal((await (await a.get('games?state=deleted&team='+a.team,{headers})).json()).total,2);
+ const archived=await (await a.get('games/'+a.completed.id,{headers})).json();
+ assert.equal(archived.game.deleted,1);
+ assert.deepEqual(archived.payload,detail.payload);
+ assert.deepEqual(archived.snapshot,detail.snapshot);
+ const download=await a.get('teams/'+a.team+'/download',{headers});
+ const archivedFiles=unzip(Buffer.from(await download.arrayBuffer()));
+ assert.deepEqual(JSON.parse(archivedFiles['matches/'+a.completed.id+'.json']).payload,detail.payload);
+ assert.equal((await (await a.get('live',{headers})).json()).items.some(g=>g.teamID===a.team),false);
 });
 test('site owner downloads every team and single cloud/live contents without team membership',async t=>{
  const a=await setup(t);

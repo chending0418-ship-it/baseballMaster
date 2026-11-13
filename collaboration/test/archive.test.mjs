@@ -18,8 +18,15 @@ test('portable archive exports complete formal records and tombstones without gr
  assert.equal('writerDeviceID' in item,false);assert.equal('accessMode' in item,false);
  assert.equal(s.archives.item(team,b.id,admin,manifest.snapshot).deleted,true);
  assert.equal(s.archives.finish(team,admin,op({snapshot:manifest.snapshot})).verified,true);
- now+=31*86400000;maintain(s);const after=s.archives.manifest(team,admin),purged=s.archives.item(team,b.id,admin,after.snapshot);
- assert.equal(purged.purged,true);assert.equal(purged.payload,null);assert.deepEqual(purged.playerLinks,[]);
+ const deleted=s.archives.item(team,b.id,admin,manifest.snapshot);
+ now+=31*86400000;assert.equal(maintain(s).purgedGames,0);
+ const after=s.archives.manifest(team,admin),archived=s.archives.item(team,b.id,admin,after.snapshot);
+ assert.deepEqual(archived,deleted);
+ const row=s.db.prepare('SELECT revision,epoch,updated_at FROM shared_games WHERE id=?').get(b.id);
+ const repeated=s.games.deleteOrRestore(team,b.id,admin,op({deleted:true,baseRevision:row.revision,writerEpoch:row.epoch}));
+ assert.equal(repeated.updatedAt,row.updated_at);
+ assert.equal(repeated.serverRevision,row.revision);
+ assert.throws(()=>s.games.deleteOrRestore(team,b.id,admin,op({deleted:false,baseRevision:row.revision,writerEpoch:row.epoch})),e=>e.code==='restore_expired');
 });
 test('archive export is admin-only and rejects mixed revisions, removal, wrong team and old snapshots',t=>{
  const s=new CollaborationStore();t.after(()=>s.close());const admin=s.register(secret(),{label:'iPhone'}).deviceID,team=s.createTeam(admin,op({name:'海浪',nickname:'教练'})).teamID;
