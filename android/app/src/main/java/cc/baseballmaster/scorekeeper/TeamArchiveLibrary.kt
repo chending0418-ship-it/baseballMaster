@@ -2,19 +2,35 @@ package cc.baseballmaster.scorekeeper
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.AppleArchiveHistory
 import cc.baseballmaster.core.AppleTeamArchive
 import kotlinx.coroutines.CancellationException
@@ -229,13 +245,8 @@ internal fun ArchiveGameHistory(stored: JsonObject, secure: Boolean = false, dis
     }
     FormPage("档案比赛历史", false, true, "", "", dismiss, {},secure=secure) {
         Text("原始只读历史", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("archive-history-title"))
-        Text("按原记录顺序查看逐球、打席和更正。")
         if (!history.hasJournal) Text("此记录没有操作日志，无法据此完整重放或纠错。")
-        sections.forEachIndexed { index, title ->
-            TextButton(onClick = { section = index; page = 0 }, modifier = Modifier.testTag("archive-history-section-$index")) {
-                Text("${if (section == index) "● " else ""}$title")
-            }
-        }
+        HistorySections(sections, section) { section = it; page = 0 }
         Text("${sections[section]} · ${rows.size} 条", modifier = Modifier.testTag("archive-history-count"))
         if (rows.isEmpty()) Text("原文件未包含此类记录")
         rows.drop(page * 20).take(20).forEachIndexed { index, row ->
@@ -281,5 +292,42 @@ internal fun ArchiveGameHistory(stored: JsonObject, secure: Boolean = false, dis
             }
         }
         ArchivePages(page, rows.size, enabled = true) { page = it }
+    }
+}
+
+@Composable
+private fun HistorySections(sections: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val fontScale = LocalDensity.current.fontScale
+        val columns = when {
+            maxWidth >= (308 * fontScale).dp -> 5
+            maxWidth >= (188 * fontScale).dp -> 3
+            else -> 2
+        }
+        val colors = MaterialTheme.colorScheme
+        Column(
+            Modifier.fillMaxWidth().selectableGroup().clip(RoundedCornerShape(12.dp))
+                .background(colors.onSurface.copy(alpha = 0.05f)).padding(3.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            sections.withIndex().toList().chunked(columns).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    row.forEach { (index, title) ->
+                        val active = index == selected
+                        Box(
+                            Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(9.dp))
+                                .then(if (active) Modifier.background(colors.surface) else Modifier)
+                                .selectable(active, role = Role.Tab, onClick = { if (!active) onSelect(index) })
+                                .testTag("archive-history-section-$index").padding(horizontal = 3.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(title, fontSize = 12.sp, textAlign = TextAlign.Center,
+                                color = if (active) colors.primary else colors.onSurfaceVariant,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                }
+            }
+        }
     }
 }

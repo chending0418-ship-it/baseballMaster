@@ -48,7 +48,7 @@ class TeamArchiveUIFlowTest {
             click(device, "team-archive-${saved.item.id}")
             NativeUi.find(device, By.res("export-team-archive"))
             assertTrue(device.hasObject(By.text("互导测试球队")))
-            assertTrue(device.hasObject(By.textContains("只读快照")))
+            assertTrue(device.hasObject(By.textContains("这份只读档案保留导出时的比赛")))
             click(device, "archive-game-history")
             assertTrue(device.wait(Until.hasObject(By.res("archive-history-title")), 10_000))
             val history = cc.baseballmaster.core.AppleArchiveHistory.read(
@@ -76,8 +76,9 @@ class TeamArchiveUIFlowTest {
             // Return to the top before opening the system picker.
             repeat(4) { device.swipe(device.displayWidth / 2, device.displayHeight / 3, device.displayWidth / 2, device.displayHeight * 8 / 10, 20) }
             repeat(2) {
-                assertTrue("System save picker did not open", device.performActionAndWait(
-                    { click(device, "export-team-archive") }, Until.newWindow(), 10_000))
+                click(device, "export-team-archive")
+                assertTrue("System save picker did not open", device.wait(
+                    Until.hasObject(By.text("BaseballMaster-球队完整档案.bmteam")), 10_000))
                 assertNotEquals(context.packageName, device.currentPackageName)
                 device.pressBack()
                 assertTrue("Cancel did not return to the reader", device.wait(Until.hasObject(By.res("export-team-archive")), 10_000))
