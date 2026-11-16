@@ -364,7 +364,7 @@ struct GameAnalysisView: View {
                             if generation != nil {
                                 ProgressView("正在分析比赛…")
                             } else {
-                                Text("生成时会把比赛统计、关键局面和球员代号发送给 V-API。姓名在本机显示。")
+                                Text("点击生成后，比赛统计、关键局面和球员代号会经球队服务器发送给第三方 AI 服务 V-API。球员姓名留在本机。")
                                     .foregroundStyle(BMTheme.secondaryText)
                                 if let error { Text(error).foregroundStyle(BMTheme.orange) }
                                 Button(error == nil ? "生成比赛分析" : "重新生成") { generate() }
