@@ -163,7 +163,7 @@ struct SituationPlayFlowSheet: View {
     @State private var sourceGame: GameState?
     @State private var sourceGameID: UUID?
     @State private var sourcePracticeID: UUID?
-    private enum Stage { case entry, catalog, process, processResult, contact, review, timing }
+    private enum Stage: Hashable { case entry, catalog, process, processResult, contact, review, timing }
     @State private var stage: Stage = .entry
     @State private var catalogReturnStage: Stage = .entry
     @State private var resultReturnStage: Stage = .entry
@@ -257,6 +257,7 @@ struct SituationPlayFlowSheet: View {
                 }
             } else {
                 ScrollView { flowSections }
+                    .id(stage)
                     .safeAreaInset(edge: .bottom) { footer }
             }
         }.bmScreenBackground()
@@ -480,7 +481,18 @@ struct SituationPlayFlowSheet: View {
     }
     private var review: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("\(outcome.rawValue) · \(observation.type.title)").font(.subheadline.weight(.semibold))
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(outcome.rawValue) · \(observation.type.title)").font(.subheadline.weight(.semibold))
+                Spacer(minLength: 8)
+                Button("修改球场记录") {
+                    contactReturnToReview = true
+                    fieldMode = .defense
+                    stage = .contact
+                }
+                .font(.subheadline)
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("edit-situation-field")
+            }
             RunnerBoardModePicker(showsPreview: $showsRunnerPreview)
             RunnerBoardOverview(decisions: decisions, selectedRunnerID: $selectedRunner,
                                 showsPreview: showsRunnerPreview)
@@ -493,8 +505,7 @@ struct SituationPlayFlowSheet: View {
 
             Text(fielding.description).font(.caption).accessibilityIdentifier("situation-defense-description")
             if let position = fielding.errorPosition { Text("失误责任：" + fielding.name(position)).font(.caption).foregroundStyle(BMTheme.red).accessibilityIdentifier("situation-error-responsibility") }
-            Button("落点：\(observation.summary) · 修改球场记录") { contactReturnToReview = true; fieldMode = .defense; stage = .contact }
-                .font(.caption).accessibilityIdentifier("edit-situation-field")
+            Text("落点：\(observation.summary)").font(.caption).foregroundStyle(BMTheme.secondaryText)
         }
     }
 
