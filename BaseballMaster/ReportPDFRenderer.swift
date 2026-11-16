@@ -1,3 +1,4 @@
+import CoreText
 import UIKit
 
 /// A print-oriented, fixed-color layout independent of the app's appearance.
@@ -337,6 +338,12 @@ final class ReportPDFCanvas {
 
     private func wrapped(_ text: String, width: CGFloat, size: CGFloat, bold: Bool) -> [String] {
         let font = font(size: size, bold: bold)
+        if style == .scorekeeper {
+            return text.components(separatedBy: .newlines).flatMap {
+                chineseLines($0, width: width, font: font)
+            }
+        }
+
         var result: [String] = []
         for paragraph in text.components(separatedBy: .newlines) {
             var line = ""
@@ -350,6 +357,24 @@ final class ReportPDFCanvas {
             result.append(line)
         }
         return result.isEmpty ? [""] : result
+    }
+
+    private func chineseLines(_ paragraph: String, width: CGFloat, font: UIFont) -> [String] {
+        guard !paragraph.isEmpty else { return [""] }
+        let attributed = NSAttributedString(string: paragraph, attributes: [
+            .font: font, NSAttributedString.Key(kCTLanguageAttributeName as String): "zh-Hans"
+        ])
+        let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+        let content = paragraph as NSString
+        var lines: [String] = []
+        var start = 0
+        while start < content.length {
+            let suggested = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
+            let length = suggested > 0 ? suggested : content.rangeOfComposedCharacterSequence(at: start).length
+            lines.append(content.substring(with: NSRange(location: start, length: length)))
+            start += length
+        }
+        return lines
     }
 
     private func draw(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, size: CGFloat,
