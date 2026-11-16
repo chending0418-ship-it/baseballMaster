@@ -1772,6 +1772,51 @@ final class GameStore: ObservableObject {
             }
             errorFielder = player
         } else { errorFielder = nil }
+        let fielders = Dictionary(uniqueKeysWithValues: activeFielders.map { ($0.id, $0) })
+        var stealErrors = Set<UUID>()
+        var defenseDescriptions: [String] = []
+        var passedBallCatcher: UUID?
+        for decision in decisions {
+            switch decision.defense {
+            case .noCatcherAssist:
+                guard kind == .caughtStealing && decision.destination == .out else {
+                    actionErrorMessage = "请核对盗垒出局的跑者。"
+                    return false
+                }
+            case .caughtStealing(let catcherID, let receiverID, let target):
+                let safeTarget: Int? = switch decision.destination {
+                case .base(let base): base.rawValue
+                case .score: StealTarget.home.rawValue
+                case .hold, .out: nil
+                }
+                guard kind == .caughtStealing, decision.stealTargets.contains(target),
+                      let catcher = fielders[catcherID], catcher.primaryPosition == .catcher,
+                      let receiver = fielders[receiverID], catcherID != receiverID,
+                      decision.destination == .out || (safeTarget ?? 0) >= target.rawValue else {
+                    actionErrorMessage = "请核对盗垒目标、传球捕手和接球野手。"
+                    return false
+                }
+                if decision.destination != .out { stealErrors.insert(receiverID) }
+                let result = decision.destination == .out ? "出局" : "接球失误"
+                let route = "\(catcher.primaryPosition.rawValue)–\(receiver.primaryPosition.rawValue)"
+                defenseDescriptions.append("\(decision.player.compactName) 盗\(target.title)\(result) · 捕手 \(catcher.compactName) 传\(receiver.primaryPosition.fullName) \(receiver.compactName)（\(route)）")
+            case .passedBall(let catcherID):
+                guard kind == .passedBall, decision.advances, passedBallCatcher == nil,
+                      let catcher = fielders[catcherID], catcher.primaryPosition == .catcher else {
+                    actionErrorMessage = "请确认捕逸导致的进垒和当时接球的捕手。"
+                    return false
+                }
+                passedBallCatcher = catcherID
+                defenseDescriptions.append("捕手 \(catcher.compactName)")
+            case nil: break
+            }
+        }
+        if kind == .caughtStealing && historyReplayDate == nil
+            && !decisions.contains(where: { $0.destination == .out || $0.defense != nil }) {
+            actionErrorMessage = "请选择盗垒出局的跑者，或记录使跑者安全进垒的接球失误。"
+            return false
+        }
+
         pushUndo(startsClock: true)
         let pitcher = game.currentPitcher
         let automaticRunnerRuns = automaticRunnerRunCount(in: decisions)
@@ -1788,9 +1833,22 @@ final class GameStore: ObservableObject {
                 updateBatter(decision.player.id) { $0.stolenBases += 1 }
             }
         case .caughtStealing:
-            for decision in decisions where decision.destination == .out {
+            for decision in decisions where decision.destination == .out || decision.defense != nil {
                 updateBatter(decision.player.id) { $0.caughtStealing += 1 }
+                if case .caughtStealing(let catcherID, let receiverID, _)? = decision.defense {
+                    updateFielder(catcherID) { $0.assists += 1 }
+                    if decision.destination == .out { updateFielder(receiverID) { $0.putouts += 1 } }
+                }
             }
+            for receiverID in stealErrors {
+                updateFielder(receiverID) { $0.errors += 1 }
+                if game.isTop { game.homeErrors += 1 } else { game.awayErrors += 1 }
+            }
+            var unearned = Set(game.unearnedRunnerIDs ?? [])
+            for decision in decisions where decision.defense != nil && decision.advances {
+                unearned.insert(decision.player.id)
+            }
+            game.unearnedRunnerIDs = unearned.sorted { $0.uuidString < $1.uuidString }
         case .wildPitch:
             updatePitcher(pitcher.id) { $0.wildPitches += 1 }
         case .defensiveErrorAdvance:
@@ -1815,13 +1873,17 @@ final class GameStore: ObservableObject {
         let summary = runnerSummary(decisions)
         let errorCredit = errorFielder.map { " · \($0.primaryPosition.fullName) \($0.compactName)" }
             ?? (responsibility == .pending ? " · 责任人待确认" : "")
+        let defenseText = defenseDescriptions.isEmpty ? "" : " · " + defenseDescriptions.joined(separator: "；")
+        let needsCatcherReview = (kind == .passedBall && passedBallCatcher == nil)
+            || (kind == .caughtStealing && decisions.contains { $0.destination == .out && $0.defense == nil })
+        let unresolved = needsCatcherReview ? " · 守备归属待确认" : ""
         addLog(
-            "\(kind.rawValue)\(errorCredit)\(summary.isEmpty ? "" : "；\(summary)")",
-            incomplete: kind == .uncertainLooseBall || (kind == .defensiveErrorAdvance && errorFielder == nil),
+            "\(kind.title)\(defenseText)\(errorCredit)\(unresolved)\(summary.isEmpty ? "" : "；\(summary)")",
+            incomplete: needsCatcherReview || kind == .uncertainLooseBall || (kind == .defensiveErrorAdvance && errorFielder == nil),
             category: kind.group == .out ? .out : .runner,
             notation: kind.notation,
             primaryPlayerID: isCoachPitch ? nil : pitcher.id,
-            secondaryPlayerID: errorFielder?.id,
+            secondaryPlayerID: errorFielder?.id ?? passedBallCatcher,
             runnerDecisions: decisions,
             ballStatus: kind.ballStatus
         )
@@ -4295,7 +4357,8 @@ final class GameStore: ObservableObject {
             RecordedRunnerMovement(
                 playerID: $0.player.id,
                 origin: $0.origin.title,
-                destination: $0.destination == .score && !(actionEffectiveScorers ?? []).contains($0.player.id) ? "回本垒（不计分）" : $0.destination.title
+                destination: $0.destination == .score && !(actionEffectiveScorers ?? []).contains($0.player.id) ? "回本垒（不计分）" : $0.destination.title,
+                defense: $0.defense
             )
         }
         let undoSituation = undoStack.last?.situationSnapshot

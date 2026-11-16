@@ -9847,6 +9847,145 @@ extension GameStoreTests {
         }
     }
 
+    func testBuild3CatcherCaughtStealingSurvivesThirdOutSubstitutionAndReload() throws {
+        for top in [true, false] {
+            let store = v111Store(rules: GameRules())
+            if !top { store.endCurrentHalf() }
+            XCTAssertTrue(store.applyPlay(.groundOut))
+            XCTAssertTrue(store.applyPlay(.groundOut))
+            XCTAssertTrue(store.applyPlay(.single))
+            let replaced = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .catcher })
+            let bench = try XCTUnwrap(store.fieldingBenchPlayers.first)
+            XCTAssertTrue(store.replaceFielder(replaced, with: bench))
+            let catcher = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .catcher })
+            let receiver = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .shortstop })
+            let runner = try XCTUnwrap(store.game.baseRunners[.first])
+            var move = RunnerDecision(player: runner, origin: .base(.first), destination: .out,
+                                      defense: .caughtStealing(catcherID: replaced.id, receiverID: receiver.id, target: .second))
+            XCTAssertFalse(store.recordRunnerEvent(.caughtStealing, decisions: [move]))
+            XCTAssertEqual(store.game.outs, 2)
+
+            move.defense = .caughtStealing(catcherID: catcher.id, receiverID: receiver.id, target: .second)
+            let pitcherID = store.currentPitcher.id
+            let assists = store.game.fielding[catcher.id]?.assists ?? 0
+            let putouts = store.game.fielding[receiver.id]?.putouts ?? 0
+            XCTAssertTrue(store.recordRunnerEvent(.caughtStealing, decisions: [move]), store.actionErrorMessage ?? "")
+            XCTAssertNotEqual(store.game.isTop, top)
+            XCTAssertEqual(store.game.pitching[pitcherID]?.outsRecorded, 3)
+            XCTAssertEqual(store.game.batting[runner.id]?.caughtStealing, 1)
+            XCTAssertEqual(store.game.fielding[catcher.id]?.assists, assists + 1)
+            XCTAssertEqual(store.game.fielding[receiver.id]?.putouts, putouts + 1)
+            XCTAssertEqual(store.game.reportFielding[catcher.id]?.catcherCaughtStealing, 1)
+            XCTAssertNil(store.game.reportFielding[replaced.id]?.catcherCaughtStealing)
+            let event = try XCTUnwrap(store.game.scoringEvents?.last { $0.notation == "CS" })
+            XCTAssertTrue(event.title.contains("盗二垒出局"))
+            XCTAssertTrue(event.title.contains("2–6"))
+            XCTAssertEqual(event.runnerMovements.first?.defense, move.defense)
+
+            store.undo()
+            XCTAssertNil(store.game.reportFielding[catcher.id]?.catcherCaughtStealing)
+            store.redo()
+            XCTAssertEqual(store.game.reportFielding[catcher.id]?.catcherCaughtStealing, 1)
+            let id = try XCTUnwrap(store.activeStoredGame?.id)
+            store.openGame(id: id)
+            let reopened = try JSONDecoder().decode(GameState.self, from: JSONEncoder().encode(store.game))
+            XCTAssertEqual(reopened.reportFielding[catcher.id]?.catcherCaughtStealing, 1)
+            XCTAssertNil(reopened.fielding[catcher.id]?.catcherCaughtStealing)
+            let draft = try store.makeCorrectionDraft()
+            XCTAssertTrue(store.previewCorrection(draft).canSave)
+        }
+    }
+
+    func testBuild3CatcherCaughtStealingOnDroppedThrowCreditsErrorWithoutAnOut() throws {
+        let store = v111Store(rules: GameRules())
+        XCTAssertTrue(store.applyPlay(.single))
+        let runner = try XCTUnwrap(store.game.baseRunners[.first])
+        let catcher = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .catcher })
+        let receiver = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .secondBase })
+        let move = RunnerDecision(player: runner, origin: .base(.first), destination: .base(.second),
+                                  defense: .caughtStealing(catcherID: catcher.id, receiverID: receiver.id, target: .second))
+        XCTAssertTrue(store.recordRunnerEvent(.caughtStealing, decisions: [move]))
+        XCTAssertEqual(store.game.outs, 0)
+        XCTAssertEqual(store.game.baseRunners[.second]?.id, runner.id)
+        XCTAssertEqual(store.game.batting[runner.id]?.caughtStealing, 1)
+        XCTAssertEqual(store.game.reportFielding[catcher.id]?.catcherCaughtStealing, 1)
+        XCTAssertEqual(store.game.fielding[catcher.id]?.assists, 1)
+        XCTAssertEqual(store.game.fielding[receiver.id]?.putouts, 0)
+        XCTAssertEqual(store.game.fielding[receiver.id]?.errors, 1)
+        XCTAssertEqual(store.game.homeErrors, 1)
+        XCTAssertTrue(store.game.unearnedRunnerIDs?.contains(runner.id) == true)
+        let last = try XCTUnwrap(store.game.scoringEvents?.last)
+        XCTAssertTrue(last.title.contains("接球失误"))
+    }
+
+    func testBuild3PassedBallCorrectionAndCatcherReportsAcrossScopes() throws {
+        let store = v111Store(rules: GameRules())
+        store.endCurrentHalf()
+        XCTAssertTrue(store.applyPlay(.single))
+        XCTAssertTrue(store.applyPlay(.single))
+        let catcher = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .catcher })
+        let receiver = try XCTUnwrap(store.activeFielders.first { $0.primaryPosition == .shortstop })
+        let pitcher = store.currentPitcher.id
+        let twoAdvances = store.suggestedRunnerEventDecisions(for: .passedBall)
+        XCTAssertEqual(twoAdvances.filter(\.advances).count, 2)
+        XCTAssertTrue(store.recordRunnerEvent(.passedBall, decisions: twoAdvances))
+        XCTAssertNil(store.game.reportFielding[catcher.id]?.passedBalls)
+        XCTAssertTrue(store.game.scoringEvents?.last?.needsReview == true)
+        XCTAssertTrue(store.recordRunnerEvent(.wildPitch, decisions: store.suggestedRunnerEventDecisions(for: .wildPitch)))
+        let third = try XCTUnwrap(store.game.baseRunners[.third])
+        let steal = RunnerDecision(player: third, origin: .base(.third), destination: .out,
+                                   defense: .caughtStealing(catcherID: catcher.id, receiverID: receiver.id, target: .home))
+        XCTAssertTrue(store.recordRunnerEvent(.caughtStealing, decisions: [steal]))
+        var draft = try store.makeCorrectionDraft()
+        draft.reason = "确认两人进垒是同一球捕逸"
+        let index = try XCTUnwrap(draft.journal.operations.firstIndex {
+            if case .runner(.passedBall, _, _, _) = $0.command { return true }
+            return false
+        })
+        draft.journal.operations[index].command = .runner(.passedBall, RunnerDecision.assigningPassedBall(to: twoAdvances, catcherID: catcher.id), nil)
+        draft.journal.operations[index].edited = true
+        XCTAssertTrue(store.saveCorrection(draft), store.actionErrorMessage ?? "")
+        XCTAssertEqual(store.game.reportFielding[catcher.id]?.passedBalls, 1)
+        XCTAssertEqual(store.game.reportFielding[catcher.id]?.catcherCaughtStealing, 1)
+        XCTAssertEqual(store.game.pitching[pitcher]?.wildPitches, 1)
+        XCTAssertEqual(store.game.awayErrors, 0)
+        XCTAssertFalse(store.game.scoringEvents?.first { $0.notation == "PB" }?.needsReview ?? true)
+        store.finishGame()
+        let finished = try XCTUnwrap(store.activeStoredGame)
+        let team = try XCTUnwrap(store.currentTeam)
+        let season = finished.yearID
+        let selected: Set<UUID> = [finished.id]
+        store.games.append(statisticsGame(store: store, seasonID: season))
+        let aggregate = store.seasonStatistics(for: team, seasonID: season)
+        XCTAssertEqual(aggregate.games.count, 2)
+        XCTAssertEqual(aggregate.fielding.passedBalls, 1)
+        XCTAssertEqual(aggregate.fielding.catcherCaughtStealing, 1)
+        let filtered = store.seasonStatistics(for: team, seasonID: season, gameIDs: selected)
+        XCTAssertEqual(filtered.games.count, 1)
+        XCTAssertEqual(filtered.players.first { $0.player.id == catcher.id }?.fielding.passedBalls, 1)
+        XCTAssertEqual(store.playerStatistics(for: catcher, seasonID: season, teamID: team.id, gameIDs: selected).fielding.catcherCaughtStealing, 1)
+
+        let exporter = GameExportService(game: store.game, rules: store.activeRules, plateAppearances: store.plateAppearanceRecords(),
+                                         gameEvents: store.nonPlateAppearanceGameEvents(), playedAt: store.activeGameRecordedAt)
+        let record = exporter.completeRecordText()
+        XCTAssertTrue(record.contains("盗本垒出局"))
+        XCTAssertTrue(record.contains("捕逸"))
+        XCTAssertTrue(record.contains("CCS\tPB"))
+        let reports = [
+            ("catcher-box-score.pdf", exporter.boxScorePDFData()),
+            ("catcher-season.pdf", TeamSeasonPDFReport(store: store, team: team, seasonID: season).pdfData()),
+            ("catcher-filtered.pdf", TeamSeasonPDFReport(store: store, team: team, seasonID: season, gameIDs: selected).pdfData()),
+            ("catcher-player.pdf", PlayerStatisticsPDFReport(store: store, player: catcher, seasonID: season, teamID: team.id, gameIDs: selected).pdfData())
+        ]
+        let directory = try reportSampleDirectory()
+        for (name, data) in reports {
+            let text = try reportText(data)
+            XCTAssertTrue(text.contains("CCS"), name)
+            XCTAssertTrue(text.contains("PB"), name)
+            try data.write(to: directory.appendingPathComponent(name))
+        }
+    }
+
     func testV313TotalBasesShareOneCalculationAcrossSeasonAndPDFTables() throws {
         let store = GameStore(persistenceURL: nil)
         let team = try XCTUnwrap(store.currentTeam)

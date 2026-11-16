@@ -4169,6 +4169,45 @@ extension BaseballMasterUITests {
         captureHistory(app, name: "3.1.3-跑垒失误责任")
     }
 
+    func testBuild3RunnerMenuRecordsCatcherCaughtStealingAndPassedBall() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v111-bases-preview"]
+        app.launch()
+        let runners = app.buttons["open-runner-events"]
+        func open(_ id: String) {
+            revealStatisticsControl(runners, in: app)
+            XCTAssertTrue(runners.isHittable)
+            runners.tap()
+            let event = app.buttons[id]
+            revealStatisticsControl(event, in: app)
+            XCTAssertTrue(event.isHittable)
+            if id == "runner-event-盗垒出局" { captureHistory(app, name: "build3-跑者菜单") }
+            event.tap()
+        }
+        open("runner-event-盗垒出局")
+        let receiver = app.buttons["runner-steal-receiver"].firstMatch
+        revealStatisticsControl(receiver, in: app)
+        XCTAssertTrue(receiver.isHittable)
+        receiver.tap()
+        let shortstop = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "游击手")).firstMatch
+        XCTAssertTrue(shortstop.waitForExistence(timeout: 5))
+        shortstop.tap()
+        let target = app.buttons["runner-steal-target"].firstMatch
+        revealStatisticsControl(target, in: app)
+        XCTAssertTrue(target.isHittable)
+        captureHistory(app, name: "build3-盗垒出局")
+        app.buttons["confirm-runners"].tap()
+        XCTAssertTrue(runners.waitForExistence(timeout: 5))
+
+        open("runner-event-捕逸 PB")
+        let catcher = app.buttons["runner-passed-ball-catcher"].firstMatch
+        XCTAssertTrue(catcher.waitForExistence(timeout: 5))
+        XCTAssertFalse(catcher.label.contains("待确认"))
+        captureHistory(app, name: "build3-捕逸")
+        app.buttons["confirm-runners"].tap()
+        XCTAssertTrue(app.staticTexts["已达到半局得分上限"].waitForExistence(timeout: 5))
+    }
+
     func testV313DoubleSwitchEditorKeepsOnlyTheCorrectGroup() {
         let app = XCUIApplication()
         app.launchArguments = ["--correction-preview", "--v313-double-switch"]

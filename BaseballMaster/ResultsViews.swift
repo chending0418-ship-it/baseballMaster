@@ -202,17 +202,19 @@ struct BoxScoreView: View {
     }
 
     private var fieldingTable: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let fielding = store.game.reportFielding
+        return VStack(alignment: .leading, spacing: 10) {
             ForEach([store.game.awayTeam, store.game.homeTeam]) { team in
-                SectionHeader(title: "\(team.shortName)守备", subtitle: "刺杀、助杀、失误与双杀")
+                SectionHeader(title: "\(team.shortName)守备", subtitle: "刺杀、助杀、失误、双杀 · CCS 捕手阻杀 · PB 捕逸")
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(spacing: 0) {
-                        tableHeader(["球员", "守位", "PO", "A", "E", "DP"])
-                        ForEach(fieldingPlayers(for: team)) { player in
-                            let line = store.fieldingLine(for: player)
+                        tableHeader(["球员", "守位", "PO", "A", "E", "DP", "CCS", "PB"])
+                        ForEach(fieldingPlayers(for: team, lines: fielding)) { player in
+                            let line = fielding[player.id, default: FieldingLine()]
                             tableRow([
                                 "#\(player.numberText) \(player.name)", player.primaryPosition.shortName,
-                                "\(line.putouts)", "\(line.assists)", "\(line.errors)", "\(line.doublePlays)"
+                                "\(line.putouts)", "\(line.assists)", "\(line.errors)", "\(line.doublePlays)",
+                                line.catcherCaughtStealingText, line.passedBallsText
                             ], emphasized: 0)
                         }
                     }
@@ -348,11 +350,8 @@ struct BoxScoreView: View {
         return recorded.isEmpty ? team.players.filter { $0.primaryPosition == .pitcher } : recorded
     }
 
-    private func fieldingPlayers(for team: Team) -> [Player] {
-        let recorded = team.players.filter {
-            let line = store.fieldingLine(for: $0)
-            return line.putouts + line.assists + line.errors + line.doublePlays > 0
-        }
+    private func fieldingPlayers(for team: Team, lines: [UUID: FieldingLine]) -> [Player] {
+        let recorded = team.players.filter { lines[$0.id, default: FieldingLine()] != FieldingLine() }
         if !recorded.isEmpty { return recorded }
         let ids = team.id == store.game.awayTeam.id
             ? (store.game.awayFieldingPlayerIDs ?? store.game.awayBattingOrderIDs)
@@ -723,10 +722,11 @@ struct GameExportService {
 
             lines.append("")
             lines.append("【\(team.shortName)守备】")
-            lines.append("球员\t守位\tPO\tA\tE\tDP")
-            for player in fieldingPlayers(for: team) {
-                let value = game.fielding[player.id, default: FieldingLine()]
-                lines.append("#\(player.numberText) \(player.name)\t\(player.primaryPosition.shortName)\t\(value.putouts)\t\(value.assists)\t\(value.errors)\t\(value.doublePlays)")
+            lines.append("球员\t守位\tPO\tA\tE\tDP\tCCS\tPB")
+            let fielding = game.reportFielding
+            for player in fieldingPlayers(for: team, lines: fielding) {
+                let value = fielding[player.id, default: FieldingLine()]
+                lines.append("#\(player.numberText) \(player.name)\t\(player.primaryPosition.shortName)\t\(value.putouts)\t\(value.assists)\t\(value.errors)\t\(value.doublePlays)\t\(value.catcherCaughtStealingText)\t\(value.passedBallsText)")
             }
         }
 
@@ -803,11 +803,8 @@ struct GameExportService {
         return recorded.isEmpty ? team.players.filter { $0.primaryPosition == .pitcher } : recorded
     }
 
-    private func fieldingPlayers(for team: Team) -> [Player] {
-        let recorded = team.players.filter {
-            let line = game.fielding[$0.id, default: FieldingLine()]
-            return line.putouts + line.assists + line.errors + line.doublePlays > 0
-        }
+    private func fieldingPlayers(for team: Team, lines: [UUID: FieldingLine]) -> [Player] {
+        let recorded = team.players.filter { lines[$0.id, default: FieldingLine()] != FieldingLine() }
         if !recorded.isEmpty { return recorded }
         let ids = team.id == game.awayTeam.id
             ? (game.awayFieldingPlayerIDs ?? game.awayBattingOrderIDs)

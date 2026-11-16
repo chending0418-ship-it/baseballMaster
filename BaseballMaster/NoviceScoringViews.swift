@@ -286,7 +286,7 @@ struct RunnerEventFlowSheet: View {
                         dismiss()
                     }
                 }
-            } else if let selectedKind, selectedKind.group == .out, store.game.outs == 2 {
+            } else if let selectedKind, selectedKind.group == .out, selectedKind != .caughtStealing, store.game.outs == 2 {
                 HalfEndingRunnerSheet(runners: store.suggestedRunnerEventDecisions(for: selectedKind), allowsScoring: selectedKind != .forceOut) { outID, scorers in
                     guard let decisions = store.halfEndingRunnerDecisions(for: selectedKind, outID: outID, scorerIDs: scorers) else { return }
                     if store.runnerEventNeedsTimingDecision(selectedKind, decisions: decisions) {
@@ -299,11 +299,14 @@ struct RunnerEventFlowSheet: View {
                 RunnerResolutionSheet(
                     decisions: store.suggestedRunnerEventDecisions(for: selectedKind),
                     availableDestinations: store.availableDestinations,
-                    title: "跑者现在在哪？",
-                    message: "系统给出了常见去向；按现场实际位置点一下即可修改。",
+                    title: selectedKind == .caughtStealing ? "盗垒出局" : (selectedKind == .passedBall ? "捕逸 PB" : "跑者现在在哪？"),
+                    message: selectedKind == .caughtStealing
+                        ? "选出局跑者和盗垒目标，再核对捕手与接球触杀者。"
+                        : (selectedKind == .passedBall ? "核对漏球的捕手和各跑者的实际去向。" : "系统给出了常见去向；按现场实际位置点一下即可修改。"),
                     confirmTitle: "确认跑者变化",
-                    errorFielders: store.activeFielders,
-                    errorResponsibility: selectedKind == .defensiveErrorAdvance ? $errorResponsibility : nil
+                    fielders: store.activeFielders,
+                    errorResponsibility: selectedKind == .defensiveErrorAdvance ? $errorResponsibility : nil,
+                    defenseKind: selectedKind
                 ) { decisions in
                     if store.runnerEventNeedsTimingDecision(selectedKind, decisions: decisions) {
                         pendingTimingDecisions = decisions
@@ -349,7 +352,7 @@ struct RunnerEventFlowSheet: View {
                                 selectedKind = kind
                             } label: {
                                 HStack {
-                                    Text(kind.rawValue)
+                                    Text(kind.title)
                                         .font(.system(size: 16, weight: .bold))
                                         .foregroundStyle(BMTheme.navy)
                                     Spacer()
@@ -379,6 +382,132 @@ struct RunnerEventFlowSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+struct RunnerPassedBallPicker: View {
+    let fielders: [Player]
+    @Binding var catcherID: UUID?
+
+    var body: some View {
+        LabeledContent("捕逸捕手") {
+            Picker("捕逸捕手", selection: $catcherID) {
+                Text("待确认").tag(nil as UUID?)
+                ForEach(fielders.filter { $0.primaryPosition == .catcher }) { catcher in
+                    Text(catcher.compactName).tag(Optional(catcher.id))
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(BMTheme.green)
+            .accessibilityIdentifier("runner-passed-ball-catcher")
+        }
+    }
+}
+
+struct RunnerCaughtStealingPicker: View {
+    private enum Receiver: Hashable {
+        case pending, noCatcherAssist, fielder(UUID)
+    }
+
+    @Binding var decision: RunnerDecision
+    let fielders: [Player]
+    @State private var chosenCatcherID: UUID?
+
+    private var catchers: [Player] { fielders.filter { $0.primaryPosition == .catcher } }
+    private var eligibleTargets: [StealTarget] {
+        switch decision.destination {
+        case .out, .score: return decision.stealTargets
+        case .base(let base): return decision.stealTargets.filter { $0.rawValue <= base.rawValue }
+        case .hold: return []
+        }
+    }
+    private var credit: (catcher: UUID, receiver: UUID, target: StealTarget)? {
+        guard case .caughtStealing(let catcher, let receiver, let target) = decision.defense else { return nil }
+        return (catcher, receiver, target)
+    }
+    private var catcherID: UUID? { credit?.catcher ?? chosenCatcherID ?? (catchers.count == 1 ? catchers.first?.id : nil) }
+    private var receiverTitle: String { decision.destination == .out ? "接球触杀者" : "接球失误者（原可阻杀）" }
+    private var receiver: Binding<Receiver> {
+        Binding {
+            if decision.defense == .noCatcherAssist { return .noCatcherAssist }
+            if let credit { return .fielder(credit.receiver) }
+            return .pending
+        } set: { selection in
+            switch selection {
+            case .pending: decision.defense = nil
+            case .noCatcherAssist: decision.defense = .noCatcherAssist
+            case .fielder(let id):
+                guard let catcherID, let target = credit?.target ?? eligibleTargets.first else { return }
+                decision.defense = .caughtStealing(catcherID: catcherID, receiverID: id, target: target)
+            }
+        }
+    }
+
+    var body: some View {
+        if !eligibleTargets.isEmpty {
+            if catchers.isEmpty {
+                Text("当时阵容缺少捕手，守备归属可以稍后补记。")
+                    .font(.footnote)
+                    .foregroundStyle(BMTheme.secondaryText)
+            } else {
+                if catchers.count > 1 {
+                    LabeledContent("传球捕手") {
+                        Picker("传球捕手", selection: Binding(
+                            get: { catcherID },
+                            set: { id in
+                                chosenCatcherID = id
+                                if let id, let credit, id != credit.receiver {
+                                    decision.defense = .caughtStealing(catcherID: id, receiverID: credit.receiver, target: credit.target)
+                                } else if decision.defense != .noCatcherAssist {
+                                    decision.defense = nil
+                                }
+                            }
+                        )) {
+                            Text("待确认").tag(nil as UUID?)
+                            ForEach(catchers) { Text($0.compactName).tag(Optional($0.id)) }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .tint(BMTheme.green)
+                        .accessibilityIdentifier("runner-steal-catcher")
+                    }
+                } else if let catcher = catchers.first {
+                    LabeledContent("传球捕手", value: catcher.compactName)
+                }
+            }
+            if decision.destination == .out || catcherID != nil {
+                LabeledContent(receiverTitle) {
+                    Picker(receiverTitle, selection: receiver) {
+                        Text(decision.destination == .out ? "待确认" : "未记接球失误").tag(Receiver.pending)
+                        if decision.destination == .out { Text("无捕手助杀").tag(Receiver.noCatcherAssist) }
+                        if let catcherID {
+                            ForEach(fielders.filter { $0.id != catcherID }) {
+                                Text("\($0.primaryPosition.fullName) · \($0.compactName)").tag(Receiver.fielder($0.id))
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .tint(BMTheme.green)
+                    .accessibilityIdentifier("runner-steal-receiver")
+                }
+            }
+            if let credit {
+                LabeledContent("盗垒目标") {
+                    Picker("盗垒目标", selection: Binding(
+                        get: { credit.target },
+                        set: { decision.defense = .caughtStealing(catcherID: credit.catcher, receiverID: credit.receiver, target: $0) }
+                    )) {
+                        ForEach(eligibleTargets, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .tint(BMTheme.green)
+                    .accessibilityIdentifier("runner-steal-target")
                 }
             }
         }

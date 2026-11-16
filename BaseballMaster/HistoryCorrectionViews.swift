@@ -312,6 +312,7 @@ private struct HistoryOperationEditor: View {
     @State private var illegalPenaltyApplied = true
     @State private var runnerKind = RunnerEventKind.stolenBase
     @State private var runnerErrorResponsibility: RunnerErrorResponsibility?
+    @State private var passedBallCatcherID: UUID?
     @State private var moves: [RunnerDecision] = []
     @State private var defense: DefensivePlay?
     @State private var errorPosition = FieldPosition.shortstop
@@ -444,7 +445,18 @@ private struct HistoryOperationEditor: View {
                     }
                     Text("修改已有击球时保留一次打席与一球；附加失误保留有效安打。请逐一核对实际进垒。").font(.caption)
                 }
-                if mode == "跑者事件" { Picker("原因", selection: $runnerKind) { ForEach(RunnerEventKind.allCases) { Text($0.rawValue).tag($0) } } }
+                if mode == "跑者事件" {
+                    Picker("原因", selection: Binding(
+                        get: { runnerKind },
+                        set: { kind in
+                            guard kind != runnerKind else { return }
+                            runnerKind = kind
+                            for index in moves.indices { moves[index].defense = nil }
+                            passedBallCatcherID = nil
+                        }
+                    )) { ForEach(RunnerEventKind.allCases) { Text($0.title).tag($0) } }
+                    if runnerKind == .passedBall { RunnerPassedBallPicker(fielders: fielders, catcherID: $passedBallCatcherID) }
+                }
                 if mode == "跑者事件", runnerKind == .defensiveErrorAdvance {
                     RunnerErrorPicker(fielders: fielders, selection: $runnerErrorResponsibility)
                 }
@@ -459,8 +471,14 @@ private struct HistoryOperationEditor: View {
                 Section("实际跑者去向") {
                     Button("按预览局面重新关联跑者") { resetMoves() }
                     ForEach($moves) { $move in
-                        Picker("\(move.origin.title) · \(move.player.compactName)", selection: $move.destination) {
+                        Picker("\(move.origin.title) · \(move.player.compactName)", selection: Binding(
+                            get: { move.destination },
+                            set: { move.destination = $0; move.defense = nil }
+                        )) {
                             ForEach([RunnerDestination.hold, .base(.first), .base(.second), .base(.third), .score, .out], id: \.self) { Text($0.title).tag($0) }
+                        }
+                        if mode == "跑者事件", runnerKind == .caughtStealing {
+                            RunnerCaughtStealingPicker(decision: $move, fielders: fielders)
                         }
                     }
                     if needsTiming {
@@ -544,6 +562,10 @@ private struct HistoryOperationEditor: View {
             case .play(let o, let d, let m, let t): mode = "击球结果"; outcome = o; defense = d; moves = m; timing = t
             case .runner(let k, let m, let t, let responsibility):
                 mode = "跑者事件"; runnerKind = k; moves = m; timing = t; runnerErrorResponsibility = responsibility
+                passedBallCatcherID = m.compactMap { move -> UUID? in
+                    if case .passedBall(let id) = move.defense { return id }
+                    return nil
+                }.first
             case .pitcher(let p): mode = "换投"; incoming = p
             case .batter(let p): mode = "代打"; incoming = p
             case .pinchRunner(let b, let p): mode = "代跑"; base = b; incoming = p
@@ -623,7 +645,10 @@ private struct HistoryOperationEditor: View {
                                         illegalResult == "击球结果" ? moves : nil, effectiveTiming, illegalPenaltyApplied)
             case "跑者事件":
                 if runnerKind == .defensiveErrorAdvance && runnerErrorResponsibility == nil { issue = "请选择失误责任人或标记待确认。"; return }
-                command = .runner(runnerKind, moves, effectiveTiming, responsibility: runnerKind == .defensiveErrorAdvance ? runnerErrorResponsibility : nil)
+                let decisions = runnerKind == .passedBall
+                    ? RunnerDecision.assigningPassedBall(to: moves, catcherID: passedBallCatcherID)
+                    : moves
+                command = .runner(runnerKind, decisions, effectiveTiming, responsibility: runnerKind == .defensiveErrorAdvance ? runnerErrorResponsibility : nil)
             case "仅修正局面": command = .situation(situation!)
             case "补充说明":
                 guard !supplementalNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { issue = "请填写补充说明。"; return }

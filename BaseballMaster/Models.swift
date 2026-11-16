@@ -609,6 +609,9 @@ struct FieldingLine: Equatable, Codable {
     var assists = 0
     var errors = 0
     var doublePlays = 0
+    // Filled from attributed runner events by GameState.reportFielding.
+    var catcherCaughtStealing: Int? = nil
+    var passedBalls: Int? = nil
 }
 
 enum Base: Int, CaseIterable, Hashable, Codable {
@@ -744,6 +747,14 @@ enum RunnerEventKind: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
+    var title: String {
+        switch self {
+        case .caughtStealing: "盗垒出局"
+        case .passedBall: "捕逸（捕手漏球）"
+        default: rawValue
+        }
+    }
+
     var shortTitle: String {
         switch self {
         case .stolenBase: "偷垒"
@@ -751,7 +762,7 @@ enum RunnerEventKind: String, CaseIterable, Identifiable, Codable {
         case .delayedSteal: "延迟盗垒"
         case .relayAdvance: "转传进垒"
         case .defensiveErrorAdvance: "失误进垒"
-        case .caughtStealing: "跑垒出局"
+        case .caughtStealing: "盗垒出局"
         case .pickoff: "牵制出局"
         case .tagOut: "触杀"
         case .forceOut: "封杀"
@@ -764,7 +775,7 @@ enum RunnerEventKind: String, CaseIterable, Identifiable, Codable {
         case .runnerHitByBall: "跑者中球"
         case .coachAssistance: "帮助跑者"
         case .wildPitch: "球太偏"
-        case .passedBall: "捕手漏球"
+        case .passedBall: "捕逸 PB"
         case .uncertainLooseBall: "分不清"
         case .balk: "投手犯规"
         }
@@ -1104,17 +1115,63 @@ enum RunnerDestination: Hashable, Codable {
     }
 }
 
+enum StealTarget: Int, CaseIterable, Hashable, Codable {
+    case second = 2, third, home
+
+    var title: String {
+        switch self {
+        case .second: "二垒"
+        case .third: "三垒"
+        case .home: "本垒"
+        }
+    }
+}
+
+enum RunnerDefenseCredit: Hashable, Codable {
+    case noCatcherAssist
+    case caughtStealing(catcherID: UUID, receiverID: UUID, target: StealTarget)
+    case passedBall(catcherID: UUID)
+}
+
 struct RunnerDecision: Identifiable, Hashable, Codable {
     let id: UUID
     let player: Player
     let origin: RunnerOrigin
     var destination: RunnerDestination
+    var defense: RunnerDefenseCredit?
 
-    init(player: Player, origin: RunnerOrigin, destination: RunnerDestination) {
+    var advances: Bool {
+        guard case .base(let origin) = origin else { return false }
+        switch destination {
+        case .score: return true
+        case .base(let target): return target.rawValue > origin.rawValue
+        case .hold, .out: return false
+        }
+    }
+
+    static func assigningPassedBall(to decisions: [RunnerDecision], catcherID: UUID?) -> [RunnerDecision] {
+        var result = decisions.map { decision in
+            var copy = decision
+            copy.defense = nil
+            return copy
+        }
+        if let catcherID, let index = result.firstIndex(where: \.advances) {
+            result[index].defense = .passedBall(catcherID: catcherID)
+        }
+        return result
+    }
+
+    var stealTargets: [StealTarget] {
+        guard case .base(let base) = origin else { return [] }
+        return StealTarget.allCases.filter { $0.rawValue > base.rawValue }
+    }
+
+    init(player: Player, origin: RunnerOrigin, destination: RunnerDestination, defense: RunnerDefenseCredit? = nil) {
         self.id = player.id
         self.player = player
         self.origin = origin
         self.destination = destination
+        self.defense = defense
     }
 }
 
@@ -1182,6 +1239,7 @@ struct RecordedRunnerMovement: Equatable, Codable {
     let playerID: UUID
     let origin: String
     let destination: String
+    var defense: RunnerDefenseCredit? = nil
 }
 
 struct RecordedBaseOccupancy: Equatable, Codable {

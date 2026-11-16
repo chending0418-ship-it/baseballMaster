@@ -1538,12 +1538,14 @@ struct CustomDefensiveRouteSheet: View {
 struct RunnerResolutionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var decisions: [RunnerDecision]
+    @State private var passedBallCatcherID: UUID?
     let availableDestinations: (RunnerDecision) -> [RunnerDestination]
     let title: String
     let message: String
     let confirmTitle: String
-    let errorFielders: [Player]
+    let fielders: [Player]
     let errorResponsibility: Binding<RunnerErrorResponsibility?>?
+    let defenseKind: RunnerEventKind?
     let onConfirm: ([RunnerDecision]) -> Void
 
     init(
@@ -1552,8 +1554,9 @@ struct RunnerResolutionSheet: View {
         title: String = "确认跑者",
         message: String = "系统已根据结果给出建议，请确认每名跑者。",
         confirmTitle: String = "确认跑者结果",
-        errorFielders: [Player] = [],
+        fielders: [Player] = [],
         errorResponsibility: Binding<RunnerErrorResponsibility?>? = nil,
+        defenseKind: RunnerEventKind? = nil,
         onConfirm: @escaping ([RunnerDecision]) -> Void
     ) {
         _decisions = State(initialValue: decisions)
@@ -1561,8 +1564,11 @@ struct RunnerResolutionSheet: View {
         self.title = title
         self.message = message
         self.confirmTitle = confirmTitle
-        self.errorFielders = errorFielders
+        self.fielders = fielders
         self.errorResponsibility = errorResponsibility
+        self.defenseKind = defenseKind
+        let catchers = fielders.filter { $0.primaryPosition == .catcher }
+        _passedBallCatcherID = State(initialValue: catchers.count == 1 ? catchers.first?.id : nil)
         self.onConfirm = onConfirm
     }
 
@@ -1582,7 +1588,10 @@ struct RunnerResolutionSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
 
                     if let errorResponsibility {
-                        BMCard { RunnerErrorPicker(fielders: errorFielders, selection: errorResponsibility) }
+                        BMCard { RunnerErrorPicker(fielders: fielders, selection: errorResponsibility) }
+                    }
+                    if defenseKind == .passedBall {
+                        BMCard { RunnerPassedBallPicker(fielders: fielders, catcherID: $passedBallCatcherID) }
                     }
 
                     if hasBaseConflict {
@@ -1635,7 +1644,10 @@ struct RunnerResolutionSheet: View {
                                     HStack(spacing: 8) {
                                         ForEach(availableDestinations(decision), id: \.self) { destination in
                                             Button {
-                                                decision.destination = destination
+                                                if decision.destination != destination {
+                                                    decision.destination = destination
+                                                    decision.defense = nil
+                                                }
                                             } label: {
                                                 Text(destination.title)
                                                     .font(.system(size: 13, weight: .bold))
@@ -1649,6 +1661,9 @@ struct RunnerResolutionSheet: View {
                                         }
                                     }
                                 }
+                                if defenseKind == .caughtStealing {
+                                    RunnerCaughtStealingPicker(decision: $decision, fielders: fielders)
+                                }
                             }
                         }
                     }
@@ -1657,7 +1672,9 @@ struct RunnerResolutionSheet: View {
             }
             .safeAreaInset(edge: .bottom) {
                 Button(confirmTitle) {
-                    onConfirm(decisions)
+                    onConfirm(defenseKind == .passedBall
+                              ? RunnerDecision.assigningPassedBall(to: decisions, catcherID: passedBallCatcherID)
+                              : decisions)
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.horizontal, 18)
@@ -1680,6 +1697,8 @@ struct RunnerResolutionSheet: View {
 
     private var confirmDisabled: Bool {
         hasBaseConflict || (errorResponsibility.map { $0.wrappedValue == nil } ?? false)
+            || (defenseKind == .caughtStealing && !decisions.contains { $0.destination == .out || $0.defense != nil })
+            || (defenseKind == .passedBall && !decisions.contains(where: \.advances))
     }
 
     private func destinationColor(_ destination: RunnerDestination) -> Color {

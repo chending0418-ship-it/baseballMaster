@@ -393,7 +393,8 @@ struct StatisticsMetricsGrid: View {
         case .fielding:
             return [("守备率 FPCT", f.percentage.map(statText) ?? "—"),
                     ("守备机会 TC", "\(f.chances)"), ("刺杀 PO", "\(f.putouts)"),
-                    ("助杀 A", "\(f.assists)"), ("失误 E", "\(f.errors)"), ("参与双杀 DP", "\(f.doublePlays)")]
+                    ("助杀 A", "\(f.assists)"), ("失误 E", "\(f.errors)"), ("参与双杀 DP", "\(f.doublePlays)"),
+                    ("捕手阻杀 CCS", f.catcherCaughtStealingText), ("捕逸 PB", f.passedBallsText)]
         }
     }
 
@@ -409,7 +410,7 @@ struct StatisticsMetricsGrid: View {
                     Text("ERA 按 7 局计算；局数小数位表示出局数，0.1 为 1 人出局。")
                         .font(.caption).foregroundStyle(BMTheme.secondaryText)
                 } else if category == .fielding {
-                    Text("守备率 =（刺杀 + 助杀）÷ 守备机会；DP 为球员参与次数。")
+                    Text("守备率 =（刺杀 + 助杀）÷ 守备机会。CCS 与 PB 只汇总已确认捕手归属的事件。")
                         .font(.caption).foregroundStyle(BMTheme.secondaryText)
                 }
                 Text("“—”表示没有计算该比率所需的记录。")
