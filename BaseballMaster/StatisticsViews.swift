@@ -14,6 +14,7 @@ struct StatsOverviewView: View {
     @State private var modeFilter: GameMode?
     @State private var selectedGameIDs: Set<UUID>?
     @State private var showGameFilter = false
+    @State private var analysis: GameAnalysisSource?
     @ScaledMetric(relativeTo: .body) private var metricWidth = 92
 
     init(initialTeamID: UUID? = nil) { _selectedTeamID = State(initialValue: initialTeamID) }
@@ -49,6 +50,16 @@ struct StatsOverviewView: View {
                     scopeSelection(team: team, selectedCount: playerGameIDs.count, eligibleCount: eligibleGames.count)
                     GameModeFilter(selection: $modeFilter)
                     teamSummary(summary)
+                    if !summary.games.isEmpty {
+                        let filtered = effectiveGameIDs != nil || modeFilter != nil
+                        Button {
+                            analysis = GameAnalysisSource(summary: summary, teamName: team.name, year: seasonID, filtered: filtered)
+                        } label: {
+                            Label(filtered ? "分析筛选比赛" : "分析全年比赛", systemImage: "text.document")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .accessibilityIdentifier("open-season-analysis")
+                    }
                     Text("仅统计已结束的本队比赛；观赛、练习和进行中比赛不计入。")
                         .font(.footnote)
                         .foregroundStyle(BMTheme.secondaryText)
@@ -150,6 +161,7 @@ struct StatsOverviewView: View {
                 selectedGameIDs = valid.isEmpty ? [] : (valid == availableIDs ? nil : valid)
             }
         }
+        .sheet(item: $analysis) { GameAnalysisView(source: $0) }
         .onChange(of: selectedTeamID) { _ in selectedGameIDs = nil }
         .onChange(of: selectedSeasonID) { _ in selectedGameIDs = nil }
         .onChange(of: modeFilter) { _ in selectedGameIDs = nil }

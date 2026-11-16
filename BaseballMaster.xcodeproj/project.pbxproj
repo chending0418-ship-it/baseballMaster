@@ -14,6 +14,7 @@
 		A10000000000000000000042 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000042 /* LaunchScreen.storyboard */; };
 		A10000000000000000000041 /* SituationRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000041 /* SituationRecording.swift */; };
 		A10000000000000000000040 /* BattedBall.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000040 /* BattedBall.swift */; };
+		A10000000000000000000A01 /* GameAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000A01 /* GameAnalysis.swift */; };
 		A10000000000000000000001 /* BaseballMasterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001 /* BaseballMasterApp.swift */; };
 		A10000000000000000000002 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* DesignSystem.swift */; };
 		A10000000000000000000003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003 /* Models.swift */; };
@@ -82,6 +83,7 @@
 		F10000000000000000000042 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		F10000000000000000000041 /* SituationRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SituationRecording.swift; sourceTree = "<group>"; };
 		F10000000000000000000040 /* BattedBall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattedBall.swift; sourceTree = "<group>"; };
+		F10000000000000000000A01 /* GameAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameAnalysis.swift; sourceTree = "<group>"; };
 		F10000000000000000000001 /* BaseballMasterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseballMasterApp.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		F10000000000000000000003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -171,6 +173,7 @@
 				F10000000000000000000043 /* ConfigurableLaunchScreen.swift */,
 				F10000000000000000000042 /* LaunchScreen.storyboard */,
 				F10000000000000000000011 /* Assets.xcassets */,
+				F10000000000000000000A01 /* GameAnalysis.swift */,
 				F10000000000000000000001 /* BaseballMasterApp.swift */,
 				F10000000000000000000002 /* DesignSystem.swift */,
 				F10000000000000000000003 /* Models.swift */,
@@ -378,6 +381,7 @@
 				A10000000000000000000044 /* BulkRosterImport.swift in Sources */,
 				A10000000000000000000045 /* BulkRosterImportView.swift in Sources */,
 				A10000000000000000000043 /* ConfigurableLaunchScreen.swift in Sources */,
+				A10000000000000000000A01 /* GameAnalysis.swift in Sources */,
 				A10000000000000000000001 /* BaseballMasterApp.swift in Sources */,
 				A10000000000000000000002 /* DesignSystem.swift in Sources */,
 				A10000000000000000000003 /* Models.swift in Sources */,
@@ -507,7 +511,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 3.1.5;
+				MARKETING_VERSION = 3.1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -536,7 +540,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 3.1.5;
+				MARKETING_VERSION = 3.1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jasonchen.baseballmaster;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

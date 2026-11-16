@@ -14,6 +14,7 @@ struct BoxScoreView: View {
     @State private var dateEditingGame: StoredGame?
     @State private var shareURLs: [URL] = []
     @State private var exportErrorMessage: String?
+    @State private var analysis: GameAnalysisSource?
     private let sections = ["打击", "投手", "守备", "记录"]
 
     var body: some View {
@@ -29,6 +30,13 @@ struct BoxScoreView: View {
                     BMCard { LocalMatchShareView(game: stored) }
                 }
                 LineScoreTable(game: store.game)
+                if let stored = store.activeStoredGame, stored.status == .completed, stored.state.isFinal {
+                    Button { analysis = GameAnalysisSource(single: stored) } label: {
+                        Label("比赛分析", systemImage: "text.document")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("open-game-analysis")
+                }
                 if store.canEditCurrentMatch { Button { showHistoryCorrection = true } label: { Label("纠正记录", systemImage: "clock.arrow.circlepath") }
                     .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-history-correction") }
                 if store.game.statisticsIncomplete == true {
@@ -100,6 +108,7 @@ struct BoxScoreView: View {
             }
         }
         .sheet(isPresented: $showHistoryCorrection) { HistoryCorrectionView().environmentObject(store) }
+        .sheet(item: $analysis) { GameAnalysisView(source: $0) }
         .sheet(item: $dateEditingGame) { stored in
             GameDateEditor(game: stored).environmentObject(store)
         }
@@ -1260,6 +1269,7 @@ struct GameFilterSheet: View {
                                         .font(.system(size: 14, weight: .black, design: .rounded))
                                         .foregroundStyle(BMTheme.navy)
                                 }
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("stats-select-game-\(game.id)")

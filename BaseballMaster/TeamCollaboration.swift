@@ -394,6 +394,19 @@ actor TeamServiceClient: TeamDirectoryService {
         guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode
             let code = (try? JSONDecoder().decode(TeamServiceProblem.self, from: data))?.error.code
+            if path == "game-analysis" || path.hasPrefix("game-analysis/") {
+                let message: String
+                switch (status, code) {
+                case (_, "analysis_expired"): message = "这份分析已过期，请重新生成。"
+                case (_, "analysis_conflict"): message = "比赛范围已改变，请重新生成。"
+                case (_, "analysis_limit"): message = "今日比赛分析次数已用完。"
+                case (429, _): message = "比赛分析请求较多，请稍后重试。"
+                case (400, _), (413, _): message = "当前比赛资料超过处理范围或无法读取，请缩小筛选范围后重试。"
+                case (404, _), (_, "analysis_unavailable"): message = "比赛分析服务暂未开放。"
+                default: message = "暂时无法生成比赛分析，请稍后重试。"
+                }
+                throw TeamServiceError.response(status ?? 503, message)
+            }
             let message: String
             switch status {
             case 400, 413:

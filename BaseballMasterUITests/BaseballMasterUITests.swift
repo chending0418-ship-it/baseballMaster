@@ -4207,4 +4207,50 @@ extension BaseballMasterUITests {
         XCTAssertEqual(total.label, "打击总垒数 TB：7")
         captureHistory(app, name: "3.1.3-球队总垒数")
     }
+
+    func testGameAnalysisGeneratesFromSingleYearAndFilteredResults() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["BM_GAME_ANALYSIS_LOCAL_TEST"] = UUID().uuidString
+
+        func generate(from entry: String, title: String, checkShare: Bool = false) {
+            let open = app.buttons[entry]
+            revealStatisticsControl(open, in: app)
+            XCTAssertTrue(open.isHittable)
+            open.tap()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
+            app.buttons["generate-game-analysis"].tap()
+            let pageCount = app.staticTexts["report-pdf-page-count"]
+            XCTAssertTrue(pageCount.waitForExistence(timeout: 20))
+            XCTAssertTrue(pageCount.label.contains("A4 竖版"))
+            XCTAssertTrue(app.descendants(matching: .any)["report-pdf-document"].firstMatch.exists)
+            captureHistory(app, name: "比赛分析PDF-\(title)")
+            if checkShare {
+                app.buttons["share-report-pdf"].tap()
+                XCTAssertTrue(app.buttons["分享文字"].waitForExistence(timeout: 5))
+                app.buttons["分享 PDF"].tap()
+                XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
+            } else {
+                app.buttons["close-report-pdf"].tap()
+            }
+        }
+
+        app.launchArguments = ["--v30-date-preview"]
+        app.launch()
+        generate(from: "open-game-analysis", title: "比赛分析")
+        app.terminate()
+
+        app.launchArguments = ["--v22-statistics-preview"]
+        app.launch()
+        generate(from: "open-season-analysis", title: "全年比赛分析")
+        let filter = app.buttons["stats-open-game-filter"]
+        revealStatisticsControl(filter, in: app)
+        filter.tap()
+        let choices = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "stats-select-game-"))
+        XCTAssertEqual(choices.count, 3)
+        choices.firstMatch.tap()
+        XCTAssertEqual(choices.firstMatch.value as? String, "未选择")
+        app.buttons["stats-apply-game-filter"].tap()
+        XCTAssertTrue(app.staticTexts["stats-game-scope"].label.contains("2 / 3"))
+        generate(from: "open-season-analysis", title: "筛选比赛分析", checkShare: true)
+    }
 }
