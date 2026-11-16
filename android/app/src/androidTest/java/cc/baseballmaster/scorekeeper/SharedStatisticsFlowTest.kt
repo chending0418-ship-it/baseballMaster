@@ -3,12 +3,14 @@ package cc.baseballmaster.scorekeeper
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -122,8 +124,8 @@ class SharedStatisticsFlowTest {
             inst.runOnMainSync {
                 val model = ViewModelProvider(activity.activity)[ScorekeeperViewModel::class.java]
                 activity.activity.setContent {
-                    MaterialTheme {
-                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                    BaseballTheme {
+                        Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp)
                             .semantics { testTagsAsResourceId = true }) {
                             StatisticsScreen(model, sharing, localRosters = emptyList(), localGames = emptyList())
                         }
