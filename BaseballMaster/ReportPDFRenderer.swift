@@ -5,6 +5,9 @@ import UIKit
 final class ReportPDFCanvas {
     nonisolated static let pageSize = CGSize(width: 842, height: 595)
     nonisolated static let portraitPageSize = CGSize(width: 595, height: 842)
+    enum Style { case standard, scorekeeper }
+
+    private let style: Style
     private let size: CGSize
     private let context: UIGraphicsPDFRendererContext
     private let kind: String
@@ -12,14 +15,23 @@ final class ReportPDFCanvas {
     private let generatedAt: Date
     private var pageNumber = 0
     private(set) var y: CGFloat = 0
-    private let margin: CGFloat = 36
-    private var bottom: CGFloat { size.height - 42 }
+    private var margin: CGFloat { style == .scorekeeper ? 54 : 36 }
+    private var bottom: CGFloat { size.height - (style == .scorekeeper ? 67 : 42) }
+    private var continuationTop: CGFloat { style == .scorekeeper ? 105 : 70 }
     private var width: CGFloat { size.width - margin * 2 }
-    private let navy = UIColor(red: 0.06, green: 0.16, blue: 0.25, alpha: 1)
-    private let green = UIColor(red: 0.10, green: 0.43, blue: 0.32, alpha: 1)
+    private var navy: UIColor {
+        style == .scorekeeper ? UIColor(red: 11/255, green: 25/255, blue: 51/255, alpha: 1)
+            : UIColor(red: 0.06, green: 0.16, blue: 0.25, alpha: 1)
+    }
+    private var green: UIColor {
+        style == .scorekeeper ? UIColor(red: 9/255, green: 42/255, blue: 42/255, alpha: 1)
+            : UIColor(red: 0.10, green: 0.43, blue: 0.32, alpha: 1)
+    }
+    private let metricSurface = UIColor(red: 0.94, green: 0.96, blue: 0.95, alpha: 1)
     private let secondary = UIColor(red: 0.36, green: 0.43, blue: 0.48, alpha: 1)
 
-    private init(context: UIGraphicsPDFRendererContext, kind: String, contextLabel: String, generatedAt: Date, size: CGSize) {
+    private init(context: UIGraphicsPDFRendererContext, kind: String, contextLabel: String, generatedAt: Date, size: CGSize, style: Style) {
+        self.style = style
         self.context = context
         self.kind = kind
         self.contextLabel = contextLabel
@@ -29,17 +41,17 @@ final class ReportPDFCanvas {
 
     static func render(
         kind: String, title: String, subtitle: String, generatedAt: Date = Date(),
-        pageSize: CGSize = ReportPDFCanvas.pageSize,
+        pageSize: CGSize = ReportPDFCanvas.pageSize, style: Style = .standard,
         content: (ReportPDFCanvas) -> Void
     ) -> Data {
         let format = UIGraphicsPDFRendererFormat()
         format.documentInfo = [kCGPDFContextTitle as String: title, kCGPDFContextAuthor as String: "BaseballMaster"]
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize), format: format)
         return renderer.pdfData { context in
-            let canvas = ReportPDFCanvas(context: context, kind: kind, contextLabel: title, generatedAt: generatedAt, size: pageSize)
+            let canvas = ReportPDFCanvas(context: context, kind: kind, contextLabel: title, generatedAt: generatedAt, size: pageSize, style: style)
             canvas.newPage()
-            canvas.paragraph(title, size: 25, bold: true)
-            canvas.paragraph(subtitle, size: 10, muted: true)
+            canvas.paragraph(title, size: style == .scorekeeper ? 29 : 25, bold: true)
+            canvas.paragraph(subtitle, size: style == .scorekeeper ? 11 : 10, muted: true)
             canvas.y += 8
             content(canvas)
         }
@@ -50,6 +62,10 @@ final class ReportPDFCanvas {
         pageNumber += 1
         UIColor.white.setFill()
         context.fill(CGRect(origin: .zero, size: size))
+        if style == .scorekeeper {
+            drawScorekeeperPage()
+            return
+        }
         draw("BASEBALLMASTER", x: margin, y: 20, width: 250, size: 11, bold: true, color: navy)
         draw(kind, x: size.width / 2, y: 20, width: size.width / 2 - margin, size: 10, bold: true, color: green, alignment: .right)
         green.setFill()
@@ -64,6 +80,37 @@ final class ReportPDFCanvas {
         y = pageNumber == 1 ? 62 : 70
     }
 
+    private func drawScorekeeperPage() {
+        drawBrandAsset("ReportScorekeeperIdentity", y: 40, height: 22)
+        draw(kind, x: size.width / 2, y: 45, width: width / 2, size: 10, bold: true, color: green, alignment: .right)
+        green.setFill()
+        context.fill(CGRect(x: margin, y: 73, width: width, height: 1))
+        UIColor(red: 0.83, green: 0.87, blue: 0.85, alpha: 1).setFill()
+        context.fill(CGRect(x: margin, y: size.height - 52, width: width, height: 0.5))
+        drawBrandAsset("ReportBaseballMasterSignoff", y: size.height - 44, height: 10)
+        draw("第 \(pageNumber) 页", x: size.width - margin - 90, y: size.height - 45,
+             width: 90, size: 9, color: secondary, alignment: .right)
+        if pageNumber > 1 {
+            draw(wrapped(contextLabel, width: width, size: 9, bold: false).first ?? "",
+                 x: margin, y: 81, width: width, size: 9, color: secondary)
+        }
+        y = pageNumber == 1 ? 91 : continuationTop
+    }
+
+    private func drawBrandAsset(_ name: String, y: CGFloat, height: CGFloat) {
+        guard let image = UIImage(named: name), image.size.height > 0 else { return }
+        let width = height * image.size.width / image.size.height
+        image.draw(in: CGRect(x: margin, y: y, width: width, height: height))
+    }
+
+    private func font(size: CGFloat, bold: Bool) -> UIFont {
+        if style == .scorekeeper,
+           let preferred = UIFont(name: bold ? "PingFangSC-Semibold" : "PingFangSC-Regular", size: size) {
+            return preferred
+        }
+        return bold ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size)
+    }
+
     static func dateText(_ date: Date, includesTime: Bool = false, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
@@ -74,13 +121,48 @@ final class ReportPDFCanvas {
 
     func paragraph(_ text: String, size: CGFloat = 10, bold: Bool = false, muted: Bool = false) {
         let lines = wrapped(text, width: width, size: size, bold: bold)
-        let leading = ceil(size * 1.5)
+        let leading = ceil(size * (style == .scorekeeper ? 1.65 : 1.5))
         for line in lines {
             ensure(leading)
             draw(line, x: margin, y: y, width: width, size: size, bold: bold, color: muted ? secondary : navy)
             y += leading
         }
         y += 7
+    }
+
+    func section(title: String, paragraphs: [String]) {
+        guard let first = paragraphs.first else { return }
+        let firstHeight = min(2, wrapped(first, width: width, size: 12, bold: false).count) * 20
+        ensure(CGFloat(firstHeight) + 37)
+        paragraph(title, size: 15, bold: true)
+        for text in paragraphs { paragraph(text, size: 12) }
+        y += 7
+    }
+
+    func highlight(title: String, detail: String) {
+        let padding: CGFloat = 14
+        let innerWidth = width - 2 * padding
+        let heading = wrapped(title, width: innerWidth, size: 15, bold: true)
+        let lines = wrapped(detail, width: innerWidth, size: 12, bold: false)
+        let height = 2 * padding + CGFloat(heading.count) * 22 + CGFloat(lines.count) * 20 + 3
+        guard height <= bottom - continuationTop else {
+            section(title: title, paragraphs: [detail])
+            return
+        }
+        ensure(height)
+        metricSurface.setFill()
+        context.fill(CGRect(x: margin, y: y, width: width, height: height))
+        var baseline = y + padding
+        for line in heading {
+            draw(line, x: margin + padding, y: baseline, width: innerWidth, size: 15, bold: true, color: green)
+            baseline += 22
+        }
+        baseline += 3
+        for line in lines {
+            draw(line, x: margin + padding, y: baseline, width: innerWidth, size: 12, color: navy)
+            baseline += 20
+        }
+        y += height + 17
     }
 
     /// Keeps a normal text record together and repeats its heading when an
@@ -110,24 +192,26 @@ final class ReportPDFCanvas {
             ensure(68)
             for (index, item) in values[start..<min(start + columns, values.count)].enumerated() {
                 let x = margin + CGFloat(index) * (cardWidth + gap)
-                UIColor(red: 0.94, green: 0.96, blue: 0.95, alpha: 1).setFill()
+                metricSurface.setFill()
                 context.fill(CGRect(x: x, y: y, width: cardWidth, height: 58))
-                let valueWidth = (item.1 as NSString).size(withAttributes: [.font: UIFont.boldSystemFont(ofSize: 21)]).width
+                let numberFont = style == .scorekeeper ? UIFont(name: "Arial-BoldMT", size: 21) : nil
+                let valueWidth = (item.1 as NSString).size(withAttributes: [.font: numberFont ?? font(size: 21, bold: true)]).width
                 let valueSize = min(21, 21 * (cardWidth - 20) / max(1, valueWidth))
-                draw(item.1, x: x + 10, y: y + 8, width: cardWidth - 20, size: valueSize, bold: true, color: navy)
+                draw(item.1, x: x + 10, y: y + 8, width: cardWidth - 20, size: valueSize, bold: true, color: navy,
+                     fontOverride: numberFont?.withSize(valueSize))
                 draw(item.0, x: x + 10, y: y + 37, width: cardWidth - 20, size: 9, color: secondary)
             }
             y += 68
         }
     }
 
-    func table(title: String, headers: [String], rows: [[String]], weights: [CGFloat]? = nil, compact: Bool = false) {
+    func table(title: String, headers: [String], rows: [[String]], weights: [CGFloat]? = nil, compact: Bool = false, leftAlignedColumns: Set<Int> = [0]) {
         let columnWeights = weights ?? [3] + Array(repeating: 1, count: headers.count - 1)
         precondition(columnWeights.count == headers.count && rows.allSatisfy { $0.count == headers.count })
         let sum = columnWeights.reduce(0, +)
         let widths = columnWeights.map { width * $0 / sum }
-        let fontSize: CGFloat = 8.5
-        let leading: CGFloat = 12
+        let fontSize: CGFloat = style == .scorekeeper ? 11 : 8.5
+        let leading: CGFloat = style == .scorekeeper ? 17 : 12
         let padding: CGFloat = compact ? 3 : 5
         let headerHeight: CGFloat = compact ? 22 : 24
 
@@ -142,7 +226,8 @@ final class ReportPDFCanvas {
             var x = margin
             for index in headers.indices {
                 draw(headers[index], x: x + 5, y: y + 6, width: widths[index] - 10,
-                     size: 8, bold: true, color: .white, alignment: index == 0 ? .left : .center)
+                     size: style == .scorekeeper ? 10 : 8, bold: true, color: .white,
+                     alignment: leftAlignedColumns.contains(index) ? .left : .center)
                 x += widths[index]
             }
             y += headerHeight
@@ -191,7 +276,7 @@ final class ReportPDFCanvas {
                             draw(lines[index][lineIndex], x: x + 5,
                                  y: y + padding + CGFloat(lineIndex - offset) * leading,
                                  width: widths[index] - 10, size: fontSize, bold: total,
-                                 color: navy, alignment: index == 0 ? .left : .center)
+                                 color: navy, alignment: leftAlignedColumns.contains(index) ? .left : .center)
                         }
                     }
                     x += widths[index]
@@ -251,7 +336,7 @@ final class ReportPDFCanvas {
     }
 
     private func wrapped(_ text: String, width: CGFloat, size: CGFloat, bold: Bool) -> [String] {
-        let font = bold ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size)
+        let font = font(size: size, bold: bold)
         var result: [String] = []
         for paragraph in text.components(separatedBy: .newlines) {
             var line = ""
@@ -268,12 +353,13 @@ final class ReportPDFCanvas {
     }
 
     private func draw(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, size: CGFloat,
-                      bold: Bool = false, color: UIColor, alignment: NSTextAlignment = .left) {
+                      bold: Bool = false, color: UIColor, alignment: NSTextAlignment = .left,
+                      fontOverride: UIFont? = nil) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
         paragraph.lineBreakMode = .byClipping
         (text as NSString).draw(in: CGRect(x: x, y: y, width: width, height: size * 1.5), withAttributes: [
-            .font: bold ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size),
+            .font: fontOverride ?? font(size: size, bold: bold),
             .foregroundColor: color, .paragraphStyle: paragraph
         ])
     }

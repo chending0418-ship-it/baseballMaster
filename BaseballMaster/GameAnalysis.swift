@@ -130,7 +130,9 @@ struct GameAnalysisInput: Encodable {
 struct GameAnalysisSource: Identifiable {
     let id = UUID()
     let input: GameAnalysisInput
+    let title: String
     let subtitle: String
+    let metrics: [(String, String)]
     let names: [String: String]
     let teamNames: [String]
 
@@ -162,7 +164,13 @@ struct GameAnalysisSource: Identifiable {
                                  fielding: state.fielding[player.id] ?? FieldingLine()))
         }
         input = GameAnalysisInput(scope: .single, games: [.init(game, people: aliases, eventLimit: 18)], players: players)
-        subtitle = "\(state.awayTeam.shortName) \(state.awayScore)–\(state.homeScore) \(state.homeTeam.shortName)"
+        title = "\(state.awayTeam.shortName) \(state.awayScore)–\(state.homeScore) \(state.homeTeam.shortName)"
+        subtitle = game.dateText + " · 已结束"
+        metrics = [
+            ("比分（客 / 主）", "\(state.awayScore) / \(state.homeScore)"),
+            ("安打 H（客 / 主）", "\(state.awayHits) / \(state.homeHits)"),
+            ("失误 E（客 / 主）", "\(state.awayErrors) / \(state.homeErrors)")
+        ]
         names = labels
         teamNames = [state.awayTeam.shortName, state.homeTeam.shortName]
     }
@@ -183,7 +191,14 @@ struct GameAnalysisSource: Identifiable {
             return .init(game, people: people, eventLimit: 3)
         }
         input = GameAnalysisInput(scope: filtered ? .filtered : .season, games: games, players: players)
-        subtitle = "\(teamName) · \(year) 年 · \(games.count) 场"
+        title = teamName
+        subtitle = "\(year) 年 · \(filtered ? "所选" : "全年") \(games.count) 场已结束比赛"
+        metrics = [
+            ("比赛", "\(games.count)"),
+            ("胜 / 负 / 平", "\(summary.wins) / \(summary.losses) / \(summary.ties)"),
+            ("得分", "\(summary.runs)"),
+            ("失分", "\(summary.runsAllowed)")
+        ]
         names = labels
         teamNames = []
     }
@@ -248,36 +263,104 @@ extension TeamServiceClient {
     }
 }
 
+@MainActor
+struct GameAnalysisPDFReport {
+    let source: GameAnalysisSource
+    let report: GameAnalysisReport
+
+    private var mvp: (title: String, detail: String) {
+        if let mvp = report.mvp, let name = source.names[mvp.id] {
+            return (source.input.scope.mvpTitle + " · " + name, source.display(mvp.reason))
+        }
+        return (source.input.scope.mvpTitle, "现有记录不足以评选。")
+    }
+
+    private var playerGroups: [(name: String, rows: [[String]])] {
+        let evaluations = Dictionary(uniqueKeysWithValues: report.players.map { ($0.id, $0.evaluation) })
+        let grouped = Dictionary(grouping: source.input.players, by: \.side)
+        let headings = source.teamNames.isEmpty
+            ? [(side: 2, name: "本队球员")]
+            : source.teamNames.enumerated().map { (side: $0.offset, name: $0.element) }
+        return headings.compactMap { heading in
+            let rows = (grouped[heading.side] ?? []).compactMap { player -> [String]? in
+                guard let name = source.names[player.id], let evaluation = evaluations[player.id] else { return nil }
+                return [name, source.display(evaluation)]
+            }
+            return rows.isEmpty ? nil : (heading.name, rows)
+        }
+    }
+
+    private var disclosure: String {
+        let author = "AI 生成 · 请结合比赛记录核对"
+        return source.input.games.contains(where: \.incomplete)
+            ? author + "。部分比赛过程或统计记录不全。"
+            : author
+    }
+
+    func write() throws -> URL {
+        let data = ReportPDFCanvas.render(kind: source.input.scope.title, title: source.title,
+                                         subtitle: source.subtitle, pageSize: ReportPDFCanvas.portraitPageSize,
+                                         style: .scorekeeper) { canvas in
+            canvas.metrics(source.metrics)
+            canvas.paragraph(disclosure, size: 10, muted: true)
+            canvas.highlight(title: mvp.title, detail: mvp.detail)
+            canvas.section(title: "比赛综述", paragraphs: [source.display(report.overview)])
+            canvas.section(title: source.input.scope.situationsTitle, paragraphs: report.situations.map(source.display))
+            for group in playerGroups {
+                canvas.table(title: "球员评价 · " + group.name, headers: ["球员", "评价"], rows: group.rows,
+                             weights: [1, 2.5], compact: true, leftAlignedColumns: [0, 1])
+            }
+        }
+        return try ReportExportFile.write(data, name: source.title + " · " + source.input.scope.title)
+    }
+
+    var plainText: String {
+        var lines = [source.input.scope.title, source.title, source.subtitle, disclosure, "", mvp.title, mvp.detail,
+                     "", "比赛综述", source.display(report.overview)]
+        if !report.situations.isEmpty {
+            lines += ["", source.input.scope.situationsTitle]
+            lines += report.situations.map { "• " + source.display($0) }
+        }
+        for group in playerGroups {
+            lines += ["", "球员评价 · " + group.name]
+            for row in group.rows { lines += ["", row[0], row[1]] }
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
 struct GameAnalysisView: View {
-    private enum ReportSection: Hashable {
-        case report, players
+    private struct Document {
+        let url: URL
+        let plainText: String
     }
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let source: GameAnalysisSource
-    @State private var report: GameAnalysisReport?
-    @State private var section: ReportSection = .report
+    @State private var document: Document?
     @State private var generation: Task<Void, Never>?
     @State private var error: String?
     @State private var requestID = UUID()
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let report {
-                    reportPage(report)
-                } else {
+        Group {
+            if let document {
+                ReportPDFPreview(url: document.url, title: source.input.scope.title, plainText: document.plainText)
+            } else {
+                NavigationStack {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            Text(source.subtitle).font(.headline)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(source.title).font(.headline)
+                                Text(source.subtitle).font(.subheadline).foregroundStyle(BMTheme.secondaryText)
+                            }
                             if generation != nil {
                                 ProgressView("正在分析比赛…")
                             } else {
                                 Text("生成时会把比赛统计、关键局面和球员代号发送给 V-API。姓名在本机显示。")
                                     .foregroundStyle(BMTheme.secondaryText)
                                 if let error { Text(error).foregroundStyle(BMTheme.orange) }
-                                Button(error == nil ? "生成文字分析" : "重新生成") { generate() }
+                                Button(error == nil ? "生成比赛分析" : "重新生成") { generate() }
                                     .buttonStyle(PrimaryButtonStyle())
                                     .accessibilityIdentifier("generate-game-analysis")
                             }
@@ -286,177 +369,16 @@ struct GameAnalysisView: View {
                         .padding(BMTheme.horizontalPadding)
                         .frame(maxWidth: .infinity)
                     }
-                }
-            }
-            .bmScreenBackground()
-            .navigationTitle(source.input.scope.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
-                if let report {
-                    ToolbarItem(placement: .primaryAction) {
-                        ShareLink(item: plainText(report)) { Label("分享文字", systemImage: "square.and.arrow.up") }
+                    .bmScreenBackground()
+                    .navigationTitle(source.input.scope.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
                     }
                 }
             }
         }
         .onDisappear { generation?.cancel() }
-    }
-
-    private func reportPage(_ report: GameAnalysisReport) -> some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(source.subtitle)
-                        .font(.title2.bold().monospacedDigit())
-                        .foregroundStyle(BMTheme.navy)
-                        .accessibilityAddTraits(.isHeader)
-                    Text("AI 生成 · 请结合比赛记录核对")
-                        .font(.caption)
-                        .foregroundStyle(BMTheme.secondaryText)
-                }
-                if !report.players.isEmpty {
-                    if dynamicTypeSize.isAccessibilitySize {
-                        sectionPicker
-                            .pickerStyle(.menu)
-                            .frame(minHeight: 44, alignment: .leading)
-                    } else {
-                        sectionPicker.pickerStyle(.segmented)
-                    }
-                }
-            }
-            .frame(maxWidth: 600, alignment: .leading)
-            .padding(.horizontal, BMTheme.horizontalPadding)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity)
-            Divider().overlay(BMTheme.line)
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    switch section {
-                    case .report: reportContent(report)
-                    case .players: playerContent(report.players)
-                    }
-                }
-                .frame(maxWidth: 600, alignment: .leading)
-                .padding(BMTheme.horizontalPadding)
-                .frame(maxWidth: .infinity)
-            }
-            .id(section)
-        }
-    }
-
-    private var sectionPicker: some View {
-        Picker("查看报告", selection: $section) {
-            Text("比赛报告").tag(ReportSection.report)
-            Text("球员评价").tag(ReportSection.players)
-        }
-        .accessibilityIdentifier("game-analysis-section-picker")
-    }
-
-    @ViewBuilder private func reportContent(_ report: GameAnalysisReport) -> some View {
-        BMCard {
-            VStack(alignment: .leading, spacing: 6) {
-                heading(source.input.scope.mvpTitle)
-                if let mvp = report.mvp, let name = source.names[mvp.id] {
-                    Text(name)
-                        .font(.title3.bold())
-                        .foregroundStyle(BMTheme.navy)
-                    reportText(mvp.reason)
-                } else {
-                    Text("现有记录不足以评选。")
-                        .foregroundStyle(BMTheme.secondaryText)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-
-        VStack(alignment: .leading, spacing: 8) {
-            heading("比赛综述")
-            reportText(report.overview)
-        }
-
-        if !report.situations.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                heading(source.input.scope.situationsTitle)
-                ForEach(report.situations.indices, id: \.self) { index in
-                    if index > 0 { Divider().overlay(BMTheme.line) }
-                    reportText(report.situations[index])
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 12)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func playerContent(_ players: [GameAnalysisReport.Evaluation]) -> some View {
-        if source.teamNames.isEmpty {
-            evaluationList(players, title: "本队球员")
-        } else {
-            let sides = Dictionary(uniqueKeysWithValues: source.input.players.map { ($0.id, $0.side) })
-            let groups = Dictionary(grouping: players) { sides[$0.id, default: 2] }
-            ForEach(source.teamNames.indices, id: \.self) { side in
-                if let rows = groups[side] {
-                    evaluationList(rows, title: source.teamNames[side])
-                }
-            }
-        }
-    }
-
-    private func evaluationList(_ rows: [GameAnalysisReport.Evaluation], title: String) -> some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
-            heading(title)
-                .padding(.bottom, 8)
-            ForEach(rows) { row in
-                if let name = source.names[row.id] {
-                    Divider().overlay(BMTheme.line)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(name)
-                            .font(.headline)
-                            .foregroundStyle(BMTheme.navy)
-                        reportText(row.evaluation)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12)
-                }
-            }
-        }
-    }
-
-    private func heading(_ title: String) -> some View {
-        Text(title)
-            .font(.headline)
-            .foregroundStyle(BMTheme.navy)
-            .accessibilityAddTraits(.isHeader)
-    }
-
-    private func reportText(_ text: String) -> some View {
-        Text(source.display(text))
-            .font(.body)
-            .lineSpacing(4)
-            .textSelection(.enabled)
-    }
-
-    private func plainText(_ report: GameAnalysisReport) -> String {
-        var lines = [source.input.scope.title, source.subtitle, "AI 生成 · 请结合比赛记录核对",
-                     "", source.input.scope.mvpTitle]
-        if let mvp = report.mvp, let name = source.names[mvp.id] {
-            lines += [name, source.display(mvp.reason)]
-        } else {
-            lines.append("现有记录不足以评选。")
-        }
-        lines += ["", "比赛综述", source.display(report.overview)]
-        if !report.situations.isEmpty {
-            lines += ["", source.input.scope.situationsTitle]
-            lines += report.situations.map { "• " + source.display($0) }
-        }
-        if !report.players.isEmpty { lines += ["", "球员评价"] }
-        for row in report.players {
-            if let name = source.names[row.id] {
-                lines += ["", name, source.display(row.evaluation)]
-            }
-        }
-        return lines.joined(separator: "\n")
     }
 
     private func generate() {
@@ -467,7 +389,9 @@ struct GameAnalysisView: View {
             do {
                 let client = try analysisClient()
                 let result = try await client.generateGameAnalysis(source.input, id: requestID)
-                if !Task.isCancelled { report = result }
+                guard !Task.isCancelled else { return }
+                let report = GameAnalysisPDFReport(source: source, report: result)
+                document = Document(url: try report.write(), plainText: report.plainText)
             } catch {
                 if !Task.isCancelled {
                     if let failure = error as? GameAnalysisFailure, case .provider = failure { requestID = UUID() }

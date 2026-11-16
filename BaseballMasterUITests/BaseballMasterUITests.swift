@@ -4119,38 +4119,36 @@ extension BaseballMasterUITests {
         let app = XCUIApplication()
         app.launchEnvironment["BM_GAME_ANALYSIS_LOCAL_TEST"] = UUID().uuidString
 
-        func generate(from entry: String, title: String, mvpTitle: String, count: Int) {
+        func generate(from entry: String, title: String, checkShare: Bool = false) {
             let open = app.buttons[entry]
             revealStatisticsControl(open, in: app)
             XCTAssertTrue(open.isHittable)
             open.tap()
             XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
             app.buttons["generate-game-analysis"].tap()
-            XCTAssertTrue(app.staticTexts["本次分析覆盖 \(count) 场比赛。"].waitForExistence(timeout: 15))
-            XCTAssertTrue(app.buttons["分享文字"].exists)
-            let mvp = app.staticTexts[mvpTitle]
-            let overview = app.staticTexts["比赛综述"]
-            XCTAssertTrue(mvp.isHittable)
-            XCTAssertLessThan(mvp.frame.minY, overview.frame.minY)
-            captureHistory(app, name: "比赛分析-\(title)")
-
-            let sections = app.segmentedControls["game-analysis-section-picker"]
-            sections.buttons["球员评价"].tap()
-            XCTAssertTrue(app.staticTexts[count == 1 ? "海浪" : "本队球员"].waitForExistence(timeout: 5))
-            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "的表现以已记录数据为准。")).firstMatch.exists)
-            sections.buttons["比赛报告"].tap()
-            XCTAssertTrue(overview.waitForExistence(timeout: 5))
-            app.buttons["关闭"].tap()
+            let pageCount = app.staticTexts["report-pdf-page-count"]
+            XCTAssertTrue(pageCount.waitForExistence(timeout: 20))
+            XCTAssertTrue(pageCount.label.contains("A4 竖版"))
+            XCTAssertTrue(app.descendants(matching: .any)["report-pdf-document"].firstMatch.exists)
+            captureHistory(app, name: "比赛分析PDF-\(title)")
+            if checkShare {
+                app.buttons["share-report-pdf"].tap()
+                XCTAssertTrue(app.buttons["分享文字"].waitForExistence(timeout: 5))
+                app.buttons["分享 PDF"].tap()
+                XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
+            } else {
+                app.buttons["close-report-pdf"].tap()
+            }
         }
 
         app.launchArguments = ["--v30-date-preview"]
         app.launch()
-        generate(from: "open-game-analysis", title: "比赛分析", mvpTitle: "本场 MVP", count: 1)
+        generate(from: "open-game-analysis", title: "比赛分析")
         app.terminate()
 
         app.launchArguments = ["--v22-statistics-preview"]
         app.launch()
-        generate(from: "open-season-analysis", title: "全年比赛分析", mvpTitle: "年度 MVP", count: 3)
+        generate(from: "open-season-analysis", title: "全年比赛分析")
         let filter = app.buttons["stats-open-game-filter"]
         revealStatisticsControl(filter, in: app)
         filter.tap()
@@ -4160,6 +4158,6 @@ extension BaseballMasterUITests {
         XCTAssertEqual(choices.firstMatch.value as? String, "未选择")
         app.buttons["stats-apply-game-filter"].tap()
         XCTAssertTrue(app.staticTexts["stats-game-scope"].label.contains("2 / 3"))
-        generate(from: "open-season-analysis", title: "筛选比赛分析", mvpTitle: "所选比赛 MVP", count: 2)
+        generate(from: "open-season-analysis", title: "筛选比赛分析", checkShare: true)
     }
 }

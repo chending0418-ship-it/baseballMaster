@@ -42,6 +42,7 @@ struct ReportPDFPreview: View {
     @Environment(\.dismiss) private var dismiss
     let url: URL
     let title: String
+    var plainText: String? = nil
     @State private var sharing = false
 
     private var pageSummary: String {
@@ -70,8 +71,18 @@ struct ReportPDFPreview: View {
                     Button("关闭") { dismiss() }.accessibilityIdentifier("close-report-pdf")
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { sharing = true } label: { Label("分享", systemImage: "square.and.arrow.up") }
+                    if let plainText {
+                        Menu {
+                            ShareLink(item: url) { Label("分享 PDF", systemImage: "doc") }
+                            ShareLink(item: plainText) { Label("分享文字", systemImage: "text.alignleft") }
+                        } label: {
+                            Label("分享", systemImage: "square.and.arrow.up")
+                        }
                         .accessibilityIdentifier("share-report-pdf")
+                    } else {
+                        Button { sharing = true } label: { Label("分享", systemImage: "square.and.arrow.up") }
+                            .accessibilityIdentifier("share-report-pdf")
+                    }
                 }
             }
             .sheet(isPresented: $sharing) { ActivityShareSheet(items: [url]) }
