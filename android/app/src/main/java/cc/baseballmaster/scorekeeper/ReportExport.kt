@@ -9,9 +9,9 @@ import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
 import cc.baseballmaster.core.*
 import java.io.File
+import java.nio.file.Files
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.UUID
 
 /** Print-oriented local reports. The caller chooses whether to share the generated private file. */
 internal object ReportExport {
@@ -244,15 +244,18 @@ internal object ReportExport {
         }
     }
 
-    private fun file(context: Context, kind: String): File = File(context.cacheDir, "reports").let {
-        check(it.isDirectory || it.mkdirs())
-        File(it, "BaseballMaster-$kind-${UUID.randomUUID()}.pdf")
+    private fun file(context: Context, label: String): File {
+        val root = Files.createDirectories(File(context.cacheDir, "reports").toPath())
+        val directory = Files.createTempDirectory(root, "pdf-")
+        return directory.resolve("BaseballMaster-$label.pdf").toFile()
     }
-    fun team(context: Context, team: Team, year: Int, mode: GameMode?, summary: SeasonStatistics, isFiltered: Boolean = false): File {
-        val file = file(context, "team")
+    fun team(context: Context, team: Team, year: Int, mode: GameMode?, summary: SeasonStatistics,
+        isFiltered: Boolean = false, sourceNote: String? = null): File {
+        val file = file(context, "球队年度报告-$year")
         val scope = ReportStatisticsProjection.scope(summary.games)
         Writer("ANNUAL REPORT / 球队年度报告", team.name,
-            subtitle = "$year · ${if (isFiltered) "所选比赛统计" else "完整球队年度数据"} · ${summary.games.size} 场已结束比赛").use { w ->
+            subtitle = "$year · ${if (isFiltered) "所选比赛统计" else if (sourceNote == null) "完整球队年度数据" else "球队年度统计"} · ${summary.games.size} 场已结束比赛").use { w ->
+            sourceNote?.let { w.line("共享球队 · $it", 9f, muted = true) }
             if (summary.incomplete > 0) w.line("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold = true)
             w.metrics(listOf("比赛" to "${summary.games.size}", "胜 / 负 / 平" to "${summary.wins} / ${summary.losses} / ${summary.ties}",
                 "得分" to "${summary.runs}", "失分" to "${summary.runsAllowed}",
@@ -279,12 +282,14 @@ internal object ReportExport {
     }
     private fun eraText(p: PitchingLine) = if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", p.earnedRuns * 21.0 / p.outsRecorded) else "-"
     private fun innings(p: PitchingLine) = "${p.outsRecorded / 3}.${p.outsRecorded % 3}"
-    fun player(context: Context, team: Team, year: Int, row: SeasonPlayerStatistics, games: List<Game> = emptyList(), eligibleGameCount: Int = row.games): File {
-        val file = file(context, "player")
+    fun player(context: Context, team: Team, year: Int, row: SeasonPlayerStatistics, games: List<Game> = emptyList(),
+        eligibleGameCount: Int = row.games, sourceNote: String? = null): File {
+        val file = file(context, "球员个人报告-$year")
         val scope = ReportStatisticsProjection.scope(games)
         val p = row.player
         Writer("PLAYER REPORT / 球员个人报告", p.name,
             subtitle = "${p.englishName} · ${playerNumbers(p)} · ${team.name} · $year\n范围：已选 ${row.games} / $eligibleGameCount 场比赛").use { w ->
+            sourceNote?.let { w.line("共享球队 · $it", 9f, muted = true) }
             if (scope.incompleteGames > 0) w.line("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold = true)
             w.metrics(listOf("已选比赛" to "${row.games}", "打率 AVG" to number(if (row.batting.atBats > 0) row.batting.average else null),
                 "安打 H" to "${row.batting.hits}", "打点 RBI" to "${row.batting.runsBattedIn}", "投球局数 IP" to innings(row.pitching),
@@ -344,7 +349,14 @@ internal object ReportExport {
         else -> "比赛"
     }
     fun game(context: Context, game: Game, playByPlay: Boolean, textOnly: Boolean = false, appearanceID: String? = null): File {
-        val file = file(context, if (playByPlay) "plays" else "game")
+        val label = when {
+            !playByPlay -> "单场比赛战报"
+            appearanceID == null && textOnly -> "逐打席文字简版"
+            appearanceID == null -> "逐打席详细版"
+            textOnly -> "单打席文字简版"
+            else -> "单打席详细版"
+        }
+        val file = file(context, label)
         if (playByPlay) writeAppearances(file, game, textOnly, appearanceID) else writeBoxScore(file, game)
         return file
     }

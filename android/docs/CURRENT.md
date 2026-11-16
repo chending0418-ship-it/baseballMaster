@@ -1,18 +1,14 @@
 # 棒球比赛记录大师 · Android 当前入口
 
-更新：2026-11-09。本文件是 Android 唯一现行状态入口。
+更新于 2026-11-16。本文件是 Android 唯一现行状态入口。
 
 | 项目 | 当前依据 |
 | --- | --- |
-| 当前版本 | Android 0.8.2（Build 10），以 [Gradle 配置](../app/build.gradle.kts)为准 |
-| 官网分发 | **用户于 2026-11-05 确认：0.8.2 可从官网下载**；本轮匿名 HTTPS 只读检查产品页两个下载入口均指向 0.8.2 Build 10 APK，HEAD 返回 200，未重建或重新分发 |
-| 分发证据 | [PR #46](https://github.com/chending0418-ship-it/baseballMaster/pull/46)保存既有官网下载与完整哈希验证记录 |
-| 本版计划 | [0.8.2 发布功能计划](<plans/0.8.2 发布功能计划.md>)、[0.8.1 发布功能计划](<plans/0.8.1 发布功能计划.md>) |
-| 后续版本 | [0.8.3 发布功能计划](<plans/0.8.3 发布功能计划.md>)，已核对 Android 0.8.2 与 iOS 3.1.5 源码差异，等待 Android 工作区实施。 |
-| 实现与验收 | [0.8.2 开发记录](releases/0.8.2-DEVELOPMENT.md)、[平台迁移及遗留](plans/ANDROID-APK.md)；历史记录的“官网仍为 0.8.1”为当时阶段状态 |
-| 工程及产物 | Android Studio 打开 `android/`；APK 与验证仍在本工作树 `output/`，签名、包名和版本不变 |
-| 平台边界 | 完整跨端互导、正式赛后归档／旧关联更新及实体厂商设备等继续按计划跟踪，不因样例移入共享目录就标记完成；未获得应用市场上传确认 |
-| iOS／服务 | [iOS CURRENT](../../ios/docs/CURRENT.md)，共享服务继续从 iOS／服务入口维护 |
-| 当前维护 | [文档与契约阶段一](../../docs/maintenance/2026-11-05-docs-contracts-stage1.md)，[PR #49](https://github.com/chending0418-ship-it/baseballMaster/pull/49) 保持开放；Android 正式目录已从核准提交 `d6ba7b6` 本地采用，原未整合工作保留 |
+| 官网分发 | **0.8.3（Build 15）**，2026-11-16 已发布。产品页首屏和下载区均指向新版签名 APK。[官网入口](https://baseballmaster.cc/scorekeeper#download) · [签名 APK](https://baseballmaster.cc/assets/android/0.8.3-build15/BaseballMaster-Android-0.8.3-build15.apk) |
+| 0.8.3 维护版 | 共享球队统计、官网更新提醒、可读的 PDF 文件名、共享历史打席标签和紧凑分类切换已交付。覆盖升级和发布证据见 [0.8.3 发布功能计划](<plans/0.8.3 发布功能计划.md>) |
+| 1.0.0 发布 | 用户已于 2026-11-16 确认暂缓。1.0.x 现有实现及历史发布记录按 [PR #58](https://github.com/chending0418-ship-it/baseballMaster/pull/58)、[PR #60](https://github.com/chending0418-ship-it/baseballMaster/pull/60) 追溯 |
+| 工程及产物 | Android Studio 打开 `android/`。包名与签名沿用官网 0.8.2，验证与交付产物归本工作树 `output/` |
+| 平台边界 | 完整跨端互导及正式赛后归档上传仍由 [Android 总计划](plans/ANDROID-APK.md) 跟踪。0.8.3 的正式共享统计使用已有球队服务读取接口 |
+| iOS／服务 | [iOS CURRENT](../../ios/docs/CURRENT.md)，共享服务由 iOS／服务工作区维护 |
 
-本次审查整改及采用边界：[旧 CURRENT 分流与两个工作目录同步步骤](../../docs/maintenance/2026-11-05-stage1-adoption.md)。本机采用已执行，远端 PR 仍未合并；归档快照不接收旧分支新增状态。
+阶段一文档与契约归位已通过 [PR #49](https://github.com/chending0418-ship-it/baseballMaster/pull/49) 采用。历史归档记录保留在 [维护说明](../../docs/maintenance/2026-11-05-docs-contracts-stage1.md)。

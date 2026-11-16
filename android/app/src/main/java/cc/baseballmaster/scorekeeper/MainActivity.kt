@@ -142,6 +142,43 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         }}
     }
     private val settings = application.getSharedPreferences("baseballmaster-settings", 0)
+    internal var websiteRelease by mutableStateOf<WebsiteAndroidRelease?>(null)
+        private set
+    internal var checkingUpdate by mutableStateOf(false)
+        private set
+    internal var updateCheckFailed by mutableStateOf(false)
+        private set
+    private var lastAutomaticUpdateCheck: Long? = null
+    private var dismissedUpdateBuild by mutableIntStateOf(settings.getInt("dismissedUpdateBuild", 0))
+    internal val advertisedUpdate get() = websiteRelease?.takeIf {
+        it.build > maxOf(BuildConfig.VERSION_CODE, dismissedUpdateBuild)
+    }
+
+    internal fun dismissUpdate(build: Int) {
+        dismissedUpdateBuild = build
+        settings.edit().putInt("dismissedUpdateBuild", build).apply()
+    }
+
+    internal fun checkForUpdate(manual: Boolean = false) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (checkingUpdate || !manual && lastAutomaticUpdateCheck?.let { now - it < 60 * 60 * 1000L } == true) return
+        lastAutomaticUpdateCheck = now
+        checkingUpdate = true
+        updateCheckFailed = false
+        viewModelScope.launch {
+            try {
+                websiteRelease = withContext(Dispatchers.IO) { WebsiteAndroidRelease.read() }
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                websiteRelease = null
+                updateCheckFailed = true
+            } finally {
+                checkingUpdate = false
+            }
+        }
+    }
+
     internal var appAppearance by mutableStateOf(settings.getString("appAppearance","system")?.takeIf {it in setOf("system","light","dark")} ?: "system")
         private set
     internal var showPracticeGuidance by mutableStateOf(settings.getBoolean("showPracticeGuidance",true))
@@ -769,6 +806,14 @@ private fun ProductBottomNavigation(selected: Int, onSelected: (Int) -> Unit) {
 
 @Composable
 private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame: () -> Unit) {
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(model, lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) model.checkForUpdate()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     val team = model.currentTeam
     val ongoing = model.games.filter { !it.isFinal && !it.isScheduled }
     val scheduled = model.games.filter { it.isScheduled && !it.isFinal }.sortedBy { it.scheduledAt }
@@ -796,6 +841,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         Icon(Icons.Outlined.AddCircle, null, Modifier.size(18.dp)); Spacer(Modifier.width(7.dp))
         Text(if (ongoing.isEmpty()) "开始新比赛" else "再开始一场比赛", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
+    model.advertisedUpdate?.let { WebsiteUpdateNotice(it, onDismiss = { model.dismissUpdate(it.build) }) }
     if (scheduled.isNotEmpty()) {
         SectionTitle("即将进行", "${scheduled.size} 场")
         scheduled.forEach { game -> HomeGameRow(game, model) }
@@ -973,7 +1019,7 @@ private fun ProfileScreen(model: ScorekeeperViewModel, manageTeams: ()->Unit) {
     when(page) {
         "data"->LocalDataScreen(model,{page=null;manageTeams()}) {page=null}
         "settings"->AppSettingsScreen(model) {page=null}
-        "about"->AppAboutScreen {page=null}
+        "about"->AppAboutScreen(model) {page=null}
     }
 }
 

@@ -10,6 +10,7 @@ data class AppleArchiveHistory(
     val operations: List<JsonObject>,
     val corrections: List<JsonObject>,
     val hasJournal: Boolean,
+    val playersByID: Map<String, Player>,
 ) {
     companion object {
         fun read(stored: JsonObject): AppleArchiveHistory {
@@ -17,9 +18,12 @@ data class AppleArchiveHistory(
             val state = stored.getValue("state").jsonObject
             fun rows(key: String) = state[key]?.takeUnless { it == JsonNull }?.jsonArray.orEmpty().map { it.jsonObject }
             val journal = state["historyJournal"]?.takeUnless { it == JsonNull }?.jsonObject
+            val players = listOf("homeTeam", "awayTeam").flatMap { side ->
+                AppleStateProjection.team(state.getValue(side).jsonObject, null).players
+            }
             return AppleArchiveHistory(rows("playLog"), rows("scoringEvents"), rows("plateAppearances"),
                 journal?.getValue("operations")?.jsonArray.orEmpty().map { it.jsonObject },
-                rows("correctionRevisions"), journal != null)
+                rows("correctionRevisions"), journal != null, players.associateBy(Player::id))
         }
     }
 }

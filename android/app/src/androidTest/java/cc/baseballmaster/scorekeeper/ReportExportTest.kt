@@ -120,7 +120,7 @@ class ReportExportTest {
         ReportExport.share(context, file)
         val device = androidx.test.uiautomator.UiDevice.getInstance(inst)
         // The system chooser replaces our supplied title on some Android releases.
-        val shown = device.wait(androidx.test.uiautomator.Until.hasObject(androidx.test.uiautomator.By.textStartsWith("BaseballMaster-team-")), 10_000)
+        val shown = device.wait(androidx.test.uiautomator.Until.hasObject(androidx.test.uiautomator.By.textStartsWith("BaseballMaster-球队年度报告-2026")), 10_000)
         val dir = context.getExternalFilesDir(null)!!
         device.takeScreenshot(File(dir, "an04-share-chooser.png"))
         device.dumpWindowHierarchy(File(dir, "an04-share-chooser.xml"))
@@ -139,11 +139,23 @@ class ReportExportTest {
         val detail = ReportExport.game(context, game, true)
         val text = ReportExport.game(context, game, true, textOnly = true)
         val single = ReportExport.game(context, game, true, appearanceID = appearances.first().id)
+        val repeated = ReportExport.game(context, game, true, appearanceID = appearances.first().id)
         assertTrue(single.length() > 1000)
+        assertEquals("BaseballMaster-逐打席详细版.pdf", detail.name)
+        assertEquals("BaseballMaster-逐打席文字简版.pdf", text.name)
+        assertEquals("BaseballMaster-单打席详细版.pdf", single.name)
+        assertEquals(single.name, repeated.name)
+        assertNotEquals(single.parentFile, repeated.parentFile)
+        val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", single)
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            assertTrue(it.moveToFirst())
+            assertEquals(single.name, it.getString(0))
+        } ?: error("无法读取分享文件名")
         assertThrows(IllegalArgumentException::class.java) { ReportExport.game(context, game, true, appearanceID = "not-a-real-appearance") }
         val external = context.getExternalFilesDir(null)!!
         detail.copyTo(File(external, "an04-detail-report.pdf"), overwrite = true)
         text.copyTo(File(external, "an04-text-report.pdf"), overwrite = true)
+        single.copyTo(File(external, single.name), overwrite = true)
         ParcelFileDescriptor.open(detail, ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> PdfRenderer(fd).use { pdf ->
             pdf.openPage(0).use { page -> assertTrue(page.width > page.height) }
         } }

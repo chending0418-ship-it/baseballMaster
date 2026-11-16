@@ -38,7 +38,7 @@ internal class AppleStateProjection private constructor(
             val cn=p.text("chineseName");val en=p.text("englishName");val number=labels.firstOrNull() ?: "—"
             return Player(uuid(p.getValue("id")),cn.ifEmpty {en.ifEmpty {"#$number"}},number,en,p.number("primaryPosition"),labels,cn)
         }
-        private fun team(raw: JsonObject,our: String?): Team = Team(uuid(raw.getValue("id")),raw.text("name"),raw.array("players").map {player(it.jsonObject)},
+        internal fun team(raw: JsonObject,our: String?): Team = Team(uuid(raw.getValue("id")),raw.text("name"),raw.array("players").map {player(it.jsonObject)},
             isOpponent=uuid(raw.getValue("id"))!=our,city=raw.optional("city")?.jsonPrimitive?.content.orEmpty(),shortName=raw.optional("shortName")?.jsonPrimitive?.content ?: raw.text("name"))
         internal fun rules(raw: JsonObject): Rules {
             val mode=GameMode.valueOf(raw.optional("mode")?.jsonPrimitive?.content ?: "standard")
