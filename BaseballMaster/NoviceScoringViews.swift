@@ -271,6 +271,7 @@ struct RunnerEventFlowSheet: View {
     @EnvironmentObject private var store: GameStore
     @State private var selectedKind: RunnerEventKind?
     @State private var pendingTimingDecisions: [RunnerDecision]?
+    @State private var errorResponsibility: RunnerErrorResponsibility?
 
     var body: some View {
         Group {
@@ -279,7 +280,8 @@ struct RunnerEventFlowSheet: View {
                     if store.recordRunnerEvent(
                         selectedKind,
                         decisions: pendingTimingDecisions,
-                        timingRunCounts: runCounts
+                        timingRunCounts: runCounts,
+                        errorResponsibility: errorResponsibility
                     ) {
                         dismiss()
                     }
@@ -299,12 +301,14 @@ struct RunnerEventFlowSheet: View {
                     availableDestinations: store.availableDestinations,
                     title: "跑者现在在哪？",
                     message: "系统给出了常见去向；按现场实际位置点一下即可修改。",
-                    confirmTitle: "确认跑者变化"
+                    confirmTitle: "确认跑者变化",
+                    errorFielders: store.activeFielders,
+                    errorResponsibility: selectedKind == .defensiveErrorAdvance ? $errorResponsibility : nil
                 ) { decisions in
                     if store.runnerEventNeedsTimingDecision(selectedKind, decisions: decisions) {
                         pendingTimingDecisions = decisions
                     } else {
-                        if store.recordRunnerEvent(selectedKind, decisions: decisions) {
+                        if store.recordRunnerEvent(selectedKind, decisions: decisions, errorResponsibility: errorResponsibility) {
                             dismiss()
                         }
                     }
@@ -378,6 +382,23 @@ struct RunnerEventFlowSheet: View {
                 }
             }
         }
+    }
+}
+
+struct RunnerErrorPicker: View {
+    let fielders: [Player]
+    @Binding var selection: RunnerErrorResponsibility?
+
+    var body: some View {
+        Picker("失误责任人", selection: $selection) {
+            Text("请选择").tag(nil as RunnerErrorResponsibility?)
+            Text("责任人待确认").tag(Optional(RunnerErrorResponsibility.pending))
+            ForEach(fielders.sorted { $0.primaryPosition.rawValue < $1.primaryPosition.rawValue }) { player in
+                Text("\(player.primaryPosition.fullName) · \(player.compactName)")
+                    .tag(Optional(RunnerErrorResponsibility.fielder(player.id)))
+            }
+        }
+        .accessibilityIdentifier("runner-error-responsibility")
     }
 }
 

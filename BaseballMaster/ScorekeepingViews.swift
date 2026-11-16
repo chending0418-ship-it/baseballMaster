@@ -206,6 +206,7 @@ struct ScorekeepingView: View {
                         Button { showHistoryCorrection = true } label: { Label("纠正记录", systemImage: "clock.arrow.circlepath") }
                             .accessibilityIdentifier("open-history-correction")
                     .disabled(isDockedRecording)
+                        recordingMethodMenu
                         NavigationLink(destination: GamePosterView(game: stored)) {
                             Label("比赛宣传海报", systemImage: "photo.badge.plus")
                         }.accessibilityIdentifier("open-game-poster")
@@ -233,11 +234,17 @@ struct ScorekeepingView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if let stored = store.activeStoredGame {
-                    NavigationLink(destination: GamePosterView(game: stored)) {
-                        Image(systemName: "photo.badge.plus")
+                    Menu {
+                        recordingMethodMenu
+                        NavigationLink(destination: GamePosterView(game: stored)) {
+                            Label("比赛宣传海报", systemImage: "photo.badge.plus")
+                        }
+                        .accessibilityIdentifier("open-game-poster")
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .accessibilityLabel("比赛宣传海报")
-                    .accessibilityIdentifier("open-game-poster")
+                    .accessibilityLabel("更多比赛操作")
+                    .accessibilityIdentifier("local-match-controls")
                     .disabled(isDockedRecording)
                 }
             }
@@ -254,7 +261,7 @@ struct ScorekeepingView: View {
         .sheet(isPresented: Binding(get: { showPlayFlowSheet && !dockedPlayFlow },
                                     set: { showPlayFlowSheet = $0 }), onDismiss: recordingSheetDidDismiss) {
             Group {
-                if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation {
+                if store.currentRecordingMethod == .situation {
                     SituationPlayFlowSheet(illegalPitch: illegalPlay)
                 } else {
                     ScorePlayFlowSheet(illegalPitch: illegalPlay) {
@@ -354,7 +361,7 @@ struct ScorekeepingView: View {
 
     private func openPlayFlow() {
         dockedPlayFlow = workbenchAvailable
-            && (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation
+            && store.currentRecordingMethod == .situation
         showPlayFlowSheet = true
     }
 
@@ -627,7 +634,7 @@ struct ScorekeepingView: View {
                     .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green, compact: true))
                     .accessibilityIdentifier("open-substitutions")
                 }
-                if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation,
+                if store.currentRecordingMethod == .situation,
                    let latest = store.game.scoringEvents?.last(where: { $0.category == .battedBall }) {
                     HStack(spacing: 8) {
                         Text(latest.title).font(.system(size: 10)).lineLimit(2).foregroundStyle(BMTheme.secondaryText)
@@ -1037,7 +1044,7 @@ struct ScorekeepingView: View {
             store.actionErrorMessage = "当前局面无法使用语音，请继续手动记分。"
             return
         }
-        let pro = (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation
+        let pro = store.currentRecordingMethod == .situation
         voiceContext = VoiceSheetContext(context: context, pro: pro)
     }
 
@@ -1045,6 +1052,17 @@ struct ScorekeepingView: View {
         let id = UUID()
         let context: VoicePlayContext
         let pro: Bool
+    }
+
+    private var recordingMethodMenu: some View {
+        Picker("记录方式 · \(store.currentRecordingMethod.title)", selection: Binding(
+            get: { store.currentRecordingMethod },
+            set: { store.changeRecordingMethod(to: $0) }
+        )) {
+            ForEach(RecordingMethod.allCases) { method in Text(method.title).tag(method) }
+        }
+        .accessibilityIdentifier("game-recording-method")
+        .disabled(!store.canRecordAction || hasRecordingPresentation)
     }
 
     private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
@@ -1524,6 +1542,8 @@ struct RunnerResolutionSheet: View {
     let title: String
     let message: String
     let confirmTitle: String
+    let errorFielders: [Player]
+    let errorResponsibility: Binding<RunnerErrorResponsibility?>?
     let onConfirm: ([RunnerDecision]) -> Void
 
     init(
@@ -1532,6 +1552,8 @@ struct RunnerResolutionSheet: View {
         title: String = "确认跑者",
         message: String = "系统已根据结果给出建议，请确认每名跑者。",
         confirmTitle: String = "确认跑者结果",
+        errorFielders: [Player] = [],
+        errorResponsibility: Binding<RunnerErrorResponsibility?>? = nil,
         onConfirm: @escaping ([RunnerDecision]) -> Void
     ) {
         _decisions = State(initialValue: decisions)
@@ -1539,6 +1561,8 @@ struct RunnerResolutionSheet: View {
         self.title = title
         self.message = message
         self.confirmTitle = confirmTitle
+        self.errorFielders = errorFielders
+        self.errorResponsibility = errorResponsibility
         self.onConfirm = onConfirm
     }
 
@@ -1556,6 +1580,10 @@ struct RunnerResolutionSheet: View {
                     .padding(12)
                     .background(BMTheme.greenSoft)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    if let errorResponsibility {
+                        BMCard { RunnerErrorPicker(fielders: errorFielders, selection: errorResponsibility) }
+                    }
 
                     if hasBaseConflict {
                         Label("同一个垒位不能站两名跑者，请修改其中一人。", systemImage: "exclamationmark.triangle.fill")
@@ -1636,8 +1664,8 @@ struct RunnerResolutionSheet: View {
                 .padding(.vertical, 10)
                 .background(BMTheme.background)
                 .accessibilityIdentifier("confirm-runners")
-                .disabled(hasBaseConflict)
-                .opacity(hasBaseConflict ? 0.45 : 1)
+                .disabled(confirmDisabled)
+                .opacity(confirmDisabled ? 0.45 : 1)
             }
             .bmScreenBackground()
             .navigationTitle(title)
@@ -1648,6 +1676,10 @@ struct RunnerResolutionSheet: View {
                 }
             }
         }
+    }
+
+    private var confirmDisabled: Bool {
+        hasBaseConflict || (errorResponsibility.map { $0.wrappedValue == nil } ?? false)
     }
 
     private func destinationColor(_ destination: RunnerDestination) -> Color {

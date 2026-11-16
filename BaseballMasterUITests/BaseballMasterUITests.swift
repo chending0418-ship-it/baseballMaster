@@ -1693,9 +1693,9 @@ extension BaseballMasterUITests {
 extension BaseballMasterUITests {
     func testHistoryCorrectionDraftPreviewAndFourScreenshots() throws {
         let app = XCUIApplication(); app.launchArguments = ["--correction-preview"]; app.launch()
-        XCTAssertTrue(app.buttons["history-kind-漏记换人"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["history-kind-换人纠错"].waitForExistence(timeout: 10))
         captureHistory(app, name: "2.1-01-四类纠错入口")
-        app.buttons["history-kind-漏记换人"].tap()
+        app.buttons["history-kind-换人纠错"].tap()
         XCTAssertTrue(app.buttons["此前补录"].firstMatch.waitForExistence(timeout: 5))
         captureHistory(app, name: "2.1-02-历史事件与局面")
         revealStatisticsControl(app.buttons["此前补录"].firstMatch, in: app)
@@ -4111,5 +4111,102 @@ extension BaseballMasterUITests {
         let active = app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@",
                                                           "team-broadcast-current-match", "青岛海浪")).firstMatch
         XCTAssertTrue(active.waitForExistence(timeout: 15))
+    }
+}
+
+extension BaseballMasterUITests {
+    func testV313NewGameUsesDefaultAndSupportsPerGameOverride() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v22-opening-preview"]
+        app.launch()
+        let profile = app.tabBars.buttons["我的"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 8))
+        profile.tap()
+        let settings = app.buttons["open-app-settings"]
+        revealStatisticsControl(settings, in: app)
+        settings.tap()
+        let preference = app.buttons["default-recording-method"]
+        XCTAssertTrue(preference.waitForExistence(timeout: 5))
+        preference.tap()
+        app.buttons["Pro 版"].tap()
+        XCTAssertTrue(preference.label.contains("Pro 版") || (preference.value as? String)?.contains("Pro 版") == true)
+        captureHistory(app, name: "3.1.3-默认记录方式")
+
+        app.terminate()
+        app.launchArguments = ["--v23-new-game-preview", "-defaultRecordingMethod", "situation"]
+        app.launch()
+        let picker = app.segmentedControls["recording-method-picker"]
+        revealStatisticsControl(picker, in: app)
+        XCTAssertTrue(picker.buttons["Pro 版"].isSelected)
+        picker.buttons["基础版"].tap()
+        XCTAssertTrue(picker.buttons["基础版"].isSelected)
+    }
+
+    func testV313ModeAndRunnerErrorControlsOnScorekeeping() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v111-bases-preview"]
+        app.launch()
+        let controls = app.buttons["local-match-controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 8))
+        func chooseMethod(_ title: String) {
+            controls.tap()
+            let submenu = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "记录方式")).firstMatch
+            if submenu.exists && !app.buttons[title].exists { submenu.tap() }
+            XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 4))
+            app.buttons[title].tap()
+        }
+        chooseMethod("Pro 版")
+        chooseMethod("基础版")
+        let runners = app.buttons["open-runner-events"]
+        revealStatisticsControl(runners, in: app)
+        runners.tap()
+        let error = app.buttons["runner-event-失误进垒"]
+        revealStatisticsControl(error, in: app)
+        error.tap()
+        let picker = app.buttons["runner-error-responsibility"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["confirm-runners"].isEnabled)
+        picker.tap()
+        app.buttons["责任人待确认"].tap()
+        XCTAssertTrue(picker.label.contains("责任人待确认") || (picker.value as? String)?.contains("责任人待确认") == true)
+        captureHistory(app, name: "3.1.3-跑垒失误责任")
+    }
+
+    func testV313DoubleSwitchEditorKeepsOnlyTheCorrectGroup() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--correction-preview", "--v313-double-switch"]
+        app.launch()
+        let category = app.buttons["history-kind-换人纠错"]
+        XCTAssertTrue(category.waitForExistence(timeout: 8))
+        category.tap()
+        let edit = app.buttons["更正换人"].firstMatch
+        revealStatisticsControl(edit, in: app)
+        XCTAssertTrue(edit.isHittable)
+        edit.tap()
+        let first = app.switches["history-keep-switch-1"]
+        let second = app.switches["history-keep-switch-2"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertEqual(first.value as? String, "1")
+        XCTAssertEqual(second.value as? String, "1")
+        first.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(first.value as? String, "0")
+        XCTAssertEqual(second.value as? String, "1")
+        captureHistory(app, name: "3.1.3-双重换人保留第二组")
+        app.buttons["history-add-draft"].tap()
+        app.buttons["history-preview"].tap()
+        XCTAssertTrue(app.buttons["history-save"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["history-save"].isEnabled)
+        app.buttons["history-save"].tap()
+    }
+
+    func testV313SeasonTotalBasesShownInTeamStatistics() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v22-statistics-preview"]
+        app.launch()
+        let total = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "打击总垒数 TB")).firstMatch
+        revealStatisticsControl(total, in: app)
+        XCTAssertTrue(total.isHittable)
+        XCTAssertEqual(total.label, "打击总垒数 TB：7")
+        captureHistory(app, name: "3.1.3-球队总垒数")
     }
 }

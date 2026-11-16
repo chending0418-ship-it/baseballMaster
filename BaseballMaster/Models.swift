@@ -714,6 +714,11 @@ enum RunnerEventGroup: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum RunnerErrorResponsibility: Equatable, Hashable, Codable {
+    case pending
+    case fielder(UUID)
+}
+
 enum RunnerEventKind: String, CaseIterable, Identifiable, Codable {
     case stolenBase = "偷垒成功"
     case doubleSteal = "双重盗垒"

@@ -267,6 +267,21 @@ final class GameStore: ObservableObject {
     var activeRules: GameRules? {
         activeGameID.flatMap { id in games.first(where: { $0.id == id })?.rules }
     }
+    var currentRecordingMethod: RecordingMethod { (game.rulesSnapshot ?? activeRules)?.effectiveRecordingMethod ?? .traditional }
+
+    @discardableResult
+    func changeRecordingMethod(to method: RecordingMethod) -> Bool {
+        guard canRecordAction, let index = games.firstIndex(where: { $0.id == activeGameID }) else { return false }
+        guard currentRecordingMethod != method else { return true }
+        beginAtomicAction()
+        historySuppressCapture = true
+        var rules = game.rulesSnapshot ?? games[index].rules
+        rules.recordingMethod = method
+        game.rulesSnapshot = rules
+        games[index].rules.recordingMethod = method
+        commitAtomicAction()
+        return actionErrorMessage == nil && currentRecordingMethod == method
+    }
     private var activeRulesOrDefault: GameRules {
         activeRules ?? game.rulesSnapshot ?? GameRules(scheduledInnings: game.scheduledInnings)
     }
@@ -1713,9 +1728,13 @@ final class GameStore: ObservableObject {
     }
 
     @discardableResult
-    func recordRunnerEvent(_ kind: RunnerEventKind, decisions: [RunnerDecision], timingRunCounts: Bool? = nil) -> Bool {
+    func recordRunnerEvent(
+        _ kind: RunnerEventKind, decisions: [RunnerDecision], timingRunCounts: Bool? = nil,
+        errorResponsibility: RunnerErrorResponsibility? = nil
+    ) -> Bool {
         beginAtomicAction()
-        let result = recordRunnerEventOperation(kind, decisions: decisions, timingRunCounts: timingRunCounts)
+        let result = recordRunnerEventOperation(kind, decisions: decisions, timingRunCounts: timingRunCounts,
+                                                errorResponsibility: errorResponsibility)
         commitAtomicAction()
         return result && actionErrorMessage == nil
     }
@@ -1723,10 +1742,12 @@ final class GameStore: ObservableObject {
     private func recordRunnerEventOperation(
         _ kind: RunnerEventKind,
         decisions: [RunnerDecision],
-        timingRunCounts: Bool? = nil
+        timingRunCounts: Bool?,
+        errorResponsibility: RunnerErrorResponsibility?
     ) -> Bool {
         beginAtomicAction()
-        recordHistoryCommand(.runner(kind, decisions, timingRunCounts))
+        let responsibility = kind == .defensiveErrorAdvance ? errorResponsibility : nil
+        recordHistoryCommand(.runner(kind, decisions, timingRunCounts, responsibility: responsibility))
 
         defer { commitAtomicAction() }
         guard canRecordAction, allowedRunnerEvents.contains(kind) else { actionErrorMessage = "教练投手模式不适用此跑垒事件。"; return false }
@@ -1743,6 +1764,14 @@ final class GameStore: ObservableObject {
             actionErrorMessage = "第三出局同时发生得分，请确认得分与出局的先后。"
             return false
         }
+        let errorFielder: Player?
+        if case .fielder(let id)? = responsibility {
+            guard let player = activeFielders.first(where: { $0.id == id }) else {
+                actionErrorMessage = "请选择当时在场的失误责任人。"
+                return false
+            }
+            errorFielder = player
+        } else { errorFielder = nil }
         pushUndo(startsClock: true)
         let pitcher = game.currentPitcher
         let automaticRunnerRuns = automaticRunnerRunCount(in: decisions)
@@ -1764,14 +1793,19 @@ final class GameStore: ObservableObject {
             }
         case .wildPitch:
             updatePitcher(pitcher.id) { $0.wildPitches += 1 }
-        case .relayAdvance, .defensiveErrorAdvance,
+        case .defensiveErrorAdvance:
+            if responsibility != nil {
+                if game.isTop { game.homeErrors += 1 } else { game.awayErrors += 1 }
+                if let errorFielder { updateFielder(errorFielder.id) { $0.errors += 1 } }
+            }
+        case .relayAdvance,
              .passedBall, .uncertainLooseBall, .pickoff, .balk,
              .tagOut, .forceOut, .appealOut, .leftEarly, .missedBase,
              .outOfBasePath, .passedRunner, .runnerInterference, .runnerHitByBall, .coachAssistance:
             break
         }
 
-        let isEarned = kind != .passedBall && kind != .uncertainLooseBall
+        let isEarned = kind != .passedBall && kind != .uncertainLooseBall && responsibility == nil
         addRunsAndPitcherResponsibility(
             resolution,
             pitcherID: pitcher.id,
@@ -1779,12 +1813,15 @@ final class GameStore: ObservableObject {
             automaticRunnerRuns: automaticRunnerRuns
         )
         let summary = runnerSummary(decisions)
+        let errorCredit = errorFielder.map { " · \($0.primaryPosition.fullName) \($0.compactName)" }
+            ?? (responsibility == .pending ? " · 责任人待确认" : "")
         addLog(
-            "\(kind.rawValue)\(summary.isEmpty ? "" : "；\(summary)")",
-            incomplete: kind == .uncertainLooseBall || kind == .defensiveErrorAdvance,
+            "\(kind.rawValue)\(errorCredit)\(summary.isEmpty ? "" : "；\(summary)")",
+            incomplete: kind == .uncertainLooseBall || (kind == .defensiveErrorAdvance && errorFielder == nil),
             category: kind.group == .out ? .out : .runner,
             notation: kind.notation,
             primaryPlayerID: isCoachPitch ? nil : pitcher.id,
+            secondaryPlayerID: errorFielder?.id,
             runnerDecisions: decisions,
             ballStatus: kind.ballStatus
         )
@@ -3088,6 +3125,11 @@ final class GameStore: ObservableObject {
         redoStack.append(game)
         if redoStack.count > 30 { redoStack.removeFirst() }
         game = previous
+        if let method = activeRules?.recordingMethod, game.rulesSnapshot?.recordingMethod != method {
+            var rules = game.rulesSnapshot ?? activeRulesOrDefault
+            rules.recordingMethod = method
+            game.rulesSnapshot = rules
+        }
         nextEventBeforeSituation = game.situationSnapshot
     }
 
@@ -3100,6 +3142,11 @@ final class GameStore: ObservableObject {
         undoStack.append(game)
         if undoStack.count > 30 { undoStack.removeFirst() }
         game = restored
+        if let method = activeRules?.recordingMethod, game.rulesSnapshot?.recordingMethod != method {
+            var rules = game.rulesSnapshot ?? activeRulesOrDefault
+            rules.recordingMethod = method
+            game.rulesSnapshot = rules
+        }
         nextEventBeforeSituation = game.situationSnapshot
     }
 

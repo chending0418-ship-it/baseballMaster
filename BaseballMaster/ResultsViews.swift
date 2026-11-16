@@ -148,12 +148,12 @@ struct BoxScoreView: View {
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(spacing: 0) {
-                        tableHeader(["球员", "PA", "AB", "R", "H", "RBI", "BB", "SO", "AVG"])
+                        tableHeader(["球员", "PA", "AB", "R", "H", "TB", "RBI", "BB", "SO", "AVG"])
                         ForEach(battingPlayers(for: team)) { player in
                             let line = store.battingLine(for: player)
                             tableRow([
                                 "#\(player.numberText) \(player.name)",
-                                "\(line.plateAppearances)", "\(line.atBats)", "\(line.runs)", "\(line.hits)",
+                                "\(line.plateAppearances)", "\(line.atBats)", "\(line.runs)", "\(line.hits)", "\(line.totalBases)",
                                 "\(line.runsBattedIn)", "\(line.walks)", "\(line.strikeouts)", statText(line.average)
                             ], emphasized: 0)
                         }
@@ -697,10 +697,10 @@ struct GameExportService {
                 lines.append(game.lineupSummary(for: team.id))
             }
             lines.append("【\(team.shortName)打击】")
-            lines.append("球员\tPA\tAB\tR\tH\t2B\t3B\tHR\tRBI\tBB\tSO\tAVG")
+            lines.append("球员\tPA\tAB\tR\tH\t2B\t3B\tHR\tTB\tRBI\tBB\tSO\tAVG")
             for player in battingPlayers(for: team) {
                 let value = game.batting[player.id, default: BattingLine()]
-                lines.append("#\(player.numberText) \(player.name)\t\(value.plateAppearances)\t\(value.atBats)\t\(value.runs)\t\(value.hits)\t\(value.doubles)\t\(value.triples)\t\(value.homeRuns)\t\(value.runsBattedIn)\t\(value.walks)\t\(value.strikeouts)\t\(statText(value.average))")
+                lines.append("#\(player.numberText) \(player.name)\t\(value.plateAppearances)\t\(value.atBats)\t\(value.runs)\t\(value.hits)\t\(value.doubles)\t\(value.triples)\t\(value.homeRuns)\t\(value.totalBases)\t\(value.runsBattedIn)\t\(value.walks)\t\(value.strikeouts)\t\(statText(value.average))")
             }
 
             lines.append("")
@@ -966,7 +966,7 @@ struct PlayerDetailView: View {
                                 detailStat("BB", selectedLine.walks)
                                 detailStat("SO", selectedLine.strikeouts)
                                 detailStat("SB", selectedLine.stolenBases)
-                                detailStat("TB", selectedLine.totalBases)
+                                detailStat("打击总垒数 TB", selectedLine.totalBases)
                             }
                         }
                     }

@@ -2,14 +2,14 @@ import Foundation
 
 @MainActor
 enum ReportStatisticsTables {
-    static let battingHeaders = ["球员", "G", "PA", "AB", "R", "H", "2B", "3B", "HR", "RBI", "BB", "HBP", "SO", "SB", "AVG", "OBP", "SLG", "OPS"]
+    static let battingHeaders = ["球员", "G", "PA", "AB", "R", "H", "2B", "3B", "HR", "TB", "RBI", "BB", "HBP", "SO", "SB", "AVG", "OBP", "SLG", "OPS"]
     static let pitchingHeaders = ["投手", "IP", "BF", "H", "R", "ER", "BB", "HBP", "SO", "WP", "P", "S", "ERA", "WHIP"]
     static let fieldingHeaders = ["球员", "PO", "A", "E", "DP", "TC", "FPCT"]
 
     static func battingRow(_ name: String, games: Int, line b: BattingLine) -> [String] {
         let obpDenominator = b.atBats + b.walks + b.hitByPitch + b.sacrifices
         return [name, "\(games)", "\(b.plateAppearances)", "\(b.atBats)", "\(b.runs)", "\(b.hits)",
-                "\(b.doubles)", "\(b.triples)", "\(b.homeRuns)", "\(b.runsBattedIn)", "\(b.walks)",
+                "\(b.doubles)", "\(b.triples)", "\(b.homeRuns)", "\(b.totalBases)", "\(b.runsBattedIn)", "\(b.walks)",
                 "\(b.hitByPitch)", "\(b.strikeouts)", "\(b.stolenBases)",
                 rate(b.average, available: b.atBats > 0), rate(b.onBasePercentage, available: obpDenominator > 0),
                 rate(b.slugging, available: b.atBats > 0), rate(b.ops, available: b.atBats > 0)]
@@ -65,7 +65,7 @@ enum ReportStatisticsTables {
     static func legend(_ canvas: ReportPDFCanvas) {
         canvas.paragraph("统计口径与缩写", size: 11, bold: true)
         canvas.paragraph("比率按累计原始数据计算；ERA 按 7 局计算。IP 小数位为出局数，0.1 表示 1 人出局。\"-\" 表示未进行、无记录或无可用分母。DP 为球员参与双杀次数，合计不等同于球队双杀次数。", size: 8, muted: true)
-        canvas.paragraph("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · TC 守备机会 · FPCT 守备率", size: 8, muted: true)
+        canvas.paragraph("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · TB 打击总垒数 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · TC 守备机会 · FPCT 守备率", size: 8, muted: true)
     }
 }
 

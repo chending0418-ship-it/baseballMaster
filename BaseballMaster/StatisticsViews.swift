@@ -363,7 +363,7 @@ struct StatisticsMetricsGrid: View {
                     ("长打率 SLG", b.atBats > 0 ? statText(b.slugging) : "—"),
                     ("攻击指数 OPS", b.atBats > 0 ? statText(b.ops) : "—"),
                     ("打席 PA", "\(b.plateAppearances)"), ("打数 AB", "\(b.atBats)"),
-                    ("安打 H", "\(b.hits)"), ("本垒打 HR", "\(b.homeRuns)"),
+                    ("安打 H", "\(b.hits)"), ("打击总垒数 TB", "\(b.totalBases)"), ("本垒打 HR", "\(b.homeRuns)"),
                     ("打点 RBI", "\(b.runsBattedIn)"), ("保送 BB", "\(b.walks)"),
                     ("三振 SO", "\(b.strikeouts)"), ("盗垒 SB", "\(b.stolenBases)")]
         case .pitching:

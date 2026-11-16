@@ -1,5 +1,5 @@
 import { randomUUID, createHash, randomBytes } from 'node:crypto';
-import { validateSnapshot } from '../live/server.mjs';
+import { publicBattingSnapshot, validateSnapshot } from '../live/server.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const uuid = v => typeof v === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(v);
@@ -399,7 +399,9 @@ export class GameService {
     if (live) {
       const row=this.db.prepare("SELECT * FROM shared_games WHERE live_code=? AND deleted=0 AND live_enabled=1 AND live_expires_at>?").get(code,this.store.now());
       this.check(row,404,"live_expired","直播已关闭或到期；历史档案由球队另行授权查看。");
-      return { ...JSON.parse(row.projection), serverRevision:row.revision, updatedAt:row.updated_at, expiresAt:row.live_expires_at, isLiveLink:true };
+      const projection = JSON.parse(row.projection);
+      return { ...projection, snapshot: publicBattingSnapshot(projection.snapshot), serverRevision:row.revision,
+        updatedAt:row.updated_at, expiresAt:row.live_expires_at, isLiveLink:true };
     }
     const row=this.db.prepare('SELECT * FROM shared_games WHERE view_code=? AND deleted=0').get(code);
     this.check(row,404,'not_found','暂时无法观看。'); const projection=JSON.parse(row.projection);

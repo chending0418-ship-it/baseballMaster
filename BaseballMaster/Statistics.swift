@@ -9,7 +9,7 @@ enum StatisticsCategory: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var metrics: [StatisticsMetric] {
         switch self {
-        case .batting: [.average, .ops, .hits, .homeRuns, .rbi, .stolenBases, .plateAppearances]
+        case .batting: [.average, .ops, .hits, .totalBases, .homeRuns, .rbi, .stolenBases, .plateAppearances]
         case .pitching: [.era, .whip, .strikeouts, .innings, .pitches]
         case .fielding: [.fieldingPercentage, .putouts, .assists, .errors, .doublePlays]
         }
@@ -18,6 +18,7 @@ enum StatisticsCategory: String, CaseIterable, Identifiable {
 
 enum StatisticsMetric: String, Identifiable {
     case average = "打率 AVG", ops = "攻击指数 OPS", hits = "安打 H"
+    case totalBases = "打击总垒数 TB"
     case homeRuns = "本垒打 HR", rbi = "打点 RBI", stolenBases = "盗垒 SB", plateAppearances = "打席 PA"
     case era = "防御率 ERA", whip = "每局被上垒率 WHIP", strikeouts = "三振 SO", innings = "投球局数 IP", pitches = "用球数 P"
     case fieldingPercentage = "守备率 FPCT", putouts = "刺杀 PO", assists = "助杀 A", errors = "失误 E", doublePlays = "参与双杀 DP"
@@ -30,6 +31,7 @@ enum StatisticsMetric: String, Identifiable {
         case .average: row.batting.atBats > 0 ? row.batting.average : nil
         case .ops: row.batting.atBats > 0 ? row.batting.ops : nil
         case .hits: Double(row.batting.hits)
+        case .totalBases: Double(row.batting.totalBases)
         case .homeRuns: Double(row.batting.homeRuns)
         case .rbi: Double(row.batting.runsBattedIn)
         case .stolenBases: Double(row.batting.stolenBases)

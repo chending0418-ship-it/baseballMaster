@@ -258,6 +258,7 @@ private struct DataMetricCard: View {
 
 struct AppSettingsView: View {
     @AppStorage("appAppearance") private var appearance = AppAppearance.system.rawValue
+    @AppStorage(RecordingMethod.preferenceKey) private var defaultRecordingMethod = RecordingMethod.traditional
     @AppStorage("showPracticeGuidance") private var showPracticeGuidance = true
     @AppStorage("showRuleExamples") private var showRuleExamples = true
 
@@ -273,6 +274,13 @@ struct AppSettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     .accessibilityIdentifier("appearance-picker")
+                }
+
+                BMCard {
+                    Picker("默认记录方式", selection: $defaultRecordingMethod) {
+                        ForEach(RecordingMethod.allCases) { method in Text(method.title).tag(method) }
+                    }
+                    .accessibilityIdentifier("default-recording-method")
                 }
 
                 SectionHeader(title: "语音记分")

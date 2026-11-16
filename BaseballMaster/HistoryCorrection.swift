@@ -8,7 +8,7 @@ enum HistoryCommand: Equatable, Codable {
     case pitch(PitchAction)
     case illegalPitch(PitchAction?, Bool, PlayOutcome?, DefensivePlay?, [RunnerDecision]?, Bool?, Bool? = nil)
     case play(PlayOutcome, DefensivePlay?, [RunnerDecision], Bool?)
-    case runner(RunnerEventKind, [RunnerDecision], Bool?)
+    case runner(RunnerEventKind, [RunnerDecision], Bool?, responsibility: RunnerErrorResponsibility? = nil)
     case hitByPitch, intentionalWalk, foulBunt
     case droppedThirdStrike([RunnerDecision])
     case pitcher(UUID)
@@ -41,7 +41,7 @@ enum HistoryCommand: Equatable, Codable {
         case .pitch(let p): p.title
         case .illegalPitch: "Illegal／非法投球"
         case .play(let p, _, _, _): p.rawValue
-        case .runner(let p, _, _): p.rawValue
+        case .runner(let p, _, _, _): p.rawValue
         case .hitByPitch: "触身球"
         case .intentionalWalk: "故意保送"
         case .foulBunt: "触击界外三振"
@@ -73,7 +73,7 @@ enum HistoryCommand: Equatable, Codable {
         switch self {
         case .illegalPitch(_, let thrown, _, _, _, _, _): return thrown
         case .pitch, .play, .hitByPitch, .foulBunt, .droppedThirdStrike: return true
-        case .runner(let kind, _, _): return [.wildPitch, .passedBall, .uncertainLooseBall].contains(kind)
+        case .runner(let kind, _, _, _): return [.wildPitch, .passedBall, .uncertainLooseBall].contains(kind)
         case .violation(let kind, _), .adjudication(let kind, _):
             return [.quickPitch, .illegalPitch, .batterOutOfBox, .batterInterference, .illegalBat, .catcherInterference].contains(kind)
         default: return false
@@ -370,6 +370,11 @@ extension GameStore {
                 }
             }
             output.game = worker.game
+            if let method = stored.rules.recordingMethod, output.game.rulesSnapshot?.recordingMethod != method {
+                var rules = output.game.rulesSnapshot ?? stored.rules
+                rules.recordingMethod = method
+                output.game.rulesSnapshot = rules
+            }
             output.game.pitchingOutsAccountingVersion = game.pitchingOutsAccountingVersion
             output.game.pitchingOutsReviewRequired = game.pitchingOutsReviewRequired
             output.game.pitchingOutsBeforeRepair = game.pitchingOutsBeforeRepair
@@ -541,8 +546,8 @@ extension GameStore {
                                        decisions: try moves.map { try decisions($0) }, timingRunCounts: timing, penaltyApplied: penalty, observation: mappedObservation)
         case .play(let outcome, let defense, let moves, let timing):
             result = applyPlay(outcome, defensivePlay: defense, decisions: try decisions(moves), timingRunCounts: timing, observation: mappedObservation)
-        case .runner(let kind, let moves, let timing):
-            result = recordRunnerEvent(kind, decisions: try decisions(moves), timingRunCounts: timing)
+        case .runner(let kind, let moves, let timing, let responsibility):
+            result = recordRunnerEvent(kind, decisions: try decisions(moves), timingRunCounts: timing, errorResponsibility: responsibility)
         case .hitByPitch: recordHitByPitch()
         case .intentionalWalk: recordIntentionalWalk()
         case .foulBunt: recordFoulBuntStrikeout()
@@ -684,6 +689,8 @@ extension GameStore {
             guard Set(ruling.unearnedRunnerIDs).isSubset(of: allowedIDs) else { throw HistoryCorrectionError.invalid("非自责跑者不属于当时进攻方。") }
             game.unearnedRunnerIDs = Array(Set(game.unearnedRunnerIDs ?? []).union(ruling.unearnedRunnerIDs)).sorted { $0.uuidString < $1.uuidString }
             for i in offset..<(game.scoringEvents?.count ?? 0) {
+                if case .runner(.defensiveErrorAdvance, _, _, .pending?) = op.command,
+                   game.scoringEvents?[i].notation == RunnerEventKind.defensiveErrorAdvance.notation { continue }
                 game.scoringEvents?[i].needsReview = false
                 game.scoringEvents?[i].reviewNote = "历史纠错；打点与投手责任已人工复核"
                 if let logID = game.scoringEvents?[i].logEntryID, let j = game.playLog.firstIndex(where: { $0.id == logID }) { game.playLog[j].isIncomplete = false }
