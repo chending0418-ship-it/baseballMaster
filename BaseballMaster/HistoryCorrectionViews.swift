@@ -352,6 +352,7 @@ private struct HistoryOperationEditor: View {
                     ToolbarItem(placement: .confirmationAction) { Button("加入草稿") { submit() }.accessibilityIdentifier("history-add-draft") }
                 }.onAppear { initialize() }
         }
+        .interactiveDismissDisabled(!switchGroups.isEmpty)
     }
 
     private var substitutionForm: some View {

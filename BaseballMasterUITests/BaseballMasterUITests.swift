@@ -4186,8 +4186,8 @@ extension BaseballMasterUITests {
         XCTAssertEqual(first.value as? String, "1")
         first.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         XCTAssertEqual(first.value as? String, "0")
-        revealStatisticsControl(second, in: app)
-        XCTAssertTrue(second.exists)
+        if !second.exists { app.collectionViews.firstMatch.swipeUp() }
+        XCTAssertTrue(second.waitForExistence(timeout: 3))
         XCTAssertEqual(second.value as? String, "1")
         captureHistory(app, name: "3.1.3-双重换人保留第二组")
         app.buttons["history-add-draft"].tap()

@@ -7,7 +7,7 @@
 | 当前发布 | **用户于 2026-11-05 确认：iOS 3.1.2 已通过审核并上架**。本轮未读取 App Store Connect，不推定实际审核通过时间或线上二进制的源码提交／Build |
 | 源码配置 | 候选分支工程为 3.1.5（Build 1），见 [BaseballMaster.xcodeproj](../../BaseballMaster.xcodeproj/) 和 [草稿 PR #57](https://github.com/chending0418-ship-it/baseballMaster/pull/57) |
 | 本版计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；[上版计划](<plans/3.1.1 发布功能计划.md>) |
-| 3.1.3 规划 | [3.1.3 发布功能计划](<plans/3.1.3 发布功能计划.md>)已记录记分方式、直播打者、换人纠错、跑垒失误归属和统计补全五项现场反馈，待开发和验收。 |
+| 3.1.3 开发 | [3.1.3 发布功能计划](<plans/3.1.3 发布功能计划.md>)的五项已实现并完成本机验收，覆盖 iPhone、iPad、Duo、直播和统计导出。实现及回执见 [草稿 PR #67](https://github.com/chending0418-ship-it/baseballMaster/pull/67)。合并、生产部署及商店发布待安排。 |
 | 后续版本 | [3.1.5 发布功能计划](<plans/3.1.5 发布功能计划.md>)。转播交接与重启串场已修复，待用模拟器配合 OBS 检查及部署。总 Admin 已上线语音开启码管理和发放备注，App 单局面录入已接入。主屏幕改名已核对，Duo 外屏图标文字会截断。单投手球数可直接输入，球数与登板局数到限只提醒。六项改动已整合。同一个模拟器构建的 iPhone、iPad 和 Duo 回归共 22 项通过。 |
 | 3.1.5 送审材料 | [审核文案、截图与提交清单](releases/3.1.5/APPSTORE-填写清单.md)已备妥，App 已增加录音前同意流程，公开隐私政策和审核专用开启码待完成。 |
 | 发布资料 | [3.1.2 材料入口](releases/3.1.2/README-先看这里.md)、[正式归档证据](releases/3.1.2/ARCHIVE.md)、[开发与验收](releases/3.1.2/DEVELOPMENT.md)；其中按日期保留的“未上传／未上架”为历史阶段 |
