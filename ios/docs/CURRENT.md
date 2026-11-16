@@ -7,7 +7,7 @@
 | 当前发布 | **用户于 2026-11-05 确认：iOS 3.1.2 已通过审核并上架**。本轮未读取 App Store Connect，不推定实际审核通过时间或线上二进制的源码提交／Build |
 | 源码配置 | 本候选工程为 3.1.3（Build 4）。3.1.5 另见 [草稿 PR #57](https://github.com/chending0418-ship-it/baseballMaster/pull/57) |
 | 本版计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；[上版计划](<plans/3.1.1 发布功能计划.md>) |
-| 3.1.3 TestFlight 候选 | [3.1.3 发布功能计划](<plans/3.1.3 发布功能计划.md>)。候选分支整合 [PR #67](https://github.com/chending0418-ship-it/baseballMaster/pull/67) 的记分、直播、纠错、统计和滚动改动，以及 [PR #68](https://github.com/chending0418-ship-it/baseballMaster/pull/68) 的[比赛分析与品牌 PDF](plans/比赛分析.md)。整合验收完成。当前为已归档的 Build 4，加入四垒跑者确认图和守备栏排版调整，等待用户上传 TestFlight。线上球队服务已启用比赛分析。 |
+| 3.1.3 TestFlight 候选 | [3.1.3 发布功能计划](<plans/3.1.3 发布功能计划.md>)。候选分支整合 [PR #67](https://github.com/chending0418-ship-it/baseballMaster/pull/67) 的记分、直播、纠错、统计和滚动改动，以及 [PR #68](https://github.com/chending0418-ship-it/baseballMaster/pull/68) 的[比赛分析与品牌 PDF](plans/比赛分析.md)。整合验收完成。Build 4 加入四垒跑者确认图和守备栏排版调整。用户于 2026-11-17 确认已上传 TestFlight，Apple 处理、测试分发与真机复核待确认。线上球队服务已启用比赛分析。 |
 | 捕手守备统计 | [3.1.3 的 Build 3](<plans/3.1.3 发布功能计划.md>) 已支持捕手阻杀 CCS 和捕逸 PB 的记分、守备统计与 PDF。 |
 | 后续版本 | [3.1.5 发布功能计划](<plans/3.1.5 发布功能计划.md>)。转播交接与重启串场已修复，待用模拟器配合 OBS 检查及部署。总 Admin 已上线语音开启码管理和发放备注，App 单局面录入已接入。主屏幕改名已核对，Duo 外屏图标文字会截断。单投手球数可直接输入，球数与登板局数到限只提醒。六项改动已整合。同一个模拟器构建的 iPhone、iPad 和 Duo 回归共 22 项通过。 |
 | 3.1.5 送审材料 | [审核文案、截图与提交清单](releases/3.1.5/APPSTORE-填写清单.md)已备妥，App 已增加录音前同意流程，公开隐私政策和审核专用开启码待完成。 |
