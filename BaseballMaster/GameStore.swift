@@ -3519,15 +3519,17 @@ final class GameStore: ObservableObject {
     }
 
     func plateAppearanceRecords() -> [PlateAppearanceRecord] {
+        guard let appearances = game.plateAppearances, !appearances.isEmpty else { return [] }
+        let eventsByAppearance = Dictionary(grouping: game.scoringEvents ?? [], by: \.plateAppearanceID)
         var teamSequences: [Bool: Int] = [:]
-        return (game.plateAppearances ?? []).compactMap { identity in
+        return appearances.compactMap { identity in
             let sequence = teamSequences[identity.isTop, default: 0] + 1
             teamSequences[identity.isTop] = sequence
             let team = identity.isTop ? game.awayTeam : game.homeTeam
             guard let batter = team.players.first(where: { $0.id == identity.batterIDs.last }) else { return nil }
             return PlateAppearanceRecord(id: identity.id, sequence: sequence, inning: identity.inning,
                 isTop: identity.isTop, batter: batter,
-                events: (game.scoringEvents ?? []).filter { $0.plateAppearanceID == identity.id },
+                events: eventsByAppearance[identity.id] ?? [],
                 isComplete: identity.completed)
         }
     }

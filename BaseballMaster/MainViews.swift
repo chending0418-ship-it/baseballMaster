@@ -32,6 +32,9 @@ struct GameHomeView: View {
     @AppStorage("demoIntroductionSeen") private var demoIntroductionSeen = false
 
     var body: some View {
+        let scheduledGames = store.scheduledGames
+        let ongoingGames = store.ongoingGames
+        let recentGames = store.recentGames.prefix(10)
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 teamHeader
@@ -49,15 +52,15 @@ struct GameHomeView: View {
                 }
 
                 NavigationLink(destination: NewGameSetupView()) {
-                    Label(store.ongoingGames.isEmpty ? "开始新比赛" : "再开始一场比赛", systemImage: "plus.circle.fill")
+                    Label(ongoingGames.isEmpty ? "开始新比赛" : "再开始一场比赛", systemImage: "plus.circle.fill")
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .accessibilityIdentifier("start-new-game")
 
-                if !store.scheduledGames.isEmpty {
-                    SectionHeader(title: "即将进行", subtitle: "\(store.scheduledGames.count) 场")
+                if !scheduledGames.isEmpty {
+                    SectionHeader(title: "即将进行", subtitle: "\(scheduledGames.count) 场")
                     LazyVStack(spacing: 12) {
-                        ForEach(store.scheduledGames) { stored in
+                        ForEach(scheduledGames) { stored in
                             HStack(spacing: 0) {
                                 NavigationLink(destination: ScheduledGameDetailView(gameID: stored.id)) {
                                     scheduledGameContent(stored)
@@ -85,8 +88,8 @@ struct GameHomeView: View {
                     }
                 }
 
-                SectionHeader(title: "正在进行", subtitle: store.ongoingGames.isEmpty ? nil : "\(store.ongoingGames.count) 场")
-                if store.ongoingGames.isEmpty {
+                SectionHeader(title: "正在进行", subtitle: ongoingGames.isEmpty ? nil : "\(ongoingGames.count) 场")
+                if ongoingGames.isEmpty {
                     emptyGameCard(
                         icon: "play.slash",
                         title: "没有进行中的比赛",
@@ -94,7 +97,7 @@ struct GameHomeView: View {
                     )
                 } else {
                     LazyVStack(spacing: 12) {
-                        ForEach(store.ongoingGames) { stored in
+                        ForEach(ongoingGames) { stored in
                             HStack(spacing: 0) {
                                 NavigationLink(destination: StoredGameRouteView(gameID: stored.id, showsBoxScore: false)) {
                                     gameCardContent(stored)
@@ -124,7 +127,7 @@ struct GameHomeView: View {
                 }
 
                 SectionHeader(title: "最近比赛", subtitle: "按比赛日期排序")
-                if store.recentGames.isEmpty {
+                if recentGames.isEmpty {
                     emptyGameCard(
                         icon: "clock",
                         title: "还没有已完成的比赛",
@@ -132,7 +135,7 @@ struct GameHomeView: View {
                     )
                 } else {
                     LazyVStack(spacing: 10) {
-                        ForEach(store.recentGames.prefix(10)) { stored in
+                        ForEach(recentGames) { stored in
                             HStack(spacing: 0) {
                                 NavigationLink(destination: StoredGameRouteView(gameID: stored.id, showsBoxScore: true)) {
                                     recentGameContent(stored)

@@ -21,27 +21,32 @@ struct StatsOverviewView: View {
     private var team: Team? {
         let currentID = store.currentTeam?.id
         let localID = currentID.map(store.localStatisticsScope)
-        let preferredID = selectedTeamID ?? (store.statisticsTeams.contains { $0.id == localID } ? localID : currentID)
-        return store.statisticsTeams.first { $0.id == preferredID } ?? store.statisticsTeams.first
+        let teams = store.statisticsTeams
+        let preferredID = selectedTeamID ?? (teams.contains { $0.id == localID } ? localID : currentID)
+        return teams.first { $0.id == preferredID } ?? teams.first
     }
     private var seasonID: String {
         store.statisticsSeasons.contains(where: { $0.id == selectedSeasonID })
             ? selectedSeasonID : MatchYear.current
     }
 
-    private var eligibleGames: [StoredGame] {
+    private func eligibleGames(for team: Team?) -> [StoredGame] {
         guard let team else { return [] }
         return store.completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: modeFilter)
     }
-    private var eligibleIDs: Set<UUID> { Set(eligibleGames.map(\.id)) }
-    private var effectiveGameIDs: Set<UUID>? { selectedGameIDs.map { $0.intersection(eligibleIDs) } }
 
     var body: some View {
+        let team = self.team
+        let eligibleGames = eligibleGames(for: team)
+        let eligibleIDs = Set(eligibleGames.map(\.id))
+        let effectiveGameIDs = selectedGameIDs.map { $0.intersection(eligibleIDs) }
+        let playerGameIDs = effectiveGameIDs ?? eligibleIDs
+
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if let team {
                     let summary = store.seasonStatistics(for: team, seasonID: seasonID, mode: modeFilter, gameIDs: effectiveGameIDs)
-                    scopeSelection(team: team)
+                    scopeSelection(team: team, selectedCount: playerGameIDs.count, eligibleCount: eligibleGames.count)
                     GameModeFilter(selection: $modeFilter)
                     teamSummary(summary)
                     Text("仅统计已结束的本队比赛；观赛、练习和进行中比赛不计入。")
@@ -97,7 +102,7 @@ struct StatsOverviewView: View {
                             ForEach(rows) { row in
                                 NavigationLink(destination: PlayerDetailView(
                                     player: row.player, initialSeasonID: seasonID,
-                                    statisticsTeamID: team.id, initialCategory: category, initialGameIDs: effectiveGameIDs ?? eligibleIDs, initialMode: modeFilter
+                                    statisticsTeamID: team.id, initialCategory: category, initialGameIDs: playerGameIDs, initialMode: modeFilter
                                 )) {
                                     playerRow(row)
                                 }
@@ -139,9 +144,10 @@ struct StatsOverviewView: View {
             }
         }
         .sheet(isPresented: $showGameFilter) {
-            GameFilterSheet(games: eligibleGames, initialSelection: effectiveGameIDs ?? eligibleIDs) { selection in
-                let valid = selection.intersection(eligibleIDs)
-                selectedGameIDs = valid.isEmpty ? [] : (valid == eligibleIDs ? nil : valid)
+            GameFilterSheet(games: eligibleGames, initialSelection: playerGameIDs) { selection in
+                let availableIDs = Set(self.eligibleGames(for: self.team).map(\.id))
+                let valid = selection.intersection(availableIDs)
+                selectedGameIDs = valid.isEmpty ? [] : (valid == availableIDs ? nil : valid)
             }
         }
         .onChange(of: selectedTeamID) { _ in selectedGameIDs = nil }
@@ -157,7 +163,7 @@ struct StatsOverviewView: View {
         .onChange(of: metric) { ascending = $0.ascendingByDefault }
     }
 
-    private func scopeSelection(team: Team) -> some View {
+    private func scopeSelection(team: Team, selectedCount: Int, eligibleCount: Int) -> some View {
         BMCard {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("球队", selection: Binding(get: { team.id }, set: { selectedTeamID = $0 })) {
@@ -176,7 +182,7 @@ struct StatsOverviewView: View {
                         Label("筛选比赛", systemImage: "line.3.horizontal.decrease.circle")
                     }.accessibilityIdentifier("stats-open-game-filter")
                     Spacer()
-                    Text("已选 \(effectiveGameIDs?.count ?? eligibleGames.count) / \(eligibleGames.count) 场")
+                    Text("已选 \(selectedCount) / \(eligibleCount) 场")
                         .font(.caption).accessibilityIdentifier("stats-game-scope")
                 }
                 if selectedGameIDs != nil {
