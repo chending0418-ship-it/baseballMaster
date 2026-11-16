@@ -12,7 +12,9 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import java.io.ByteArrayOutputStream
@@ -56,6 +58,17 @@ class TeamArchiveUIFlowTest {
             counts.forEachIndexed { index, count ->
                 click(device, "archive-history-section-$index")
                 assertTrue(device.wait(Until.hasObject(By.text("${labels[index]} · $count 条")), 10_000))
+                if (index == 1) {
+                    assertNotNull(NativeUi.find(device, By.text("关联打席：第 1 打席")))
+                }
+                if (index == 2) {
+                    val first = history.appearances.first()
+                    assertNotNull(NativeUi.find(device, By.text("第 1 打席")))
+                    assertNotNull(NativeUi.find(device, By.text("打者：#1 球员1")))
+                    assertFalse(device.hasObject(By.textContains(first.getValue("id").jsonPrimitive.content)))
+                    assertFalse(device.hasObject(By.textContains(first.getValue("batterIDs").jsonArray.first().jsonPrimitive.content)))
+                    device.takeScreenshot(File(context.getExternalFilesDir(null), "083-archive-appearances.png"))
+                }
             }
             device.takeScreenshot(File(context.getExternalFilesDir(null), "an04-archive-corrections.png"))
             device.pressBack()

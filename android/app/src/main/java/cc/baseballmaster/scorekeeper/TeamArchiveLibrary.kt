@@ -224,9 +224,12 @@ internal fun ArchiveGameHistory(stored: JsonObject, secure: Boolean = false, dis
     val sections = listOf("逐球日志", "记分事件", "打席", "历史操作", "更正审计")
     val rows = listOf(history.logs, history.events, history.appearances, history.operations, history.corrections)[section]
     fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val appearanceNumbers = remember(history) {
+        history.appearances.mapIndexed { index, row -> row.text("id").lowercase() to index + 1 }.toMap()
+    }
     FormPage("档案比赛历史", false, true, "", "", dismiss, {},secure=secure) {
         Text("原始只读历史", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("archive-history-title"))
-        Text("保留原编号及顺序，不从当前局面推算历史；此页不能续记或撤回更正。")
+        Text("按原记录顺序查看逐球、打席和更正。")
         if (!history.hasJournal) Text("此记录没有操作日志，无法据此完整重放或纠错。")
         sections.forEachIndexed { index, title ->
             TextButton(onClick = { section = index; page = 0 }, modifier = Modifier.testTag("archive-history-section-$index")) {
@@ -236,18 +239,33 @@ internal fun ArchiveGameHistory(stored: JsonObject, secure: Boolean = false, dis
         Text("${sections[section]} · ${rows.size} 条", modifier = Modifier.testTag("archive-history-count"))
         if (rows.isEmpty()) Text("原文件未包含此类记录")
         rows.drop(page * 20).take(20).forEachIndexed { index, row ->
+            val number = page * 20 + index + 1
             CardBlock {
-                Text("${page * 20 + index + 1}. ${row.text("title").ifBlank { row.text("text").ifBlank { row.text("reason") } }}", fontWeight = FontWeight.Bold)
-                Text("ID: ${row.text("id")}")
+                if (section == 2) Text("第 $number 打席", fontWeight = FontWeight.Bold)
+                else {
+                    val title = row.text("title").ifBlank { row.text("text").ifBlank { row.text("reason") } }
+                    Text("$number. $title", fontWeight = FontWeight.Bold)
+                    Text("ID: ${row.text("id")}")
+                }
                 when (section) {
                     0 -> Text("第 ${row.text("inning")} 局${if (row.text("isTop") == "true") "上" else "下"}")
                     1 -> {
                         Text("${row.text("category")} · ${row.text("notation")}")
-                        Text("关联日志：${row.text("logEntryID")}\n关联打席：${row.text("plateAppearanceID")}")
+                        Text("关联日志：${row.text("logEntryID")}")
+                        appearanceNumbers[row.text("plateAppearanceID").lowercase()]?.let { Text("关联打席：第 $it 打席") }
                     }
                     2 -> {
                         Text("第 ${row.text("inning")} 局${if (row.text("isTop") == "true") "上" else "下"} · ${if (row.text("completed") == "true") "已完成" else "未完成"}${if (row.text("interrupted") == "true") " · 中断" else ""}")
-                        Text("打者：${row["batterIDs"]?.jsonArray?.joinToString { it.jsonPrimitive.content }.orEmpty()}")
+                        val batters = row.getValue("batterIDs").jsonArray.joinToString("、") { item ->
+                            val player = history.playersByID[item.jsonPrimitive.content.lowercase()]
+                            if (player == null) "历史球员"
+                            else {
+                                val name = player.chineseName.orEmpty().ifBlank { player.englishName.ifBlank { "姓名未记录" } }
+                                val numbers = player.jerseyNumbers.joinToString(" / ") { "#$it" }
+                                if (numbers.isEmpty()) name else "$numbers $name"
+                            }
+                        }
+                        Text("打者：${batters.ifEmpty { "未记录" }}")
                     }
                     3 -> {
                         Text("${row["command"]?.jsonObject?.keys?.joinToString().orEmpty()}${if (row.text("edited") == "true") " · 已编辑" else ""}${if (row.text("inserted") == "true") " · 补记" else ""}")
