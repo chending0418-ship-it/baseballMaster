@@ -9646,3 +9646,54 @@ private final class VoiceContractURLProtocol: URLProtocol {
         }
     }
 }
+
+extension GameStoreTests {
+    func testGameAnalysisSingleUsesParticipantsAndStructuredSituationsWithoutNames() throws {
+        let store = freshStore()
+        let first = store.currentBatter
+        XCTAssertTrue(store.applyPlay(.homeRun))
+        store.finishGame()
+        let saved = try XCTUnwrap(store.activeStoredGame)
+        let source = GameAnalysisSource(single: saved)
+        XCTAssertEqual(source.input.scope, .single)
+        let situation = try XCTUnwrap(source.input.games.first?.events.first { $0.kind == "HR" })
+        let id = try XCTUnwrap(situation.batter)
+        XCTAssertTrue(source.names[id]?.contains(first.name) == true)
+        XCTAssertEqual(situation.beforeScore, [0, 0])
+        XCTAssertEqual(situation.afterScore, [1, 0])
+        XCTAssertEqual(source.input.players.first { $0.id == id }?.batting[3], 4)
+        XCTAssertEqual(Set(source.input.players.map(\.side)), [0, 1])
+        XCTAssertTrue(source.display("\(id)击出本垒打").contains(first.name))
+        let wire = String(decoding: try JSONEncoder().encode(source.input), as: UTF8.self)
+        XCTAssertFalse(wire.contains(first.name))
+        XCTAssertFalse(wire.contains(first.id.uuidString))
+        XCTAssertFalse(wire.contains(saved.state.awayTeam.name))
+        XCTAssertFalse(wire.contains(saved.state.homeTeam.name))
+    }
+
+    func testGameAnalysisYearAndFilterUseExactlyTheSelectedCompletedMatches() throws {
+        let store = GameStore(persistenceURL: nil)
+        let team = try XCTUnwrap(store.currentTeam)
+        let first = try XCTUnwrap(team.players.first)
+        var standard = statisticsGame(store: store, runs: 7)
+        standard.state.batting[first.id] = BattingLine(plateAppearances: 3, atBats: 3, hits: 1)
+        var slow = statisticsGame(store: store, isHome: false, runs: 2)
+        slow.rules.mode = .slowPitch
+        slow.state.batting[first.id] = BattingLine(plateAppearances: 2, atBats: 2, hits: 1, doubles: 1)
+        store.games = [standard, slow, statisticsGame(store: store, status: .ongoing), statisticsGame(store: store, observation: true)]
+
+        let annual = GameAnalysisSource(summary: store.seasonStatistics(for: team, seasonID: MatchYear.current),
+                                        teamName: team.name, year: MatchYear.current, filtered: false)
+        XCTAssertEqual(annual.input.scope, .season)
+        XCTAssertEqual(annual.input.games.count, 2)
+        let annualPlayer = annual.input.players.first { annual.names[$0.id] == first.compactName }
+        XCTAssertEqual(annualPlayer?.games, 2)
+        XCTAssertEqual(annualPlayer?.batting[3], 3)
+        let filtered = GameAnalysisSource(summary: store.seasonStatistics(for: team, seasonID: MatchYear.current, gameIDs: [slow.id]),
+                                           teamName: team.name, year: MatchYear.current, filtered: true)
+        XCTAssertEqual(filtered.input.scope, .filtered)
+        XCTAssertEqual(filtered.input.games.map(\.mode), [.slowPitch])
+        XCTAssertEqual(filtered.input.games.first?.totals.first, 2)
+        XCTAssertEqual(filtered.input.players.first { filtered.names[$0.id] == first.compactName }?.batting[3], 2)
+    }
+}

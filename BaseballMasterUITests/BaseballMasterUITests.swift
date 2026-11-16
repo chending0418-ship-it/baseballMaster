@@ -4113,3 +4113,42 @@ extension BaseballMasterUITests {
         XCTAssertTrue(active.waitForExistence(timeout: 15))
     }
 }
+
+extension BaseballMasterUITests {
+    func testGameAnalysisGeneratesFromSingleYearAndFilteredResults() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["BM_GAME_ANALYSIS_LOCAL_TEST"] = UUID().uuidString
+
+        func generate(from entry: String, title: String, count: Int) {
+            let open = app.buttons[entry]
+            revealStatisticsControl(open, in: app)
+            XCTAssertTrue(open.isHittable)
+            open.tap()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
+            app.buttons["generate-game-analysis"].tap()
+            XCTAssertTrue(app.staticTexts["本次分析覆盖 \(count) 场比赛。"].waitForExistence(timeout: 15))
+            XCTAssertTrue(app.buttons["分享文字"].exists)
+            captureHistory(app, name: "比赛分析-\(title)")
+            app.buttons["关闭"].tap()
+        }
+
+        app.launchArguments = ["--v30-date-preview"]
+        app.launch()
+        generate(from: "open-game-analysis", title: "比赛分析", count: 1)
+        app.terminate()
+
+        app.launchArguments = ["--v22-statistics-preview"]
+        app.launch()
+        generate(from: "open-season-analysis", title: "全年比赛分析", count: 3)
+        let filter = app.buttons["stats-open-game-filter"]
+        revealStatisticsControl(filter, in: app)
+        filter.tap()
+        let choices = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "stats-select-game-"))
+        XCTAssertEqual(choices.count, 3)
+        choices.firstMatch.tap()
+        XCTAssertEqual(choices.firstMatch.value as? String, "未选择")
+        app.buttons["stats-apply-game-filter"].tap()
+        XCTAssertTrue(app.staticTexts["stats-game-scope"].label.contains("2 / 3"))
+        generate(from: "open-season-analysis", title: "筛选比赛分析", count: 2)
+    }
+}
