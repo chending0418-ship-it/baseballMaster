@@ -390,15 +390,19 @@ struct RunnerErrorPicker: View {
     @Binding var selection: RunnerErrorResponsibility?
 
     var body: some View {
-        Picker("失误责任人", selection: $selection) {
-            Text("请选择").tag(nil as RunnerErrorResponsibility?)
-            Text("责任人待确认").tag(Optional(RunnerErrorResponsibility.pending))
-            ForEach(fielders.sorted { $0.primaryPosition.rawValue < $1.primaryPosition.rawValue }) { player in
-                Text("\(player.primaryPosition.fullName) · \(player.compactName)")
-                    .tag(Optional(RunnerErrorResponsibility.fielder(player.id)))
+        LabeledContent("失误责任人") {
+            Picker("失误责任人", selection: $selection) {
+                Text("请选择").tag(nil as RunnerErrorResponsibility?)
+                Text("责任人待确认").tag(Optional(RunnerErrorResponsibility.pending))
+                ForEach(fielders.sorted { $0.primaryPosition.rawValue < $1.primaryPosition.rawValue }) { player in
+                    Text("\(player.primaryPosition.fullName) · \(player.compactName)")
+                        .tag(Optional(RunnerErrorResponsibility.fielder(player.id)))
+                }
             }
+            .labelsHidden()
+            .tint(BMTheme.green)
+            .accessibilityIdentifier("runner-error-responsibility")
         }
-        .accessibilityIdentifier("runner-error-responsibility")
     }
 }
 

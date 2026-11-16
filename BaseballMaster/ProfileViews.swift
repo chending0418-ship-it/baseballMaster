@@ -277,10 +277,13 @@ struct AppSettingsView: View {
                 }
 
                 BMCard {
-                    Picker("默认记录方式", selection: $defaultRecordingMethod) {
-                        ForEach(RecordingMethod.allCases) { method in Text(method.title).tag(method) }
+                    LabeledContent("默认记录方式") {
+                        Picker("默认记录方式", selection: $defaultRecordingMethod) {
+                            ForEach(RecordingMethod.allCases) { method in Text(method.title).tag(method) }
+                        }
+                        .labelsHidden()
+                        .accessibilityIdentifier("default-recording-method")
                     }
-                    .accessibilityIdentifier("default-recording-method")
                 }
 
                 SectionHeader(title: "语音记分")

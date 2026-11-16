@@ -4117,11 +4117,8 @@ extension BaseballMasterUITests {
 extension BaseballMasterUITests {
     func testV313NewGameUsesDefaultAndSupportsPerGameOverride() {
         let app = XCUIApplication()
-        app.launchArguments = ["--v22-opening-preview"]
+        app.launchArguments = ["--profile-preview"]
         app.launch()
-        let profile = app.tabBars.buttons["我的"]
-        XCTAssertTrue(profile.waitForExistence(timeout: 8))
-        profile.tap()
         let settings = app.buttons["open-app-settings"]
         revealStatisticsControl(settings, in: app)
         settings.tap()
@@ -4133,7 +4130,7 @@ extension BaseballMasterUITests {
         captureHistory(app, name: "3.1.3-默认记录方式")
 
         app.terminate()
-        app.launchArguments = ["--v23-new-game-preview", "-defaultRecordingMethod", "situation"]
+        app.launchArguments = ["--v23-new-game-preview"]
         app.launch()
         let picker = app.segmentedControls["recording-method-picker"]
         revealStatisticsControl(picker, in: app)
@@ -4187,9 +4184,10 @@ extension BaseballMasterUITests {
         let second = app.switches["history-keep-switch-2"]
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         XCTAssertEqual(first.value as? String, "1")
-        XCTAssertEqual(second.value as? String, "1")
         first.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         XCTAssertEqual(first.value as? String, "0")
+        revealStatisticsControl(second, in: app)
+        XCTAssertTrue(second.exists)
         XCTAssertEqual(second.value as? String, "1")
         captureHistory(app, name: "3.1.3-双重换人保留第二组")
         app.buttons["history-add-draft"].tap()
