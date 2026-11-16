@@ -499,6 +499,7 @@ final class BaseballMasterUITests: XCTestCase {
 
         let confirm = app.buttons["confirm-runners"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["runner-base-本垒"].exists, "打者从本垒确认结果")
         confirm.tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 3))
     }
@@ -4185,8 +4186,29 @@ extension BaseballMasterUITests {
             event.tap()
         }
         open("runner-event-盗垒出局")
+        let diagram = app.segmentedControls["runner-board-view"]
+        let first = app.buttons["runner-base-一垒"]
+        let second = app.buttons["runner-base-二垒"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["runner-base-三垒"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-本垒"].firstMatch.exists)
+
+        second.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-focused-player"].firstMatch.label.contains("二垒跑者"))
+        let thirdDestination = app.buttons["runner-destination-到三垒"]
+        revealStatisticsControl(thirdDestination, in: app)
+        thirdDestination.tap()
+        XCTAssertFalse(app.buttons["confirm-runners"].isEnabled)
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-conflict"].firstMatch.exists)
+        app.buttons["runner-destination-停留"].tap()
+
+        revealStatisticsControl(first, in: app)
+        first.tap()
         let receiver = app.buttons["runner-steal-receiver"].firstMatch
         revealStatisticsControl(receiver, in: app)
+        if receiver.frame.midY > app.buttons["confirm-runners"].frame.minY - 12 {
+            app.scrollViews.firstMatch.swipeUp()
+        }
         XCTAssertTrue(receiver.isHittable)
         receiver.tap()
         let shortstop = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "游击手")).firstMatch
@@ -4195,15 +4217,26 @@ extension BaseballMasterUITests {
         let target = app.buttons["runner-steal-target"].firstMatch
         revealStatisticsControl(target, in: app)
         XCTAssertTrue(target.isHittable)
-        captureHistory(app, name: "build3-盗垒出局")
+        captureHistory(app, name: "runner-diamond-盗垒出局")
+        let after = diagram.buttons["去向预览"]
+        revealStatisticsControl(after, in: app)
+        after.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-preview-outs"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-一垒"].firstMatch.label.contains("空垒"))
+        captureHistory(app, name: "runner-diamond-阻杀预览")
         app.buttons["confirm-runners"].tap()
         XCTAssertTrue(runners.waitForExistence(timeout: 5))
 
         open("runner-event-捕逸 PB")
         let catcher = app.buttons["runner-passed-ball-catcher"].firstMatch
+        revealStatisticsControl(catcher, in: app)
         XCTAssertTrue(catcher.waitForExistence(timeout: 5))
-        XCTAssertFalse(catcher.label.contains("待确认"))
-        captureHistory(app, name: "build3-捕逸")
+        XCTAssertTrue((catcher.value as? String)?.contains("#") == true)
+        captureHistory(app, name: "runner-diamond-捕逸")
+        revealStatisticsControl(after, in: app)
+        after.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-本垒"].firstMatch.label.contains("回本垒"))
+        captureHistory(app, name: "runner-diamond-捕逸预览")
         app.buttons["confirm-runners"].tap()
         XCTAssertTrue(app.staticTexts["已达到半局得分上限"].waitForExistence(timeout: 5))
     }
