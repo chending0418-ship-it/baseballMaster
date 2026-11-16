@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import cc.baseballmaster.core.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -266,14 +267,54 @@ internal fun ReportShareButton(label: String, tag: String, mime: String = "appli
 }
 
 @Composable
-internal fun StatisticsScreen(model: ScorekeeperViewModel) {
-    val teams = LocalMatchSource.statisticsTeams(model.rosters,model.games)
+internal fun StatisticsScreen(
+    model: ScorekeeperViewModel,
+    sharing: AndroidTeamSharing = model.sharing,
+    localRosters: List<Team> = model.rosters,
+    localGames: List<Game> = model.games,
+) {
+    val localTeams = remember(localRosters, localGames) { LocalMatchSource.statisticsTeams(localRosters, localGames) }
+    var teamID by rememberSaveable { mutableStateOf<String?>(null) }
+    var refreshCount by remember { mutableIntStateOf(0) }
+    var shared by remember { mutableStateOf(SharedStatisticsResult()) }
+    var syncing by remember { mutableStateOf(true) }
+    val preferShared = localTeams.isEmpty()
+    val selectedSharedID = teamID?.takeIf { it.startsWith("shared:") }?.removePrefix("shared:")
+    LaunchedEffect(sharing, selectedSharedID, preferShared, refreshCount) {
+        syncing = true
+        try {
+            shared = sharing.sharedStatistics(selectedSharedID, preferShared)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            shared = SharedStatisticsResult(message = "暂时无法读取共享统计，请重试。")
+        } finally {
+            syncing = false
+        }
+    }
+    val teams = localTeams + shared.memberships.map { membership ->
+        shared.team?.takeIf { it.id == sharedStatisticsID(membership.id) } ?: membership.statisticsRoster()
+    }
+    LaunchedEffect(syncing, shared.memberships) {
+        if (!syncing && selectedSharedID != null && shared.memberships.none { it.id == selectedSharedID }) teamID = null
+    }
     if (teams.isEmpty()) {
         Text("统计", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        CardBlock { Text("还没有球队", fontWeight = FontWeight.Bold); Text("先在球队页面创建球队并添加球员。") }
+        CardBlock {
+            when {
+                syncing -> Text("正在查看共享球队…")
+                shared.message != null -> {
+                    Text(requireNotNull(shared.message))
+                    TextButton({ refreshCount++ }) { Text("重试") }
+                }
+                else -> {
+                    Text("还没有球队", fontWeight = FontWeight.Bold)
+                    Text("可在球队页面创建球队或加入共享球队。")
+                }
+            }
+        }
         return
     }
-    var teamID by rememberSaveable { mutableStateOf<String?>(null) }
     var year by rememberSaveable { mutableIntStateOf(Year.now().value) }
     var modeKey by rememberSaveable { mutableStateOf("all") }
     var categoryName by rememberSaveable { mutableStateOf(StatsCategory.BATTING.name) }
@@ -286,7 +327,17 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     var filterDraft by rememberSaveable { mutableStateOf<Set<String>?>(null) }
     var playerID by rememberSaveable { mutableStateOf<String?>(null) }
-    val team = teams.firstOrNull { it.id == teamID } ?: model.currentTeam ?: teams.first()
+    val team = teams.firstOrNull { it.id == teamID }
+        ?: localTeams.firstOrNull { it.id == model.currentTeamID } ?: teams.first()
+    val sharedTeam = team.source == "shared"
+    val matchingShared = shared.team?.id == team.id
+    val games = if (sharedTeam) shared.games.takeIf { matchingShared }.orEmpty() else localGames
+    val sharedNote = if (!sharedTeam) null else when {
+        syncing || !matchingShared -> "正在刷新共享球队统计。"
+        shared.message != null -> shared.message
+        shared.unavailableCount > 0 -> "有 ${shared.unavailableCount} 场已结束比赛暂无法计入。"
+        else -> "按最近同步的已结束比赛汇总。"
+    }
     // The Tab's SaveableStateHolder can restore these slots after the current
     // team has changed elsewhere. Save the owner, not only remember inputs, so
     // the first frame never applies another team's IDs or opens its old detail.
@@ -305,20 +356,30 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
     val mode = GameMode.entries.firstOrNull { it.name == modeKey }
     val category = StatsCategory.valueOf(categoryName)
     val metric = StatsMetric.valueOf(metricName)
-    val eligible = SeasonStatisticsCalculator.calculate(team, model.games, year, mode)
+    val eligible = remember(team, games, year, mode) { SeasonStatisticsCalculator.calculate(team, games, year, mode) }
     val eligibleIDs = eligible.games.map { it.id }.toSet()
     val selectedValid = teamSelection?.intersect(eligibleIDs)
-    val summary = SeasonStatisticsCalculator.calculate(team, model.games, year, mode, selectedValid)
+    val summary = remember(eligible, selectedValid) {
+        if (selectedValid == null) eligible else SeasonStatisticsCalculator.calculate(team, games, year, mode, selectedValid)
+    }
     Box(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         StatisticsHelp(Modifier.align(Alignment.CenterStart))
         Text("统计", Modifier.align(Alignment.Center), fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        Box(Modifier.align(Alignment.CenterEnd)) {
-            ReportShareButton("导出 PDF", "export-team-season-pdf") { context -> ReportExport.team(context, team, year, mode, summary, isFiltered = selectedValid != null) }
+        if (!sharedTeam || matchingShared && !syncing) Box(Modifier.align(Alignment.CenterEnd)) {
+            ReportShareButton("导出 PDF", "export-team-season-pdf") { context ->
+                ReportExport.team(context, team, year, mode, summary, isFiltered = selectedValid != null, sourceNote = sharedNote)
+            }
         }
     }
     CardBlock {
-        val teamLabels=teams.associate {it.id to (it.name+if(it.archived) " · 已归档" else if(it.source=="sharedSnapshot") " · 本机共享名单记录" else " · 本机")}
-        val yearLabels=SeasonStatisticsCalculator.years(model.games).associate {it.toString() to "${it} 年"}
+        val teamLabels = teams.associate { candidate -> candidate.id to (candidate.name + when {
+            candidate.source == "shared" -> " · 共享球队"
+            candidate.source == "sharedSnapshot" -> " · 本机共享名单记录"
+            candidate.archived -> " · 已归档"
+            else -> " · 本机"
+        }) }
+        val yearLabels = (SeasonStatisticsCalculator.years(games) + year).distinct().sortedDescending()
+            .associate { it.toString() to "${it} 年" }
         StatsPicker("球队",team.id,teamLabels,"stats-team-picker") {
             teamID=it;scopeOwnerTeamID=it;selected=null;filterOpen=false;filterDraft=null;playerID=null
         }
@@ -326,6 +387,10 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
         StatsPicker("年度",year.toString(),yearLabels,"stats-season-picker") {year=it.toInt();selected=null}
         Text("按比赛日期自动归入年度，无需创建或划分赛季。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if(team.source=="sharedSnapshot") Text("本机统计 · 未计入球队正式档案", Modifier.testTag("stats-shared-snapshot-note"), fontSize=12.sp)
+        if (sharedTeam) {
+            Text(requireNotNull(sharedNote), Modifier.testTag("stats-shared-source-note"), fontSize = 12.sp)
+            TextButton({ refreshCount++ }, enabled = !syncing, modifier = Modifier.testTag("stats-refresh-shared")) { Text("刷新球队统计") }
+        }
         HorizontalDivider()
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("已选 ${selectedValid?.size ?: eligible.games.size} / ${eligible.games.size} 场", Modifier.testTag("stats-game-scope"), fontSize = 12.sp, color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -333,6 +398,7 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
         }
         if (teamSelection != null) TextButton({ selected = null }, Modifier.testTag("stats-reset-games")) { Text("恢复全部比赛") }
     }
+    if (sharedTeam && !matchingShared) return
     StatisticsSegmented("比赛模式", mapOf("all" to "全部模式", *GameMode.entries.map { it.name to it.title }.toTypedArray()), modeKey) { modeKey = it; selected = null }
     CardBlock {
         if (summary.incomplete > 0) Text("含待复核比赛", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
@@ -429,7 +495,7 @@ internal fun StatisticsScreen(model: ScorekeeperViewModel) {
     val player = if (ownsScope) summary.players.firstOrNull { it.player.id == playerID } else null
     if (player != null) key(team.id, player.player.id) {
         PlayerStatisticsDetail(team, player, model, year, modeKey, categoryName,
-            selectedValid ?: eligibleIDs) { playerID = null }
+            selectedValid ?: eligibleIDs, statisticsGames = games, sourceNote = sharedNote, sharing = sharing) { playerID = null }
     }
 }
 
@@ -443,8 +509,16 @@ internal fun PlayerStatisticsDetail(
     initialModeKey: String = "all",
     initialCategoryName: String = "BATTING",
     initialGameIDs: Set<String>? = null,
+    statisticsGames: List<Game> = model.games,
+    sourceNote: String? = null,
+    sharing: AndroidTeamSharing = model.sharing,
     onClose: () -> Unit,
 ) {
+    val sharedTeamID = team.id.takeIf { team.source == "shared" }?.removePrefix("shared:")
+    val coroutineScope = rememberCoroutineScope()
+    var archive by remember { mutableStateOf<kotlinx.serialization.json.JsonObject?>(null) }
+    var openingArchive by remember { mutableStateOf(false) }
+    var archiveUnavailable by remember { mutableStateOf(false) }
     var playerYear by rememberSaveable(player.player.id) { mutableIntStateOf(initialYear) }
     var playerModeKey by rememberSaveable(player.player.id) { mutableStateOf(initialModeKey) }
     var playerCategoryName by rememberSaveable(player.player.id) { mutableStateOf(initialCategoryName) }
@@ -455,13 +529,13 @@ internal fun PlayerStatisticsDetail(
     }
     val playerMode = GameMode.entries.firstOrNull { it.name == playerModeKey }
     val playerCategory = StatsCategory.valueOf(playerCategoryName)
-    val allPlayerGames = PlayerStatisticsProjection.calculate(team, player.player, model.games, playerYear, playerMode, inheritedIDs)
+    val allPlayerGames = PlayerStatisticsProjection.calculate(team, player.player, statisticsGames, playerYear, playerMode, inheritedIDs)
     val eligiblePlayerIDs = allPlayerGames.eligibleGames.map { it.id }.toSet()
     // A new visit, year or mode selects all then-eligible games, without mutating the team filter.
     // Later data refreshes intersect the selection instead of silently adding unseen games.
     var selectedPlayerGames by rememberSaveable(player.player.id, playerYear, playerModeKey, inheritedIDs) { mutableStateOf(eligiblePlayerIDs) }
     val projection = if (selectedPlayerGames == eligiblePlayerIDs) allPlayerGames else
-        PlayerStatisticsProjection.calculate(team, player.player, model.games, playerYear, playerMode, inheritedIDs, selectedPlayerGames)
+        PlayerStatisticsProjection.calculate(team, player.player, statisticsGames, playerYear, playerMode, inheritedIDs, selectedPlayerGames)
     val playerGames = projection.eligibleGames
     val selectedGames = projection.selectedGames
     val selectedPlayerIDs = selectedGames.map { it.id }.toSet()
@@ -471,7 +545,7 @@ internal fun PlayerStatisticsDetail(
     fun closeFilter() { filterOpen = false; filterDraft = null }
     ProductPage("球员统计", onBack = onClose, backTag = "stats-player-close", headerTrailing = {
         ReportShareButton("导出 PDF", "export-player-season-pdf", iconOnly = true) { context ->
-            ReportExport.player(context, team, playerYear, shown, selectedGames, eligibleGameCount = eligiblePlayerIDs.size)
+            ReportExport.player(context, team, playerYear, shown, selectedGames, eligibleGameCount = eligiblePlayerIDs.size, sourceNote = sourceNote)
         }
     }) {
         Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).testTag("stats-player-identity"),
@@ -489,7 +563,8 @@ internal fun PlayerStatisticsDetail(
         }
         CardBlock(Modifier.testTag("stats-player-scope-card")) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                StatsPicker("统计年度", playerYear.toString(), SeasonStatisticsCalculator.years(model.games).associate { it.toString() to "${it} 年" }, "stats-player-season-picker") {
+                StatsPicker("统计年度", playerYear.toString(), (SeasonStatisticsCalculator.years(statisticsGames) + playerYear).distinct().sortedDescending()
+                    .associate { it.toString() to "${it} 年" }, "stats-player-season-picker") {
                     val chosen = it.toInt()
                     if (chosen != playerYear) { closeFilter(); inheritedIDs = null; playerYear = chosen }
                 }
@@ -537,10 +612,36 @@ internal fun PlayerStatisticsDetail(
                         else game.pitching[player.player.id]?.let { Text("投球 ${innings(it)} 局 · 三振 ${it.strikeouts} · ERA ${pitchRate(era(it))}", fontSize = 12.sp) } ?: Text("无投手记录", fontSize = 12.sp)
                     StatsCategory.FIELDING -> game.fielding[player.player.id]?.let { Text("刺杀 ${it.putouts} · 助杀 ${it.assists} · 失误 ${it.errors}", fontSize = 12.sp) } ?: Text("无守备记录", fontSize = 12.sp)
                 }
-                TextButton({ onClose(); model.open(game.id) }, Modifier.testTag("player-view-game-${game.id}")) { Text("查看比赛") }
+                TextButton(onClick = {
+                    if (sharedTeamID == null) {
+                        onClose()
+                        model.open(game.id)
+                    } else {
+                        openingArchive = true
+                        coroutineScope.launch {
+                            try {
+                                val document = sharing.match(sharedTeamID, game.id)
+                                archive = requireNotNull(document.payload?.takeIf { !document.deleted })
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: Exception) {
+                                archiveUnavailable = true
+                            } finally {
+                                openingArchive = false
+                            }
+                        }
+                    }
+                }, Modifier.testTag("player-view-game-${game.id}"), enabled = !openingArchive) { Text("查看比赛") }
             }
         }
     }
+    archive?.let { ArchiveGameHistory(it, secure = true) { archive = null } }
+    if (archiveUnavailable) AlertDialog(
+        onDismissRequest = { archiveUnavailable = false },
+        title = { Text("暂时无法打开共享比赛") },
+        text = { Text("请确认网络和球队访问权限后重试。") },
+        confirmButton = { TextButton({ archiveUnavailable = false }) { Text("知道了") } },
+    )
     if (filterOpen) {
         val draft = filterDraft ?: selectedPlayerIDs
         ProductPage("筛选球员比赛", onBack = ::closeFilter, backLabel = "取消", backTag = "stats-player-filter-cancel",

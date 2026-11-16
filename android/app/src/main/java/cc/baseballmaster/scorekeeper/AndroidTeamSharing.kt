@@ -1,6 +1,7 @@
 package cc.baseballmaster.scorekeeper
 
 import cc.baseballmaster.core.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -11,6 +12,43 @@ import kotlinx.coroutines.ensureActive
  */
 internal class AndroidTeamSharing(private val local: GameRepository, private val session: TeamDirectorySession) {
     suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
+
+    suspend fun sharedStatistics(selectedTeamID: String?, preferShared: Boolean): SharedStatisticsResult = withContext(Dispatchers.IO) {
+        val before = session.snapshot()
+        if (before.deviceID == null) return@withContext SharedStatisticsResult()
+        if (before.credentialExpired || before.requiresRecoveryReview)
+            return@withContext SharedStatisticsResult(message = "请在球队共享页面核对设备授权。")
+        var teamID = selectedTeamID
+        var message: String? = null
+        try {
+            val directory = session.refresh()
+            if (teamID == null && preferShared) teamID = directory.teams.firstOrNull()?.id
+            check(!session.snapshot().requiresRecoveryReview)
+            if (teamID != null && directory.teams.any { it.id == teamID }) {
+                session.roster(teamID)
+                val documents = session.matches(teamID)
+                for (document in documents) {
+                    ensureActive()
+                    if (document.mayCountInStatistics && document.payload == null) session.match(teamID, document.id)
+                }
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            message = "共享统计暂未同步完成。已收到的近期版本可能不完整，请重试。"
+        }
+        val state = session.snapshot()
+        if (state.credentialExpired || state.requiresRecoveryReview)
+            return@withContext SharedStatisticsResult(message = "请在球队共享页面核对设备授权。")
+        val teams = state.directory?.teams.orEmpty()
+        if (teamID == null && preferShared) teamID = teams.firstOrNull()?.id
+        val membership = teams.firstOrNull { it.id == teamID }
+        val team = membership?.statisticsRoster(state.profiles[teamID]?.profile)
+        val games = if (membership == null) SharedStatisticsGames(emptyList(), 0) else
+            projectSharedStatistics(state.matches.values.asSequence().map { it.document }
+                .filter { it.teamID == membership.id }.asIterable())
+        SharedStatisticsResult(teams, team, games.games, games.unavailableCount, message)
+    }
     /** Complete source-backed final archives only; native Game JSON is never uploaded here. */
     suspend fun stageFinalArchive(backupID: String, gameID: String, teamID: String, confirmed: Boolean) = withContext(Dispatchers.IO) {
         session.stageFinalArchive(local.exportAppleBackup(backupID),gameID,teamID,confirmed)
@@ -93,3 +131,11 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     suspend fun confirmRecoveryCardSaved(teamID: String, version: Long) = withContext(Dispatchers.IO) { session.confirmRecoveryCardSaved(teamID,version) }
     suspend fun quarantineRejectedSecurity(operationID: String, confirmed: Boolean) = withContext(Dispatchers.IO) { session.quarantineRejectedSecurity(operationID,confirmed) }
 }
+
+internal data class SharedStatisticsResult(
+    val memberships: List<RemoteTeam> = emptyList(),
+    val team: Team? = null,
+    val games: List<Game> = emptyList(),
+    val unavailableCount: Int = 0,
+    val message: String? = null,
+)

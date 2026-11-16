@@ -248,11 +248,13 @@ internal object ReportExport {
         check(it.isDirectory || it.mkdirs())
         File(it, "BaseballMaster-$kind-${UUID.randomUUID()}.pdf")
     }
-    fun team(context: Context, team: Team, year: Int, mode: GameMode?, summary: SeasonStatistics, isFiltered: Boolean = false): File {
+    fun team(context: Context, team: Team, year: Int, mode: GameMode?, summary: SeasonStatistics,
+        isFiltered: Boolean = false, sourceNote: String? = null): File {
         val file = file(context, "team")
         val scope = ReportStatisticsProjection.scope(summary.games)
         Writer("ANNUAL REPORT / 球队年度报告", team.name,
-            subtitle = "$year · ${if (isFiltered) "所选比赛统计" else "完整球队年度数据"} · ${summary.games.size} 场已结束比赛").use { w ->
+            subtitle = "$year · ${if (isFiltered) "所选比赛统计" else if (sourceNote == null) "完整球队年度数据" else "球队年度统计"} · ${summary.games.size} 场已结束比赛").use { w ->
+            sourceNote?.let { w.line("共享球队 · $it", 9f, muted = true) }
             if (summary.incomplete > 0) w.line("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold = true)
             w.metrics(listOf("比赛" to "${summary.games.size}", "胜 / 负 / 平" to "${summary.wins} / ${summary.losses} / ${summary.ties}",
                 "得分" to "${summary.runs}", "失分" to "${summary.runsAllowed}",
@@ -279,12 +281,14 @@ internal object ReportExport {
     }
     private fun eraText(p: PitchingLine) = if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", p.earnedRuns * 21.0 / p.outsRecorded) else "-"
     private fun innings(p: PitchingLine) = "${p.outsRecorded / 3}.${p.outsRecorded % 3}"
-    fun player(context: Context, team: Team, year: Int, row: SeasonPlayerStatistics, games: List<Game> = emptyList(), eligibleGameCount: Int = row.games): File {
+    fun player(context: Context, team: Team, year: Int, row: SeasonPlayerStatistics, games: List<Game> = emptyList(),
+        eligibleGameCount: Int = row.games, sourceNote: String? = null): File {
         val file = file(context, "player")
         val scope = ReportStatisticsProjection.scope(games)
         val p = row.player
         Writer("PLAYER REPORT / 球员个人报告", p.name,
             subtitle = "${p.englishName} · ${playerNumbers(p)} · ${team.name} · $year\n范围：已选 ${row.games} / $eligibleGameCount 场比赛").use { w ->
+            sourceNote?.let { w.line("共享球队 · $it", 9f, muted = true) }
             if (scope.incompleteGames > 0) w.line("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold = true)
             w.metrics(listOf("已选比赛" to "${row.games}", "打率 AVG" to number(if (row.batting.atBats > 0) row.batting.average else null),
                 "安打 H" to "${row.batting.hits}", "打点 RBI" to "${row.batting.runsBattedIn}", "投球局数 IP" to innings(row.pitching),
