@@ -2299,12 +2299,19 @@ final class GameStoreTests: XCTestCase {
         let reloaded = GameStore(persistenceURL: url)
         reloaded.openGame(id: gameID)
         let event = try XCTUnwrap(reloaded.game.scoringEvents?.first(where: \.needsReview))
-        XCTAssertEqual(reloaded.seasonStatistics(for: reloaded.currentTeam!, seasonID: seasonID).pendingCount, 1)
+        let team = try XCTUnwrap(reloaded.currentTeam)
+        let overview = reloaded.statisticsOverview(for: team, seasonID: seasonID, mode: nil, selectedIDs: [gameID])
+        XCTAssertEqual(overview.summary.pendingCount, 1)
+        XCTAssertEqual(reloaded.homeGameLists.recent.first?.state.scoringEvents?.first(where: \.needsReview)?.id, event.id)
         XCTAssertTrue(reloaded.reviewPendingEvent(
             id: event.id, title: "复核为一垒安打", category: event.category,
             notation: "1B", primaryPlayerID: event.primaryPlayerID, secondaryPlayerID: nil,
             ballStatus: event.ballStatus, resolvedOutcome: .single, note: "录像确认"
         ))
+        let updated = reloaded.statisticsOverview(for: team, seasonID: seasonID, mode: nil, selectedIDs: [gameID])
+        XCTAssertEqual(updated.summary.pendingCount, 0)
+        XCTAssertEqual(updated.summary.batting.hits, 1)
+        XCTAssertNil(reloaded.homeGameLists.recent.first?.state.scoringEvents?.first(where: \.needsReview))
         let finalStore = GameStore(persistenceURL: url)
         let summary = finalStore.seasonStatistics(for: finalStore.currentTeam!, seasonID: seasonID)
         XCTAssertEqual(summary.pendingCount, 0)
@@ -6802,6 +6809,54 @@ extension GameStoreTests {
             XCTAssertEqual(other.seasonStatistics(for: cloud, seasonID: original.yearID).players.first { $0.id == temporary.id }?.batting.hits, 1)
             XCTAssertEqual(other.seasonStatistics(for: cloud, seasonID: original.yearID).batting.hits, 1)
         }
+    }
+
+    func testBuild5UnchangedSharedPollDoesNotRewriteArchivesOrRefreshStatistics() async throws {
+        let publisher = freshStore()
+        XCTAssertTrue(publisher.applyPlay(.single))
+        publisher.finishGame()
+        let game = try XCTUnwrap(publisher.activeStoredGame)
+        let client = try matchClient()
+        _ = try await client.enroll(deviceName: "iPhone")
+        let team = try await client.createTeam(name: "同步测试", nickname: "教练", operationID: UUID(), profile: SharedRosterSeed(team: game.ourTeam))
+        let sender = SharedMatchCoordinator(store: publisher, service: client, storage: V30MatchMemoryStorage())
+        publisher.sharedMatches = sender
+        await sender.publish(game, teamID: team.teamID)
+        let remote = try XCTUnwrap(sender.state.matches.first)
+
+        let reader = try await matchPartner(client, team: team.teamID, role: .member)
+        let store = GameStore(persistenceURL: nil)
+        store.teamSharing = TeamSharingStore(service: reader, storage: V30DirectoryMemoryStorage())
+        await store.teamSharing.connect()
+        let disk = V30MatchMemoryStorage()
+        let receiver = SharedMatchCoordinator(store: store, service: reader, storage: disk)
+        store.sharedMatches = receiver
+        await receiver.synchronize()
+        XCTAssertNil(receiver.message)
+        let cloud = try XCTUnwrap(store.teamSharing.sharedRosterTeams.first)
+        let before = store.statisticsOverview(for: cloud, seasonID: game.yearID, mode: nil, selectedIDs: nil)
+        XCTAssertEqual(before.summary.batting.hits, 1)
+
+        let revision = receiver.stateRevision
+        var databaseWrites = 0
+        CoreDataRosterStore.writeFault = { databaseWrites += 1 }
+        defer { CoreDataRosterStore.writeFault = nil }
+        disk.failSave = true
+        await receiver.synchronize()
+        XCTAssertNil(receiver.message)
+        XCTAssertEqual(receiver.stateRevision, revision)
+        XCTAssertEqual(databaseWrites, 0)
+
+        disk.failSave = false
+        _ = try await client.matchCommand(path: TeamServiceClient.matchPath(cloud.id, remote.id) + "/deletion", method: "POST", body: .object([
+            "operationID": .uuid(UUID()), "baseRevision": .number(Double(remote.serverRevision)),
+            "writerEpoch": .number(Double(remote.writerEpoch)), "deleted": .bool(true)
+        ]))
+        await receiver.synchronize()
+        XCTAssertNil(receiver.message)
+        XCTAssertGreaterThan(receiver.stateRevision, revision)
+        XCTAssertEqual(store.statisticsOverview(for: cloud, seasonID: game.yearID, mode: nil, selectedIDs: nil).summary.games.count, 0)
+        XCTAssertFalse(store.games.contains { $0.sharedGameID == remote.id })
     }
 
     func testV30SharedStatisticsExcludeUnacknowledgedDraftsAndDeletedGames() async throws {

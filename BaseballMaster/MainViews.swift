@@ -4,9 +4,18 @@ struct RootTabView: View {
     @EnvironmentObject private var store: GameStore
 
     var body: some View {
-        TabView(selection: $store.selectedTab) {
+        MainTabContent(selection: store.mainTabSelection, gameNavigationID: store.gameNavigationID)
+    }
+}
+
+private struct MainTabContent: View {
+    @ObservedObject var selection: MainTabSelection
+    let gameNavigationID: UUID
+
+    var body: some View {
+        TabView(selection: $selection.index) {
             NavigationStack { GameHomeView() }
-                .id(store.gameNavigationID)
+                .id(gameNavigationID)
                 .tabItem { Label("比赛", systemImage: "baseball.diamond.bases") }
                 .tag(0)
 
@@ -32,12 +41,13 @@ struct GameHomeView: View {
     @AppStorage("demoIntroductionSeen") private var demoIntroductionSeen = false
 
     var body: some View {
-        let scheduledGames = store.scheduledGames
-        let ongoingGames = store.ongoingGames
-        let recentGames = store.recentGames.prefix(10)
+        let games = store.homeGameLists
+        let scheduledGames = games.scheduled
+        let ongoingGames = games.ongoing
+        let recentGames = games.recent.prefix(10)
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                teamHeader
+                teamHeader(recentGames: games.recent)
                 if store.currentTeam == nil {
                     Button("创建球队") { store.selectedTab = 1 }
                         .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("empty-create-team")
@@ -206,7 +216,7 @@ struct GameHomeView: View {
         }
     }
 
-    private var teamHeader: some View {
+    private func teamHeader(recentGames: [StoredGame]) -> some View {
         HStack(spacing: 13) {
             if let team = store.currentTeam { TeamMark(team: team, size: 56) }
             VStack(alignment: .leading, spacing: 4) {
@@ -218,7 +228,7 @@ struct GameHomeView: View {
                     .foregroundStyle(BMTheme.secondaryText)
             }
             Spacer()
-            Text(recordText)
+            Text(recordText(recentGames: recentGames))
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(BMTheme.green)
                 .padding(.horizontal, 11)
@@ -228,9 +238,11 @@ struct GameHomeView: View {
         }
     }
 
-    private var recordText: String {
-        let completed = store.recentGames.filter {
-            store.belongsToStatisticsTeam($0, teamID: store.currentTeam?.id) && $0.yearID == MatchYear.current
+    private func recordText(recentGames: [StoredGame]) -> String {
+        let year = MatchYear.current
+        let teamID = store.currentTeam?.id
+        let completed = recentGames.filter {
+            store.belongsToStatisticsTeam($0, teamID: teamID) && $0.yearID == year
         }
         guard !completed.isEmpty else { return "暂无战绩" }
         let wins = completed.filter { $0.ourScore > $0.opponentScore }.count

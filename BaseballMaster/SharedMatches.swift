@@ -157,7 +157,10 @@ struct SharedMatchFile: SharedMatchStorage {
 }
 
 @MainActor final class SharedMatchCoordinator: ObservableObject {
-    @Published private(set) var state = SharedMatchLocalState()
+    @Published private(set) var state = SharedMatchLocalState() {
+        didSet { stateRevision &+= 1 }
+    }
+    private(set) var stateRevision: UInt = 0
     @Published private(set) var busy = false
     @Published var message: String?
     @Published private(set) var importing = false
@@ -421,7 +424,14 @@ struct SharedMatchFile: SharedMatchStorage {
             next.matches.removeAll { !accessible.contains($0.teamID) }
             next.cursors = next.cursors.filter { key, _ in UUID(uuidString: key).map(accessible.contains) == true }
             if let link = next.lastInvitationURL, !next.matches.contains(where: { link.hasPrefix($0.viewURL.absoluteString) && $0.canManageAccess }) { next.lastInvitationURL = nil }
-            try persist(next)
+            let archiveChanged = next.deviceID != state.deviceID
+                || next.recoveryEpoch != state.recoveryEpoch
+                || next.teamAccessEpochs != state.teamAccessEpochs
+                || next.cursors != state.cursors
+                || next.lastInvitationURL != state.lastInvitationURL
+                || next.matches.count != state.matches.count
+                || next.pending.count != state.pending.count
+            if archiveChanged { try persist(next) }
             // Reinstall a complete durable document after a prior database write failure or process termination.
             for remote in state.matches where !state.pending.contains(where: { $0.gameID == remote.id }) {
                 if remote.deleted || remote.payload.map({ !canEdit($0.id) }) == true { try install(remote) }
@@ -555,6 +565,11 @@ struct SharedMatchFile: SharedMatchStorage {
                 continue
             }
             guard page.recoveryEpoch == state.recoveryEpoch else { throw TeamServiceError.message("服务版本已变化，请重新核对。") }
+            more = page.hasMore
+            if page.games.isEmpty && page.cursor == cursor {
+                if more { throw TeamServiceError.message("同步进度未更新，请重试。") }
+                continue
+            }
             var next = state
             for summary in page.games {
                 let remote = try await fetchMatch(teamID: teamID, gameID: summary.id)
@@ -568,7 +583,6 @@ struct SharedMatchFile: SharedMatchStorage {
             // The page is complete and durable before any downloaded match becomes visible.
             try persist(next)
             for summary in page.games { if let remote = match(id: summary.id) { try install(remote) } }
-            more = page.hasMore
         }
     }
     func refresh(_ match: SharedMatch) async {

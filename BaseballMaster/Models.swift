@@ -483,11 +483,12 @@ struct StoredGame: Identifiable, Equatable, Codable {
     var displayDate: Date { status == .scheduled ? effectiveScheduledAt : effectivePlayedAt }
     var playedTimeZone: TimeZone { playedTimeZoneID.flatMap(TimeZone.init(identifier:)) ?? .current }
     var dateText: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.timeZone = playedTimeZone
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return formatter.string(from: displayDate)
+        Date.VerbatimFormatStyle(
+            format: "\(year: .padded(4))-\(month: .twoDigits)-\(day: .twoDigits) \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)",
+            locale: Locale(identifier: "zh_CN"),
+            timeZone: playedTimeZone,
+            calendar: Calendar(identifier: .gregorian)
+        ).format(displayDate)
     }
 }
 

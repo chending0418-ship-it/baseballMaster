@@ -2,6 +2,11 @@ import Combine
 import Foundation
 
 @MainActor
+final class MainTabSelection: ObservableObject {
+    @Published var index = 0
+}
+
+@MainActor
 final class GameStore: ObservableObject {
     @Published var teams: [Team]
     @Published var opponentTeams: [Team]
@@ -10,14 +15,29 @@ final class GameStore: ObservableObject {
         didSet { persistCurrentGameIfNeeded() }
     }
     @Published var seasons: [Season]
-    @Published var playerGameRecords: [PlayerGameRecord]
+    @Published var playerGameRecords: [PlayerGameRecord] {
+        didSet { statisticsSeasonsCache = nil }
+    }
     @Published var archivedTeams: [Team] = []
-    @Published var games: [StoredGame]
+    @Published var games: [StoredGame] {
+        didSet {
+            homeGameListsCache = nil
+            statisticsOverviewCache = nil
+            statisticsSeasonsCache = nil
+        }
+    }
+    private var homeGameListsCache: HomeGameLists?
+    var statisticsOverviewCache: StatisticsOverviewCache?
+    var statisticsSeasonsCache: StatisticsSeasonsCache?
     @Published var storageErrorMessage: String?
     @Published var actionErrorMessage: String?
     @Published private(set) var pendingPitcherChange: PendingPitcherChange?
     @Published private(set) var requiresDataRecovery = false
-    @Published var selectedTab = 0
+    let mainTabSelection = MainTabSelection()
+    var selectedTab: Int {
+        get { mainTabSelection.index }
+        set { mainTabSelection.index = newValue }
+    }
     @Published var gameNavigationID = UUID()
 
     lazy var teamSharing: TeamSharingStore = {
@@ -246,6 +266,19 @@ final class GameStore: ObservableObject {
     var hasRunners: Bool { !game.baseRunners.isEmpty }
     var currentBatter: Player { game.currentBatter }
     var currentPitcher: Player { game.currentPitcher }
+    var homeGameLists: HomeGameLists {
+        if let homeGameListsCache { return homeGameListsCache }
+        let lists = HomeGameLists(scheduled: scheduledGames, ongoing: ongoingGames, recent: recentGames)
+        homeGameListsCache = lists
+        return lists
+    }
+
+    struct HomeGameLists {
+        let scheduled: [StoredGame]
+        let ongoing: [StoredGame]
+        let recent: [StoredGame]
+    }
+
     var ongoingGames: [StoredGame] {
         games.filter { $0.status == .ongoing && $0.sharedGameID == nil }.sorted { $0.updatedAt > $1.updatedAt }
     }
@@ -840,12 +873,19 @@ final class GameStore: ObservableObject {
         var result = teams + teamSharing.sharedRosterTeams + archivedTeams.filter { archived in !teams.contains { $0.id == archived.id } }
         var seen = Set<UUID>()
         result = result.filter { seen.insert($0.id).inserted }
+        let sharedIDs = Set(teamSharing.teams.map(\.id))
+        var localScopeIDs: [UUID: UUID] = [:]
         for stored in games where !stored.isObservation && stored.ourTeamID != nil && stored.sharedTeamID == nil {
-            var team = stored.ourTeam
-            if teamSharing.teams.contains(where: { $0.id == team.id }) {
-                team = Team(id: localStatisticsScope(team.id), name: team.name + " · 本机记录", shortName: team.shortName + " · 本机", city: team.city, players: team.players)
+            let team = stored.ourTeam
+            if sharedIDs.contains(team.id) {
+                let scopeID = localScopeIDs[team.id] ?? localStatisticsScope(team.id)
+                localScopeIDs[team.id] = scopeID
+                guard seen.insert(scopeID).inserted else { continue }
+                result.append(Team(id: scopeID, name: team.name + " · 本机记录",
+                                   shortName: team.shortName + " · 本机", city: team.city, players: team.players))
+            } else if seen.insert(team.id).inserted {
+                result.append(team)
             }
-            if !result.contains(where: { $0.id == team.id }) { result.append(team) }
         }
         return result
     }
@@ -5003,12 +5043,17 @@ final class GameStore: ObservableObject {
     }
 
     func installSharedCopy(_ stored: StoredGame) throws {
-        if let existing = games.first(where: { $0.id == stored.id }), existing.sharedGameID == nil || existing.sharedGameID != stored.sharedGameID {
-            throw TeamServiceError.message("比赛来源不一致，已保留本机记录，请核对。")
+        let index = games.firstIndex { $0.id == stored.id }
+        if let index {
+            let existing = games[index]
+            guard existing.sharedGameID != nil, existing.sharedGameID == stored.sharedGameID else {
+                throw TeamServiceError.message("比赛来源不一致，已保留本机记录，请核对。")
+            }
+            if existing == stored { return }
         }
         try persistenceStore.upsertGame(stored)
         withSuspendedCurrentPersistence {
-            if let index = games.firstIndex(where: { $0.id == stored.id }) { games[index] = stored } else { games.append(stored) }
+            if let index { games[index] = stored } else { games.append(stored) }
             if activeGameID == stored.id { game = stored.state }
         }
     }

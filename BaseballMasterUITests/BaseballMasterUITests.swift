@@ -2985,9 +2985,12 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.buttons["quick-outcome-DP"].isEnabled); app.buttons["quick-outcome-DP"].tap(); app.buttons["contact-type-ground"].tap()
         app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.32, dy: 0.45)).tap()
         app.buttons["situation-route-6-4-3"].tap(); app.buttons["finish-situation-field"].tap()
-        XCTAssertTrue(app.buttons["situation-runner-0"].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["situation-runner-1"].exists)
+        XCTAssertTrue(app.buttons["runner-base-本垒"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["runner-base-一垒"].exists)
+        let editField = app.buttons["edit-situation-field"]
+        revealStatisticsControl(editField, in: app)
         XCTAssertTrue(app.staticTexts["situation-defense-description"].label.contains("防守路线 6-4-3"))
-        app.buttons["edit-situation-field"].tap()
+        editField.tap()
         XCTAssertTrue(app.staticTexts["situation-route"].label.contains("6 → 4 → 3"))
         app.buttons["finish-situation-field"].tap()
         let runners = XCTAttachment(screenshot: app.screenshot()); runners.name = "V4-统一核对双杀跑者"; runners.lifetime = .keepAlways; add(runners)
@@ -3003,14 +3006,31 @@ extension BaseballMasterUITests {
         app.buttons["contact-type-line"].tap()
         app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
         app.buttons["situation-fielder-8"].tap(); app.buttons["situation-fielder-4"].tap(); app.buttons["finish-situation-field"].tap()
-        XCTAssertTrue(app.buttons["situation-destination-1-得分"].waitForExistence(timeout: 5))
-        app.buttons["situation-destination-1-得分"].tap(); app.buttons["situation-runner-0"].tap()
-        app.buttons["situation-destination-0-出局"].tap()
+        let second = app.buttons["runner-base-二垒"]
+        let home = app.buttons["runner-base-本垒"]
+        let board = app.segmentedControls["runner-board-view"]
+        let confirm = app.buttons["confirm-situation-play"]
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        captureHistory(app, name: "Build5-Pro-击球后四垒图")
+        let batterSecond = app.buttons["situation-destination-0-到二垒"]
+        revealStatisticsControl(batterSecond, in: app); batterSecond.tap()
+        revealStatisticsControl(second, in: app); second.tap()
+        let hold = app.buttons["situation-destination-1-停留"]
+        revealStatisticsControl(hold, in: app); hold.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-conflict"].firstMatch.exists)
+        XCTAssertFalse(confirm.isEnabled)
+        let score = app.buttons["situation-destination-1-得分"]
+        revealStatisticsControl(score, in: app); score.tap()
+        revealStatisticsControl(home, in: app); home.tap()
+        let out = app.buttons["situation-destination-0-出局"]
+        revealStatisticsControl(out, in: app); out.tap()
         let extra = app.buttons["situation-extra-route-0"]; revealStatisticsControl(extra, in: app); extra.tap()
         XCTAssertTrue(app.buttons["situation-reuse-route"].waitForExistence(timeout: 5)); app.buttons["situation-reuse-route"].tap()
-        XCTAssertTrue(app.buttons["confirm-situation-play"].waitForExistence(timeout: 5))
-        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "V4-安打后进垒被触杀-独立原因和路线"; capture.lifetime = .keepAlways; add(capture)
-        app.buttons["confirm-situation-play"].tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        revealStatisticsControl(board, in: app); board.buttons["去向预览"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-preview-outs"].firstMatch.exists)
+        captureHistory(app, name: "Build5-Pro-击球后去向预览")
+        confirm.tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
         let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
         XCTAssertTrue(pitcher.label.contains("本场已投 2 球"))

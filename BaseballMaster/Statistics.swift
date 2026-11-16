@@ -88,17 +88,42 @@ struct TeamSeasonStatistics {
     let games: [StoredGame]
     let players: [PlayerSeasonStatistics]
 
-    var wins: Int { games.filter { $0.ourScore > $0.opponentScore }.count }
-    var losses: Int { games.filter { $0.ourScore < $0.opponentScore }.count }
+    let wins: Int
+    let losses: Int
     var ties: Int { games.count - wins - losses }
-    var runs: Int { games.reduce(0) { $0 + $1.ourScore } }
-    var runsAllowed: Int { games.reduce(0) { $0 + $1.opponentScore } }
-    var pendingCount: Int {
-        games.reduce(0) { $0 + ($1.state.scoringEvents ?? []).filter(\.needsReview).count }
+    let runs: Int
+    let runsAllowed: Int
+    let pendingCount: Int
+    let hasIncompleteGames: Bool
+    let batting: BattingLine
+    let pitching: PitchingLine
+    let fielding: FieldingLine
+
+    init(games: [StoredGame], players: [PlayerSeasonStatistics]) {
+        self.games = games
+        self.players = players
+        var wins = 0, losses = 0, runs = 0, runsAllowed = 0, pending = 0
+        var incomplete = false
+        for game in games {
+            let scored = game.ourScore
+            let allowed = game.opponentScore
+            if scored > allowed { wins += 1 }
+            if scored < allowed { losses += 1 }
+            runs += scored
+            runsAllowed += allowed
+            incomplete = incomplete || game.state.statisticsIncomplete == true
+            for event in game.state.scoringEvents ?? [] where event.needsReview { pending += 1 }
+        }
+        self.wins = wins
+        self.losses = losses
+        self.runs = runs
+        self.runsAllowed = runsAllowed
+        pendingCount = pending
+        hasIncompleteGames = incomplete
+        batting = BattingLine.aggregate(players.lazy.map(\.batting))
+        pitching = PitchingLine.aggregate(players.lazy.map(\.pitching))
+        fielding = FieldingLine.aggregate(players.lazy.map(\.fielding))
     }
-    var batting: BattingLine { BattingLine.aggregate(players.map(\.batting)) }
-    var pitching: PitchingLine { PitchingLine.aggregate(players.map(\.pitching)) }
-    var fielding: FieldingLine { FieldingLine.aggregate(players.map(\.fielding)) }
 
     func filteredPlayers(
         category: StatisticsCategory,
@@ -233,8 +258,62 @@ extension StoredGame {
     }
 }
 
+struct StatisticsSharedSource: Equatable {
+    let directory: ObjectIdentifier
+    let directoryRevision: UInt
+    let matches: ObjectIdentifier
+    let matchesRevision: UInt
+}
+
+struct StatisticsSeasonsCache {
+    let source: StatisticsSharedSource
+    let currentYear: String
+    let timeZone: TimeZone
+    let seasons: [Season]
+}
+
+/// Holds only the last overview so switching tabs and changing display controls reuse its aggregates.
+struct StatisticsOverviewCache {
+    struct Scope: Equatable {
+        let team: Team
+        let seasonID: String
+        let mode: GameMode?
+        let sharedSource: StatisticsSharedSource
+    }
+
+    let scope: Scope
+    let eligibleGames: [StoredGame]
+    let eligibleIDs: Set<UUID>
+    let selectedIDs: Set<UUID>?
+    let summary: TeamSeasonStatistics
+}
+
 @MainActor
 extension GameStore {
+    private var statisticsSharedSource: StatisticsSharedSource {
+        StatisticsSharedSource(
+            directory: ObjectIdentifier(teamSharing), directoryRevision: teamSharing.stateRevision,
+            matches: ObjectIdentifier(sharedMatches), matchesRevision: sharedMatches.stateRevision
+        )
+    }
+
+    func statisticsOverview(for team: Team, seasonID: String, mode: GameMode?, selectedIDs: Set<UUID>?) -> StatisticsOverviewCache {
+        let scope = StatisticsOverviewCache.Scope(team: team, seasonID: seasonID, mode: mode, sharedSource: statisticsSharedSource)
+        let cached = statisticsOverviewCache.flatMap { $0.scope == scope ? $0 : nil }
+        let eligible = cached?.eligibleGames ?? completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: mode)
+        let eligibleIDs = cached?.eligibleIDs ?? Set(eligible.map(\.id))
+        let selected = selectedIDs.map { $0.intersection(eligibleIDs) }
+        if let cached, cached.selectedIDs == selected { return cached }
+
+        let completed = selected.map { ids in eligible.filter { ids.contains($0.id) } } ?? eligible
+        let overview = StatisticsOverviewCache(
+            scope: scope, eligibleGames: eligible, eligibleIDs: eligibleIDs, selectedIDs: selected,
+            summary: seasonStatistics(for: team, completed: completed)
+        )
+        statisticsOverviewCache = overview
+        return overview
+    }
+
     /// Shared summaries always use the last acknowledged document, never an editable local draft.
     var officialStatisticsGames: [StoredGame] {
         let sharedIDs = Set(sharedMatches.state.matches.compactMap { $0.payload?.id })
@@ -251,8 +330,17 @@ extension GameStore {
     }
 
     var statisticsSeasons: [Season] {
-        let years = Set(officialStatisticsGames.map(\.yearID) + playerGameRecords.map(\.yearID) + [MatchYear.current])
-        return years.sorted(by: >).map { Season(id: $0, name: "\($0) 年") }
+        let source = statisticsSharedSource
+        let year = MatchYear.current
+        let timeZone = TimeZone.current
+        if let cached = statisticsSeasonsCache, cached.source == source,
+           cached.currentYear == year, cached.timeZone == timeZone { return cached.seasons }
+        var years: Set<String> = [year]
+        years.formUnion(officialStatisticsGames.lazy.map(\.yearID))
+        years.formUnion(playerGameRecords.lazy.map(\.yearID))
+        let seasons = years.sorted(by: >).map { Season(id: $0, name: "\($0) 年") }
+        statisticsSeasonsCache = StatisticsSeasonsCache(source: source, currentYear: year, timeZone: timeZone, seasons: seasons)
+        return seasons
     }
 
     /// Separate stable scope for local originals made from a shared roster.
@@ -290,6 +378,10 @@ extension GameStore {
 
     func seasonStatistics(for team: Team, seasonID: String, mode: GameMode? = nil, gameIDs: Set<UUID>? = nil) -> TeamSeasonStatistics {
         let completed = completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: mode, gameIDs: gameIDs)
+        return seasonStatistics(for: team, completed: completed)
+    }
+
+    private func seasonStatistics(for team: Team, completed: [StoredGame]) -> TeamSeasonStatistics {
         var players = Dictionary(uniqueKeysWithValues: team.players.map {
             ($0.id, PlayerSeasonStatistics(player: $0))
         })

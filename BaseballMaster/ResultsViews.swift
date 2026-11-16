@@ -849,27 +849,27 @@ struct PlayerDetailView: View {
         _category = State(initialValue: initialCategory)
     }
 
-    private var seasonGames: [PlayerGameRecord] {
+    private var seasonGames: [PlayerGameRecord] { seasonGames(using: officialGamesByID) }
+
+    private var officialGamesByID: [UUID: StoredGame] {
+        Dictionary(store.officialStatisticsGames.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private func seasonGames(using official: [UUID: StoredGame]) -> [PlayerGameRecord] {
         store.gameRecords(for: player, seasonID: selectedSeasonID, teamID: statisticsTeamID).filter { record in
-            (inheritedGameIDs == nil || inheritedGameIDs!.contains(record.id)) &&
-                (modeFilter == nil || (store.officialStatisticsGames.first { $0.id == record.id }?.rules.gameMode ?? .standard) == modeFilter)
+            (inheritedGameIDs?.contains(record.id) ?? true) &&
+                (modeFilter == nil || (official[record.id]?.rules.gameMode ?? .standard) == modeFilter)
         }
     }
 
-    private var selectedStatistics: PlayerSeasonStatistics {
-        store.playerStatistics(for: player, seasonID: selectedSeasonID,
-                               teamID: statisticsTeamID, gameIDs: Set(selectedGames.map(\.id)))
-    }
-
-    private var selectedGames: [PlayerGameRecord] {
-        seasonGames.filter { selectedGameIDs.contains($0.id) }
-    }
-
-    private var selectedLine: BattingLine {
-        store.battingLine(for: selectedGames)
-    }
-
     var body: some View {
+        let official = officialGamesByID
+        let seasonGames = seasonGames(using: official)
+        let selectedGames = seasonGames.filter { selectedGameIDs.contains($0.id) }
+        let selectedLine = store.battingLine(for: selectedGames)
+        let selectedStatistics = store.playerStatistics(for: player, seasonID: selectedSeasonID,
+            teamID: statisticsTeamID, gameIDs: Set(selectedGames.map(\.id)))
+
         ScrollView {
             VStack(spacing: 18) {
                 VStack(spacing: 10) {
@@ -939,7 +939,7 @@ struct PlayerDetailView: View {
                 }
 
                 GameModeFilter(selection: $modeFilter)
-                    .onChange(of: modeFilter) { _ in selectedGameIDs = Set(seasonGames.map(\.id)) }
+                    .onChange(of: modeFilter) { _ in selectedGameIDs = Set(self.seasonGames.map(\.id)) }
                 if let statisticsTeamID, store.teamSharing.teams.contains(where: { $0.id == statisticsTeamID }) {
                     SharedStatisticsSyncNotice(coordinator: store.sharedMatches, teamID: statisticsTeamID)
                 }
@@ -977,7 +977,7 @@ struct PlayerDetailView: View {
                         }
                     }
 
-                    playerContactChart
+                    playerContactChart(games: selectedGames)
 
                     VStack(alignment: .leading, spacing: 10) {
                         SectionHeader(title: "表现总结", subtitle: selectedSeasonName)
@@ -1005,8 +1005,10 @@ struct PlayerDetailView: View {
                                 .frame(maxWidth: .infinity, minHeight: 72)
                         }
                     } else {
-                        ForEach(seasonGames) { record in
-                            gameRecordRow(record)
+                        LazyVStack(spacing: 10) {
+                            ForEach(seasonGames) { record in
+                                gameRecordRow(record, stored: official[record.id])
+                            }
                         }
                     }
                 }
@@ -1030,7 +1032,7 @@ struct PlayerDetailView: View {
         .onAppear(perform: prepareInitialSelection)
         .onChange(of: selectedSeasonID) { _ in
             inheritedGameIDs = nil
-            selectedGameIDs = Set(seasonGames.map(\.id))
+            selectedGameIDs = Set(self.seasonGames.map(\.id))
         }
         .sheet(isPresented: $showGameFilter) {
             GameFilterSheet(games: seasonGames, initialSelection: selectedGameIDs,
@@ -1040,7 +1042,7 @@ struct PlayerDetailView: View {
         }
     }
 
-    private var playerContactChart: some View {
+    private func playerContactChart(games selectedGames: [PlayerGameRecord]) -> some View {
         let performance = store.statisticsBatterContacts(for: player, seasonID: selectedSeasonID,
             teamID: statisticsTeamID, gameIDs: Set(selectedGames.map(\.id)))
         return BMCard {
@@ -1135,8 +1137,7 @@ struct PlayerDetailView: View {
         .frame(width: 47)
     }
 
-    private func gameRecordSummary(_ record: PlayerGameRecord) -> String {
-        let stored = store.officialStatisticsGames.first { $0.id == record.id }
+    private func gameRecordSummary(_ record: PlayerGameRecord, stored: StoredGame?) -> String {
         switch category {
         case .batting: return "\(record.batting.hits)-\(record.batting.atBats)"
         case .pitching:
@@ -1149,19 +1150,19 @@ struct PlayerDetailView: View {
         }
     }
 
-    private func gameRecordRow(_ record: PlayerGameRecord) -> some View {
+    private func gameRecordRow(_ record: PlayerGameRecord, stored: StoredGame?) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text("对 \(record.opponent)")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(BMTheme.navy)
-                Text("\(gameDateText(record.date, timeZone: store.officialStatisticsGames.first(where: { $0.id == record.id })?.playedTimeZone ?? .current)) · \(record.result)")
+                Text("\(gameDateText(record.date, timeZone: stored?.playedTimeZone ?? .current)) · \(record.result)")
                     .font(.system(size: 12))
                     .foregroundStyle(BMTheme.secondaryText)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
-                Text(gameRecordSummary(record))
+                Text(gameRecordSummary(record, stored: stored))
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(BMTheme.navy)
                 Text(category == .batting ? "AVG \(record.batting.atBats > 0 ? statText(record.batting.average) : "—")" : category.rawValue)
@@ -1295,11 +1296,12 @@ struct GameFilterSheet: View {
 }
 
 private func gameDateText(_ date: Date, timeZone: TimeZone = .current) -> String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_CN")
-    formatter.timeZone = timeZone
-    formatter.dateFormat = "M月d日"
-    return formatter.string(from: date)
+    Date.VerbatimFormatStyle(
+        format: "\(month: .defaultDigits)月\(day: .defaultDigits)日",
+        locale: Locale(identifier: "zh_CN"),
+        timeZone: timeZone,
+        calendar: Calendar(identifier: .gregorian)
+    ).format(date)
 }
 
 #Preview("比赛结果") {

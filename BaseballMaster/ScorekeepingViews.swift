@@ -1541,7 +1541,6 @@ struct RunnerResolutionSheet: View {
     @State private var passedBallCatcherID: UUID?
     @State private var selectedRunnerID: UUID?
     @State private var showsPreview = false
-    @ScaledMetric(relativeTo: .subheadline) private var destinationWidth: CGFloat = 60
     let availableDestinations: (RunnerDecision) -> [RunnerDestination]
     let title: String
     let confirmTitle: String
@@ -1581,24 +1580,14 @@ struct RunnerResolutionSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    fieldOverview
+                    RunnerBoardOverview(decisions: decisions, selectedRunnerID: $selectedRunnerID,
+                                        showsPreview: showsPreview)
 
                     if let errorResponsibility {
                         BMCard { RunnerErrorPicker(fielders: fielders, selection: errorResponsibility) }
                     }
                     if defenseKind == .passedBall {
                         BMCard { RunnerPassedBallPicker(fielders: fielders, catcherID: $passedBallCatcherID) }
-                    }
-
-                    if !conflictingBases.isEmpty {
-                        Label("\(conflictingBases.map(\.title).joined(separator: "、"))有多名跑者，请调整去向。",
-                              systemImage: "exclamationmark.triangle.fill")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(BMTheme.orange)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(BMTheme.orangeSoft, in: RoundedRectangle(cornerRadius: 12))
-                            .accessibilityIdentifier("runner-base-conflict")
                     }
 
                     if !showsPreview, let selectedRunnerID,
@@ -1631,12 +1620,7 @@ struct RunnerResolutionSheet: View {
                 .padding(.bottom, 18)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                Picker("垒况", selection: $showsPreview) {
-                    Text("本球前").tag(false)
-                    Text("去向预览").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("runner-board-view")
+                RunnerBoardModePicker(showsPreview: $showsPreview)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 8)
                 .background(BMTheme.background)
@@ -1667,23 +1651,92 @@ struct RunnerResolutionSheet: View {
     }
 
     private var confirmDisabled: Bool {
-        !conflictingBases.isEmpty || (errorResponsibility.map { $0.wrappedValue == nil } ?? false)
+        !RunnerBaseLayout(decisions: decisions).conflictingBases.isEmpty || (errorResponsibility.map { $0.wrappedValue == nil } ?? false)
             || (defenseKind == .caughtStealing && !decisions.contains { $0.destination == .out || $0.defense != nil })
             || (defenseKind == .passedBall && !decisions.contains(where: \.advances))
     }
 
-    private var fieldOverview: some View {
+    private func runnerEditor(_ selection: Binding<RunnerDecision>) -> some View {
+        let decision = selection.wrappedValue
+        return BMCard {
+            VStack(alignment: .leading, spacing: 12) {
+                RunnerEditorHeading(decision: decision)
+                    .accessibilityIdentifier("runner-focused-player")
+                RunnerDestinationGrid(decision: decision, destinations: availableDestinations(decision)) { destination in
+                    guard selection.wrappedValue.destination != destination else { return }
+                    selection.wrappedValue.destination = destination
+                    selection.wrappedValue.defense = nil
+                }
+
+                if defenseKind == .caughtStealing {
+                    RunnerCaughtStealingPicker(decision: selection, fielders: fielders)
+                }
+            }
+        }
+    }
+
+}
+
+struct RunnerBaseLayout {
+    let arrivals: [Base: [RunnerDecision]]
+
+    init(decisions: [RunnerDecision]) {
+        var bases: [Base: [RunnerDecision]] = [:]
+        for decision in decisions {
+            switch (decision.origin, decision.destination) {
+            case (_, .base(let base)), (.base(let base), .hold):
+                bases[base, default: []].append(decision)
+            default: break
+            }
+        }
+        arrivals = bases
+    }
+
+    var conflictingBases: [Base] { Base.allCases.filter { (arrivals[$0]?.count ?? 0) > 1 } }
+}
+
+struct RunnerBoardModePicker: View {
+    @Binding var showsPreview: Bool
+
+    var body: some View {
+        Picker("垒况", selection: $showsPreview) {
+            Text("本球前").tag(false)
+            Text("去向预览").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("runner-board-view")
+    }
+}
+
+struct RunnerBoardOverview: View {
+    let decisions: [RunnerDecision]
+    @Binding var selectedRunnerID: UUID?
+    let showsPreview: Bool
+
+    var body: some View {
+        let layout = RunnerBaseLayout(decisions: decisions)
         VStack(alignment: .leading, spacing: 8) {
             Text(showsPreview
                  ? "预览各垒落点。回本垒是否计分，按比赛规则判定。"
-                 : "点有跑者的垒包，逐个核对去向。")
+                 : "点有球员的垒包，核对打者和跑者的去向。")
                 .font(.footnote)
                 .foregroundStyle(BMTheme.secondaryText)
 
-            RunnerBaseDiamond(decisions: decisions, arrivals: arrivals, selectedRunnerID: $selectedRunnerID,
+            RunnerBaseDiamond(decisions: decisions, arrivals: layout.arrivals, selectedRunnerID: $selectedRunnerID,
                               showsPreview: showsPreview)
                 .frame(maxWidth: 468)
                 .frame(maxWidth: .infinity)
+
+            if !layout.conflictingBases.isEmpty {
+                Label("\(layout.conflictingBases.map(\.title).joined(separator: "、"))有多名跑者，请调整去向。",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(BMTheme.orange)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(BMTheme.orangeSoft, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("runner-base-conflict")
+            }
 
             if showsPreview {
                 let retired = decisions.filter { $0.destination == .out }.map { $0.player.compactName }
@@ -1696,79 +1749,63 @@ struct RunnerResolutionSheet: View {
             }
         }
     }
+}
 
-    private func runnerEditor(_ selection: Binding<RunnerDecision>) -> some View {
-        let decision = selection.wrappedValue
-        return BMCard {
-            VStack(alignment: .leading, spacing: 12) {
-                ViewThatFits(in: .horizontal) {
-                    Text("\(decision.origin.title) · \(decision.player.compactName)")
-                        .fixedSize(horizontal: true, vertical: false)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(decision.origin.title)
-                            .font(.caption)
-                            .foregroundStyle(BMTheme.secondaryText)
-                        Text(decision.player.compactName)
-                    }
-                }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(BMTheme.navy)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(decision.origin.title) · \(decision.player.compactName)")
-                .accessibilityIdentifier("runner-focused-player")
+struct RunnerEditorHeading: View {
+    let decision: RunnerDecision
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: destinationWidth), spacing: 6)], spacing: 6) {
-                    ForEach(availableDestinations(decision), id: \.self) { destination in
-                        let selected = decision.destination == destination
-                        Button {
-                            guard selection.wrappedValue.destination != destination else { return }
-                            selection.wrappedValue.destination = destination
-                            selection.wrappedValue.defense = nil
-                        } label: {
-                            Text(destination.title)
-                                .font(.subheadline.weight(.semibold))
-                                .multilineTextAlignment(.center)
-                                .foregroundStyle(selected ? .white : BMTheme.navy)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 7)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .background(selected ? destinationColor(destination) : BMTheme.background,
-                                            in: RoundedRectangle(cornerRadius: 10))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(selected ? .isSelected : [])
-                        .accessibilityIdentifier("runner-destination-\(destination.title)")
-                    }
-                }
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text("\(decision.origin.title) · \(decision.player.compactName)")
+                .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(decision.origin.title).font(.caption).foregroundStyle(BMTheme.secondaryText)
+                Text(decision.player.compactName)
+            }
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(BMTheme.navy)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(decision.origin.title) · \(decision.player.compactName)")
+    }
+}
 
-                if defenseKind == .caughtStealing {
-                    RunnerCaughtStealingPicker(decision: selection, fielders: fielders)
+struct RunnerDestinationGrid: View {
+    let decision: RunnerDecision
+    let destinations: [RunnerDestination]
+    var identifierPrefix = "runner-destination-"
+    let onSelect: (RunnerDestination) -> Void
+    @ScaledMetric(relativeTo: .subheadline) private var destinationWidth: CGFloat = 60
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: destinationWidth), spacing: 6)], spacing: 6) {
+            ForEach(destinations, id: \.self) { destination in
+                let selected = decision.destination == destination
+                Button { onSelect(destination) } label: {
+                    Text(destination.title)
+                        .font(.subheadline.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(selected ? .white : BMTheme.navy)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(selected ? color(for: destination) : BMTheme.background,
+                                    in: RoundedRectangle(cornerRadius: 10))
                 }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier(identifierPrefix + destination.title)
             }
         }
     }
 
-    private func destinationColor(_ destination: RunnerDestination) -> Color {
+    private func color(for destination: RunnerDestination) -> Color {
         switch destination {
         case .score, .base: BMTheme.green
         case .out: BMTheme.red
         case .hold: BMTheme.secondaryText
         }
     }
-
-    private var arrivals: [Base: [RunnerDecision]] {
-        var bases: [Base: [RunnerDecision]] = [:]
-        for decision in decisions {
-            switch (decision.origin, decision.destination) {
-            case (_, .base(let base)), (.base(let base), .hold):
-                bases[base, default: []].append(decision)
-            default: break
-            }
-        }
-        return bases
-    }
-
-    private var conflictingBases: [Base] { Base.allCases.filter { (arrivals[$0]?.count ?? 0) > 1 } }
 }
 
 private struct RunnerBaseDiamond: View {

@@ -19,35 +19,34 @@ struct StatsOverviewView: View {
 
     init(initialTeamID: UUID? = nil) { _selectedTeamID = State(initialValue: initialTeamID) }
 
-    private var team: Team? {
+    private func team(in teams: [Team]) -> Team? {
         let currentID = store.currentTeam?.id
         let localID = currentID.map(store.localStatisticsScope)
-        let teams = store.statisticsTeams
         let preferredID = selectedTeamID ?? (teams.contains { $0.id == localID } ? localID : currentID)
         return teams.first { $0.id == preferredID } ?? teams.first
     }
-    private var seasonID: String {
-        store.statisticsSeasons.contains(where: { $0.id == selectedSeasonID })
-            ? selectedSeasonID : MatchYear.current
-    }
-
-    private func eligibleGames(for team: Team?) -> [StoredGame] {
-        guard let team else { return [] }
-        return store.completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: modeFilter)
+    private func seasonID(in seasons: [Season]) -> String {
+        seasons.contains(where: { $0.id == selectedSeasonID }) ? selectedSeasonID : MatchYear.current
     }
 
     var body: some View {
-        let team = self.team
-        let eligibleGames = eligibleGames(for: team)
-        let eligibleIDs = Set(eligibleGames.map(\.id))
-        let effectiveGameIDs = selectedGameIDs.map { $0.intersection(eligibleIDs) }
+        let teams = store.statisticsTeams
+        let seasons = store.statisticsSeasons
+        let team = team(in: teams)
+        let seasonID = seasonID(in: seasons)
+        let overview = team.map {
+            store.statisticsOverview(for: $0, seasonID: seasonID, mode: modeFilter, selectedIDs: selectedGameIDs)
+        }
+        let eligibleGames = overview?.eligibleGames ?? []
+        let eligibleIDs = overview?.eligibleIDs ?? []
+        let effectiveGameIDs = overview?.selectedIDs
         let playerGameIDs = effectiveGameIDs ?? eligibleIDs
 
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if let team {
-                    let summary = store.seasonStatistics(for: team, seasonID: seasonID, mode: modeFilter, gameIDs: effectiveGameIDs)
-                    scopeSelection(team: team, selectedCount: playerGameIDs.count, eligibleCount: eligibleGames.count)
+                if let team, let summary = overview?.summary {
+                    scopeSelection(team: team, teams: teams, seasonID: seasonID, seasons: seasons,
+                                   selectedCount: playerGameIDs.count, eligibleCount: eligibleGames.count)
                     GameModeFilter(selection: $modeFilter)
                     teamSummary(summary)
                     if !summary.games.isEmpty {
@@ -137,10 +136,19 @@ struct StatsOverviewView: View {
         }
         .scrollDismissesKeyboard(.immediately)
         .bmScreenBackground()
-        .task(id: team?.id) {
-            if let team, store.teamSharing.teams.contains(where: { $0.id == team.id }) {
-                await store.teamSharing.connect()
-                await store.sharedMatches.synchronize(teamID: team.id)
+        .task(id: sharedRefreshScope(for: team)) {
+            guard let scope = sharedRefreshScope(for: team) else { return }
+            let directory = store.teamSharing
+            let coordinator = store.sharedMatches
+            // Changing tabs should not cancel an in-flight shared data refresh.
+            _ = Task { @MainActor in
+                guard directory.foregroundGeneration == scope.foregroundGeneration else { return }
+                await directory.refreshPageOnce("statistics-\(scope.teamID)") {
+                    await directory.connectOnce()
+                    guard !coordinator.busy else { return false }
+                    await coordinator.synchronize(teamID: scope.teamID)
+                    return coordinator.message == nil
+                }
             }
         }
         .navigationTitle("统计")
@@ -156,7 +164,11 @@ struct StatsOverviewView: View {
         }
         .sheet(isPresented: $showGameFilter) {
             GameFilterSheet(games: eligibleGames, initialSelection: playerGameIDs) { selection in
-                let availableIDs = Set(self.eligibleGames(for: self.team).map(\.id))
+                guard let currentTeam = self.team(in: store.statisticsTeams) else { return }
+                let currentSeason = self.seasonID(in: store.statisticsSeasons)
+                let availableIDs = store.statisticsOverview(
+                    for: currentTeam, seasonID: currentSeason, mode: modeFilter, selectedIDs: selectedGameIDs
+                ).eligibleIDs
                 let valid = selection.intersection(availableIDs)
                 selectedGameIDs = valid.isEmpty ? [] : (valid == availableIDs ? nil : valid)
             }
@@ -175,16 +187,27 @@ struct StatsOverviewView: View {
         .onChange(of: metric) { ascending = $0.ascendingByDefault }
     }
 
-    private func scopeSelection(team: Team, selectedCount: Int, eligibleCount: Int) -> some View {
+    private struct SharedRefreshScope: Equatable {
+        let teamID: UUID
+        let foregroundGeneration: Int
+    }
+
+    private func sharedRefreshScope(for team: Team?) -> SharedRefreshScope? {
+        guard let team, store.teamSharing.teams.contains(where: { $0.id == team.id }) else { return nil }
+        return SharedRefreshScope(teamID: team.id, foregroundGeneration: store.teamSharing.foregroundGeneration)
+    }
+
+    private func scopeSelection(team: Team, teams: [Team], seasonID: String, seasons: [Season],
+                                selectedCount: Int, eligibleCount: Int) -> some View {
         BMCard {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("球队", selection: Binding(get: { team.id }, set: { selectedTeamID = $0 })) {
-                    ForEach(store.statisticsTeams) { team in Text(team.name + (store.teamSharing.teams.contains { $0.id == team.id } ? " · 共享" : " · 本机")).tag(team.id) }
+                    ForEach(teams) { team in Text(team.name + (store.teamSharing.teams.contains { $0.id == team.id } ? " · 共享" : " · 本机")).tag(team.id) }
                 }
                 .accessibilityIdentifier("stats-team-picker")
                 Divider()
                 Picker("年度", selection: Binding(get: { seasonID }, set: { selectedSeasonID = $0 })) {
-                    ForEach(store.statisticsSeasons) { Text($0.name).tag($0.id) }
+                    ForEach(seasons) { Text($0.name).tag($0.id) }
                 }
                 .accessibilityIdentifier("stats-season-picker")
                 Text("按比赛日期自动归入年度，无需创建或划分赛季。").font(.caption).foregroundStyle(BMTheme.secondaryText)
@@ -210,7 +233,7 @@ struct StatsOverviewView: View {
     private func teamSummary(_ summary: TeamSeasonStatistics) -> some View {
         BMCard {
             VStack(alignment: .leading, spacing: 14) {
-                if summary.games.contains(where: { $0.state.statisticsIncomplete == true }) {
+                if summary.hasIncompleteGames {
                     Text("含过程或责任待确认的比赛 · 统计可能不完整").font(.caption.bold()).foregroundStyle(BMTheme.orange)
                 }
                 Text("\(summary.games.count) 场比赛 · \(summary.wins)胜\(summary.losses)负\(summary.ties)平")

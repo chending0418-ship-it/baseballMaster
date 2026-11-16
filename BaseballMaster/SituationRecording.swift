@@ -175,6 +175,7 @@ struct SituationPlayFlowSheet: View {
     @State private var decisions: [RunnerDecision] = []
     @State private var runnerDetails: [BattedBallRunnerDetail] = []
     @State private var selectedRunner: UUID?
+    @State private var showsRunnerPreview = false
     @State private var extraRunner: UUID?
     @State private var contactReturnToReview = false
     @State private var search = ""
@@ -268,7 +269,12 @@ struct SituationPlayFlowSheet: View {
                     outcome = initial.outcome; observation = initial.observation
                     selectedType = voiceReview && initial.observation.type == .unknown ? nil : initial.observation.type
                     fielding = initial.observation.fielding ?? (voiceReview ? BattedBallFielding() : BattedBallFielding(status: .pending))
-                    decisions = initial.decisions; runnerDetails = initial.observation.runnerDetails ?? initial.decisions.map { BattedBallRunnerDetail(playerID: $0.id) }
+                    decisions = initial.decisions
+                    runnerDetails = decisions.map { decision in
+                        initial.observation.runnerDetails?.first { $0.playerID == decision.id }
+                            ?? BattedBallRunnerDetail(playerID: decision.id)
+                    }
+                    selectedRunner = decisions.first { $0.origin == .batter }?.id ?? decisions.first?.id
                     timing = initial.timing
                     stage = voiceReview ? .contact : .review
                 }
@@ -463,47 +469,54 @@ struct SituationPlayFlowSheet: View {
         } else if stage == .review {
             VStack(spacing: 6) {
                 Text(previewText).font(.caption.bold())
-                Button(initial == nil ? "确认本球" : "保存本球修改") { submit() }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("confirm-situation-play")
+                let hasCollision = !RunnerBaseLayout(decisions: decisions).conflictingBases.isEmpty
+                Button(initial == nil ? "确认本球" : "保存本球修改") { submit() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(hasCollision)
+                    .opacity(hasCollision ? 0.45 : 1)
+                    .accessibilityIdentifier("confirm-situation-play")
             }.padding(12).background(BMTheme.surface)
         }
     }
     private var review: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(initial == nil ? "尚未提交" : "修改刚才这球 · 保存后替换").font(.caption.bold()).foregroundStyle(BMTheme.orange)
-            Text("\(outcome.rawValue) · \(observation.type.title)").font(.headline)
+            Text("\(outcome.rawValue) · \(observation.type.title)").font(.subheadline.weight(.semibold))
+            RunnerBoardModePicker(showsPreview: $showsRunnerPreview)
+            RunnerBoardOverview(decisions: decisions, selectedRunnerID: $selectedRunner,
+                                showsPreview: showsRunnerPreview)
+
+            if !showsRunnerPreview, let selectedRunner,
+               let index = decisions.firstIndex(where: { $0.id == selectedRunner }) {
+                runnerEditor(index)
+                    .id(selectedRunner)
+            }
+
             Text(fielding.description).font(.caption).accessibilityIdentifier("situation-defense-description")
             if let position = fielding.errorPosition { Text("失误责任：" + fielding.name(position)).font(.caption).foregroundStyle(BMTheme.red).accessibilityIdentifier("situation-error-responsibility") }
             Button("落点：\(observation.summary) · 修改球场记录") { contactReturnToReview = true; fieldMode = .defense; stage = .contact }
                 .font(.caption).accessibilityIdentifier("edit-situation-field")
-            ForEach(decisions.indices, id: \.self) { index in runnerCard(index) }
-            Text("进垒是建议值，按现场调整；点击姓名展开去向。")
-                .font(.caption).foregroundStyle(BMTheme.secondaryText)
         }
     }
-    private func runnerCard(_ index: Int) -> some View {
+
+    private func runnerEditor(_ index: Int) -> some View {
         let decision = decisions[index]
-        return VStack(alignment: .leading, spacing: 9) {
-            Button { selectedRunner = selectedRunner == decision.id ? nil : decision.id } label: {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(decision.origin.title).font(.caption)
-                        Text(decision.player.compactName).font(.headline)
+        return BMCard {
+            VStack(alignment: .leading, spacing: 12) {
+                RunnerEditorHeading(decision: decision)
+                    .accessibilityIdentifier("runner-focused-player")
+                RunnerDestinationGrid(decision: decision, destinations: store.availableDestinations(for: decision),
+                                      identifierPrefix: "situation-destination-\(index)-") { destination in
+                    guard decisions[index].destination != destination else { return }
+                    decisions[index].destination = destination
+                    timing = nil
+                    issue = nil
+                    if !decisions[index].hasActualMovement {
+                        runnerDetails[index].cause = .hit
+                        runnerDetails[index].fielding = nil
                     }
-                    Spacer()
-                    Text(decision.destination == .hold ? "留垒" : decision.destination.title).font(.subheadline.bold())
-                    Image(systemName: selectedRunner == decision.id ? "chevron.up" : "chevron.down")
-                }.frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityIdentifier("situation-runner-\(index)")
-            if selectedRunner == decision.id {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 3), spacing: 5) {
-                    ForEach(store.availableDestinations(for: decision), id: \.self) { destination in
-                        Button(destination.title) {
-                            decisions[index].destination = destination; timing = nil
-                            if !decisions[index].hasActualMovement { runnerDetails[index].cause = .hit; runnerDetails[index].fielding = nil }
-                            if destination == .out && runnerDetails[index].cause == .hit { runnerDetails[index].cause = .tag }
-                            if destination != .out && [.tag, .appeal].contains(runnerDetails[index].cause) { runnerDetails[index].cause = .hit }
-                        }.buttonStyle(SecondaryButtonStyle(color: decision.destination == destination ? BMTheme.orange : BMTheme.green))
-                            .accessibilityIdentifier("situation-destination-\(index)-\(destination.title)")
+                    if destination == .out && runnerDetails[index].cause == .hit { runnerDetails[index].cause = .tag }
+                    if destination != .out && [.tag, .appeal].contains(runnerDetails[index].cause) {
+                        runnerDetails[index].cause = .hit
                     }
                 }
                 Picker("变化原因", selection: $runnerDetails[index].cause) {
@@ -514,7 +527,7 @@ struct SituationPlayFlowSheet: View {
                         .font(.caption.bold()).accessibilityIdentifier("situation-extra-route-\(index)")
                 }
             }
-        }.padding(12).background(BMTheme.surface, in: RoundedRectangle(cornerRadius: 13))
+        }
     }
     private var previewText: String {
         let outs = decisions.filter { $0.destination == .out }.count
@@ -586,7 +599,8 @@ struct SituationPlayFlowSheet: View {
             return order(a) < order(b)
         }
         runnerDetails = decisions.map { BattedBallRunnerDetail(playerID: $0.player.id) }
-        selectedRunner = decisions.count > 3 ? nil : decisions.first(where: { $0.origin != .batter })?.id ?? decisions.first?.id
+        selectedRunner = decisions.first { $0.origin == .batter }?.id ?? decisions.first?.id
+        showsRunnerPreview = false
         timing = nil; fieldMode = .landing; stage = .contact; issue = nil; contactReturnToReview = false
     }
     private func finishContact() {
@@ -609,7 +623,11 @@ struct SituationPlayFlowSheet: View {
         for index in runnerDetails.indices {
             if runnerDetails[index].cause.asksForFielding, decisions[index].destination != .hold,
                runnerDetails[index].fielding?.status == nil {
-                issue = "请补充\(decisions[index].player.name)的跑垒处理，或明确标记待补"; stage = .review; selectedRunner = decisions[index].id; return
+                issue = "请补充\(decisions[index].player.name)的跑垒处理，或明确标记待补"
+                stage = .review
+                showsRunnerPreview = false
+                selectedRunner = decisions[index].id
+                return
             }
             runnerDetails[index].fielding?.capture(in: store.game)
         }
