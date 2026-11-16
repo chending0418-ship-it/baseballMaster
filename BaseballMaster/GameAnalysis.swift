@@ -164,7 +164,7 @@ struct GameAnalysisSource: Identifiable {
                                  fielding: state.fielding[player.id] ?? FieldingLine()))
         }
         input = GameAnalysisInput(scope: .single, games: [.init(game, people: aliases, eventLimit: 18)], players: players)
-        title = "\(state.awayTeam.shortName) \(state.awayScore)–\(state.homeScore) \(state.homeTeam.shortName)"
+        title = "\(state.awayTeam.shortName) \(state.awayScore)–\(state.homeScore) \(state.homeTeam.shortName)".withAnalysisSpacing
         subtitle = game.dateText + " · 已结束"
         metrics = [
             ("比分（客 / 主）", "\(state.awayScore) / \(state.homeScore)"),
@@ -191,7 +191,7 @@ struct GameAnalysisSource: Identifiable {
             return .init(game, people: people, eventLimit: 3)
         }
         input = GameAnalysisInput(scope: filtered ? .filtered : .season, games: games, players: players)
-        title = teamName
+        title = teamName.withAnalysisSpacing
         subtitle = "\(year) 年 · \(filtered ? "所选" : "全年") \(games.count) 场已结束比赛"
         metrics = [
             ("比赛", "\(games.count)"),
@@ -209,7 +209,14 @@ struct GameAnalysisSource: Identifiable {
         for match in text.matches(of: aliases).reversed() {
             output.replaceSubrange(match.range, with: names[String(match.output)] ?? "球员")
         }
-        return output
+        return output.withAnalysisSpacing
+    }
+}
+
+private extension String {
+    var withAnalysisSpacing: String {
+        let boundary = #"(?<=\p{Han})(?=[\p{Latin}0-9]|#[0-9])|(?<=[\p{Latin}0-9])(?=\p{Han})"#
+        return replacingOccurrences(of: boundary, with: " ", options: .regularExpression)
     }
 }
 
@@ -270,7 +277,7 @@ struct GameAnalysisPDFReport {
 
     private var mvp: (title: String, detail: String) {
         if let mvp = report.mvp, let name = source.names[mvp.id] {
-            return (source.input.scope.mvpTitle + " · " + name, source.display(mvp.reason))
+            return (source.input.scope.mvpTitle + " · " + name.withAnalysisSpacing, source.display(mvp.reason))
         }
         return (source.input.scope.mvpTitle, "现有记录不足以评选。")
     }
@@ -284,9 +291,9 @@ struct GameAnalysisPDFReport {
         return headings.compactMap { heading in
             let rows = (grouped[heading.side] ?? []).compactMap { player -> [String]? in
                 guard let name = source.names[player.id], let evaluation = evaluations[player.id] else { return nil }
-                return [name, source.display(evaluation)]
+                return [name.withAnalysisSpacing, source.display(evaluation)]
             }
-            return rows.isEmpty ? nil : (heading.name, rows)
+            return rows.isEmpty ? nil : (heading.name.withAnalysisSpacing, rows)
         }
     }
 

@@ -9664,6 +9664,9 @@ extension GameStoreTests {
         XCTAssertEqual(source.input.players.first { $0.id == id }?.batting[3], 4)
         XCTAssertEqual(Set(source.input.players.map(\.side)), [0, 1])
         XCTAssertTrue(source.display("\(id)击出本垒打").contains(first.name))
+        XCTAssertEqual(source.display("本场MVP贡献2次RBI，球队以1比0获胜。已有 H/AB。"),
+                       "本场 MVP 贡献 2 次 RBI，球队以 1 比 0 获胜。已有 H/AB。")
+        XCTAssertEqual(source.display("海浪#7 Pérez选手"), "海浪 #7 Pérez 选手")
         let wire = String(decoding: try JSONEncoder().encode(source.input), as: UTF8.self)
         XCTAssertFalse(wire.contains(first.name))
         XCTAssertFalse(wire.contains(first.id.uuidString))
