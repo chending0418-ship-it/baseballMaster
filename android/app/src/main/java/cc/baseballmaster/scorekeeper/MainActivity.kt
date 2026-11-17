@@ -1447,8 +1447,6 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                             }
                         }
                         panelControls()
-                        Text("已保存 ${game.totalPitches} 球", Modifier.fillMaxWidth().testTag("save-status"),
-                            textAlign = TextAlign.Center, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
                     finishActions = finishActions,
                     task = task,

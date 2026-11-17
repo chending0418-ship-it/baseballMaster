@@ -17,6 +17,7 @@ import cc.baseballmaster.core.Rules
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -228,6 +229,48 @@ class Product085VisualParityTest {
                 assertFirstScoringScreen()
                 click("record-runner"); shot("runner-menu")
             }
+        }
+    }
+
+    @Test fun twoStrikeBuntIsCentered() {
+        launch(); match("pro")
+        assertFirstScoringScreen()
+        val bunt = By.res("foul-bunt-strikeout")
+        assertFalse(device.hasObject(bunt))
+        click("pitch-calledStrike"); assertFalse(device.hasObject(bunt))
+        click("pitch-swingingStrike")
+        assertFirstScoringScreen()
+        val center = requireNotNull(device.findObject(bunt))
+        val left = requireNotNull(device.findObject(By.res("end-half"))).visibleBounds
+        val right = requireNotNull(device.findObject(By.res("finish-game"))).visibleBounds
+        val row = requireNotNull(device.findObject(By.res("scorekeeping-finish-actions"))).visibleBounds
+        assertTrue(center.isEnabled && row.contains(center.visibleBounds))
+        assertEquals(left.centerY(), center.visibleBounds.centerY())
+        assertEquals(right.centerY(), center.visibleBounds.centerY())
+        assertTrue(left.right <= center.visibleBounds.left && center.visibleBounds.right <= right.left)
+        assertTrue(kotlin.math.abs(center.visibleBounds.centerX() - row.centerX()) <= 3)
+        shot("live-pro-two-strikes")
+
+        val before = currentFixtureGame()
+        click("pitch-foul")
+        val afterFoul = currentFixtureGame()
+        assertEquals(2, afterFoul.strikes)
+        assertEquals(before.batter.id, afterFoul.batter.id)
+        click("foul-bunt-strikeout")
+        val afterBunt = currentFixtureGame()
+        assertEquals(afterFoul.outs + 1, afterBunt.outs)
+        assertEquals("K-BUNT", afterBunt.entries.last().notation)
+        assertFalse(device.hasObject(bunt))
+        click("undo")
+        assertTrue(device.wait(Until.hasObject(bunt), 5000))
+    }
+
+    private fun currentFixtureGame(): Game = runBlocking {
+        val db = LocalDatabase.open(context)
+        try {
+            GameRepository.decode(requireNotNull(db.dao().game(fixture.getString("pro"))))
+        } finally {
+            db.close()
         }
     }
 

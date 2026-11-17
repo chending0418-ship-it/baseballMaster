@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
@@ -68,27 +70,33 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
     var openingPlay by rememberSaveable(game.id) { mutableStateOf(false) }
     var confirmEndHalf by rememberSaveable(game.id) { mutableStateOf(false) }
     var confirmTimeEnd by rememberSaveable(game.id) { mutableStateOf(false) }
+    val showFinishActions = !game.isFinal && !game.isScheduled && game.pendingDecision == null
+    val showFoulBunt = showFinishActions && game.strikes == 2 && game.rules.mode != GameMode.slowPitch
+    val showAmendObservation = showFinishActions && game.rules.recordingMethod == "situation" &&
+        game.journal.take(game.cursor).any { it.command.kind == "play" }
+    val actionEnabled = enabled && panel.isEmpty()
     val finishActions: @Composable () -> Unit = {
-        if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
+        if (showFinishActions) {
             Row(Modifier.fillMaxWidth().testTag("scorekeeping-finish-actions"), verticalAlignment = Alignment.CenterVertically) {
-                val actionEnabled = enabled && panel.isEmpty()
                 val touchHeight = Modifier.heightIn(min = 48.dp)
                 val padding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
                 TextButton({ confirmEndHalf = true }, enabled = actionEnabled,
                     modifier = touchHeight.testTag("end-half"), contentPadding = padding) {
                     Text("结束半局", fontSize = 13.sp)
                 }
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center) {
-                    if (game.rules.recordingMethod == "situation" && game.journal.take(game.cursor).any { it.command.kind == "play" }) {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    if (showFoulBunt) {
+                        val orange = if (MaterialTheme.colorScheme.background.luminance() < 0.4f)
+                            Color(0xFFF5AC68) else Color(0xFF9F4C0D)
+                        TextButton({ model.command(Command("foulBunt")) }, enabled = actionEnabled,
+                            modifier = touchHeight.testTag("foul-bunt-strikeout"), contentPadding = padding,
+                            colors = ButtonDefaults.textButtonColors(contentColor = orange)) {
+                            Text("触击界外出局", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    } else if (showAmendObservation) {
                         TextButton({ open("amend-observation") }, enabled = actionEnabled,
                             modifier = touchHeight.testTag("amend-situation-play"), contentPadding = padding) {
                             Text("补充这球", fontSize = 12.sp)
-                        }
-                    }
-                    if (game.strikes == 2 && game.rules.mode != GameMode.slowPitch) {
-                        TextButton({ model.command(Command("foulBunt")) }, enabled = actionEnabled,
-                            modifier = touchHeight.testTag("foul-bunt-strikeout"), contentPadding = padding) {
-                            Text("触击界外出局", fontSize = 12.sp)
                         }
                     }
                 }
@@ -238,6 +246,18 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
                 }
             },
         )
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("已保存 ${game.totalPitches} 球", Modifier.weight(1f).testTag("save-status"),
+            textAlign = if (showFoulBunt && showAmendObservation) TextAlign.Start else TextAlign.Center,
+            fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (showFoulBunt && showAmendObservation) {
+            TextButton({ open("amend-observation") }, enabled = actionEnabled,
+                modifier = Modifier.heightIn(min = 30.dp).testTag("amend-situation-play"),
+                contentPadding = PaddingValues(horizontal = 4.dp)) {
+                Text("补充这球", fontSize = 12.sp)
+            }
+        }
+    }
     }
     val task: @Composable () -> Unit = {
     CompositionLocalProvider(LocalProductTaskEmbedded provides (inlineTask && panel == "play")) {
