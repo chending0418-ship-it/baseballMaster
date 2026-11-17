@@ -1,6 +1,7 @@
 package cc.baseballmaster.scorekeeper
 
 import android.content.Intent
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -163,6 +164,89 @@ class Product085VisualParityTest {
         click("stats-player-open-game-filter"); shot("player-filter")
     }
 
+    @Test fun pdfPreviewSavesItsOriginalBytesAndRecoversFromFailure() {
+        launch(2)
+        val reports = File(context.cacheDir, "reports")
+        fun reportFiles() = reports.walkTopDown().filter { it.isFile && it.extension == "pdf" }.toSet()
+        val before = reportFiles()
+        click("export-team-season-pdf")
+        node(By.res("report-preview-page"))
+        val original = (reportFiles() - before).single()
+        val reference = original.copyTo(File(output, "team-pdf-preview-original.pdf"), overwrite = true)
+        fun expectPage(number: Int) {
+            val label = By.res("report-preview-page-count").textStartsWith("$number /")
+            assertTrue("PDF 页码应为 $number", device.wait(Until.hasObject(label), 10_000))
+            val tag = if (number == 1) "report-preview-page" else "report-preview-page-$number"
+            assertTrue(device.wait(Until.hasObject(By.res(tag)), 10_000))
+        }
+        click("report-preview-next")
+        expectPage(2)
+        click("report-preview-next")
+        expectPage(3)
+        assertFalse(node(By.res("report-preview-next")).isEnabled)
+        shot("team-pdf-last-page")
+        click("report-preview-previous")
+        expectPage(2)
+
+        val pickerSave = By.text(java.util.regex.Pattern.compile("(?i)save|保存"))
+        fun pickerControl(selector: BySelector) =
+            requireNotNull(device.wait(Until.findObject(selector), 10_000)) { "找不到系统文件选择器控件 $selector" }
+        fun openPicker() {
+            node(By.res("report-preview-save")).click()
+            pickerControl(pickerSave)
+        }
+        openPicker()
+        device.pressBack()
+        expectPage(2)
+        assertFalse(device.hasObject(By.text("已保存")))
+        assertEquals(before + original, reportFiles())
+        shot("team-pdf-cancel-save")
+
+        val filename = "085-parity-${System.nanoTime()}.pdf"
+        fun saveAs(name: String) {
+            openPicker()
+            pickerControl(By.clazz("android.widget.EditText")).text = name
+            pickerControl(pickerSave).click()
+        }
+        fun findSaved(name: String) =
+            device.executeShellCommand("find /sdcard/Download /sdcard/Documents -name $name").trim()
+
+        saveAs(filename)
+        node(By.text("已保存"))
+        shot("team-pdf-saved")
+        tap(By.text("完成"))
+        expectPage(2)
+        assertEquals(before + original, reportFiles())
+        val saved = findSaved(filename)
+        assertTrue("找不到系统保存的 PDF", saved.startsWith("/sdcard/"))
+        try {
+            val savedHash = device.executeShellCommand("sha256sum $saved").substringBefore(' ')
+            val originalHash = java.security.MessageDigest.getInstance("SHA-256").digest(reference.readBytes())
+                .joinToString("") { "%02x".format(it) }
+            assertEquals(originalHash, savedHash)
+            File(output, "team-pdf-save-sha256.txt").writeText("$originalHash preview\n$savedHash SAF\n")
+
+            // Exercise the actual activity result and error state when Android has reclaimed this cache file.
+            assertTrue(original.delete())
+            val failed = "085-parity-failure-${System.nanoTime()}.pdf"
+            try {
+                saveAs(failed)
+                node(By.text("导出未完成"))
+                shot("team-pdf-save-failure")
+                tap(By.text("知道了"))
+                click("report-preview-close")
+                assertEquals("1 场比赛 · 1胜0负0平", node(By.res("stats-team-record")).text)
+                click("export-team-season-pdf")
+                node(By.res("report-preview-page"))
+            } finally {
+                findSaved(failed).takeIf { it.startsWith("/sdcard/") }
+                    ?.let { device.executeShellCommand("rm -f $it") }
+            }
+        } finally {
+            device.executeShellCommand("rm -f $saved")
+        }
+    }
+
     @Test fun profile() {
         for ((control, name) in listOf("open-app-settings" to "settings", "open-local-data" to "local-data",
             "open-app-about" to "about", "open-rules" to "rules", "open-practice-inning" to "practice-live")) {
@@ -253,14 +337,14 @@ class Product085VisualParityTest {
 
         val before = currentFixtureGame()
         click("pitch-foul")
-        val afterFoul = currentFixtureGame()
+        val afterFoul = awaitFixtureRevision(before.revision + 1)
         assertEquals(2, afterFoul.strikes)
         assertEquals(before.batter.id, afterFoul.batter.id)
         click("foul-bunt-strikeout")
-        val afterBunt = currentFixtureGame()
+        val afterBunt = awaitFixtureRevision(afterFoul.revision + 1)
         assertEquals(afterFoul.outs + 1, afterBunt.outs)
         assertEquals("K-BUNT", afterBunt.entries.last().notation)
-        assertFalse(device.hasObject(bunt))
+        assertTrue(device.wait(Until.gone(bunt), 5000))
         click("undo")
         assertTrue(device.wait(Until.hasObject(bunt), 5000))
     }
@@ -274,22 +358,36 @@ class Product085VisualParityTest {
         }
     }
 
+    private fun awaitFixtureRevision(revision: Long): Game {
+        val deadline = SystemClock.uptimeMillis() + 8000
+        do {
+            val game = currentFixtureGame()
+            if (game.revision >= revision) {
+                assertEquals(revision, game.revision)
+                return game
+            }
+            SystemClock.sleep(50)
+        } while (SystemClock.uptimeMillis() < deadline)
+        error("Scorekeeping revision $revision did not persist")
+    }
+
     private fun assertFirstScoringScreen() {
         assertTrue(device.wait(Until.hasObject(By.res("finish-game")), 8000))
         UiTreeCache.refresh()
         val window = requireNotNull(device.findObject(By.res("portrait-app"))).visibleBounds
         val density = context.resources.displayMetrics.density
-        val controls = mapOf(
-            "pitch-ball" to 42, "pitch-calledStrike" to 42, "pitch-swingingStrike" to 42, "pitch-foul" to 42,
-            "record-play" to 44, "record-runner" to 44, "record-special" to 44,
-            "undo" to 38, "redo" to 38, "open-state-correction" to 38, "open-substitutions" to 38,
-            "end-half" to 48, "finish-game" to 48,
+        val controls = listOf(
+            "pitch-ball", "pitch-calledStrike", "pitch-swingingStrike", "pitch-foul",
+            "record-play", "record-runner", "record-special",
+            "undo", "redo", "open-state-correction", "open-substitutions",
+            "end-half", "finish-game",
         )
-        for ((tag, minimumHeight) in controls) {
+        for (tag in controls) {
             val button = requireNotNull(device.findObject(By.res(tag))) { "$tag must be visible without scrolling" }
             assertTrue("$tag must fit in the first screen: ${button.visibleBounds}",
                 (tag == "redo" || button.isEnabled) && window.contains(button.visibleBounds) &&
-                    button.visibleBounds.height() >= minimumHeight * density - 2)
+                    button.visibleBounds.height() >= 48 * density - 2 &&
+                    button.visibleBounds.width() >= 48 * density - 2)
         }
         val half = requireNotNull(device.findObject(By.res("end-half"))).visibleBounds
         val finish = requireNotNull(device.findObject(By.res("finish-game"))).visibleBounds

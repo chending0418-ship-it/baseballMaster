@@ -10,6 +10,7 @@ object MatchEngine {
     internal fun checkpoint(game: Game) =
         GameJson.encodeToString(
             clone(game).apply {
+                restorePitcherInningUsage()
                 journal = emptyList()
                 cursor = 0
                 checkpoint = null
@@ -290,7 +291,12 @@ object MatchEngine {
 }
 
 internal class Session(val g: Game, val c: Command, val id: String, private val validateNewLineupReplacements: Boolean = false) {
+    init {
+        g.restorePitcherInningUsage()
+    }
+
     private val before = g.situation()
+    private val alreadyPlaying = !g.isPregame
     private val ownersBefore = g.runnerPitcherIDs.toMap()
     private val unearnedBefore = g.unearnedRunnerIDs.toSet()
     private val automaticBefore = g.automaticRunnerIDs.toSet()
@@ -322,10 +328,8 @@ internal class Session(val g: Game, val c: Command, val id: String, private val 
         if (!g.clockHasStarted && !g.practice && !c.timeUnknown) {
             g.clockHasStarted = true
             g.clockRunningSince = c.at
+            if (g.rules.mode != GameMode.coachPitch) g.includeMoundAppearance(before)
         }
-        if (g.rules.mode != GameMode.coachPitch)
-            g.pitcherInnings[g.pitcher.id] =
-                (g.pitcherInnings[g.pitcher.id] ?: emptySet()) + g.inning
     }
 
     fun run(): Game {
@@ -393,9 +397,9 @@ internal class Session(val g: Game, val c: Command, val id: String, private val 
                 if (g.rules.mode == GameMode.coachPitch) {
                     g.totalPitches++
                     g.appearancePitches++
-                    coachLimit()
                     notation = "HBP-CONTINUE"
                     title = "触身球，继续打击"
+                    coachLimit()
                 } else {
                     pit(g.pitcher.id).pitches++
                     g.totalPitches++
@@ -598,6 +602,8 @@ internal class Session(val g: Game, val c: Command, val id: String, private val 
                     "start",
                     "resume" -> {
                         require(g.clockRunningSince == null) { "比赛正在计时" }
+                        if (!g.clockHasStarted && g.rules.mode != GameMode.coachPitch)
+                            g.includeMoundAppearance(before)
                         g.clockHasStarted = true
                         g.clockRunningSince = c.at
                     }
@@ -673,33 +679,31 @@ internal class Session(val g: Game, val c: Command, val id: String, private val 
                 g.dismissedRunLimitHalf != g.halfKey
         )
             g.pendingDecision = "runLimit"
-        if (g.clockHasStarted && !g.isFinal && g.rules.mode != GameMode.coachPitch)
-            g.pitcherInnings[g.pitcher.id] =
-                (g.pitcherInnings[g.pitcher.id] ?: emptySet()) + g.inning
-        g.entries =
-            g.entries +
-                PitchEntry(
-                    id,
-                    c.pitch,
-                    title.ifBlank { c.kind },
-                    c.kind,
-                    notation,
-                    oldBatter.id,
-                    if (g.rules.mode == GameMode.coachPitch) null else oldPitcher.id,
-                    outcome,
-                    decisions,
-                    c.observation,
-                    participants,
-                    before.inning,
-                    before.isTop,
-                    c.at,
-                    before,
-                    g.situation(),
-                    incomplete,
-                    runnerOwnersBefore = ownersBefore,
-                    unearnedBefore = unearnedBefore,
-                    automaticBefore = automaticBefore,
-                )
+        val entry = PitchEntry(
+            id,
+            c.pitch,
+            title.ifBlank { c.kind },
+            c.kind,
+            notation,
+            oldBatter.id,
+            if (g.rules.mode == GameMode.coachPitch) null else oldPitcher.id,
+            outcome,
+            decisions,
+            c.observation,
+            participants,
+            before.inning,
+            before.isTop,
+            c.at,
+            before,
+            g.situation(),
+            incomplete,
+            runnerOwnersBefore = ownersBefore,
+            unearnedBefore = unearnedBefore,
+            automaticBefore = automaticBefore,
+        )
+        if (g.rules.mode != GameMode.coachPitch)
+            g.includeMoundAppearance(entry.moundAppearance(c, alreadyPlaying))
+        g.entries = g.entries + entry
         g.validate()
         return g
     }

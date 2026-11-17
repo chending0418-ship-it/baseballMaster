@@ -123,24 +123,24 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ScoreControl("跑者 / 出局", "record-runner", Modifier.weight(1f), enabled && panel.isEmpty()) { open("runner") }
-            ScoreControl("特殊 / 判罚", "record-special", Modifier.weight(1f), enabled && panel.isEmpty(), color = Color(0xFF9F4C0D)) { open("special") }
+            ScoreControl("特殊 / 判罚", "record-special", Modifier.weight(1f), enabled && panel.isEmpty(), warning = true) { open("special") }
         }
         if (game.rules.mode == GameMode.slowPitch) {
             ScoreControl("Illegal／非法投球", "record-illegal-pitch", Modifier.fillMaxWidth(), enabled && panel.isEmpty() && !game.isPregame,
-                color = Color(0xFF9F4C0D)) { open("illegal") }
+                warning = true) { open("illegal") }
         }
         if (reachedTimeLimit)
             ScoreControl("时间已到 · 按裁判决定结束比赛", "game-time-limit-reached",
-                Modifier.fillMaxWidth(), enabled && panel.isEmpty(), color = Color(0xFF9F4C0D)) { confirmTimeEnd = true }
+                Modifier.fillMaxWidth(), enabled && panel.isEmpty(), warning = true) { confirmTimeEnd = true }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        ScoreControl("撤销", "undo", Modifier.weight(1f), !model.busy && panel.isEmpty() && game.canUndo, compact = true) { model.undo() }
-        ScoreControl("恢复", "redo", Modifier.weight(1f), !model.busy && panel.isEmpty() && game.cursor < game.journal.size, compact = true) { model.redo() }
+        ScoreControl("撤销", "undo", Modifier.weight(1f), !model.busy && panel.isEmpty() && game.canUndo) { model.undo() }
+        ScoreControl("恢复", "redo", Modifier.weight(1f), !model.busy && panel.isEmpty() && game.cursor < game.journal.size) { model.redo() }
         if (game.isFinal) {
-            ScoreControl("返回首页", "return-final-game-home", Modifier.weight(2f), !model.busy, filled = true, compact = true) { model.open(null) }
+            ScoreControl("返回首页", "return-final-game-home", Modifier.weight(2f), !model.busy, filled = true) { model.open(null) }
         } else {
-            ScoreControl("修正", "open-state-correction", Modifier.weight(1f), enabled && panel.isEmpty(), color = Color(0xFF9F4C0D), compact = true) { open("correction") }
-            ScoreControl("阵容", "open-substitutions", Modifier.weight(1f), enabled && panel.isEmpty(), compact = true) { open("substitution") }
+            ScoreControl("修正", "open-state-correction", Modifier.weight(1f), enabled && panel.isEmpty(), warning = true) { open("correction") }
+            ScoreControl("阵容", "open-substitutions", Modifier.weight(1f), enabled && panel.isEmpty()) { open("substitution") }
         }
     }
     if (confirmEndHalf) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { confirmEndHalf = false }, title = { Text("结束本半局？") },
@@ -1403,17 +1403,23 @@ private fun HistoryResponsibilityEditor(
 
 /** Same hierarchy, colors and corner treatment as iOS ScoreActionButtonStyle. */
 @Composable
-internal fun ScoreControl(label: String, tag: String, modifier: Modifier = Modifier, enabled: Boolean = true,
-    color: Color = Accent, filled: Boolean = false, compact: Boolean = false, action: () -> Unit) {
+private fun ScoreControl(label: String, tag: String, modifier: Modifier = Modifier, enabled: Boolean = true,
+    warning: Boolean = false, filled: Boolean = false, action: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val tint = when {
+        !warning -> colors.primary
+        colors.surface.luminance() < .4f -> Color(0xFFF5AC68)
+        else -> Color(0xFF9F4C0D)
+    }
     val shape = RoundedCornerShape(12.dp)
-    val sizing = modifier.heightIn(min = if (compact) 38.dp else 44.dp).testTag(tag)
+    val sizing = modifier.heightIn(min = 48.dp).testTag(tag)
     val padding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
     if (filled) Button(action, sizing, enabled = enabled, shape = shape, contentPadding = padding,
-        colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color.White)) {
+        colors = ButtonDefaults.buttonColors(containerColor = ProductGreen, contentColor = Color.White)) {
         Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     } else OutlinedButton(action, sizing, enabled = enabled, shape = shape, contentPadding = padding,
-        border = BorderStroke(1.dp, color.copy(alpha = if(enabled) .25f else .12f)),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = color, containerColor = MaterialTheme.colorScheme.surface)) {
+        border = BorderStroke(1.dp, tint.copy(alpha = if (enabled) .35f else .12f)),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = tint, containerColor = colors.surface)) {
         Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }

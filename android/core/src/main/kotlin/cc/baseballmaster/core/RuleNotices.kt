@@ -19,13 +19,18 @@ fun Game.ruleNotices(at: Long): List<String> {
                 result += "比赛时间剩余约 ${(remaining + 59_999L) / 60_000L} 分钟"
             }
         }
-    if (rules.mode != GameMode.coachPitch)
+    if (rules.mode != GameMode.coachPitch) {
+        val usage = if (rules.pitcherInningsLimit != null && !pitcherInningUsageCurrent && appleSourceID == null)
+            copy(pitcherInnings = pitcherInnings.toMutableMap()).apply { restorePitcherInningUsage() }
+        else this
+        if (rules.pitcherInningsLimit != null && usage.pitcherInningHistoryIncomplete)
+            result += "部分登板记录缺失，请核对实际登板局数。"
         for (player in home.players + away.players) {
             val pitches = pitching[player.id]?.pitches ?: 0
             rules.pitchLimit?.let { limit ->
                 val remaining = limit - pitches
                 if (remaining <= 0)
-                    result += "#${player.number} ${player.name} 已达到 $limit 球限制（已投 $pitches 球）"
+                    result += "#${player.number} ${player.name} 已达到 $limit 球限制（已投 $pitches 球）。可继续记分。"
                 else if (
                     player.id == pitcher.id &&
                         rules.pitchWarningRemaining?.let { remaining <= it } == true
@@ -33,12 +38,16 @@ fun Game.ruleNotices(at: Long): List<String> {
                     result += "#${player.number} ${player.name} 距投球限制还剩 $remaining 球"
             }
             rules.pitcherInningsLimit?.let { limit ->
-                val used = pitcherInnings[player.id]?.size ?: 0
-                if (used >= limit && used > 0)
-                    result +=
-                        "#${player.number} ${player.name} 已登板 $used / $limit 局；登板即计入，统计 IP 另按实际出局数计算"
+                val used = usage.pitcherInnings[player.id]?.size ?: 0
+                if (used > limit && used > 0)
+                    result += "#${player.number} ${player.name} 已确认登板 $used 局，超过 $limit 局限制。可继续记分。"
+                else if (used == limit && used > 0 && !usage.pitcherInningHistoryIncomplete)
+                    result += "#${player.number} ${player.name} 已达到 $limit 局登板额度（已登板 $used / $limit 局）。可继续记分。"
+                else if (player.id == pitcher.id && used in 1 until limit && !usage.pitcherInningHistoryIncomplete)
+                    result += "#${player.number} ${player.name} 已登板 $used / $limit 局；统计 IP 按实际出局数计算。"
             }
         }
+    }
     if (statisticsIncomplete || incompletePrefix) result += "部分过程或统计责任不完整，请核对记录"
     return result.distinct()
 }

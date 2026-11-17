@@ -23,7 +23,7 @@ internal data class RuleDraft(
     val pitchLimit: String = "",
     val pitcherInnings: String = "",
     val timed: Boolean = false,
-    val extraFoul: Boolean = true,
+    val extraFoul: Boolean? = null,
     val dh: Boolean = false,
     val twoWay: Boolean = false,
     val method: String = "traditional",
@@ -36,13 +36,14 @@ internal data class RuleDraft(
             return value.toIntOrNull()?.takeIf { it in range }
                 ?: error("$label 请填写 ${range.first}–${range.last}")
         }
+        require(mode != GameMode.slowPitch || extraFoul != null) { "开赛前请选择两好后的界外规则" }
         require(!timed || timeMinutes.isNotBlank()) { "时间赛请填写比赛时限" }
         return Rules(
             mode = mode,
             initialBalls = n("初始坏球", balls, 0..3)!!,
             initialStrikes = n("初始好球", strikes, 0..2)!!,
             coachPitchLimit = n("规定投球数", coachLimit, 1..20)!!,
-            oneExtraFoul = extraFoul,
+            oneExtraFoul = extraFoul ?: true,
             innings = n("局数", innings, 1..99)!!,
             timed = timed,
             timeLimitMinutes = n("比赛时限", timeMinutes, 1..600, true),
@@ -59,6 +60,14 @@ internal data class RuleDraft(
     }
 
     companion object {
+        fun forSetup(mode: GameMode, savedRules: Rules?): RuleDraft {
+            val existing = savedRules?.takeIf { it.mode == mode }
+            val draft = from(existing ?: Rules(mode))
+            return if (mode == GameMode.slowPitch && existing == null)
+                draft.copy(timeMinutes = "", extraFoul = null)
+            else draft
+        }
+
         fun from(r: Rules) =
             RuleDraft(
                 r.innings.toString(),
@@ -174,7 +183,11 @@ internal fun RuleDraftForm(
         Choices(
             "两好球后界外",
             mapOf("extra" to "额外一次界外", "out" to "直接出局"),
-            if (draft.extraFoul) "extra" else "out",
+            when (draft.extraFoul) {
+                true -> "extra"
+                false -> "out"
+                null -> ""
+            },
         ) { v ->
             update { it.copy(extraFoul = v == "extra") }
         }

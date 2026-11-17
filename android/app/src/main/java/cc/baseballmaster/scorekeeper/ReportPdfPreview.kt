@@ -6,6 +6,7 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -90,7 +91,12 @@ internal fun ReportPdfPreview(
     var pageBounds by remember(file.path, retry) { mutableStateOf<List<ReportPageBounds>?>(null) }
     var issue by remember(file.path, retry) { mutableStateOf(false) }
     val scroll = rememberLazyListState()
+    var selectedPage by rememberSaveable(file.path) { mutableStateOf<Int?>(null) }
+    val dragged by scroll.interactionSource.collectIsDraggedAsState()
     val scope = rememberCoroutineScope()
+    LaunchedEffect(dragged) {
+        if (dragged) selectedPage = null
+    }
     LaunchedEffect(file.path, retry) {
         try {
             pageBounds = withContext(Dispatchers.IO) { readReportBounds(file) }
@@ -102,18 +108,30 @@ internal fun ReportPdfPreview(
     }
     ProductPage(title, busy = busy, onBack = onClose, backTag = "report-preview-close", scrollableContent = false) {
         val bounds = pageBounds
-        val current = scroll.firstVisibleItemIndex
         if (bounds != null) {
+            val current by remember(bounds, scroll) {
+                derivedStateOf {
+                    // At the bottom, multiple short landscape pages can share one scroll position.
+                    // Keep the arrow selection as long as that page is still in the viewport.
+                    selectedPage?.takeIf { page -> scroll.layoutInfo.visibleItemsInfo.any { it.index == page } }
+                        ?: if (!scroll.canScrollForward && scroll.canScrollBackward) bounds.lastIndex
+                        else scroll.firstVisibleItemIndex
+                }
+            }
+            fun moveTo(page: Int) {
+                scope.launch {
+                    scroll.scrollToItem(page)
+                    selectedPage = page
+                }
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton({
-                    scope.launch { scroll.scrollToItem(current - 1) }
-                }, Modifier.size(48.dp).testTag("report-preview-previous"), enabled = current > 0 && !busy) {
+                IconButton({ moveTo(current - 1) }, Modifier.size(48.dp).testTag("report-preview-previous"),
+                    enabled = current > 0 && !busy) {
                     Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "上一页")
                 }
                 Text("${current + 1} / ${bounds.size} 页", Modifier.weight(1f).testTag("report-preview-page-count"), style = MaterialTheme.typography.bodySmall)
-                IconButton({
-                    scope.launch { scroll.scrollToItem(current + 1) }
-                }, Modifier.size(48.dp).testTag("report-preview-next"), enabled = current + 1 < bounds.size && !busy) {
+                IconButton({ moveTo(current + 1) }, Modifier.size(48.dp).testTag("report-preview-next"),
+                    enabled = current + 1 < bounds.size && !busy) {
                     Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "下一页")
                 }
                 IconButton({ zoom = (zoom - .25f).coerceAtLeast(1f) },

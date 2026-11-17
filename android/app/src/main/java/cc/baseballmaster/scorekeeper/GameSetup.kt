@@ -78,11 +78,12 @@ internal fun NewGameDialog(
     val mode = GameMode.valueOf(modeName)
     var ownHome by rememberSaveable { mutableStateOf(initialSchedule != null && initialSchedule.home.id == initialSchedule.ourTeamID) }
     val baselineRules = initialSchedule?.rules?.takeIf { it.mode == mode } ?: Rules(mode)
+    val savedRules = initialSchedule?.takeUnless { it.scheduledSetupPending }?.rules
     // Keep every field, including invalid text, above the conditional first-step
     // page. Returning from lineup review or hiding rules for a basic schedule
     // must not reconstruct the user's inputs from default/last-valid Rules.
     var ruleDraftJSON by rememberSaveable(mode) {
-        mutableStateOf(GameJson.encodeToString(RuleDraft.from(baselineRules)))
+        mutableStateOf(GameJson.encodeToString(RuleDraft.forSetup(mode, savedRules)))
     }
     val ruleDraft = remember(ruleDraftJSON) { GameJson.decodeFromString<RuleDraft>(ruleDraftJSON) }
     var ruleAdvanced by rememberSaveable(mode) { mutableStateOf(

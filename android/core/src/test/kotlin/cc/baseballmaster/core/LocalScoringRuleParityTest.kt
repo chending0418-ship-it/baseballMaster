@@ -5,6 +5,139 @@ import org.junit.Test
 
 class LocalScoringRuleParityTest {
     @Test
+    fun coachPitchLimitCompletesTheAppearanceAfterFoulOrHitByPitch() {
+        for (finishingPitch in listOf("pitch", "hitByPitch")) {
+            val initial = seed(Rules(GameMode.coachPitch, coachPitchLimit = 3))
+            val batter = initial.batter.id
+            val first = MatchEngine.apply(initial, Command("hitByPitch"))
+            assertEquals(1, first.appearancePitches)
+            assertEquals("HBP-CONTINUE", first.entries.last().notation)
+            val second = MatchEngine.apply(first, Command("pitch", pitch = PitchAction.ball))
+            assertEquals(2, second.appearancePitches)
+            assertEquals(0, second.balls)
+            val done = MatchEngine.apply(
+                second,
+                Command(finishingPitch, pitch = PitchAction.foul.takeIf { finishingPitch == "pitch" }),
+            )
+            assertEquals(3, done.totalPitches)
+            assertEquals(0, done.appearancePitches)
+            assertEquals(1, done.outs)
+            assertEquals(0, done.awayRuns)
+            assertNotEquals(batter, done.batter.id)
+            assertEquals(BattingLine(plateAppearances = 1, atBats = 1), done.batting.getValue(batter))
+            assertTrue(done.pitching.isEmpty())
+            assertEquals("PITCH-LIMIT", done.entries.last().notation)
+            assertEquals(done.situation(), MatchEngine.redo(MatchEngine.undo(done)).situation())
+        }
+    }
+
+    @Test
+    fun slowPitchFoulPolicyUsesOnlyTheActualPitchesAndSurvivesReload() {
+        for (extraFoul in listOf(true, false)) {
+            val game = seed(Rules(GameMode.slowPitch, oneExtraFoul = extraFoul))
+            val pitcher = game.pitcher.id
+            val foul = Command("pitch", pitch = PitchAction.foul)
+            assertEquals(1, game.balls)
+            assertEquals(1, game.strikes)
+            assertEquals(0, game.totalPitches)
+            val twoStrikes = MatchEngine.apply(game, foul)
+            assertEquals(2, twoStrikes.strikes)
+            assertFalse(twoStrikes.extraFoulUsed)
+            var after = MatchEngine.apply(twoStrikes, foul)
+            assertEquals(if (extraFoul) 0 else 1, after.outs)
+            if (extraFoul) {
+                assertTrue(after.extraFoulUsed)
+                val reloaded = GameJson.decodeFromString<Game>(GameJson.encodeToString(after))
+                assertTrue(reloaded.extraFoulUsed)
+                assertEquals(90, reloaded.rules.timeLimitMinutes)
+                after = MatchEngine.apply(reloaded, foul)
+            }
+            val pitches = if (extraFoul) 3 else 2
+            assertEquals(pitches, after.totalPitches)
+            assertEquals(pitches, after.pitching.getValue(pitcher).pitches)
+            assertEquals(1, after.pitching.getValue(pitcher).strikeouts)
+            assertEquals("K-F", after.entries.last().notation)
+            assertEquals(1, after.balls)
+            assertEquals(1, after.strikes)
+            assertFalse(after.extraFoulUsed)
+        }
+    }
+
+    @Test
+    fun standardLoadedWalkAndBothThirdStrikesCreditOneActualPitchPerAction() {
+        val game = seed()
+        val pitcher = game.pitcher.id
+        val loaded = (1..3).fold(game) { state, _ ->
+            MatchEngine.apply(state, Command("play", outcome = Outcome.single))
+        }
+        val scorer = loaded.bases[2]!!
+        val batter = loaded.batter.id
+        var after = loaded
+        repeat(4) { after = MatchEngine.apply(after, Command("pitch", pitch = PitchAction.ball)) }
+        assertEquals(1, after.awayRuns)
+        assertEquals(1, after.batting.getValue(scorer).runs)
+        assertEquals(1, after.batting.getValue(batter).runsBattedIn)
+        assertEquals(1, after.batting.getValue(batter).walks)
+        assertEquals(1, after.pitching.getValue(pitcher).runs)
+        assertEquals(1, after.pitching.getValue(pitcher).earnedRuns)
+        assertEquals(7, after.pitching.getValue(pitcher).pitches)
+        for (third in listOf(PitchAction.calledStrike, PitchAction.swingingStrike)) {
+            val striker = after.batter.id
+            repeat(2) { after = MatchEngine.apply(after, Command("pitch", pitch = PitchAction.calledStrike)) }
+            after = MatchEngine.apply(after, Command("pitch", pitch = PitchAction.foul))
+            assertEquals(2, after.strikes)
+            assertNull(after.batting[striker])
+            after = MatchEngine.apply(after, Command("pitch", pitch = third))
+            assertEquals(1, after.batting.getValue(striker).strikeouts)
+            assertEquals(if (third == PitchAction.calledStrike) "ꓘ" else "K", after.entries.last().notation)
+        }
+        assertEquals(2, after.outs)
+        assertEquals(2, after.pitching.getValue(pitcher).strikeouts)
+        assertEquals(2, after.pitching.getValue(pitcher).outsRecorded)
+        assertEquals(15, after.pitching.getValue(pitcher).pitches)
+    }
+
+    @Test
+    fun pitcherLimitUsesMoundConfirmationAndActualPitchesAcrossHalves() {
+        val initial = seed(Rules(pitchLimit = 2, pitcherInningsLimit = 1))
+        val starter = initial.pitcher.id
+        var game = MatchEngine.apply(initial, Command("clock", text = "start"))
+        assertEquals(mapOf(starter to setOf(1)), game.pitcherInnings)
+        repeat(3) { game = MatchEngine.apply(game, Command("play", outcome = Outcome.groundOut)) }
+        assertFalse(game.isTop)
+        assertEquals(mapOf(starter to setOf(1)), game.pitcherInnings)
+        assertEquals(3, game.pitching.getValue(starter).outsRecorded)
+        game = MatchEngine.apply(game, Command("endHalf"))
+        game = MatchEngine.apply(game, Command("clock", text = "pause"))
+        game = MatchEngine.apply(game, Command("clock", text = "resume"))
+        game = MatchEngine.apply(game, Command("note", text = "进入第二局"))
+        assertEquals(2, game.inning)
+        assertEquals(mapOf(starter to setOf(1)), game.pitcherInnings)
+        val legacy = game.copy(
+            pitcherInningUsageCurrent = false,
+            pitcherInnings = mutableMapOf(starter to setOf(1, 2), game.awayPitcherID!! to setOf(1)),
+        )
+        assertFalse(legacy.ruleNotices(0).any { "超过 1 局限制" in it })
+
+        val reliever = game.fieldingPositions.getValue(2)
+        val changed = MatchEngine.apply(legacy, Command("pitcher", playerID = reliever))
+        assertEquals(mapOf(starter to setOf(1), reliever to setOf(2)), changed.pitcherInnings)
+        assertEquals(0, changed.pitching[reliever]?.pitches ?: 0)
+        assertEquals(game.pitcherInnings, MatchEngine.undo(changed).pitcherInnings)
+        assertEquals(changed.pitcherInnings, MatchEngine.redo(MatchEngine.undo(changed)).pitcherInnings)
+
+        val returned = MatchEngine.apply(changed, Command("pitcher", playerID = starter))
+        assertEquals(setOf(1, 2), returned.pitcherInnings[starter])
+        assertEquals(setOf(2), returned.pitcherInnings[reliever])
+        assertTrue(returned.ruleNotices(0).any { "已投 3 球" in it })
+        assertTrue(returned.ruleNotices(0).any { "超过 1 局限制" in it })
+        val next = MatchEngine.apply(returned, Command("pitch", pitch = PitchAction.ball))
+        assertEquals(4, next.pitching.getValue(starter).pitches)
+        assertEquals(3, next.pitching.getValue(starter).outsRecorded)
+        assertFalse(next.isFinal)
+    }
+
+    @Test
     fun basicAndProTimePlayKeepTheScoreAndPitcherLinesConsistentThroughReplay() {
         for (pro in listOf(false, true)) {
             var game = seed(Rules(recordingMethod = if (pro) "situation" else "traditional"))

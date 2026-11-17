@@ -101,7 +101,9 @@ class CompletionFlowTest {
                 android.view.Choreographer.getInstance().postFrameCallback { latch.countDown() }
             }
         }
-        assertTrue(latch.await(3, java.util.concurrent.TimeUnit.SECONDS))
+        // A static screen can already be drawn while the simulator defers the next frame.
+        // Still require a successful native screenshot, regardless of that frame callback.
+        latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
         assertTrue(device.takeScreenshot(File(output, "081-regression-completion-$name.png")))
     }
 
@@ -197,6 +199,26 @@ class CompletionFlowTest {
             click("choose-roster-${opponent.id}")
             click("setup-game-mode")
             click("choice-模式-${mode.name}")
+            if (mode == GameMode.slowPitch) {
+                assertFalse(find(By.res("start-game")).isEnabled)
+                input("rule-time-minutes", "90")
+                assertFalse(find(By.res("start-game")).isEnabled)
+                assertNotNull(text("开赛前请选择两好后的界外规则"))
+                shot("02-slow-pitch-unselected")
+                click("choice-两好球后界外-extra")
+                assertTrue(find(By.res("start-game")).isEnabled)
+                input("rule-time-minutes", "0")
+                assertFalse(find(By.res("start-game")).isEnabled)
+                input("rule-time-minutes", "90")
+                assertTrue(find(By.res("start-game")).isEnabled)
+                find(By.res("choice-两好球后界外-extra"))
+                shot("02-slow-pitch-confirmed-rules")
+                click("start-game")
+                assertNotNull(text("双方阵容"))
+                device.pressBack()
+                device.waitForIdle()
+                assertTrue(find(By.res("start-game")).isEnabled)
+            }
             click("start-game")
             assertNotNull(text("双方阵容"))
             assertNotNull(find(By.res("lineup-row-away-0")))
@@ -219,6 +241,10 @@ class CompletionFlowTest {
             assertEquals(0, g.totalPitches)
             assertEquals(if (mode == GameMode.slowPitch) 10 else 9, g.awayOrder!!.size)
             assertEquals(if (mode == GameMode.slowPitch) 1 else 0, g.balls)
+            if (mode == GameMode.slowPitch) {
+                assertEquals(90, g.rules.timeLimitMinutes)
+                assertTrue(g.rules.oneExtraFoul)
+            }
             shot("03-game-${mode.name}")
             click("back-home")
         }

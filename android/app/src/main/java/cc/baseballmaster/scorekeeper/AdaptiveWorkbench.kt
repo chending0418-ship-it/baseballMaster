@@ -15,11 +15,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -56,6 +59,8 @@ internal fun AdaptiveScoreWorkbench(
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
             val viewportHeight = maxHeight
             val canCollapseField = !wide && !inlineTask && !game.isFinal && !game.isScheduled && viewportHeight < 620.dp
+            val tight = canCollapseField && viewportHeight < 520.dp
+            val largeTextTightWindow = tight && density.fontScale >= 1.4f
             val scroll = if (!wide && !inlineTask) Modifier.verticalScroll(outerScroll) else Modifier
             Layout(
                 modifier = Modifier.widthIn(max = 1280.dp).fillMaxWidth().then(scroll)
@@ -88,7 +93,12 @@ internal fun AdaptiveScoreWorkbench(
                         }
                     }
                     Column(Modifier.then(if (wide) Modifier.verticalScroll(rightScroll) else Modifier),
-                        verticalArrangement = Arrangement.spacedBy(if (wide) 12.dp else 6.dp)) {
+                        verticalArrangement = Arrangement.spacedBy(when {
+                            wide -> 12.dp
+                            largeTextTightWindow -> 3.dp
+                            tight -> 4.dp
+                            else -> 6.dp
+                        })) {
                         if (wide) WorkbenchHeading("现场记录", if (game.isFinal) "本场已结束" else "当前打席 · 第 ${game.batterIndex + 1} 棒")
                         controls()
                         if (wide) {
@@ -99,7 +109,7 @@ internal fun AdaptiveScoreWorkbench(
                     }
                     Box(Modifier.testTag("workbench-recording-host")) { task() }
                     Box {
-                        if (canCollapseField) CompactWorkbenchContext(game, locked, ruleNotices,
+                        if (canCollapseField) CompactWorkbenchContext(game, locked, ruleNotices, tight,
                             dialogFieldHeight = (viewportHeight * .6f).coerceAtMost(260.dp), openPanel = openPanel)
                     }
                 },
@@ -107,12 +117,22 @@ internal fun AdaptiveScoreWorkbench(
                 val width = constraints.maxWidth
                 val fullHeight = with(density) { viewportHeight.roundToPx() }
                 val pad = 12.dp.roundToPx()
-                val gap = (if (wide) 16.dp else 7.dp).roundToPx()
+                val verticalPad = when {
+                    largeTextTightWindow -> 4.dp.roundToPx()
+                    tight -> 6.dp.roundToPx()
+                    else -> pad
+                }
+                val gap = (when {
+                    wide -> 16.dp
+                    largeTextTightWindow -> 4.dp
+                    tight -> 5.dp
+                    else -> 7.dp
+                }).roundToPx()
                 val innerWidth = (width - pad * 2).coerceAtLeast(0)
                 val header = measurables[0].measure(Constraints(maxWidth = innerWidth))
                 val summary = measurables[1].measure(Constraints(maxWidth = innerWidth))
-                val bodyY = pad + header.height + gap + summary.height + gap
-                val bodyHeight = (fullHeight - bodyY - pad).coerceAtLeast(0)
+                val bodyY = verticalPad + header.height + gap + summary.height + gap
+                val bodyHeight = (fullHeight - bodyY - verticalPad).coerceAtLeast(0)
                 val localFold = fold?.bounds?.translate(-origin.x, -origin.y)
                 val splitVertically = wide && fold?.vertical == true && localFold != null &&
                     localFold.left > width * .24f && localFold.right < width * .76f
@@ -151,11 +171,9 @@ internal fun AdaptiveScoreWorkbench(
                 } else {
                     right = measurables[3].measure(Constraints(maxWidth = innerWidth))
                     val remaining = bodyHeight - right.height - gap
-                    val minimumFieldCard = if (viewportHeight >= 660.dp && density.fontScale <= 1.2f) {
-                        300.dp.roundToPx()
-                    } else 270.dp.roundToPx()
-                    // Keep the normal field card on tall phones. On a short window
-                    // use the context card when the full field would crowd the controls.
+                    val minimumFieldCard = 270.dp.roundToPx()
+                    // Grow the full field with the available space after reserving
+                    // the controls. Only short windows need the compact context card.
                     left = if (canCollapseField && remaining < minimumFieldCard) {
                         measurables[5].measure(Constraints.fixedWidth(innerWidth))
                     } else {
@@ -163,11 +181,11 @@ internal fun AdaptiveScoreWorkbench(
                     }
                     rightY = bodyY + left.height + gap
                     editor = measurables[4].measure(Constraints.fixed(0, 0))
-                    layoutHeight = maxOf(fullHeight, rightY + right.height + pad)
+                    layoutHeight = maxOf(fullHeight, rightY + right.height + verticalPad)
                 }
                 layout(width, layoutHeight) {
-                    header.placeRelative(pad, pad)
-                    summary.placeRelative(pad, pad + header.height + gap)
+                    header.placeRelative(pad, verticalPad)
+                    summary.placeRelative(pad, verticalPad + header.height + gap)
                     if (!inlineTask || wide) left.placeRelative(leftX, leftY)
                     if (!inlineTask) right.placeRelative(rightX, rightY)
                     editor.placeRelative(rightX, rightY)
@@ -187,6 +205,7 @@ private fun CompactWorkbenchContext(
     game: Game,
     locked: Boolean,
     notices: List<String>,
+    tight: Boolean,
     dialogFieldHeight: Dp,
     openPanel: (String) -> Unit,
 ) {
@@ -199,26 +218,35 @@ private fun CompactWorkbenchContext(
         border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
         Column {
-            WorkbenchCurrentPlayers(game, locked, notices, openPanel)
+            WorkbenchCurrentPlayers(game, locked, notices, openPanel, tight)
             Row(
-                Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, bottom = 10.dp),
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, bottom = if (tight) 4.dp else 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 listOf("一垒", "二垒", "三垒").forEachIndexed { index, base ->
                     val id = game.bases[index]
                     val player = game.battingTeam.players.firstOrNull { it.id == id }
+                    val occupancy = player?.let { "#${it.number} ${it.name}" } ?: if (id == null) "无人" else "有人"
                     Surface(
-                        modifier = Modifier.weight(1f).testTag("compact-base-${index + 1}"),
+                        modifier = Modifier.weight(1f).testTag("compact-base-${index + 1}")
+                            .clearAndSetSemantics { contentDescription = "$base：$occupancy" },
                         color = if (id == null) colors.surfaceContainerHighest else colors.primaryContainer,
                         contentColor = if (id == null) colors.onSurface else colors.onPrimaryContainer,
                         shape = RoundedCornerShape(8.dp),
                     ) {
-                        Column(Modifier.padding(horizontal = 5.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(base, style = MaterialTheme.typography.labelMedium)
-                            Text(player?.let { "#${it.number} ${it.name}" } ?: if (id == null) "无人" else "有人",
-                                style = MaterialTheme.typography.labelLarge, fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (tight) {
+                            val jersey = player?.let { "#${it.number}" } ?: if (id == null) "空" else "在"
+                            Text("$base $jersey", Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        } else {
+                            Column(Modifier.padding(horizontal = 5.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(base, style = MaterialTheme.typography.labelMedium)
+                                Text(occupancy, style = MaterialTheme.typography.labelLarge, fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }
@@ -247,26 +275,30 @@ private fun CompactWorkbenchContext(
 }
 
 @Composable
-private fun WorkbenchCurrentPlayers(game: Game, locked: Boolean, notices: List<String>, openPanel: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(if (game.rules.mode == GameMode.coachPitch) "P 位守备" else "投手 · 已投 ${game.pitching[game.pitcher.id]?.pitches ?: 0} 球",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("#${game.pitcher.number} ${game.pitcher.name}", Modifier.weight(1f, false), fontSize = 14.sp,
+private fun WorkbenchCurrentPlayers(game: Game, locked: Boolean, notices: List<String>, openPanel: (String) -> Unit,
+    tight: Boolean = false) {
+    val colors = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (tight) 6.dp else 10.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(if (game.rules.mode == GameMode.coachPitch) "P 位守备" else "投手 · 已投 ${game.pitching[game.pitcher.id]?.pitches ?: 0} 球",
+                    fontSize = 11.sp, color = colors.onSurfaceVariant)
+                Text("#${game.pitcher.number} ${game.pitcher.name}", fontSize = 14.sp,
                     fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (notices.isNotEmpty()) IconButton({ openPanel("rule-notices") }, enabled = !locked,
-                    modifier = Modifier.size(24.dp).testTag("game-rule-warning")) {
-                    Icon(Icons.Outlined.Notifications, notices.joinToString(" · "), Modifier.size(16.dp), tint = ProductAmber)
-                }
+            }
+            if (notices.isNotEmpty()) IconButton({ openPanel("rule-notices") }, enabled = !locked,
+                modifier = Modifier.size(48.dp).testTag("game-rule-warning")) {
+                Icon(Icons.Outlined.Notifications, notices.joinToString(" · "), Modifier.size(18.dp),
+                    tint = if (colors.surface.luminance() < .4f) Color(0xFFF5AC68) else Color(0xFF9F4C0D))
             }
         }
         TextButton({ openPanel("performance") }, enabled = !locked, contentPadding = PaddingValues(0.dp),
-            modifier = Modifier.weight(1f).testTag("current-batter")) {
+            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("current-batter")) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("第 ${game.batterIndex + 1} 棒", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("#${game.batter.number} ${game.batter.name}", fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

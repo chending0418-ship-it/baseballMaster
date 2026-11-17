@@ -217,8 +217,9 @@ internal object ReportExport {
         fun pitching(name: String, p: PitchingLine) = listOf(name, "${p.outsRecorded / 3}.${p.outsRecorded % 3}", "${p.battersFaced}", "${p.hits}", "${p.runs}", "${p.earnedRuns}", "${p.walks}", "${p.hitByPitch}", "${p.strikeouts}", "${p.wildPitches}", "${p.pitches}", "${p.strikes}", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", p.earnedRuns * 21.0 / p.outsRecorded) else "-", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", (p.walks + p.hits) * 3.0 / p.outsRecorded) else "-")
         fun fielding(name: String, f: FieldingLine): List<String> {
             val total = f.putouts + f.assists + f.errors
-            return listOf(name, "${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}", "$total", number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null),
-                f.catcherCaughtStealing?.toString() ?: "-", f.passedBalls?.toString() ?: "-")
+            return listOf(name, "${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}",
+                f.catcherCaughtStealing?.toString() ?: "-", f.passedBalls?.toString() ?: "-", "$total",
+                number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null))
         }
         fun name(p: SeasonPlayerStatistics) = playerName(p.player) + if (p.currentRoster) "" else "（历史）"
         val batTotal = BattingLine(); val pitchTotal = PitchingLine(); val fieldTotal = FieldingLine()
@@ -242,8 +243,8 @@ internal object ReportExport {
         if ("fielding" in categories) {
             val fielders = players.filter { it.fielding != FieldingLine() }
             val defense = fielders.map { fielding(name(it), it.fielding) } + if (includeTotal && fielders.isNotEmpty()) listOf(fielding("合计", fieldTotal)) else emptyList()
-            w.table("${titlePrefix.ifEmpty { "守备" }} · FIELDING", listOf("球员", "PO", "A", "E", "DP", "TC", "FPCT", "CCS", "PB"), defense,
-                listOf(4f, 1f, 1f, 1f, 1f, 1f, 1.5f, 1f, 1f), compact)
+            w.table("${titlePrefix.ifEmpty { "守备" }} · FIELDING", listOf("球员", "PO", "A", "E", "DP", "CCS", "PB", "TC", "FPCT"), defense,
+                listOf(4f, 1f, 1f, 1f, 1f, 1f, 1f, 1f, 1.5f), compact)
         }
     }
 
@@ -317,11 +318,11 @@ internal object ReportExport {
                 listOf(label(g)) + if (g.rules.mode == GameMode.coachPitch) List(8) { "不适用" } else if (pitch == null) List(8) { "-" } else
                     listOf(innings(pitch), "${pitch.hits}", "${pitch.runs}", "${pitch.earnedRuns}", "${pitch.walks}", "${pitch.strikeouts}", "${pitch.pitches}", eraText(pitch))
             }, listOf(5f) + List(8) { 1f })
-            w.table("逐场守备 · FIELDING GAME LOG", listOf("日期 / 对手 / 结果", "PO", "A", "E", "DP", "FPCT", "CCS", "PB"), games.map { g ->
+            w.table("逐场守备 · FIELDING GAME LOG", listOf("日期 / 对手 / 结果", "PO", "A", "E", "DP", "CCS", "PB", "FPCT"), games.map { g ->
                 val f = g.reportFielding[p.id]; val total = f?.let { it.putouts + it.assists + it.errors } ?: 0
                 listOf(label(g)) + if (f == null) List(7) { "-" } else listOf("${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}",
-                    number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null),
-                    f.catcherCaughtStealing?.toString() ?: "-", f.passedBalls?.toString() ?: "-")
+                    f.catcherCaughtStealing?.toString() ?: "-", f.passedBalls?.toString() ?: "-",
+                    number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null))
             }, listOf(5f) + List(7) { 1f })
             legend(w); w.save(file)
         }

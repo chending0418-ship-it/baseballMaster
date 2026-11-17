@@ -123,7 +123,9 @@ internal fun ProductPage(
                 sheetGesturesEnabled = false, dragHandle = null,
                 containerColor = MaterialTheme.colorScheme.background, contentColor = foreground,
                 sheetMaxWidth = 720.dp) {
-                page(Modifier.fillMaxWidth().fillMaxHeight(.97f).imePadding())
+                page(Modifier.fillMaxWidth().fillMaxHeight(.97f)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    .imePadding())
             }
         }
         else -> Dialog(

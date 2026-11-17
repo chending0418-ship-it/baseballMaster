@@ -1318,44 +1318,59 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                 }
                 AdaptiveScoreWorkbench(game, inlineTask, locked, game.ruleNotices(now),
                     toolbar = {
-                        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton({ model.open(null) }, enabled = !locked, modifier = Modifier.size(40.dp).testTag("back-home")) {
-                                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回比赛", tint = MaterialTheme.colorScheme.primary)
-                            }
-                            Text(if (game.isObservation) "观赛记分" else "现场记分", Modifier.weight(1f),
-                                fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (!game.practice) {
-                                IconButton({ requestedPanel = "live" }, enabled = !locked, modifier = Modifier.size(34.dp).testTag("open-live-broadcast")) {
-                                    Icon(Icons.Outlined.Share, "文字直播与分享", Modifier.size(21.dp))
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            val largerText = (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f)
+                            val showBroadcast = !game.practice && maxWidth >= 324.dp + 148.dp * largerText
+                            val showPoster = showBroadcast && maxWidth >= 372.dp + 148.dp * largerText
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                                IconButton({ model.open(null) }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("back-home")) {
+                                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回比赛", tint = MaterialTheme.colorScheme.primary)
                                 }
-                                IconButton({ requestedPanel = "poster" }, enabled = !locked, modifier = Modifier.size(34.dp).testTag("open-game-poster")) {
-                                    Icon(Icons.Outlined.AddCircle, "比赛宣传海报", Modifier.size(21.dp))
-                                }
-                            }
-                            IconButton({ requestedPanel = "history" }, enabled = !locked, modifier = Modifier.size(34.dp).testTag("game-history")) {
-                                Icon(Icons.Outlined.Refresh, "纠正记录", Modifier.size(21.dp))
-                            }
-                            TextButton({ requestedPanel = "results" }, enabled = !locked,
-                                modifier = Modifier.height(40.dp).testTag("game-results"), contentPadding = PaddingValues(horizontal = 6.dp)) {
-                                Text("比赛结果", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            Box {
-                                IconButton({ menu = true }, enabled = !locked, modifier = Modifier.size(30.dp).testTag("scoring-more")) {
-                                    Icon(Icons.Outlined.MoreVert, "比赛菜单", Modifier.size(21.dp))
-                                }
-                                DropdownMenu(menu, { menu = false }) {
-                                    if (!game.isFinal && !game.isScheduled && game.appleSourceID == null) {
-                                        DropdownMenuItem(
-                                            text = { Text("记录方式：$currentMethod") },
-                                            enabled = canChangeRecordingMethod,
-                                            modifier = Modifier.testTag("scoring-recording-method"),
-                                            onClick = { menu = false; recordingMethodRevision = game.revision },
-                                        )
+                                Text(if (game.isObservation) "观赛记分" else "现场记分", Modifier.weight(1f),
+                                    fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (showBroadcast) {
+                                    IconButton({ requestedPanel = "live" }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("open-live-broadcast")) {
+                                        Icon(Icons.Outlined.Share, "文字直播与分享", Modifier.size(21.dp))
                                     }
-                                    listOf("比赛结果" to "results", "文字直播" to "live", "双方阵容与打序" to "lineup", "比赛计时" to "clock",
-                                        "比赛时间／预告" to "time", "本场比赛规则" to "rules", "完整记录与纠错" to "history", "报告与更多操作" to "more")
-                                        .forEach { (label, target) -> DropdownMenuItem(text = { Text(label) }, enabled = !locked,
-                                            onClick = { menu = false; requestedPanel = target }) }
+                                }
+                                if (showPoster) {
+                                    IconButton({ requestedPanel = "poster" }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("open-game-poster")) {
+                                        Icon(Icons.Outlined.AddCircle, "比赛宣传海报", Modifier.size(21.dp))
+                                    }
+                                }
+                                IconButton({ requestedPanel = "history" }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("game-history")) {
+                                    Icon(Icons.Outlined.Refresh, "纠正记录", Modifier.size(21.dp))
+                                }
+                                TextButton({ requestedPanel = "results" }, enabled = !locked,
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("game-results"), contentPadding = PaddingValues(horizontal = 6.dp)) {
+                                    Text("比赛结果", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                                Box {
+                                    IconButton({ menu = true }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("scoring-more")) {
+                                        Icon(Icons.Outlined.MoreVert, "比赛菜单", Modifier.size(21.dp))
+                                    }
+                                    DropdownMenu(menu, { menu = false }) {
+                                        if (!game.practice && !showBroadcast) DropdownMenuItem(
+                                            text = { Text("文字直播与分享") }, modifier = Modifier.testTag("open-live-broadcast"),
+                                            onClick = { menu = false; requestedPanel = "live" },
+                                        )
+                                        if (!game.practice && !showPoster) DropdownMenuItem(
+                                            text = { Text("比赛宣传海报") }, modifier = Modifier.testTag("open-game-poster"),
+                                            onClick = { menu = false; requestedPanel = "poster" },
+                                        )
+                                        if (!game.isFinal && !game.isScheduled && game.appleSourceID == null) {
+                                            DropdownMenuItem(
+                                                text = { Text("记录方式：$currentMethod") },
+                                                enabled = canChangeRecordingMethod,
+                                                modifier = Modifier.testTag("scoring-recording-method"),
+                                                onClick = { menu = false; recordingMethodRevision = game.revision },
+                                            )
+                                        }
+                                        listOf("比赛结果" to "results", "双方阵容与打序" to "lineup", "比赛计时" to "clock",
+                                            "比赛时间／预告" to "time", "本场比赛规则" to "rules", "完整记录与纠错" to "history", "报告与更多操作" to "more")
+                                            .forEach { (label, target) -> DropdownMenuItem(text = { Text(label) }, enabled = !locked,
+                                                onClick = { menu = false; requestedPanel = target }) }
+                                    }
                                 }
                             }
                         }
@@ -1365,21 +1380,27 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                             if (game.clockHasStarted || game.rules.timed) {
                                 val seconds = (if (game.clockDisplayMode == "remaining") game.remainingTime(now) ?: game.elapsed(now) else game.elapsed(now)) / 1000
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("${if (game.clockDisplayMode == "remaining") "倒" else "正"} ${seconds / 60}:${"%02d".format(kotlin.math.abs(seconds % 60))}",
-                                        Modifier.testTag("game-clock").clickable(enabled = !locked) { requestedPanel = "clock" },
-                                        fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                    TextButton({ requestedPanel = "clock" }, enabled = !locked, contentPadding = PaddingValues(horizontal = 2.dp),
+                                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag("game-clock")) {
+                                        Text("${if (game.clockDisplayMode == "remaining") "倒" else "正"} ${seconds / 60}:${"%02d".format(kotlin.math.abs(seconds % 60))}",
+                                            fontSize = 10.sp, maxLines = 1)
+                                    }
                                     if (!game.isFinal) TextButton({ model.command(Command("clock", text = if (game.clockRunningSince == null) "resume" else "pause")) },
-                                        enabled = !locked && !model.busy, modifier = Modifier.size(28.dp).testTag("toggle-game-clock"), contentPadding = PaddingValues(0.dp)) {
-                                        Text(if (game.clockRunningSince == null) "▶" else "Ⅱ", fontSize = 10.sp)
+                                        enabled = !locked && !model.busy, modifier = Modifier.size(48.dp).testTag("toggle-game-clock")
+                                            .semantics { contentDescription = if (game.clockRunningSince == null) "继续计时" else "暂停计时" },
+                                        contentPadding = PaddingValues(0.dp)) {
+                                        Text(if (game.clockRunningSince == null) "▶" else "Ⅱ", Modifier.clearAndSetSemantics {}, fontSize = 10.sp)
                                     }
                                 }
                             } else Text(game.rules.mode.title, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
                         }
                         val counts: @Composable () -> Unit = {
+                            val colors = MaterialTheme.colorScheme
+                            val dark = colors.surface.luminance() < .4f
                             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                MiniCount("B", game.balls, 3, Accent, "坏球")
-                                MiniCount("S", game.strikes, 2, Color(0xFFA35513), "好球")
-                                MiniCount("O", game.outs, 2, Color(0xFFC7463D), "出局")
+                                MiniCount("B", game.balls, 3, colors.primary, "坏球")
+                                MiniCount("S", game.strikes, 2, if (dark) Color(0xFFF5AC68) else Color(0xFFA35513), "好球")
+                                MiniCount("O", game.outs, 2, if (dark) colors.error else Color(0xFFC7463D), "出局")
                             }
                         }
                         if (wide) {
@@ -1412,7 +1433,7 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
-                                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Column(horizontalAlignment = Alignment.End) {
                                     timer()
                                     counts()
                                 }
@@ -1422,8 +1443,12 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                     controls = {
                         if (game.canSwapOpeningSides && !game.isFinal && !game.isScheduled)
                             TextButton({ model.command(Command("swap")) }, enabled = enabled,
-                                modifier = Modifier.fillMaxWidth().height(30.dp).testTag("swap-opening-sides")) { Text("互换先攻／后攻", fontSize = 11.sp) }
-                        if (game.rules.mode == GameMode.coachPitch) Text("教练投手 · 本打席 ${game.appearancePitches} 球", fontSize = 11.sp)
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("swap-opening-sides")) { Text("互换先攻／后攻", fontSize = 11.sp) }
+                        if (game.rules.mode == GameMode.coachPitch) Text(
+                            "教练投手 · 本打席 ${game.appearancePitches} / ${game.rules.coachPitchLimit} 球",
+                            Modifier.testTag("coach-pitch-progress"), fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                 PitchAction.entries.forEach { action ->
@@ -1440,8 +1465,9 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                                     Button({ pitch(action) }, enabled = enabled,
                                         contentPadding = PaddingValues(horizontal = 2.dp), shape = RoundedCornerShape(10.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color.White),
-                                        modifier = Modifier.weight(1f).height(42.dp).testTag("pitch-${action.name}")) {
-                                        Text(title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("pitch-${action.name}")) {
+                                        Text(title, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold,
+                                            textAlign = TextAlign.Center)
                                     }
                                 }
                             }
@@ -1459,12 +1485,14 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
 
 @Composable
 private fun MiniCount(label: String, value: Int, maximum: Int, color: Color, tag: String) {
+    val empty = if (MaterialTheme.colorScheme.surface.luminance() < .4f) Color(0xFF536574) else Color(0xFFDADFD9)
     Row(
         horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
+            Modifier.clearAndSetSemantics {},
             fontSize = 10.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Black,
@@ -1473,6 +1501,7 @@ private fun MiniCount(label: String, value: Int, maximum: Int, color: Color, tag
         Box(
             Modifier.testTag("count-$tag").semantics {
                 text = androidx.compose.ui.text.AnnotatedString("$value")
+                contentDescription = "$tag $value"
             }
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1480,7 +1509,7 @@ private fun MiniCount(label: String, value: Int, maximum: Int, color: Color, tag
                     Box(
                         Modifier.size(8.dp)
                             .background(
-                                if (index < value) color else Color(0xFFDADFD9),
+                                if (index < value) color else empty,
                                 RoundedCornerShape(50),
                             )
                     )

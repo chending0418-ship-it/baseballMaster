@@ -14,6 +14,80 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ReportExportTest {
+    @Test fun catcherAttributionIsExportedAcrossReportScopes() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        fun team(id: String, name: String, roster: List<Pair<String, String>>) =
+            Team(id, name, roster.mapIndexed { index, (player, numbers) ->
+                val jerseys = numbers.split("/")
+                Player("$id-${index + 1}", player, jerseys.first(), position = index + 1, jerseyNumbers = jerseys)
+            })
+        val home = team("catcher-home", "北京飞鹰", listOf(
+            "赵一鸣" to "1", "高博文" to "2", "邵子谦" to "3", "何俊熙" to "4", "梁天佑" to "5",
+            "彭奕辰" to "6", "罗凯" to "7", "杜明泽" to "8", "郑文轩" to "9",
+        ))
+        val away = team("catcher-away", "青岛海浪", listOf(
+            "陈昊" to "12/88", "周子墨" to "7", "林宇轩" to "18", "王星野" to "23", "许嘉树" to "5",
+            "韩一川" to "9", "顾晨" to "3", "沈亦航" to "16", "唐乐天" to "21",
+        ))
+        val opening = MatchFactory.create("catcher-confirmed", home, away, Rules(), away.id)
+        var game = MatchEngine.apply(opening, Command("endHalf"))
+        repeat(2) { game = MatchEngine.apply(game, Command("play", outcome = Outcome.single)) }
+        val catcher = away.players.first { it.id == game.fieldingPositions.getValue(2) }
+        val receiver = game.fieldingPositions.getValue(6)
+        val advances = game.bases.mapIndexedNotNull { index, player ->
+            player?.let { Decision(it, index + 1, index + 2) }
+        }
+        assertEquals(2, advances.size)
+        val unconfirmed = Command("runner", runnerKind = "passedBall", decisions = advances)
+        val confirmed = unconfirmed.copy(decisions = advances.mapIndexed { index, move ->
+            if (index == 0) move.copy(runnerDefense = RunnerDefenseCredit.PassedBall(catcher.id)) else move
+        })
+        val time = java.time.Instant.parse("2026-11-17T06:00:00Z").toEpochMilli()
+        val legacy = MatchEngine.apply(game, unconfirmed).copy(
+            id = "catcher-legacy", isFinal = true, playedAt = time - 86_400_000, playedTimeZoneID = "Asia/Shanghai",
+        )
+        game = MatchEngine.apply(game, confirmed)
+        game = MatchEngine.apply(game, Command("runner", runnerKind = "wildPitch"))
+        val runner = requireNotNull(game.bases[2])
+        val decisions = MatchEngine.suggestedRunner(game, "caughtStealing").map { move ->
+            if (move.playerID == runner) move.copy(
+                destination = -1,
+                runnerDefense = RunnerDefenseCredit.CaughtStealing(catcher.id, receiver, 4),
+            ) else move.copy(destination = 0)
+        }
+        game = MatchEngine.apply(game, Command("runner", runnerKind = "caughtStealing", decisions = decisions))
+        game = MatchEngine.apply(game, Command("finish", text = "scorerDecision"))
+            .copy(playedAt = time, playedTimeZoneID = "Asia/Shanghai")
+        assertTrue(game.isFinal)
+        assertEquals(1, game.homeRuns)
+        assertEquals(1, game.reportFielding.getValue(receiver).putouts)
+        assertEquals(1, game.reportFielding.getValue(catcher.id).assists)
+        assertEquals(1, game.reportFielding.getValue(catcher.id).catcherCaughtStealing)
+        assertEquals(1, game.reportFielding.getValue(catcher.id).passedBalls)
+
+        val games = listOf(game, legacy)
+        val season = SeasonStatisticsCalculator.calculate(away, games, 2026)
+        val filtered = SeasonStatisticsCalculator.calculate(away, listOf(game), 2026)
+        val selected = PlayerStatisticsProjection.calculate(away, catcher, games, 2026, selectedIDs = setOf(game.id))
+        val legacyOnly = PlayerStatisticsProjection.calculate(away, catcher, games, 2026, selectedIDs = setOf(legacy.id))
+        assertEquals(1, season.pending)
+        assertEquals(1, selected.statistics.fielding.passedBalls)
+        assertNull(legacyOnly.statistics.fielding.passedBalls)
+        assertNull(legacyOnly.statistics.fielding.catcherCaughtStealing)
+        val reports = mapOf(
+            "catcher-box-score" to ReportExport.game(context, game, false),
+            "catcher-season" to ReportExport.team(context, away, 2026, null, season),
+            "catcher-filtered" to ReportExport.team(context, away, 2026, null, filtered, isFiltered = true),
+            "catcher-player" to ReportExport.player(context, away, 2026, selected.statistics, selected.selectedGames, games.size),
+            "catcher-player-legacy" to ReportExport.player(context, away, 2026, legacyOnly.statistics, legacyOnly.selectedGames, games.size),
+        )
+        val output = File(context.getExternalFilesDir(null), "085-report-parity").apply { mkdirs() }
+        for ((name, file) in reports) {
+            assertTrue(file.length() > 1000)
+            file.copyTo(File(output, "$name.pdf"), overwrite = true)
+        }
+    }
+
     @Test fun reportRegressionArtifactsPreserveParticipantsReviewAndSelectedScope() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         fun roster(id: String, name: String) = Team(id, name, (1..13).map {
