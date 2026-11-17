@@ -16,14 +16,16 @@ import cc.baseballmaster.core.WebsiteAndroidRelease
 @Composable internal fun AppSettingsScreen(model: ScorekeeperViewModel, dismiss: ()->Unit) {
     FormPage("App 设置",false,false,"","",dismiss,{},dismissLabel="返回") {
         CardBlock {
+            Choices("App 外观", mapOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色"),
+                model.appAppearance, model::setAppearance)
+        }
+        CardBlock {
             Choices("默认记录方式", RecordingMethodLabels, model.defaultRecordingMethod, model::setDefaultRecordingMethod)
             Text("用于新建比赛和安排赛程，每场仍可单独选择。", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text("外观",fontWeight=FontWeight.Bold)
-        Choices("App 外观",mapOf("system" to "跟随系统","light" to "浅色","dark" to "深色"),model.appAppearance) {model.setAppearance(it)}
-        Text("辅助提示",fontWeight=FontWeight.Bold)
         CardBlock {
+            Text("辅助提示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             ProductToggleRow("显示练习引导", "练习记分时显示下一步提示", model.showPracticeGuidance, "show-practice-guidance", model::setPracticeGuidance)
             ProductToggleRow("显示规则示例", "常用规则条目中显示简短场景", model.showRuleExamples, "show-rule-examples", model::setRuleExamples)
         }

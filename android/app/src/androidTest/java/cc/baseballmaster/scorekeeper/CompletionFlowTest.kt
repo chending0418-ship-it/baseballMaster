@@ -407,6 +407,7 @@ class CompletionFlowTest {
         await(g.id) { !it.isScheduled }
         click("scoring-more")
         text("比赛时间／预告").click()
+        click("match-time-manual")
         input("match-time", "2026-01-01 00:30")
         input("match-zone", "America/Los_Angeles")
         input("match-time-reason", "补填比赛发生时间")

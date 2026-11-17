@@ -32,7 +32,11 @@ import org.junit.runner.RunWith
 class SharedStatisticsFlowTest {
     @get:Rule val activity = ActivityTestRule(MainActivity::class.java)
 
-    @Test fun memberWithNoLocalDataSeesFinishedMatchesAndLatestCorrectionUntilAccessIsRemoved() {
+    @Test fun memberWithNoLocalDataSeesFinishedMatchesAndLatestCorrectionUntilAccessIsRemoved() = memberStatistics(scoped = false)
+
+    @Test fun scopedStatsFailClosedOnRevocationEvenWithASameNamedLocalTeam() = memberStatistics(scoped = true)
+
+    private fun memberStatistics(scoped: Boolean) {
         fun id() = UUID.randomUUID().toString()
         val teamID = id()
         val localOriginalTeamID = id()
@@ -127,7 +131,11 @@ class SharedStatisticsFlowTest {
                     BaseballTheme {
                         Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp)
                             .semantics { testTagsAsResourceId = true }) {
-                            StatisticsScreen(model, sharing, localRosters = emptyList(), localGames = emptyList())
+                            val sameNamedLocalTeam = Team(localOriginalTeamID, profile.name, listOf(
+                                Player(localOriginalPlayerID, "只在本机", "00"),
+                            ))
+                            StatisticsScreen(model, sharing, localRosters = if (scoped) listOf(sameNamedLocalTeam) else emptyList(),
+                                localGames = emptyList(), scopedSharedTeamID = teamID.takeIf { scoped })
                         }
                     }
                 }
@@ -136,7 +144,12 @@ class SharedStatisticsFlowTest {
             assertTrue(device.wait(Until.hasObject(By.text("1 场比赛 · 1胜0负0平")), 15_000))
             assertEquals(1, reads.get())
             assertNotNull(NativeUi.find(device, By.textContains(profile.name)))
-            device.takeScreenshot(File(inst.targetContext.getExternalFilesDir(null), "083-shared-statistics.png"))
+            if (scoped) {
+                node("shared-stats-scope")
+                assertFalse(device.hasObject(By.res("stats-team-picker")))
+            }
+            val fileName = if (scoped) "085-shared-scoped-statistics" else "083-shared-statistics"
+            device.takeScreenshot(File(inst.targetContext.getExternalFilesDir(null), "$fileName.png"))
 
             revision.incrementAndGet()
             node("stats-refresh-shared").click()
@@ -149,7 +162,13 @@ class SharedStatisticsFlowTest {
 
             directory.updateAndGet { it.copy(teams = emptyList()) }
             StatisticsUi.use(device, By.res("stats-refresh-shared"), true) { it.click() }
-            assertTrue(device.wait(Until.hasObject(By.text("还没有球队")), 10_000))
+            val unavailable = if (scoped) "当前设备无法访问这支共享球队。" else "还没有球队"
+            assertTrue(device.wait(Until.hasObject(By.text(unavailable)), 10_000))
+            assertFalse(device.hasObject(By.res("stats-team-record")))
+            if (scoped) {
+                node("stats-retry-shared")
+                assertFalse(device.hasObject(By.res("export-team-season-pdf")))
+            }
         } finally {
             db.close()
         }

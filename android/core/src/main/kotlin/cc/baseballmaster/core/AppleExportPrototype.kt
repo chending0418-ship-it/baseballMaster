@@ -77,6 +77,7 @@ internal object AppleExportPrototype {
         put("playerID", uid(d.playerID))
         put("origin", when (d.origin) { 0 -> "打者"; 1 -> "一垒跑者"; 2 -> "二垒跑者"; 3 -> "三垒跑者"; else -> error("起始垒位无效") })
         put("destination", when (d.destination) { -1 -> "出局"; 0 -> "停留"; 1 -> "到一垒"; 2 -> "到二垒"; 3 -> "到三垒"; 4 -> "得分"; else -> error("目标垒位无效") })
+        d.runnerDefense?.let { put("defense", AppleHistoryCommandCodec.encodeRunnerDefense(it)) }
     }
     private fun context(g: Game) = buildJsonObject {
         put("inning", g.inning); put("isTop", g.isTop); put("batterIndex", g.batterIndex)
@@ -92,6 +93,7 @@ internal object AppleExportPrototype {
             -1 -> buildJsonObject { put("out", buildJsonObject {}) }; 0 -> buildJsonObject { put("hold", buildJsonObject {}) }
             4 -> buildJsonObject { put("score", buildJsonObject {}) }; in 1..3 -> buildJsonObject { put("base", buildJsonObject { put("_0", d.destination) }) }; else -> error("目标垒位无效")
         })
+        d.runnerDefense?.let { put("defense", AppleHistoryCommandCodec.encodeRunnerDefense(it)) }
     }
     private val runnerNames = mapOf("stolenBase" to "偷垒成功", "doubleSteal" to "双重盗垒", "delayedSteal" to "延迟盗垒", "relayAdvance" to "守备转传时额外进垒", "defensiveErrorAdvance" to "守备失误造成额外进垒", "caughtStealing" to "跑垒出局", "pickoff" to "牵制出局", "tagOut" to "触杀出局", "forceOut" to "封杀出局", "appealOut" to "申诉出局", "leftEarly" to "离垒过早", "missedBase" to "漏踩垒位", "outOfBasePath" to "跑出限制道", "passedRunner" to "超越前位跑者", "runnerInterference" to "跑者妨碍守备", "runnerHitByBall" to "跑垒员被击球击中", "coachAssistance" to "教练员帮助跑者", "wildPitch" to "球太偏，跑者进垒", "passedBall" to "捕手漏球，跑者进垒", "uncertainLooseBall" to "球漏过去，分不清原因", "balk" to "投手犯规，跑者进垒")
     private val endReasons = mapOf("regulation" to "规定局数完成", "walkOff" to "再见分结束", "timeLimit" to "时间限制结束", "mercyRule" to "提前结束规则", "forfeit" to "弃权结束", "weather" to "天气或场地原因", "suspended" to "比赛中断", "scorerDecision" to "记录员结束记录")
@@ -168,17 +170,21 @@ internal object AppleExportPrototype {
             require(e.id == g.journal[i].id && e.kind in listOf("pitch", "play", "runner", "hitByPitch", "intentionalWalk", "foulBunt", "endHalf", "skipTB", "finish", "suspend", "reopen", "pitcher", "batter", "pinchRunner", "fielder", "position"))
             add(buildJsonObject {
                 put("id", uid(e.id)); put("logEntryID", generated("${g.id}/log/${e.id}")); put("inning", e.inning); put("isTop", e.isTop); put("timestamp", date(e.at))
-                put("category", when (e.kind) { "pitch" -> "pitch"; "play" -> "battedBall"; "runner" -> "runner"; "hitByPitch", "intentionalWalk", "foulBunt" -> "pitch"; "pitcher", "batter", "pinchRunner", "fielder", "position" -> "substitution"; else -> "game" }); put("title", e.text); put("notation", e.notation)
+                val passedBall = e.decisions.firstNotNullOfOrNull { it.runnerDefense as? RunnerDefenseCredit.PassedBall }
+                val confirmedSteal = e.notation == "caughtStealing" && e.decisions.any { it.runnerDefense != null }
+                put("category", when (e.kind) { "pitch" -> "pitch"; "play" -> "battedBall"; "runner" -> if (confirmedSteal) "out" else "runner"; "hitByPitch", "intentionalWalk", "foulBunt" -> "pitch"; "pitcher", "batter", "pinchRunner", "fielder", "position" -> "substitution"; else -> "game" })
+                put("title", e.text)
+                put("notation", when { confirmedSteal -> "CS"; passedBall != null -> "PB"; else -> e.notation })
                 val runnerError = g.journal[i].command.runnerErrorResponsibility
-                if (runnerError != null) {
+                if (runnerError != null || confirmedSteal || passedBall != null) {
                     idField("primaryPlayerID", e.pitcherID)
-                    idField("secondaryPlayerID", runnerError.fielderID)
+                    idField("secondaryPlayerID", runnerError?.fielderID ?: passedBall?.catcherID)
                 } else {
                     idField("primaryPlayerID", if (e.kind == "pitch") e.pitcherID else e.batterID)
                     idField("secondaryPlayerID", if (e.kind == "pitch") e.batterID else e.pitcherID)
                 }
                 idField("plateAppearanceBatterID", e.batterID); put("plateAppearanceID", eventGroup.getValue(e.id))
-                put("runnerMovements", buildJsonArray { e.decisions.forEach { add(movement(it)) } }); put("needsReview", e.incomplete); e.reviewNote?.let { put("reviewNote", it) }; dateField("reviewedAt", e.reviewedAt)
+                put("runnerMovements", buildJsonArray { e.decisions.forEach { add(movement(it)) } }); put("needsReview", e.needsReview); e.reviewNote?.let { put("reviewNote", it) }; dateField("reviewedAt", e.reviewedAt)
                 e.outcome?.let { put("resolvedOutcome", it.title) }; observation(e)?.let { put("battedBall", it) }; put("beforeSituation", snapshot(states[i])); put("afterSituation", snapshot(states[i + 1]))
             })
         } }

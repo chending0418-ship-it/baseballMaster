@@ -4,6 +4,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -24,13 +28,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
 internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPanel: String = "", handled: () -> Unit = {},
+    initialPanel: String = "",
+    closeInitialResults: (() -> Unit)? = null,
     host: (@Composable (controls: @Composable () -> Unit, task: @Composable () -> Unit, inlineTask: Boolean, locked: Boolean) -> Unit)? = null,
 ) {
-    var panel by rememberSaveable(game.id) { mutableStateOf("") }
+    var panel by rememberSaveable(game.id) { mutableStateOf(initialPanel) }
     var returnPanel by rememberSaveable(game.id) { mutableStateOf("") }
     var sourceRevision by rememberSaveable(game.id) { mutableLongStateOf(game.revision) }
     // Keep history-heavy match snapshots in the ViewModel across configuration
@@ -52,6 +61,16 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
     }
     var openingPlay by rememberSaveable(game.id) { mutableStateOf(false) }
     var confirmEndHalf by rememberSaveable(game.id) { mutableStateOf(false) }
+    var confirmTimeEnd by rememberSaveable(game.id) { mutableStateOf(false) }
+    val reachedTimeLimit by produceState(game.hasReachedTimeLimit(System.currentTimeMillis()),
+        game.id, game.isFinal, game.isScheduled, game.rules, game.clockHasStarted, game.clockElapsedMs, game.clockRunningSince) {
+        value = game.hasReachedTimeLimit(System.currentTimeMillis())
+        val remaining = game.remainingTime(System.currentTimeMillis())
+        if (!game.isFinal && game.rules.timed && remaining != null && remaining > 0 && game.clockRunningSince != null) {
+            delay(remaining)
+            value = game.hasReachedTimeLimit(System.currentTimeMillis())
+        }
+    }
     val controls: @Composable () -> Unit = {
     if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
         ScoreControl("击球进入场内", "record-play", Modifier.fillMaxWidth(), enabled && panel.isEmpty(), filled = true) {
@@ -62,9 +81,12 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
             ScoreControl("特殊 / 判罚", "record-special", Modifier.weight(1f), enabled && panel.isEmpty(), color = Color(0xFF9F4C0D)) { open("special") }
         }
         if (game.rules.mode == GameMode.slowPitch) {
-            ScoreControl("Illegal／非法投球", "record-illegal-pitch", Modifier.fillMaxWidth(), enabled && panel.isEmpty(),
+            ScoreControl("Illegal／非法投球", "record-illegal-pitch", Modifier.fillMaxWidth(), enabled && panel.isEmpty() && !game.isPregame,
                 color = Color(0xFF9F4C0D)) { open("illegal") }
         }
+        if (reachedTimeLimit)
+            ScoreControl("时间已到 · 按裁判决定结束比赛", "game-time-limit-reached",
+                Modifier.fillMaxWidth(), enabled && panel.isEmpty(), color = Color(0xFF9F4C0D)) { confirmTimeEnd = true }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         ScoreControl("撤销", "undo", Modifier.weight(1f), !model.busy && panel.isEmpty() && game.canUndo, compact = true) { model.undo() }
@@ -90,6 +112,21 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
         text = { Text("请按现场情况确认交换攻守，保留当前比分和记录。") },
         confirmButton = { TextButton({ confirmEndHalf = false; model.command(Command("endHalf")) }, modifier = Modifier.testTag("confirm-end-half")) { Text("确认交换攻守") } },
         dismissButton = { TextButton({ confirmEndHalf = false }) { Text("取消") } })
+    if (confirmTimeEnd && !game.isFinal) AlertDialog(
+        modifier = Modifier.semantics { testTagsAsResourceId = true },
+        onDismissRequest = { confirmTimeEnd = false },
+        title = { Text("确认时间赛结束？") },
+        text = { Text("按裁判最终决定结束比赛，保留当前比分与实际记录。") },
+        confirmButton = {
+            TextButton({
+                confirmTimeEnd = false
+                model.command(Command("finish", text = "timeLimit"), game.revision)
+            }, enabled = enabled, modifier = Modifier.testTag("confirm-time-limit-end")) { Text("确认结束") }
+        },
+        dismissButton = {
+            TextButton({ confirmTimeEnd = false }, Modifier.testTag("continue-after-time-limit")) { Text("继续记录") }
+        },
+    )
     if (openingPlay) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { openingPlay = false }, title = { Text("确认双方先发阵容") },
         text = { Text("${game.away.name} 与 ${game.home.name}的先发阵容确认后开始计时。开赛后仍可调整阵容。") },
         confirmButton = { TextButton({ openingPlay = false; open("play") }, modifier = Modifier.testTag("confirm-opening-play")) { Text("确认开赛") } },
@@ -132,12 +169,10 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
         CardBlock {
             Text("比赛已结束", fontWeight = FontWeight.Bold)
             Text("${game.away.name} ${game.awayRuns} : ${game.homeRuns} ${game.home.name}")
-            TextButton(
-                { model.command(Command("reopen")) },
-                enabled = !model.busy,
-                modifier = Modifier.testTag("reopen-game"),
-            ) {
-                Text("恢复比赛")
+            ResumeGameAction(game, onResume = { model.command(it) }) { request ->
+                TextButton(request, enabled = !model.busy, modifier = Modifier.testTag("reopen-game")) {
+                    Text("恢复比赛")
+                }
             }
         }
     if (game.pendingDecision != null)
@@ -188,7 +223,23 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
             returnPanel = ""
         }
         val save: (Command) -> Unit = { model.command(it, snapshot.revision, close) }
-        when (panel) {
+        val directReviewID = panel.takeIf { it.startsWith("review:") }?.substringAfter(':')
+        val directHistoryID = panel.takeIf { it.startsWith("history:") }?.substringAfter(':')
+        fun openCatcherHistory(eventID: String) {
+            if (panel == "advanced") returnPanel = "advanced"
+            panel = "history:$eventID"
+        }
+        when {
+            directHistoryID != null -> HistoryEditor(game, model, close, initialEventID = directHistoryID)
+            directReviewID != null -> {
+                if (game.entries.any { it.id == directReviewID && it.catcherAttributionPending }) {
+                    HistoryEditor(game, model, close, initialEventID = directReviewID)
+                } else {
+                    AdvancedPanel(game, model, close, initialPage = "review", initialEventID = directReviewID,
+                        openHistory = ::openCatcherHistory)
+                }
+            }
+            else -> when (panel) {
             "rule-notices" -> ProductPage("比赛规则提醒", onBack = close, backLabel = "返回比赛", modal = true) {
                 game.ruleNotices(System.currentTimeMillis()).forEach { notice -> CardBlock { Text(notice, fontSize = 14.sp) } }
             }
@@ -254,7 +305,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
                             Text("三振未接住")
                         }
                     if (game.rules.mode == GameMode.slowPitch)
-                        TextButton({ panel = "illegal" }, enabled = enabled) { Text("Illegal 宣告") }
+                        TextButton({ panel = "illegal" }, enabled = enabled && !game.isPregame) { Text("Illegal 宣告") }
                     TextButton({ panel = "substitution" }, enabled = enabled) { Text("换人／换投／守位") }
                     TextButton({ panel = "lineup" }, enabled = !model.busy&&!game.isFinal&&game.pendingDecision==null) { Text("双方阵容与打序") }
                     TextButton({ panel = "violation" }, enabled = enabled) { Text("裁判判罚") }
@@ -296,7 +347,9 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
                         Text("首球前互换先攻／后攻")
                     }
                 }
-            "results" -> GameResultsScreen(game, model, close) {
+            "results" -> GameResultsScreen(game, model, {
+                if (closeInitialResults != null && model.openedGame?.isFinal == true) closeInitialResults() else close()
+            }) {
                 model.scoringTaskSource = model.openedGame ?: game
                 sourceRevision = (model.openedGame ?: game).revision
                 returnPanel = "results"
@@ -347,8 +400,8 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
             "illegal" -> IllegalEditor(snapshot, model.busy, close, save)
             "finish" -> FinishGameTask(snapshot, model.busy, close, save)
             "clock" -> ClockEditor(game, model.busy, close) { model.command(it, done = close) }
-            "review" -> AdvancedPanel(game, model, close, initialPage = "review")
-            "advanced" -> AdvancedPanel(game, model, close)
+            "review" -> AdvancedPanel(game, model, close, initialPage = "review", openHistory = ::openCatcherHistory)
+            "advanced" -> AdvancedPanel(game, model, close, openHistory = ::openCatcherHistory)
             "poster" -> GamePosterScreen(game, close)
             "appearance-exports" -> FormPage("选择打席", false, true, "close-appearance-exports", "完成", close, close) {
                 AppearanceProjection.build(game).forEach { appearance ->
@@ -366,6 +419,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
             }
             "performance" -> PerformanceSheet(game, model.games, close)
             "history" -> HistoryEditor(game, model, close)
+            }
         }
     }
     }
@@ -394,11 +448,11 @@ internal fun Choices(
                 Row(Modifier.fillMaxWidth().padding(3.dp)) {
                     row.forEach { (key, title) ->
                         Box(Modifier.weight(1f).heightIn(min = 38.dp).clip(RoundedCornerShape(7.dp))
-                            .background(if(selected == key) MaterialTheme.colorScheme.surface else Color.Transparent)
+                            .background(if(selected == key) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                             .toggleable(value = selected == key, role = Role.RadioButton, onValueChange = { onSelect(key) }).testTag("choice-$label-$key"), contentAlignment = Alignment.Center) {
                             Text(title, fontSize = 12.sp, fontWeight = if(selected == key) FontWeight.SemiBold else FontWeight.Normal,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                color = if(selected == key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if(selected == key) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 3.dp, vertical = 6.dp))
                         }
                     }
@@ -596,6 +650,7 @@ private fun ViolationEditor(
     save: (Command) -> Unit,
 ) {
     var kind by rememberSaveable { mutableStateOf("batterInterference") }
+    var ballStatus by rememberSaveable { mutableStateOf(ScoringOptions.defaultViolationBallStatus(kind)) }
     var previous by rememberSaveable { mutableStateOf("notApplicable") }
     var plate by rememberSaveable { mutableStateOf("continueAtBat") }
     var credit by rememberSaveable { mutableStateOf("none") }
@@ -648,6 +703,7 @@ private fun ViolationEditor(
                     decisions = GameJson.decodeFromString(dsJson),
                     adjudication =
                         Ruling(
+                            ballStatus = ballStatus,
                             previousPlay = previous,
                             plateAppearance = plate,
                             countsAsAtBat = counts,
@@ -661,13 +717,18 @@ private fun ViolationEditor(
             )
         },
     ) {
-        Choices("判罚", options, kind) { kind = it }
+        Choices("判罚", options, kind) {
+            kind = it
+            ballStatus = ScoringOptions.defaultViolationBallStatus(it)
+        }
         OutlinedButton({ save(Command("violation", runnerKind = kind)) }, shape = RoundedCornerShape(14.dp)) { Text("记录默认判罚") }
         HorizontalDivider()
         Text("最终宣判", fontWeight = FontWeight.Bold)
+        Choices("球状态", ScoringOptions.adjudicationBallStatuses, ballStatus) { ballStatus = it }
         Choices(
             "前一结果",
-            mapOf("notApplicable" to "不适用", "keep" to "保留", "cancel" to "取消前一结果"),
+            mapOf("notApplicable" to "不适用", "keep" to "保留", "cancel" to "取消前一结果")
+                .filterKeys { it != "cancel" || game.cursor > 0 },
             previous,
         ) {
             previous = it
@@ -692,6 +753,7 @@ private fun ViolationEditor(
                 "homeRun" to "本垒打",
                 "sacrifice" to "牺牲",
                 "reachedOnError" to "失误上垒",
+                "fieldersChoice" to "野手选择",
             ),
             credit,
         ) {
@@ -721,24 +783,42 @@ private fun ViolationEditor(
 private fun historyTitle(command: Command) = History.title(command)
 
 @Composable
-private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -> Unit) {
+private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -> Unit, initialEventID: String? = null) {
     var screen by rememberSaveable(game.id) { mutableStateOf("list") }
     var selected by rememberSaveable(game.id) { mutableIntStateOf(0) }
     var discard by remember { mutableStateOf(false) }
+    var preparing by remember { mutableStateOf(false) }
+    var issue by remember { mutableStateOf<String?>(null) }
+    var openedInitial by rememberSaveable(game.id, initialEventID) { mutableStateOf(false) }
+    var half by rememberSaveable(game.id) { mutableStateOf("all") }
+    val timelineState = rememberLazyListState()
+    val draftState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     LaunchedEffect(game.id) { model.loadHistoryDraft(game) }
     val draft = model.historyDraft?.takeIf { it.gameID == game.id }
     val record = draft?.records?.getOrNull(selected)
-    val before =
-        remember(game.revision, draft, selected) {
-            draft?.let { runCatching { History.stateBefore(game, it, selected) }.getOrNull() }
+    val needsBefore = screen in setOf("detail", "edit", "responsibility", "insert",
+        "insert-pitch", "insert-play", "insert-runner", "insert-situation", "insert-sub")
+    val beforeState = remember(game.revision, draft?.records, draft?.checkpoint, selected, needsBefore) {
+        mutableStateOf<Result<Game>?>(null)
+    }
+    LaunchedEffect(beforeState) {
+        if (draft != null && needsBefore) {
+            beforeState.value = withContext(Dispatchers.Default) { runCatching { History.stateBefore(game, draft, selected) } }
         }
-    val preview by
-        produceState<CorrectionPreview?>(null, game.revision, draft) {
-            value = null
-            value = draft?.let {
-                withContext(kotlinx.coroutines.Dispatchers.Default) { History.preview(game, it) }
-            }
+    }
+    val beforeResult by beforeState
+    val before = beforeResult?.getOrNull()
+    val needsPreview = screen == "draft"
+    val previewState = remember(game.revision, draft?.records, draft?.checkpoint, needsPreview) {
+        mutableStateOf<CorrectionPreview?>(null)
+    }
+    LaunchedEffect(previewState) {
+        if (draft != null && needsPreview) {
+            previewState.value = withContext(Dispatchers.Default) { History.preview(game, draft) }
         }
+    }
+    val preview by previewState
     fun update(value: CorrectionDraft) {
         model.updateHistoryDraft(value)
     }
@@ -746,11 +826,39 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
         val d = draft ?: return
         update(d.copy(records = d.records.toMutableList().apply { set(selected, value) }))
     }
-    fun start(index: Int) {
-        val d = draft ?: History.draft(game)
-        update(d)
-        selected = index
-        screen = "detail"
+    fun start(eventID: String, openEditor: Boolean = false) {
+        if (preparing) return
+        if (game.appleSourceID != null) {
+            issue = "这场 iOS 来源比赛暂不支持历史纠错"
+            return
+        }
+        preparing = true
+        issue = null
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.Default) {
+                    runCatching {
+                        val existing = draft ?: History.draft(game)
+                        val index = existing.records.indexOfFirst { it.id == eventID }
+                        require(index >= 0) { "草稿中未找到这条原记录，请先核对草稿" }
+                        existing to index
+                    }
+                }
+                result.onSuccess { (existing, index) ->
+                    if (draft == null) update(existing)
+                    selected = index
+                    screen = if (openEditor) "edit" else "detail"
+                }.onFailure { issue = it.message ?: "无法重放此条历史记录" }
+            } finally {
+                preparing = false
+            }
+        }
+    }
+    LaunchedEffect(game.id, initialEventID, model.historyDraftLoadedFor) {
+        if (initialEventID != null && !openedInitial && model.historyDraftLoadedFor == game.id) {
+            openedInitial = true
+            start(initialEventID, openEditor = true)
+        }
     }
     fun amend(command: Command) {
         val r = record ?: return
@@ -779,6 +887,12 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
             },
             dismissButton = { TextButton({ discard = false }) { Text("继续核对") } },
         )
+    if (screen in setOf("edit", "responsibility") && before == null) {
+        ProductPage("更正记录", onBack = { screen = "detail" }) {
+            Text(beforeResult?.exceptionOrNull()?.message ?: "正在核对当时局面…")
+        }
+        return
+    }
     if (screen == "edit" && record != null && before != null) {
         when (record.command.kind) {
             "play" -> PlayEditor(before, model.busy, { screen = "detail" }, record.command, save = ::amend)
@@ -824,10 +938,16 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
         }
         return
     }
+    if (screen.startsWith("insert-") && before == null) {
+        ProductPage("补记操作", onBack = { screen = "insert" }) {
+            Text(beforeResult?.exceptionOrNull()?.message ?: "正在核对当时局面…")
+        }
+        return
+    }
     if (screen == "insert" && draft != null) {
         FormPage("补记操作", model.busy, false, "unused", "", { screen = "draft" }, {}) {
             Text("补在第 ${selected+1} 条之前；保存前会核对之后每条记录的局次、棒次和跑者。")
-            if (before == null) Text("此处之前存在冲突，请先修正前面的记录。")
+            if (before == null) Text(beforeResult?.exceptionOrNull()?.message ?: "正在核对当时局面…")
             else {
                 TextButton({ screen = "insert-situation" }, Modifier.testTag("insert-situation")) {
                     Text("补正历史局面")
@@ -916,157 +1036,199 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
     }
     if (screen != "list" && draft != null) {
         val result = preview
-        FormPage(
-            "更正预览",
-            model.busy,
-            result?.canSave == true && result.changes.isNotEmpty() && draft.reason.isNotBlank(),
-            "save-history-correction",
-            "保存更正",
-            { screen = "list" },
-            { model.saveHistoryCorrection(draft) { screen = "list" } },
+        ProductPage(
+            "更正预览", model.busy, { screen = "list" }, backLabel = "取消",
+            actionEnabled = result?.canSave == true && result.changes.isNotEmpty() && draft.reason.isNotBlank(),
+            actionTag = "save-history-correction", actionLabel = "保存更正",
+            onAction = { model.saveHistoryCorrection(draft) { screen = "list" } },
+            scrollableContent = false,
         ) {
-            OutlinedTextField(
-                draft.reason,
-                { update(draft.copy(reason = it)) },
-                label = { Text("更正原因") },
-                modifier = Modifier.fillMaxWidth().testTag("correction-reason"),
-            )
-            Text(
-                if (game.practice) "练习草稿仅保留在本次练习"
-                else if (model.historyDraftSaved) "草稿已保存在本机" else "正在保存草稿…",
-                Modifier.testTag("history-draft-status"),
-                fontSize = 12.sp,
-            )
-            Text("原比赛 ${game.awayRuns}:${game.homeRuns}", fontWeight = FontWeight.Bold)
-            if (result == null) Text("正在重放核对…")
-            else if (result.conflict != null) {
-                Text(
-                    result.conflict.orEmpty(),
-                    Modifier.testTag("history-conflict"),
-                    color = MaterialTheme.colorScheme.error,
-                )
-                result.conflictID?.let { id ->
-                    TextButton({
-                        selected = draft.records.indexOfFirst { it.id == id }
-                        screen = "detail"
-                    }) {
-                        Text("核对冲突记录")
+            LazyColumn(state = draftState, modifier = Modifier.weight(1f).fillMaxWidth().testTag("product-page-scroll"),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item("draft-header") {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            draft.reason,
+                            { update(draft.copy(reason = it)) },
+                            label = { Text("更正原因") },
+                            modifier = Modifier.fillMaxWidth().testTag("correction-reason"),
+                        )
+                        Text(
+                            if (game.practice) "练习草稿仅保留在本次练习"
+                            else if (model.historyDraftSaved) "草稿已保存在本机" else "正在保存草稿…",
+                            Modifier.testTag("history-draft-status"),
+                            fontSize = 12.sp,
+                        )
+                        Text("原比赛 ${game.awayRuns}:${game.homeRuns}", fontWeight = FontWeight.Bold)
+                        if (result == null) Text("正在重放核对…")
+                        else if (result.conflict != null) {
+                            Text(
+                                result.conflict.orEmpty(),
+                                Modifier.testTag("history-conflict"),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            result.conflictID?.let { id ->
+                                TextButton({
+                                    selected = draft.records.indexOfFirst { it.id == id }
+                                    screen = "detail"
+                                }) {
+                                    Text("核对冲突记录")
+                                }
+                            }
+                        } else {
+                            val next = result.game!!
+                            Text(
+                                "更正后 ${next.awayRuns}:${next.homeRuns}",
+                                Modifier.testTag("history-preview-score"),
+                                fontWeight = FontWeight.Bold,
+                            )
+                            if (next.statisticsIncomplete)
+                                Text("统计责任待确认，统计可能不完整。", color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
-            } else {
-                val next = result.game!!
-                Text(
-                    "更正后 ${next.awayRuns}:${next.homeRuns}",
-                    Modifier.testTag("history-preview-score"),
-                    fontWeight = FontWeight.Bold,
-                )
-                if (next.statisticsIncomplete)
-                    Text("统计责任待确认，统计可能不完整。", color = MaterialTheme.colorScheme.error)
-                result.changes.forEach { Text(it, fontSize = 12.sp) }
-            }
-            draft.records.forEachIndexed { i, r ->
-                CardBlock {
-                    Text(
-                        "${i+1}. ${historyTitle(r.command)}${if(r.inserted)" · 补记"else if(r.edited)" · 更正"else""}"
-                    )
+                if (result?.canSave == true) items(result.changes) { Text(it, fontSize = 12.sp) }
+                itemsIndexed(draft.records, key = { _, record -> "draft-${record.id}" }) { i, r ->
+                    CardBlock {
+                        Text(
+                            "${i+1}. ${historyTitle(r.command)}${if(r.inserted)" · 补记"else if(r.edited)" · 更正"else""}"
+                        )
+                        TextButton(
+                            {
+                                selected = i
+                                screen = "detail"
+                            },
+                            Modifier.testTag("draft-record-$i"),
+                        ) {
+                            Text("核对／编辑")
+                        }
+                    }
+                }
+                item("add-history-record") {
                     TextButton(
                         {
-                            selected = i
-                            screen = "detail"
+                            selected = draft.records.size
+                            screen = "insert"
                         },
-                        Modifier.testTag("draft-record-$i"),
+                        Modifier.testTag("history-append"),
                     ) {
-                        Text("核对／编辑")
+                        Text("在末尾补记")
                     }
                 }
-            }
-            TextButton(
-                {
-                    selected = draft.records.size
-                    screen = "insert"
-                },
-                Modifier.testTag("history-append"),
-            ) {
-                Text("在末尾补记")
-            }
-            TextButton({ discard = true }, Modifier.testTag("discard-history-draft")) {
-                Text("放弃纠错草稿")
+                item("discard-history") {
+                    TextButton({ discard = true }, Modifier.testTag("discard-history-draft")) {
+                        Text("放弃纠错草稿")
+                    }
+                }
             }
         }
         return
     }
-    FormPage("完整记录", model.busy, false, "unused", "", dismiss, {}) {
-        if (model.historyDraftLoadedFor != game.id) Text("正在读取纠错草稿…")
-        else if (draft != null)
-            TextButton({ screen = "draft" }, Modifier.testTag("resume-history-draft")) {
-                Text("继续上次纠错草稿")
-            }
-        if (game.incompletePrefix || game.statisticsIncomplete) Text("部分历史过程或统计责任不完整，请核对记录。")
-        game.entries.asReversed().forEach { entry ->
-            CardBlock {
-                Text(
-                    "${entry.inning}局${if(entry.isTop)"上"else"下"} · ${entry.notation}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(entry.text, fontWeight = FontWeight.SemiBold)
-                entry.observation?.let { o ->
-                    Text(
-                        "${ScoringOptions.ballTypes[o.type]} · ${o.region?.let{ScoringOptions.regions[it]}?:if(o.precision=="point")"已记录落点"else"没有看清"}",
-                        fontSize = 12.sp,
-                    )
+    ProductPage("完整记录", model.busy, dismiss, backLabel = "取消", scrollableContent = false) {
+        val halfOptions = remember(game.entries) {
+            linkedMapOf("all" to "全部局次").apply {
+                game.entries.map { it.historyHalfKey() }.distinct().forEach { key ->
+                    val (inning, side) = key.split('-')
+                    put(key, "${inning}局${if (side == "top") "上" else "下"}")
                 }
-                entry.observation?.fielding?.let { f ->
-                    Text(
-                        "路线 ${f.route.joinToString(" → "){pos->entry.participants.firstOrNull{it.position==pos}?.let{"$pos ${it.name}"}?:pos.toString()}}",
-                        fontSize = 12.sp,
-                    )
-                }
-                val index = game.journal.indexOfFirst { it.id == entry.id }
-                val draftIndex =
-                    if (draft == null) index else draft.records.indexOfFirst { it.id == entry.id }
-                if (index in 0 until game.cursor)
-                    TextButton(
-                        { start(draftIndex) },
-                        enabled =
-                            draftIndex >= 0 &&
-                                model.historyDraftLoadedFor == game.id &&
-                                !model.busy,
-                        modifier = Modifier.testTag("correct-record-$index"),
-                    ) {
-                        Text(if (draftIndex < 0) "草稿已删除此记录" else "纠错／补充本球")
-                    }
             }
         }
-        if (game.historyRevisions.isNotEmpty()) {
-            Text("更正历史", fontWeight = FontWeight.Bold)
-            game.historyRevisions.asReversed().forEach { revision ->
-                CardBlock {
-                    Text(revision.reason, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        java.time.Instant.ofEpochMilli(revision.at)
-                            .atZone(java.time.ZoneId.systemDefault())
-                            .format(
-                                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-                            ),
-                        fontSize = 12.sp,
-                    )
-                    revision.summary.forEach { Text(it, fontSize = 12.sp) }
+        val committedIndex = remember(game.journal, game.cursor) {
+            game.journal.take(game.cursor).mapIndexed { index, event -> event.id to index }.toMap()
+        }
+        val draftIDs = remember(draft?.records) { draft?.records.orEmpty().map { it.id }.toSet() }
+        val activeHalf = if (half in halfOptions) half else "all"
+        val visibleEvents = remember(game.entries, activeHalf) {
+            game.entries.asReversed().filter { activeHalf == "all" || it.historyHalfKey() == activeHalf }
+        }
+        ProductMenuPicker("局次", activeHalf, halfOptions, tag = "history-half-filter", enabled = !preparing && !model.busy) { choice ->
+            if (activeHalf != choice) {
+                half = choice
+                scope.launch { timelineState.scrollToItem(0) }
+            }
+        }
+        LazyColumn(state = timelineState, modifier = Modifier.weight(1f).fillMaxWidth().testTag("product-page-scroll"),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item("timeline-header") {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (model.historyDraftLoadedFor != game.id) Text("正在读取纠错草稿…")
+                    else if (preparing) Text("正在重放历史…")
+                    else if (draft != null)
+                        TextButton({ screen = "draft" }, Modifier.testTag("resume-history-draft")) {
+                            Text("继续上次纠错草稿")
+                        }
+                    if (game.incompletePrefix || game.statisticsIncomplete) Text("部分历史过程或统计责任不完整，请核对记录。")
+                    issue?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (visibleEvents.isEmpty()) Text("这个范围没有比赛记录")
                 }
             }
-            TextButton(
-                {
-                    update(History.revertingDraft(game))
-                    screen = "draft"
-                },
-                enabled = draft == null && !model.busy,
-                modifier = Modifier.testTag("revert-latest-correction"),
-            ) {
-                Text("撤回最近一次更正")
+            items(visibleEvents, key = { "event-${it.id}" }) { entry ->
+                CardBlock {
+                    Text(
+                        "${entry.inning}局${if(entry.isTop)"上"else"下"} · ${entry.notation}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(entry.text, fontWeight = FontWeight.SemiBold)
+                    entry.observation?.let { o ->
+                        Text(
+                            "${ScoringOptions.ballTypes[o.type]} · ${o.region?.let{ScoringOptions.regions[it]}?:if(o.precision=="point")"已记录落点"else"没有看清"}",
+                            fontSize = 12.sp,
+                        )
+                    }
+                    entry.observation?.fielding?.let { f ->
+                        Text(
+                            "路线 ${f.route.joinToString(" → "){pos->entry.participants.firstOrNull{it.position==pos}?.let{"$pos ${it.name}"}?:pos.toString()}}",
+                            fontSize = 12.sp,
+                        )
+                    }
+                    val index = committedIndex[entry.id]
+                    val existsInDraft = draft == null || entry.id in draftIDs
+                    if (index != null)
+                        TextButton(
+                            { start(entry.id) },
+                            enabled =
+                                existsInDraft && !preparing &&
+                                    model.historyDraftLoadedFor == game.id &&
+                                    !model.busy,
+                            modifier = Modifier.testTag("correct-record-$index"),
+                        ) {
+                            Text(if (!existsInDraft) "草稿已删除此记录" else "纠错／补充本球")
+                        }
+                }
             }
-        } else game.correctionRevisions.forEach { Text(it, fontSize = 12.sp) }
+            if (game.historyRevisions.isNotEmpty()) {
+                item("revision-heading") { Text("更正历史", fontWeight = FontWeight.Bold) }
+                items(game.historyRevisions.asReversed(), key = { "revision-${it.id}" }) { revision ->
+                    CardBlock {
+                        Text(revision.reason, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            java.time.Instant.ofEpochMilli(revision.at)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .format(
+                                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                                ),
+                            fontSize = 12.sp,
+                        )
+                        revision.summary.forEach { Text(it, fontSize = 12.sp) }
+                    }
+                }
+                item("revert-history") { TextButton(
+                    {
+                        update(History.revertingDraft(game))
+                        screen = "draft"
+                    },
+                    enabled = draft == null && !model.busy,
+                    modifier = Modifier.testTag("revert-latest-correction"),
+                ) {
+                    Text("撤回最近一次更正")
+                } }
+            } else items(game.correctionRevisions) { Text(it, fontSize = 12.sp) }
+        }
     }
 }
+
+private fun PitchEntry.historyHalfKey(): String = "$inning-${if (isTop) "top" else "bottom"}"
 
 @Composable
 private fun HistoryPitchEditor(

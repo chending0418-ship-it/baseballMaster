@@ -13,7 +13,7 @@ import kotlinx.coroutines.ensureActive
 internal class AndroidTeamSharing(private val local: GameRepository, private val session: TeamDirectorySession) {
     suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
 
-    suspend fun sharedStatistics(selectedTeamID: String?, preferShared: Boolean): SharedStatisticsResult = withContext(Dispatchers.IO) {
+    suspend fun sharedStatistics(selectedTeamID: String?, preferShared: Boolean, verifyAccess: Boolean = false): SharedStatisticsResult = withContext(Dispatchers.IO) {
         val before = session.snapshot()
         if (before.deviceID == null) return@withContext SharedStatisticsResult()
         if (before.credentialExpired || before.requiresRecoveryReview)
@@ -35,6 +35,7 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (_: Exception) {
+            if (verifyAccess) return@withContext SharedStatisticsResult(message = "未能核对这支球队的访问权限，请联网刷新。")
             message = "共享统计暂未同步完成。已收到的近期版本可能不完整，请重试。"
         }
         val state = session.snapshot()

@@ -162,7 +162,9 @@ class Product081VisualAuditFlowTest {
         click("tab-$tab")
         verifyViewport()
     }
-    private fun open(game: Game) { launch(); click("game-${game.id}"); ready("game-results") }
+    private fun open(game: Game) {
+        launch(); click("game-${game.id}"); ready(if (game.isFinal) "result-final-score" else "game-results")
+    }
     private fun input(tag: String, value: String) {
         node(tag).apply { click(); text = value }
         inst.runOnMainSync {
@@ -311,7 +313,7 @@ class Product081VisualAuditFlowTest {
             click("choice-统计分类-FIELDING"); selected("choice-统计分类-FIELDING"); ready("stats-summary-FIELDING")
             shot("statistics-fielding", "球队统计", "统计 → 守备", "刺杀、助杀与失误统计的可读性。")
             launch(3); ready("open-app-settings")
-            text("本机记录员"); text("当前球队 · ${fixture.own.name}"); text("本机保存")
+            text("本机记分员"); text("当前球队 · ${fixture.own.name}"); text("保存在此设备")
             shot("tab-profile", "四个Tab", "我的", "本机记录员身份、当前球队与本机保存说明、学习帮助、本机数据和设置分组及底部Tab。")
             click("open-app-settings"); selected("choice-App 外观-light")
             shot("settings-light", "设置", "我的 → App设置 → 浅色", "设置分组、选择态、开关与浅色语义色。")
@@ -394,7 +396,7 @@ class Product081VisualAuditFlowTest {
             back()
             click("cancel-play"); unchanged(fixture.pro, baselines.getValue(fixture.pro.id), "Cancelling Pro landing, 6-to-3 route and runner review preserves the entire Room payload")
 
-            open(fixture.finished.first()); click("game-results"); ready("result-final-score")
+            open(fixture.finished.first()); ready("result-final-score")
             shot("results-overview", "比赛结果", "已结束比赛 → 比赛结果", "终场比分、R/H/E记分表、队内共享与后续数据入口。")
             ready("choice-数据-batting"); selected("choice-数据-batting"); ready("game-result-batting-${fixture.own.players.first().id}")
             shot("results-batting", "比赛结果", "比赛结果 → 打击", "真实终场打击表、姓名背号与数据列；检查手机横向可读性和展开利用率。")
@@ -411,7 +413,7 @@ class Product081VisualAuditFlowTest {
                 device.hasObject(By.text("当前打席进行中")))
             checks += "final unfinished appearance states that the match has ended; no current-in-progress label"
             shot("results-records", "比赛结果", "比赛结果 → 记录", "真实中文逐打席记录、局数与球员身份；记录与统计源于同一场比赛。")
-            click("close-game-results"); ready("back-home"); click("back-home"); ready("tab-0")
+            click("close-game-results"); ready("tab-0")
             fixture.games.forEach { unchanged(it, baselines.getValue(it.id), "All visual-only navigation leaves seeded game ${it.id} unchanged") }
             db { database, _ ->
                 existing.first.forEach { (id, original) -> assertEquals("Existing game must never be changed", original, requireNotNull(database.dao().game(id)).payload) }

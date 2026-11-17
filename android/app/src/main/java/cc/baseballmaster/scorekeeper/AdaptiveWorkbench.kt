@@ -147,7 +147,9 @@ internal fun AdaptiveScoreWorkbench(
             } else {
                 right = measurables[3].measure(Constraints(maxWidth = innerWidth))
                 val remaining = bodyHeight - right.height - gap
-                val minimumFieldCard = 270.dp.roundToPx()
+                val minimumFieldCard = if (viewportHeight >= 660.dp && density.fontScale <= 1.2f) {
+                    300.dp.roundToPx()
+                } else 270.dp.roundToPx()
                 // Keep the normal field card on tall phones. On a short window
                 // use the context card when the full field would crowd the controls.
                 left = if (canCollapseField && remaining < minimumFieldCard) {

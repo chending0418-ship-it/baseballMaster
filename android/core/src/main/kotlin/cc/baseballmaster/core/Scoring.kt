@@ -145,6 +145,12 @@ data class FieldingLine(
     var assists: Int = 0,
     var errors: Int = 0,
     var doublePlays: Int = 0,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var catcherCaughtStealing: Int? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var passedBalls: Int? = null,
 )
 
 @Serializable
@@ -156,7 +162,25 @@ data class Decision(
     val route: List<Int> = emptyList(),
     val errorPosition: Int? = null,
     val fielding: Fielding? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val runnerDefense: RunnerDefenseCredit? = null,
 ) // origin 0=batter, 1..3=base; destination -1=out, 0=hold, 1..3=base, 4=score
+
+val Decision.advancesFromBase: Boolean
+    get() = origin in 1..3 && destination > origin
+
+@Serializable
+sealed interface RunnerDefenseCredit {
+    @Serializable
+    data object NoCatcherAssist : RunnerDefenseCredit
+
+    @Serializable
+    data class CaughtStealing(val catcherID: String, val receiverID: String, val target: Int) : RunnerDefenseCredit
+
+    @Serializable
+    data class PassedBall(val catcherID: String) : RunnerDefenseCredit
+}
 
 /** A recorded fielding error. A missing fielder means the scorer will identify them later. */
 @Serializable
@@ -387,7 +411,15 @@ data class PitchEntry(
     val runnerOwnersBefore: Map<String, String> = emptyMap(),
     val unearnedBefore: Set<String> = emptySet(),
     val automaticBefore: Set<String> = emptySet(),
-)
+) {
+    val catcherAttributionPending: Boolean
+        get() = kind == "runner" && when (notation) {
+            "caughtStealing", "CS" -> decisions.any { it.destination == -1 && it.runnerDefense == null }
+            "passedBall", "PB" -> decisions.none { it.runnerDefense is RunnerDefenseCredit.PassedBall }
+            else -> false
+        }
+    val needsReview: Boolean get() = incomplete || catcherAttributionPending
+}
 
 @Serializable
 data class Game(
@@ -505,6 +537,35 @@ data class Game(
                     .mapIndexed { i, p -> i + 1 to p.id }
                     .toMap()
 
+    /** CCS/PB are based on confirmed events. Older unassigned runner records stay unknown. */
+    val reportFielding: Map<String, FieldingLine>
+        get() {
+            val caught = mutableMapOf<String, Int>()
+            val passed = mutableMapOf<String, Int>()
+            for (event in entries) {
+                if (event.kind != "runner") continue
+                if (event.notation in setOf("caughtStealing", "CS")) {
+                    for (decision in event.decisions) {
+                        val credit = decision.runnerDefense as? RunnerDefenseCredit.CaughtStealing ?: continue
+                        caught[credit.catcherID] = (caught[credit.catcherID] ?: 0) + 1
+                    }
+                } else if (event.notation in setOf("passedBall", "PB")) {
+                    val credit = event.decisions.firstNotNullOfOrNull {
+                        it.runnerDefense as? RunnerDefenseCredit.PassedBall
+                    } ?: continue
+                    passed[credit.catcherID] = (passed[credit.catcherID] ?: 0) + 1
+                }
+            }
+            if (caught.isEmpty() && passed.isEmpty()) return fielding
+            return (fielding.keys + caught.keys + passed.keys).associateWith { id ->
+                val line = fielding[id] ?: FieldingLine()
+                line.copy(
+                    catcherCaughtStealing = caught[id] ?: line.catcherCaughtStealing,
+                    passedBalls = passed[id] ?: line.passedBalls,
+                )
+            }
+        }
+
     val pitcher
         get() =
             fieldingTeam.players.first {
@@ -522,6 +583,9 @@ data class Game(
 
     val isPregame
         get() = !isFinal && !clockHasStarted && startedAt == null && canSwapOpeningSides
+
+    val requiresLegacyResumeConfirmation
+        get() = isFinal && appleSourceID == null && (endedAt == null || endReason == null)
 
     fun canConfirmExtraInning(at: Long) =
         !isFinal &&

@@ -58,6 +58,7 @@ internal fun ProductPage(
     headerTrailing: (@Composable () -> Unit)? = null,
     scrollKey: Any? = null,
     actionSummary: (@Composable () -> Unit)? = null,
+    scrollableContent: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val embedded = LocalProductTaskEmbedded.current
@@ -87,8 +88,8 @@ internal fun ProductPage(
                         Text(if (busy) "保存中…" else actionLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     } else Spacer(Modifier.width(44.dp))
                 }
-                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)
-                    .testTag("product-page-scroll").padding(horizontal = 18.dp, vertical = 14.dp),
+                val contentScroll = if (scrollableContent) Modifier.verticalScroll(scroll).testTag("product-page-scroll") else Modifier
+                Column(Modifier.weight(1f).fillMaxWidth().then(contentScroll).padding(horizontal = 18.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     saved.SaveableStateProvider("page-content") { content() }
                 }

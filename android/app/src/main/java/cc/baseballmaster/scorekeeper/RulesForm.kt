@@ -241,21 +241,6 @@ internal fun RuleDraftForm(
         )
 }
 
-internal fun parseMatchDate(text: String, zone: String): Long =
-    java.time.LocalDateTime.parse(
-            text.trim(),
-            java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm")
-                .withResolverStyle(java.time.format.ResolverStyle.STRICT),
-        )
-        .atZone(java.time.ZoneId.of(zone))
-        .toInstant()
-        .toEpochMilli()
-
-internal fun formatMatchDate(date: Long, zone: String): String =
-    java.time.Instant.ofEpochMilli(date)
-        .atZone(java.time.ZoneId.of(zone))
-        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-
 @Composable
 internal fun MatchTimeEditor(
     game: Game,
@@ -263,22 +248,22 @@ internal fun MatchTimeEditor(
     dismiss: () -> Unit,
     save: (Command) -> Unit,
 ) {
+    val initial = game.playedAt ?: game.startedAt ?: game.scheduledAt ?: System.currentTimeMillis()
     var text by rememberSaveable {
-        mutableStateOf(
-            formatMatchDate(
-                game.playedAt ?: game.startedAt ?: game.scheduledAt ?: System.currentTimeMillis(),
-                game.playedTimeZoneID,
-            )
-        )
+        mutableStateOf(formatMatchDate(initial, game.playedTimeZoneID))
     }
     var zone by rememberSaveable { mutableStateOf(game.playedTimeZoneID) }
+    var offset by rememberSaveable { mutableStateOf<String?>(
+        java.time.Instant.ofEpochMilli(initial).atZone(java.time.ZoneId.of(zone)).offset.id,
+    ) }
     var reason by rememberSaveable { mutableStateOf("") }
     var scheduled by rememberSaveable { mutableStateOf(game.isScheduled) }
-    val date = runCatching { parseMatchDate(text, zone) }.getOrNull()
+    val date = runCatching { parseMatchDate(text, zone.trim(), offset) }.getOrNull()
+    val ready = date != null && matchDateIssue(date, scheduled, System.currentTimeMillis()) == null
     FormPage(
         "比赛时间",
         busy,
-        date != null && (scheduled || reason.isNotBlank()),
+        ready && (scheduled || reason.isNotBlank()),
         "save-match-time",
         "保存",
         dismiss,
@@ -287,7 +272,7 @@ internal fun MatchTimeEditor(
                 Command(
                     if (scheduled) "schedule" else "date",
                     dateMillis = date,
-                    timeZoneID = zone,
+                    timeZoneID = zone.trim(),
                     text = reason,
                 )
             )
@@ -301,14 +286,9 @@ internal fun MatchTimeEditor(
             ) {
                 scheduled = it == "schedule"
             }
-        OutlinedTextField(
-            text,
-            { text = it },
-            label = { Text("日期时间 yyyy-MM-dd HH:mm") },modifier=Modifier.testTag("match-time"),
-            singleLine = true,
-        )
-        OutlinedTextField(zone, { zone = it }, label = { Text("时区") },modifier=Modifier.testTag("match-zone"), singleLine = true)
+        MatchDateTimeControls(text, zone.trim(), scheduled, offset, "match-time", enabled = !busy,
+            onTextChange = { if (text != it) offset = null; text = it }, onOffsetChange = { offset = it })
+        OutlinedTextField(zone, { if (zone != it) offset = null; zone = it }, label = { Text("时区") },modifier=Modifier.testTag("match-zone"), singleLine = true)
         if (!scheduled) OutlinedTextField(reason, { reason = it }, label = { Text("更正原因") },modifier=Modifier.testTag("match-time-reason"))
-        if (date == null) Text("请核对日期格式与时区。", color = MaterialTheme.colorScheme.error)
     }
 }

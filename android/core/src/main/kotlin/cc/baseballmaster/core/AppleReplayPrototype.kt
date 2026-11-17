@@ -54,7 +54,8 @@ internal object AppleReplayPrototype {
         val destination = d["destination"]!!.jsonObject.let { o -> when {
             "hold" in o -> 0; "out" in o -> -1; "score" in o -> 4; "base" in o -> o["base"]!!.jsonObject.int("_0"); else -> error("跑垒结果不受支持")
         } }
-        return Decision(id(d.text("id")), origin, destination)
+        return Decision(id(d.text("id")), origin, destination, runnerDefense =
+            d.optional("defense")?.jsonObject?.let(AppleHistoryCommandCodec::decodeRunnerDefense))
     }
     private fun fielding(f: JsonObject) = Fielding(route = f.array("route").map { it.jsonPrimitive.int }, errorPosition = f.optional("errorPosition")?.jsonPrimitive?.intOrNull,
         status = f.optional("status")?.jsonPrimitive?.content ?: error("缺少守备状态"))

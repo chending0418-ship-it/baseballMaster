@@ -1,5 +1,8 @@
 package cc.baseballmaster.core
 
+fun Game.hasReachedTimeLimit(at: Long): Boolean =
+    !isFinal && !isScheduled && rules.timed && clockHasStarted && (remainingTime(at) ?: 1L) <= 0
+
 /** Advisories only. A limit never fabricates an out or automatically ends a match. */
 fun Game.ruleNotices(at: Long): List<String> {
     if (isFinal || isScheduled || practice) return emptyList()
@@ -9,10 +12,11 @@ fun Game.ruleNotices(at: Long): List<String> {
     }
     if (clockHasStarted)
         rules.timeLimitMinutes?.let { limit ->
-            rules.timeWarningMinutes?.let { warning ->
-                val remaining = limit - (elapsed(at) / 60000).toInt()
-                if (remaining <= warning)
-                    result += if (remaining > 0) "比赛时间剩余约 $remaining 分钟" else "已到 $limit 分钟时间限制"
+            val remaining = limit * 60_000L - elapsed(at)
+            if (remaining <= 0L) {
+                result += "已到 $limit 分钟时间限制"
+            } else if (rules.timeWarningMinutes?.let { remaining <= it * 60_000L } == true) {
+                result += "比赛时间剩余约 ${(remaining + 59_999L) / 60_000L} 分钟"
             }
         }
     if (rules.mode != GameMode.coachPitch)

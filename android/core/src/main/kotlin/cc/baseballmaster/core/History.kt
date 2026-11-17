@@ -275,13 +275,15 @@ object History {
             game.bases.forEachIndexed { index, id ->
                 if (input.bases[index] != id) changes += "${index + 1} 垒 ${name(input.bases[index])} → ${name(id)}"
             }
+            val oldFielding = input.reportFielding
+            val newFielding = game.reportFielding
             for (player in game.home.players + game.away.players) {
                 val oldBat = input.batting[player.id] ?: BattingLine()
                 val newBat = game.batting[player.id] ?: BattingLine()
                 val oldPitch = input.pitching[player.id] ?: PitchingLine()
                 val newPitch = game.pitching[player.id] ?: PitchingLine()
-                val oldField = input.fielding[player.id] ?: FieldingLine()
-                val newField = game.fielding[player.id] ?: FieldingLine()
+                val oldField = oldFielding[player.id] ?: FieldingLine()
+                val newField = newFielding[player.id] ?: FieldingLine()
                 val label = "${player.name} #${player.number}"
                 if (oldBat != newBat)
                     changes +=
@@ -291,7 +293,7 @@ object History {
                         "$label：投球 ${oldPitch.pitches}→${newPitch.pitches}，失分 ${oldPitch.runs}→${newPitch.runs}，自责分 ${oldPitch.earnedRuns}→${newPitch.earnedRuns}"
                 if (oldField != newField)
                     changes +=
-                        "$label：守备 PO ${oldField.putouts}→${newField.putouts}，A ${oldField.assists}→${newField.assists}，E ${oldField.errors}→${newField.errors}"
+                        "$label：守备 PO ${oldField.putouts}→${newField.putouts}，A ${oldField.assists}→${newField.assists}，E ${oldField.errors}→${newField.errors}，CCS ${oldField.catcherCaughtStealing ?: "—"}→${newField.catcherCaughtStealing ?: "—"}，PB ${oldField.passedBalls ?: "—"}→${newField.passedBalls ?: "—"}"
             }
             if (input.situation() != game.situation())
                 changes +=
@@ -384,7 +386,10 @@ object History {
                 val beforePitch = state.pitching.mapValues { it.value.copy() }
                 val oldPitcher = state.pitcher.id
                 val original = record.command
-                require(original.runnerErrorResponsibility == null || record.additionalErrors.isEmpty()) {
+                val recordsReceiverError = original.decisions.orEmpty().any {
+                    it.advancesFromBase && it.runnerDefense is RunnerDefenseCredit.CaughtStealing
+                }
+                require((original.runnerErrorResponsibility == null && !recordsReceiverError) || record.additionalErrors.isEmpty()) {
                     "这球已有补记失误。请先清除补记，再确认这次跑垒失误的责任人"
                 }
                 val beforeCancel =
@@ -430,7 +435,15 @@ object History {
                             ) {
                                 "跑者与补记后的垒况不同，请修改跑垒决定"
                             }
-                            d.copy(playerID = state.bases[d.origin - 1]!!)
+                            val credit = when (val defense = d.runnerDefense) {
+                                is RunnerDefenseCredit.CaughtStealing -> defense.copy(
+                                    catcherID = participant(defense.catcherID),
+                                    receiverID = participant(defense.receiverID),
+                                )
+                                is RunnerDefenseCredit.PassedBall -> defense.copy(catcherID = participant(defense.catcherID))
+                                else -> defense
+                            }
+                            d.copy(playerID = state.bases[d.origin - 1]!!, runnerDefense = credit)
                         }
                     }
                 var command = original.copy(decisions = decisions)
@@ -569,6 +582,7 @@ object History {
                     "fielder", "position", "doubleSwitch" -> original.copy(
                         playerID = command.playerID, secondPlayerID = command.secondPlayerID,
                     )
+                    "runner" -> if (original.decisions.orEmpty().any { it.runnerDefense != null }) command else original
                     else -> original
                 }
                 normalized +=

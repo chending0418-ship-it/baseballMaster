@@ -45,7 +45,9 @@ internal fun DrawScope.drawBaseballField(
     drawRoundRect(Color.White.copy(alpha=.9f),center-Offset(7*scale,1.5f*scale),androidx.compose.ui.geometry.Size(14*scale,3*scale),CornerRadius(1.5f*scale))
     listOf(geometry.first,geometry.second,geometry.third).forEachIndexed {index,base->
         val active=occupied.getOrElse(index) {false}
-        drawPath(diamond(point(base),(if(active)13f else 8f)*scale),if(active) Color(0xFFFABD29) else Color.White)
+        val marker = diamond(point(base), (if (active) 18f else 8f) * scale)
+        drawPath(marker, if (active) Color(0xFFFABD29) else Color.White)
+        if (active) drawPath(marker, Color.White, style = Stroke(1.5f * scale))
     }
     val plate=Path().apply {
         moveTo(home.x-9*scale,home.y-9*scale);lineTo(home.x+9*scale,home.y-9*scale)

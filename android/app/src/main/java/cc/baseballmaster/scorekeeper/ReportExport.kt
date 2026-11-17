@@ -217,7 +217,8 @@ internal object ReportExport {
         fun pitching(name: String, p: PitchingLine) = listOf(name, "${p.outsRecorded / 3}.${p.outsRecorded % 3}", "${p.battersFaced}", "${p.hits}", "${p.runs}", "${p.earnedRuns}", "${p.walks}", "${p.hitByPitch}", "${p.strikeouts}", "${p.wildPitches}", "${p.pitches}", "${p.strikes}", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", p.earnedRuns * 21.0 / p.outsRecorded) else "-", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", (p.walks + p.hits) * 3.0 / p.outsRecorded) else "-")
         fun fielding(name: String, f: FieldingLine): List<String> {
             val total = f.putouts + f.assists + f.errors
-            return listOf(name, "${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}", "$total", number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null))
+            return listOf(name, "${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}", "$total", number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null),
+                f.catcherCaughtStealing?.toString() ?: "-", f.passedBalls?.toString() ?: "-")
         }
         fun name(p: SeasonPlayerStatistics) = playerName(p.player) + if (p.currentRoster) "" else "（历史）"
         val batTotal = BattingLine(); val pitchTotal = PitchingLine(); val fieldTotal = FieldingLine()
@@ -241,8 +242,8 @@ internal object ReportExport {
         if ("fielding" in categories) {
             val fielders = players.filter { it.fielding != FieldingLine() }
             val defense = fielders.map { fielding(name(it), it.fielding) } + if (includeTotal && fielders.isNotEmpty()) listOf(fielding("合计", fieldTotal)) else emptyList()
-            w.table("${titlePrefix.ifEmpty { "守备" }} · FIELDING", listOf("球员", "PO", "A", "E", "DP", "TC", "FPCT"), defense,
-                listOf(4f, 1f, 1f, 1f, 1f, 1f, 1.5f), compact)
+            w.table("${titlePrefix.ifEmpty { "守备" }} · FIELDING", listOf("球员", "PO", "A", "E", "DP", "TC", "FPCT", "CCS", "PB"), defense,
+                listOf(4f, 1f, 1f, 1f, 1f, 1f, 1.5f, 1f, 1f), compact)
         }
     }
 
@@ -316,11 +317,12 @@ internal object ReportExport {
                 listOf(label(g)) + if (g.rules.mode == GameMode.coachPitch) List(8) { "不适用" } else if (pitch == null) List(8) { "-" } else
                     listOf(innings(pitch), "${pitch.hits}", "${pitch.runs}", "${pitch.earnedRuns}", "${pitch.walks}", "${pitch.strikeouts}", "${pitch.pitches}", eraText(pitch))
             }, listOf(5f) + List(8) { 1f })
-            w.table("逐场守备 · FIELDING GAME LOG", listOf("日期 / 对手 / 结果", "PO", "A", "E", "DP", "FPCT"), games.map { g ->
-                val f = g.fielding[p.id]; val total = f?.let { it.putouts + it.assists + it.errors } ?: 0
-                listOf(label(g)) + if (f == null) List(5) { "-" } else listOf("${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}",
-                    number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null))
-            }, listOf(5f) + List(5) { 1f })
+            w.table("逐场守备 · FIELDING GAME LOG", listOf("日期 / 对手 / 结果", "PO", "A", "E", "DP", "FPCT", "CCS", "PB"), games.map { g ->
+                val f = g.reportFielding[p.id]; val total = f?.let { it.putouts + it.assists + it.errors } ?: 0
+                listOf(label(g)) + if (f == null) List(7) { "-" } else listOf("${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}",
+                    number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null),
+                    f.catcherCaughtStealing?.toString() ?: "-", f.passedBalls?.toString() ?: "-")
+            }, listOf(5f) + List(7) { 1f })
             legend(w); w.save(file)
         }
         return file
@@ -334,7 +336,8 @@ internal object ReportExport {
     private fun legend(w: Writer) {
         w.line("统计口径与缩写", 11f, true)
         w.line("比率按累计原始数据计算；ERA 按 7 局计算。IP 小数位为出局数，0.1 表示 1 人出局。\"-\" 表示未进行、无记录或无可用分母。DP 为球员参与双杀次数，合计不等同于球队双杀次数。", 8f, muted = true)
-        w.line("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · TB 打击总垒数 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · TC 守备机会 · FPCT 守备率", 8f, muted = true)
+        w.line("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · TB 打击总垒数 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · TC 守备机会 · FPCT 守备率 · CCS 捕手阻杀 · PB 捕逸", 8f, muted = true)
+        w.line("CCS、PB 只计归属已确认的记录；横线表示无可核对的数据。", 8f, muted = true)
     }
     internal fun eventCategory(e: PitchEntry, command: Command? = null): String = when (e.kind) {
         "pitch" -> "投球"

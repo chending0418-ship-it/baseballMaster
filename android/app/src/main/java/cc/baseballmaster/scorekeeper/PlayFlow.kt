@@ -424,6 +424,7 @@ internal fun ProductRunnerDecisions(
     pro: Boolean,
     sharedFielding: Fielding? = null,
     showBoard: Boolean = false,
+    runnerDefenseEditor: (@Composable (Decision, (RunnerDefenseCredit?) -> Unit) -> Unit)? = null,
     change: ((List<Decision>) -> List<Decision>) -> Unit,
 ) {
     val identity = decisions.map { it.playerID }.sorted().joinToString("|")
@@ -477,6 +478,11 @@ internal fun ProductRunnerDecisions(
                         modify { current ->
                             val next = destination.toInt()
                             current.copy(destination = next,
+                                runnerDefense = when (val credit = current.runnerDefense) {
+                                    RunnerDefenseCredit.NoCatcherAssist -> credit.takeIf { next == -1 }
+                                    is RunnerDefenseCredit.CaughtStealing -> credit.takeIf { next == -1 || next >= credit.target }
+                                    else -> credit
+                                },
                                 cause = when {
                                     !pro -> current.cause
                                     next == 0 -> "hit"
@@ -487,6 +493,7 @@ internal fun ProductRunnerDecisions(
                                 fielding = if (pro && next == 0) null else if (pro && next == -1 && current.cause == "hit") current.fielding ?: Fielding(status = "") else current.fielding)
                         }
                     }
+                    runnerDefenseEditor?.invoke(decision) { credit -> modify { it.copy(runnerDefense = credit) } }
                     if (pro && decision.destination != 0) {
                         ProductRunnerCauseMenu(decision) { cause ->
                             modify { current -> current.copy(cause = cause,
@@ -571,20 +578,52 @@ internal fun ProductRunnerEditor(
     initial: Command? = null,
     save: (Command) -> Unit,
 ) {
-    var json by rememberSaveable(game.id, game.revision) { mutableStateOf(initial?.let { GameJson.encodeToString(it) }.orEmpty()) }
+    var json by rememberSaveable(game.id, game.revision, initial) {
+        val start = initial?.let { event ->
+            val kind = event.runnerKind
+            if (event.decisions == null && kind != null) {
+                event.copy(decisions = MatchEngine.suggestedRunner(game, kind))
+            } else event
+        }
+        mutableStateOf(start?.let { GameJson.encodeToString(it) }.orEmpty())
+    }
     val command = remember(json) { json.takeIf { it.isNotEmpty() }?.let { GameJson.decodeFromString<Command>(it) } }
-    var menu by rememberSaveable(game.id, game.revision) { mutableStateOf(initial == null) }
+    var menu by rememberSaveable(game.id, game.revision, initial) { mutableStateOf(initial == null) }
+    var passedBallCatcher by rememberSaveable(game.id, game.revision, initial) {
+        mutableStateOf(if (initial == null) game.fieldingPositions[2] else initial.decisions.orEmpty().firstNotNullOfOrNull {
+            (it.runnerDefense as? RunnerDefenseCredit.PassedBall)?.catcherID
+        })
+    }
     val options = ScoringOptions.runnerEvents.filterKeys { ScoringOptions.runnerAllowed(game.rules.mode, it) }
     fun update(transform: (Command) -> Command) { json = GameJson.encodeToString(transform(GameJson.decodeFromString(json))) }
-    val final = command?.let { it.copy(timingRunCounts = if (MatchEngine.needsTiming(game, it)) it.timingRunCounts else null) }
+    val final = command?.let {
+        val moves = if (it.runnerKind == "passedBall") {
+            val firstAdvance = it.decisions.orEmpty().indexOfFirst(Decision::advancesFromBase)
+            it.decisions.orEmpty().mapIndexed { index, decision ->
+                decision.copy(runnerDefense = passedBallCatcher?.takeIf { index == firstAdvance }?.let { id -> RunnerDefenseCredit.PassedBall(id) })
+            }
+        } else it.decisions
+        it.copy(decisions = moves, timingRunCounts = if (MatchEngine.needsTiming(game, it)) it.timingRunCounts else null)
+    }
     val collision = if (!menu && final != null) runnerBaseConflict(final.decisions.orEmpty()) else null
     val needsErrorResponsibility = final?.runnerKind == "defensiveErrorAdvance" && final.runnerErrorResponsibility == null
-    val preview = if (!menu && final != null && collision == null && !needsErrorResponsibility)
-        runCatching { MatchEngine.apply(game, final) } else null
+    val catcherIssue = when {
+        final?.runnerKind == "caughtStealing" && final.decisions.orEmpty().none {
+            it.destination == -1 || it.runnerDefense is RunnerDefenseCredit.CaughtStealing
+        } -> "请选择盗垒出局的跑者，或记录原可阻杀的接球失误。"
+        final?.runnerKind == "passedBall" && final.decisions.orEmpty().none(Decision::advancesFromBase) ->
+            "请选择因捕逸进垒的跑者。"
+        else -> null
+    }
+    val preview = remember(game, final, menu) {
+        if (!menu && final != null && collision == null && !needsErrorResponsibility && catcherIssue == null)
+            runCatching { MatchEngine.apply(game, final) } else null
+    }
     val issue = when {
         menu -> null
         collision != null -> collision
         needsErrorResponsibility -> "请选择失误责任人，或选责任人待确认。"
+        catcherIssue != null -> catcherIssue
         else -> productCommandIssue(preview?.exceptionOrNull())
     }
     ProductPage(title = if (menu) "跑者／出局" else "跑者现在在哪？", busy = busy,
@@ -650,8 +689,14 @@ internal fun ProductRunnerEditor(
             }
         } else if (command != null) {
             Text(options[command.runnerKind].orEmpty(), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            ProductRunnerDecisions(game, command.decisions.orEmpty(), false, showBoard = true) { transform ->
+            ProductRunnerDecisions(game, command.decisions.orEmpty(), false, showBoard = true,
+                runnerDefenseEditor = if (command.runnerKind == "caughtStealing") { decision, change ->
+                    RunnerCaughtStealingPicker(game, decision, busy, change)
+                } else null) { transform ->
                 update { it.copy(decisions = transform(it.decisions.orEmpty()), timingRunCounts = null) }
+            }
+            if (command.runnerKind == "passedBall") {
+                RunnerCatcherPicker(game, passedBallCatcher, busy) { passedBallCatcher = it }
             }
             if (command.runnerKind == "defensiveErrorAdvance") {
                 RunnerErrorResponsibilityPicker(game, command.runnerErrorResponsibility, busy) { value ->

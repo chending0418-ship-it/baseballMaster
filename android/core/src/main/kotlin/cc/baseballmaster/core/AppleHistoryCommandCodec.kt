@@ -31,6 +31,29 @@ internal object AppleHistoryCommandCodec {
             else -> error("跑垒失误归属不受支持")
         }
     }
+    fun encodeRunnerDefense(credit: RunnerDefenseCredit): JsonObject = when (credit) {
+        RunnerDefenseCredit.NoCatcherAssist -> tagged("noCatcherAssist")
+        is RunnerDefenseCredit.CaughtStealing -> tagged("caughtStealing", buildJsonObject {
+            put("catcherID", uid(credit.catcherID))
+            put("receiverID", uid(credit.receiverID))
+            put("target", credit.target)
+        })
+        is RunnerDefenseCredit.PassedBall -> tagged("passedBall", buildJsonObject {
+            put("catcherID", uid(credit.catcherID))
+        })
+    }
+
+    fun decodeRunnerDefense(value: JsonObject): RunnerDefenseCredit {
+        val entry = value.entries.singleOrNull() ?: error("跑垒守备归属无效")
+        val body = entry.value.jsonObject
+        fun id(key: String) = appleUUID(body.getValue(key).jsonPrimitive.content)
+        return when (entry.key) {
+            "noCatcherAssist" -> RunnerDefenseCredit.NoCatcherAssist
+            "caughtStealing" -> RunnerDefenseCredit.CaughtStealing(id("catcherID"), id("receiverID"), body.getValue("target").jsonPrimitive.int)
+            "passedBall" -> RunnerDefenseCredit.PassedBall(id("catcherID"))
+            else -> error("跑垒守备归属不受支持")
+        }
+    }
     private fun player(p: Player,position: Int=p.position)=buildJsonObject {
         put("id",uid(p.id));put("chineseName",p.chineseName ?: p.name);put("englishName",p.englishName)
         put("numbers",buildJsonArray {p.jerseyNumbers.forEach {add(it.toInt())}});put("jerseyNumbers",buildJsonArray {p.jerseyNumbers.forEach {add(it)}})
@@ -40,6 +63,7 @@ internal object AppleHistoryCommandCodec {
         put("id",uid(d.playerID));put("player",player(people.getValue(d.playerID)))
         put("origin",if(d.origin==0) tagged("batter") else tagged("base",buildJsonObject {put("_0",d.origin)}))
         put("destination",when(d.destination) {-1->tagged("out");0->tagged("hold");4->tagged("score");in 1..3->tagged("base",buildJsonObject {put("_0",d.destination)});else->error("跑者去向无效")})
+        d.runnerDefense?.let { put("defense", encodeRunnerDefense(it)) }
     }
     private fun moves(values: List<Decision>,people: Map<String,Player>)=buildJsonArray {values.forEach {add(decision(it,people))}}
     internal fun defensive(c: Command,moves: List<Decision>): JsonObject? {

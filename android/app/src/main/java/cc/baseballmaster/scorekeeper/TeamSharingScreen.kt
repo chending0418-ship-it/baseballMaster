@@ -88,12 +88,20 @@ internal object SharingClipboard {
     }
 }
 
-@Composable internal fun TeamSharingScreen(api: AndroidTeamSharing, localTeams: List<Team>, incoming: IncomingTeamLink? = null, dismiss: ()->Unit) {
+@Composable
+internal fun TeamSharingScreen(
+    api: AndroidTeamSharing,
+    localTeams: List<Team>,
+    incoming: IncomingTeamLink? = null,
+    statistics: (@Composable (String, () -> Unit) -> Unit)? = null,
+    dismiss: () -> Unit,
+) {
     val ui=remember(api) {SharingUi(api)}; val scope=rememberCoroutineScope(); val context=LocalContext.current
     var editor by remember { mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.join) "join" else null) }; var player by remember {mutableStateOf<SharedRosterPlayer?>(null)}
     var securityPage by remember {mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.pair) "approve" else null)}
     var lifecyclePage by remember {mutableStateOf<String?>(null)}
     var showMatches by remember {mutableStateOf(false)}
+    var statisticsID by remember { mutableStateOf<String?>(null) }
     var confirmation by remember {mutableStateOf<SharingConfirmation?>(null)}
     var invitationToShow by remember {mutableStateOf<FixedTeamInvitation?>(null)}; var shownCard by remember {mutableStateOf<SavedManagementCard?>(null)}
     var receiptBaseline by remember {mutableStateOf<String?>(null)}; var baselineLoaded by remember {mutableStateOf(false)}
@@ -115,6 +123,14 @@ internal object SharingClipboard {
             if(result.request.securityAction==TeamSecurityAction.recoveryRotate && lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) shownCard=ui.state.recoveryCards.singleOrNull {it.teamID==result.request.teamID}
             if(result.request.kind==DirectoryRequestKind.join && incoming?.kind==IncomingTeamLinkKind.join) dismiss()
         }
+    }
+    val openedStatistics = statisticsID
+    if (openedStatistics != null && statistics != null) {
+        statistics(openedStatistics) {
+            statisticsID = null
+            ui.call(scope) { ui.refresh() }
+        }
+        return
     }
     FormPage(ui.team?.name ?: "球队共享",ui.busy,!ui.busy,"shared-refresh","刷新",{
         if(ui.selectedID.isNotEmpty()) {ui.selectedID="";ui.members=emptyList();ui.invitations=emptyList()} else dismiss()
@@ -163,6 +179,10 @@ internal object SharingClipboard {
             val team=ui.team; val profile=ui.roster
             if(team==null) Text("球队不可用，请刷新核对。") else {
                 Text(team.name,fontWeight=FontWeight.Bold); Text(team.role.title())
+                if (statistics != null && ui.fresh && ui.enabled && !ui.state.credentialExpired && !ui.state.requiresRecoveryReview) {
+                    ProductActionRow("年度统计", "查看已确认的共享完赛", NavigationSymbols.statistics,
+                        "shared-open-statistics", enabled = !ui.busy) { statisticsID = team.id }
+                }
                 TextButton(enabled=ui.enabled && !ui.busy,onClick={showMatches=true}) {Text("球队比赛与观看设置")}
                 TextButton(enabled=!ui.busy,onClick={securityPage="devices"}) {Text("球队设备")}
                 if(team.role==TeamRole.admin) TextButton(enabled=ui.canPrepare && profile!=null,onClick={editor="profile"}) {Text("编辑球队资料")}

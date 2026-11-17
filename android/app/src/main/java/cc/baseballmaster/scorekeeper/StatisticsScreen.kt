@@ -4,16 +4,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -48,9 +52,11 @@ private enum class StatsMetric(val label: String, val category: StatsCategory, v
     FPCT("守备率 FPCT", StatsCategory.FIELDING), PO("刺杀 PO", StatsCategory.FIELDING),
     ASSISTS("助杀 A", StatsCategory.FIELDING), ERRORS("失误 E", StatsCategory.FIELDING, true),
     DOUBLE_PLAYS("参与双杀 DP", StatsCategory.FIELDING),
+    CATCHER_CAUGHT_STEALING("捕手阻杀 CCS", StatsCategory.FIELDING),
+    PASSED_BALLS("捕逸 PB", StatsCategory.FIELDING, true),
 }
-private fun rate(n: Double?): String = n?.let { String.format(Locale.US, "%.3f", it).let { formatted -> if (it < 1) formatted.removePrefix("0") else formatted } } ?: "—"
-private fun pitchRate(n: Double?): String = n?.let { String.format(Locale.US, "%.2f", it) } ?: "—"
+internal fun rate(n: Double?): String = n?.let { String.format(Locale.US, "%.3f", it).let { formatted -> if (it < 1) formatted.removePrefix("0") else formatted } } ?: "—"
+internal fun pitchRate(n: Double?): String = n?.let { String.format(Locale.US, "%.2f", it) } ?: "—"
 private fun avg(b: BattingLine) = if (b.atBats > 0) b.average else null
 private fun ops(b: BattingLine) = if (b.atBats > 0) b.onBasePercentage + b.slugging else null
 internal fun era(p: PitchingLine) = if (p.outsRecorded > 0) p.earnedRuns * 21.0 / p.outsRecorded else null
@@ -73,28 +79,47 @@ private fun metricValue(row: SeasonPlayerStatistics, metric: StatsMetric): Doubl
     StatsMetric.FPCT -> fpct(row.fielding); StatsMetric.PO -> row.fielding.putouts.toDouble()
     StatsMetric.ASSISTS -> row.fielding.assists.toDouble(); StatsMetric.ERRORS -> row.fielding.errors.toDouble()
     StatsMetric.DOUBLE_PLAYS -> row.fielding.doublePlays.toDouble()
+    StatsMetric.CATCHER_CAUGHT_STEALING -> row.fielding.catcherCaughtStealing?.toDouble()
+    StatsMetric.PASSED_BALLS -> row.fielding.passedBalls?.toDouble()
 }
 
 @Composable
 private fun StatsPicker(label: String, selected: String, values: Map<String, String>, tag: String, modifier: Modifier = Modifier, onSelect: (String) -> Unit) {
-    Box(modifier) { ProductMenuPicker(label, selected, values, tag, onSelect = onSelect) }
+    var open by remember { mutableStateOf(false) }
+    Box(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .clickable(role = Role.Button) { open = true }
+            .semantics { contentDescription = label }
+            .testTag(tag).padding(horizontal = 3.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(values[selected].orEmpty(), color = MaterialTheme.colorScheme.primary, fontSize = 16.sp)
+            Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+        }
+        DropdownMenu(open, { open = false }, Modifier.semantics { testTagsAsResourceId = true }) {
+            values.forEach { (key, title) ->
+                DropdownMenuItem(text = { Text(title) }, onClick = { open = false; onSelect(key) },
+                    modifier = Modifier.testTag("$tag-option-$key"))
+            }
+        }
+    }
 }
 
 @Composable
-private fun StatisticsSegmented(label: String, values: Map<String, String>, selected: String, onSelect: (String) -> Unit) {
-    val shape = RoundedCornerShape(8.dp)
-    val columns = if (values.size > 3 && androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f) 2 else values.size
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha=.05f))) {
+internal fun StatisticsSegmented(label: String, values: Map<String, String>, selected: String, onSelect: (String) -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    val columns = if (values.size > 2 && LocalDensity.current.fontScale > 1.2f) 2 else values.size
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = .07f)).selectableGroup()) {
         values.entries.toList().chunked(columns).forEach { row ->
             Row(Modifier.fillMaxWidth().padding(3.dp),verticalAlignment=Alignment.CenterVertically) {
                 row.forEach { (key,text) ->
-                    Box(Modifier.weight(1f).heightIn(min=44.dp).clip(shape)
-                        .background(if(selected==key) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent)
-                        .toggleable(value=selected==key,role=Role.RadioButton,onValueChange={if(it) onSelect(key)})
-                        .testTag("choice-$label-$key"),contentAlignment=Alignment.Center) {
-                        Text(text,fontSize=12.sp,fontWeight=if(selected==key) FontWeight.SemiBold else FontWeight.Normal,
-                            color=if(selected==key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+                    Box(Modifier.weight(1f).heightIn(min = 48.dp).clip(shape)
+                        .background(if (selected == key) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+                        .toggleable(value = selected == key, role = Role.RadioButton, onValueChange = { if (it) onSelect(key) })
+                        .testTag("choice-$label-$key"), contentAlignment = Alignment.Center) {
+                        Text(text, Modifier.padding(horizontal = 3.dp, vertical = 5.dp), fontSize = 12.sp,
+                            fontWeight = if (selected == key) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (selected == key) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     }
                 }
                 repeat(columns-row.size) {Spacer(Modifier.weight(1f))}
@@ -106,17 +131,18 @@ private fun StatisticsSegmented(label: String, values: Map<String, String>, sele
 @Composable
 private fun StatisticsMetricGrid(values: List<Pair<String, String>>, tagPrefix: String? = null) {
     BoxWithConstraints {
-        val count = (maxWidth.value / 110).toInt().coerceIn(3, 6)
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        val minimum = if (LocalDensity.current.fontScale > 1.2f) 132 else 92
+        val count = (maxWidth.value / minimum).toInt().coerceIn(2, 6)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             values.chunked(count).forEach { row ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     row.forEach { (label, value) ->
                         val metricModifier = if (tagPrefix == null) Modifier else Modifier.semantics(mergeDescendants = true) {
                             semanticTestTag = "$tagPrefix-$label"; contentDescription = "$label：$value"
                         }
-                        Column(Modifier.weight(1f).then(metricModifier), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(Modifier.weight(1f).then(metricModifier), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(value, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                            Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     repeat(count - row.size) { Spacer(Modifier.weight(1f)) }
@@ -171,7 +197,9 @@ private fun PlayerStatisticsMetrics(category: StatsCategory, row: SeasonPlayerSt
                 StatisticsMetricGrid(listOf(
                     "守备率 FPCT" to rate(fpct(f)), "守备机会 TC" to "${f.putouts + f.assists + f.errors}",
                     "刺杀 PO" to "${f.putouts}", "助杀 A" to "${f.assists}", "失误 E" to "${f.errors}", "参与双杀 DP" to "${f.doublePlays}",
+                    "捕手阻杀 CCS" to (f.catcherCaughtStealing?.toString() ?: "—"), "捕逸 PB" to (f.passedBalls?.toString() ?: "—"),
                 ), "stats-player-fielding")
+                CatcherStatisticsNote()
             }
         }
     }
@@ -200,8 +228,8 @@ private fun PlayerBattingHighlights(b: BattingLine) {
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f))) {
                             Column(Modifier.padding(horizontal = 6.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text(short, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(value, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = tint)
+                                Text(short, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -222,47 +250,71 @@ private fun PlayerRecentSummary(title: String, tag: String, row: SeasonPlayerSta
 }
 
 @Composable
-internal fun ReportShareButton(label: String, tag: String, mime: String = "application/pdf", iconOnly: Boolean = false, generate: (android.content.Context) -> java.io.File) {
+internal fun ReportShareButton(
+    label: String,
+    tag: String,
+    mime: String = "application/pdf",
+    iconOnly: Boolean = false,
+    previewTitle: String = label,
+    generate: (android.content.Context) -> java.io.File,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var choose by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
-    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(mime)) { uri ->
-        if (uri != null) {
-            busy = true
-            scope.launch {
-                try {
-                    withContext(Dispatchers.IO) {
-                        val file = generate(context)
-                        context.contentResolver.openOutputStream(uri)?.use { output -> file.inputStream().use { it.copyTo(output) } }
-                            ?: error("无法写入所选文件")
-                    }
-                    saved = true
-                } catch (failure: Exception) { error = failure.message ?: "导出未完成" }
-                finally { busy = false }
-            }
-        }
-    }
-    fun share() {
+    var previewPath by rememberSaveable(tag) { mutableStateOf<String?>(null) }
+    val isPdf = mime == "application/pdf"
+
+    fun runExport(operation: suspend () -> Unit) {
+        if (busy) return
         busy = true
         scope.launch {
             try {
-                val file = withContext(Dispatchers.IO) { generate(context) }
-                ReportExport.share(context, file)
+                operation()
+            } catch (cancel: CancellationException) {
+                throw cancel
             } catch (failure: Exception) {
                 error = failure.message ?: "导出未完成"
-            } finally { busy = false }
+            } finally {
+                busy = false
+            }
         }
     }
-    if (iconOnly) IconButton(onClick = { choose = true }, enabled = !busy, modifier = Modifier.size(44.dp).testTag(tag)) {
+
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(mime)) { uri ->
+        if (uri != null) runExport {
+            val snapshot = previewPath
+            withContext(Dispatchers.IO) {
+                val file = if (snapshot != null) java.io.File(snapshot) else generate(context)
+                context.contentResolver.openOutputStream(uri)?.use { output -> file.inputStream().use { it.copyTo(output) } }
+                    ?: error("无法写入所选文件")
+            }
+            saved = true
+        }
+    }
+    fun share(file: java.io.File?) = runExport {
+        ReportExport.share(context, file ?: withContext(Dispatchers.IO) { generate(context) })
+    }
+    fun open() {
+        if (isPdf) runExport { previewPath = withContext(Dispatchers.IO) { generate(context).absolutePath } }
+        else choose = true
+    }
+    if (iconOnly) IconButton(onClick = { open() }, enabled = !busy, modifier = Modifier.size(48.dp).testTag(tag)) {
         if (busy) CircularProgressIndicator(Modifier.size(20.dp).semantics { contentDescription = "正在生成报告" }, strokeWidth = 2.dp)
         else Icon(Icons.Outlined.Share, contentDescription = label, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
-    } else TextButton(onClick = { choose = true }, enabled = !busy, modifier = Modifier.testTag(tag)) { Text(if (busy) "正在生成…" else label) }
+    } else TextButton(onClick = { open() }, enabled = !busy, modifier = Modifier.testTag(tag)) {
+        Text(if (busy) "正在生成…" else label)
+    }
+    previewPath?.let { path ->
+        val file = java.io.File(path)
+        ReportPdfPreview(file, previewTitle, busy, onClose = { previewPath = null },
+            onSave = { saveLauncher.launch(file.name) }, onShare = { share(file) })
+    }
     if (choose) AlertDialog(onDismissRequest = { choose = false }, title = { Text(label) },
-        confirmButton = { TextButton({ choose = false; saveLauncher.launch(if (mime == "image/png") "比赛海报.png" else "比赛记录.pdf") }) { Text("保存到文件") } },
-        dismissButton = { TextButton({ choose = false; share() }) { Text("系统分享") } })
+        confirmButton = { TextButton({ choose = false; saveLauncher.launch("比赛海报.png") }) { Text("保存到文件") } },
+        dismissButton = { TextButton({ choose = false; share(null) }) { Text("系统分享") } })
     if (error != null) AlertDialog(onDismissRequest = { error = null }, title = { Text("导出未完成") }, text = { Text(error.orEmpty()) }, confirmButton = { TextButton({ error = null }) { Text("知道了") } })
     if (saved) AlertDialog(onDismissRequest = { saved = false }, title = { Text("已保存") }, confirmButton = { TextButton({ saved = false }) { Text("完成") } })
 }
@@ -273,18 +325,23 @@ internal fun StatisticsScreen(
     sharing: AndroidTeamSharing = model.sharing,
     localRosters: List<Team> = model.rosters,
     localGames: List<Game> = model.games,
+    scopedSharedTeamID: String? = null,
 ) {
-    val localTeams = remember(localRosters, localGames) { LocalMatchSource.statisticsTeams(localRosters, localGames) }
+    val scoped = scopedSharedTeamID != null
+    val localTeams = remember(localRosters, localGames, scoped) {
+        if (scoped) emptyList() else LocalMatchSource.statisticsTeams(localRosters, localGames)
+    }
     var teamID by rememberSaveable { mutableStateOf<String?>(null) }
     var refreshCount by remember { mutableIntStateOf(0) }
     var shared by remember { mutableStateOf(SharedStatisticsResult()) }
     var syncing by remember { mutableStateOf(true) }
-    val preferShared = localTeams.isEmpty()
-    val selectedSharedID = teamID?.takeIf { it.startsWith("shared:") }?.removePrefix("shared:")
+    val preferShared = !scoped && localTeams.isEmpty()
+    val selectedSharedID = scopedSharedTeamID ?: teamID?.takeIf { it.startsWith("shared:") }?.removePrefix("shared:")
     LaunchedEffect(sharing, selectedSharedID, preferShared, refreshCount) {
         syncing = true
+        if (scoped) shared = SharedStatisticsResult()
         try {
-            shared = sharing.sharedStatistics(selectedSharedID, preferShared)
+            shared = sharing.sharedStatistics(selectedSharedID, preferShared, verifyAccess = scoped)
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (_: Exception) {
@@ -293,20 +350,23 @@ internal fun StatisticsScreen(
             syncing = false
         }
     }
-    val teams = localTeams + shared.memberships.map { membership ->
+    val teams = if (scopedSharedTeamID != null) {
+        // Never replace the requested shared team with a same-named local team or cached membership.
+        listOfNotNull(shared.team?.takeIf { !syncing && it.id == sharedStatisticsID(scopedSharedTeamID) })
+    } else localTeams + shared.memberships.map { membership ->
         shared.team?.takeIf { it.id == sharedStatisticsID(membership.id) } ?: membership.statisticsRoster()
     }
-    LaunchedEffect(syncing, shared.memberships) {
-        if (!syncing && selectedSharedID != null && shared.memberships.none { it.id == selectedSharedID }) teamID = null
+    LaunchedEffect(syncing, shared.memberships, scoped) {
+        if (!scoped && !syncing && selectedSharedID != null && shared.memberships.none { it.id == selectedSharedID }) teamID = null
     }
     if (teams.isEmpty()) {
-        Text("统计", Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        CardBlock {
+        if (!scoped) ProductTabHeader("统计")
+        CardBlock(Modifier.testTag(if (scoped) "shared-stats-access-state" else "stats-empty")) {
             when {
-                syncing -> Text("正在查看共享球队…")
-                shared.message != null -> {
-                    Text(requireNotNull(shared.message))
-                    TextButton({ refreshCount++ }) { Text("重试") }
+                syncing -> Text("正在核对共享球队访问权限…")
+                shared.message != null || scoped -> {
+                    Text(shared.message ?: "当前设备无法访问这支共享球队。")
+                    TextButton({ refreshCount++ }, Modifier.testTag("stats-retry-shared")) { Text("重试") }
                 }
                 else -> {
                     Text("还没有球队", fontWeight = FontWeight.Bold)
@@ -363,47 +423,66 @@ internal fun StatisticsScreen(
     val summary = remember(eligible, selectedValid) {
         if (selectedValid == null) eligible else SeasonStatisticsCalculator.calculate(team, games, year, mode, selectedValid)
     }
-    Box(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-        StatisticsHelp(Modifier.align(Alignment.CenterStart))
-        Text("统计", Modifier.align(Alignment.Center), fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        if (!sharedTeam || matchingShared && !syncing) Box(Modifier.align(Alignment.CenterEnd)) {
-            ReportShareButton("导出 PDF", "export-team-season-pdf") { context ->
+    val export: @Composable () -> Unit = {
+        if (!sharedTeam || matchingShared && !syncing) {
+            ReportShareButton("导出 PDF", "export-team-season-pdf", iconOnly = true, previewTitle = "球队年度报告") { context ->
                 ReportExport.team(context, team, year, mode, summary, isFiltered = selectedValid != null, sourceNote = sharedNote)
             }
         }
     }
-    CardBlock {
-        val teamLabels = teams.associate { candidate -> candidate.id to (candidate.name + when {
-            candidate.source == "shared" -> " · 共享球队"
-            candidate.source == "sharedSnapshot" -> " · 本机共享名单记录"
-            candidate.archived -> " · 已归档"
-            else -> " · 本机"
-        }) }
-        val yearLabels = (SeasonStatisticsCalculator.years(games) + year).distinct().sortedDescending()
-            .associate { it.toString() to "${it} 年" }
-        StatsPicker("球队",team.id,teamLabels,"stats-team-picker") {
-            teamID=it;scopeOwnerTeamID=it;selected=null;filterOpen=false;filterDraft=null;playerID=null
+    if (scoped) {
+        Row(Modifier.fillMaxWidth().testTag("shared-stats-scope"), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(team.name, style = MaterialTheme.typography.titleLarge)
+                Text("共享球队 · 已结束的正式比赛", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            export()
         }
-        HorizontalDivider()
-        StatsPicker("年度",year.toString(),yearLabels,"stats-season-picker") {year=it.toInt();selected=null}
-        Text("按比赛日期自动归入年度，无需创建或划分赛季。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if(team.source=="sharedSnapshot") Text("本机统计 · 未计入球队正式档案", Modifier.testTag("stats-shared-snapshot-note"), fontSize=12.sp)
-        if (sharedTeam) {
-            Text(requireNotNull(sharedNote), Modifier.testTag("stats-shared-source-note"), fontSize = 12.sp)
-            TextButton({ refreshCount++ }, enabled = !syncing, modifier = Modifier.testTag("stats-refresh-shared")) { Text("刷新球队统计") }
+    } else {
+        ProductTabHeader("统计", leading = { StatisticsHelp() }, trailing = export)
+    }
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)) {
+            val teamLabels = teams.associate { candidate -> candidate.id to (candidate.name + when {
+                candidate.source == "shared" -> " · 共享球队"
+                candidate.source == "sharedSnapshot" -> " · 本机共享名单记录"
+                candidate.archived -> " · 已归档"
+                else -> " · 本机"
+            }) }
+            val yearLabels = (SeasonStatisticsCalculator.years(games) + year).distinct().sortedDescending()
+                .associate { it.toString() to "${it} 年" }
+            if (!scoped) {
+                StatsPicker("球队",team.id,teamLabels,"stats-team-picker") {
+                    teamID=it;scopeOwnerTeamID=it;selected=null;filterOpen=false;filterDraft=null;playerID=null
+                }
+                HorizontalDivider()
+            }
+            StatsPicker("年度",year.toString(),yearLabels,"stats-season-picker") {year=it.toInt();selected=null}
+            Text("按比赛日期自动归入年度，无需创建或划分赛季。", modifier = Modifier.padding(vertical = 5.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if(team.source=="sharedSnapshot") Text("本机统计 · 未计入球队正式档案", Modifier.testTag("stats-shared-snapshot-note"), fontSize=12.sp)
+            if (sharedTeam) {
+                Text(requireNotNull(sharedNote), Modifier.testTag("stats-shared-source-note"), fontSize = 12.sp)
+                TextButton({ refreshCount++ }, enabled = !syncing, modifier = Modifier.testTag("stats-refresh-shared")) { Text("刷新球队统计") }
+            }
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("stats-open-game-filter").clickable(role = Role.Button) {
+                filterDraft = selectedValid ?: eligibleIDs
+                filterOpen = true
+            }, horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Outlined.List, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("筛选比赛", Modifier.weight(1f), color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
+                Text("已选 ${selectedValid?.size ?: eligible.games.size} / ${eligible.games.size} 场", Modifier.testTag("stats-game-scope"),
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (teamSelection != null) TextButton({ selected = null }, Modifier.testTag("stats-reset-games")) { Text("恢复全部比赛") }
         }
-        HorizontalDivider()
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("已选 ${selectedValid?.size ?: eligible.games.size} / ${eligible.games.size} 场", Modifier.testTag("stats-game-scope"), fontSize = 12.sp, color=MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton({ filterDraft = selectedValid ?: eligibleIDs; filterOpen = true }, Modifier.testTag("stats-open-game-filter"), contentPadding=PaddingValues(horizontal=4.dp)) { Text("筛选比赛",fontSize=13.sp) }
-        }
-        if (teamSelection != null) TextButton({ selected = null }, Modifier.testTag("stats-reset-games")) { Text("恢复全部比赛") }
     }
     if (sharedTeam && !matchingShared) return
     StatisticsSegmented("比赛模式", mapOf("all" to "全部模式", *GameMode.entries.map { it.name to it.title }.toTypedArray()), modeKey) { modeKey = it; selected = null }
     CardBlock {
         if (summary.incomplete > 0) Text("含待复核比赛", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-        Text("${summary.games.size} 场比赛 · ${summary.wins}胜${summary.losses}负${summary.ties}平", Modifier.testTag("stats-team-record"), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color=MaterialTheme.colorScheme.primary)
+        Text("${summary.games.size} 场比赛 · ${summary.wins}胜${summary.losses}负${summary.ties}平", Modifier.testTag("stats-team-record"), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         StatisticsMetricGrid(listOf("累计得分" to "${summary.runs}", "累计失分" to "${summary.runsAllowed}", "净胜分" to "${summary.runs - summary.runsAllowed}"))
     }
     if (summary.pending > 0) Text("${summary.pending} 条记录待确认", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
@@ -425,26 +504,34 @@ internal fun StatisticsScreen(
             }
             StatsCategory.FIELDING -> {
                 val f = summary.fielding
-                StatisticsMetricGrid(listOf("守备率 FPCT" to rate(fpct(f)), "守备机会 TC" to "${f.putouts + f.assists + f.errors}", "刺杀 PO" to "${f.putouts}", "助杀 A" to "${f.assists}", "失误 E" to "${f.errors}", "参与双杀 DP" to "${f.doublePlays}"))
+                StatisticsMetricGrid(listOf("守备率 FPCT" to rate(fpct(f)), "守备机会 TC" to "${f.putouts + f.assists + f.errors}", "刺杀 PO" to "${f.putouts}", "助杀 A" to "${f.assists}", "失误 E" to "${f.errors}", "参与双杀 DP" to "${f.doublePlays}",
+                    "捕手阻杀 CCS" to (f.catcherCaughtStealing?.toString() ?: "—"), "捕逸 PB" to (f.passedBalls?.toString() ?: "—")), "stats-team-fielding")
+                CatcherStatisticsNote()
             }
         }
     }
     if (summary.games.isEmpty()) CardBlock { Text(if (teamSelection == null) "这个年度还没有已结束的比赛" else "当前筛选范围没有比赛"); Text("完成并保存比赛后会自动加入可选范围。", fontSize = 12.sp) }
     Text("球员表现", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-    OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().testTag("stats-search"), label = { Text("搜索姓名、英文名或背号") }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search))
+    OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().testTag("stats-search"),
+        label = { Text("搜索姓名、英文名或背号") }, singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        trailingIcon = if (query.isNotEmpty()) {
+            { TextButton({ query = "" }, Modifier.testTag("stats-clear-search")) { Text("清空") } }
+        } else null)
+
     Row(verticalAlignment = Alignment.CenterVertically) {
         Checkbox(recordsOnly, { recordsOnly = it }, Modifier.testTag("stats-records-only"))
         Text("仅显示有记录球员")
         Spacer(Modifier.weight(1f))
         TextButton({ ascending = !ascending }, Modifier.testTag("stats-sort-direction")) { Text(if (ascending) "升序" else "降序") }
     }
-    val rows = summary.players.filter { row ->
+    val rows = remember(summary.players, query, recordsOnly, category, metric, ascending) { summary.players.filter { row ->
         (!recordsOnly || recorded(row, category)) && listOf(row.player.name, row.player.englishName, row.player.jerseyNumbers.joinToString(" ")).any { it.contains(query.trim(), ignoreCase = true) }
     }.sortedWith { a, b ->
         val x = metricValue(a, metric)
         val y = metricValue(b, metric)
         when { x == null && y != null -> 1; x != null && y == null -> -1; x != null && y != null && x != y -> if (ascending) x.compareTo(y) else y.compareTo(x); else -> compareValuesBy(a, b, { it.player.number.toIntOrNull() ?: 0 }, { it.player.name }, { it.player.id }) }
-    }
+    } }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box {
             TextButton({ metricMenu = true }, Modifier.testTag("stats-sort-picker")) { Text("排序：${metric.label}") }
@@ -545,7 +632,7 @@ internal fun PlayerStatisticsDetail(
     var filterDraft by rememberSaveable(player.player.id) { mutableStateOf<Set<String>?>(null) }
     fun closeFilter() { filterOpen = false; filterDraft = null }
     ProductPage("球员统计", onBack = onClose, backTag = "stats-player-close", headerTrailing = {
-        ReportShareButton("导出 PDF", "export-player-season-pdf", iconOnly = true) { context ->
+        ReportShareButton("导出 PDF", "export-player-season-pdf", iconOnly = true, previewTitle = "球员年度报告") { context ->
             ReportExport.player(context, team, playerYear, shown, selectedGames, eligibleGameCount = eligiblePlayerIDs.size, sourceNote = sourceNote)
         }
     }) {
@@ -611,7 +698,9 @@ internal fun PlayerStatisticsDetail(
                     StatsCategory.BATTING -> game.batting[player.player.id]?.let { Text("打数 ${it.atBats} · 安打 ${it.hits} · TB ${it.totalBases} · 打点 ${it.runsBattedIn}", fontSize = 12.sp) } ?: Text("无打击记录", fontSize = 12.sp)
                     StatsCategory.PITCHING -> if (game.rules.mode == GameMode.coachPitch) Text("教练投手模式：投手数据不适用", fontSize = 12.sp)
                         else game.pitching[player.player.id]?.let { Text("投球 ${innings(it)} 局 · 三振 ${it.strikeouts} · ERA ${pitchRate(era(it))}", fontSize = 12.sp) } ?: Text("无投手记录", fontSize = 12.sp)
-                    StatsCategory.FIELDING -> game.fielding[player.player.id]?.let { Text("刺杀 ${it.putouts} · 助杀 ${it.assists} · 失误 ${it.errors}", fontSize = 12.sp) } ?: Text("无守备记录", fontSize = 12.sp)
+                    StatsCategory.FIELDING -> game.reportFielding[player.player.id]?.let {
+                        Text("刺杀 ${it.putouts} · 助杀 ${it.assists} · 失误 ${it.errors} · CCS ${it.catcherCaughtStealing ?: "—"} · PB ${it.passedBalls ?: "—"}", fontSize = 12.sp)
+                    } ?: Text("无守备记录", fontSize = 12.sp)
                 }
                 TextButton(onClick = {
                     if (sharedTeamID == null) {
@@ -672,6 +761,12 @@ internal fun PlayerStatisticsDetail(
             }
         }
     }
+}
+
+@Composable
+internal fun CatcherStatisticsNote() {
+    Text("CCS、PB 只计归属已确认的记录；— 表示无可核对的数据。", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable

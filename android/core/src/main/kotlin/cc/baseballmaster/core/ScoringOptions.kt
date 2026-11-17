@@ -46,6 +46,20 @@ object ScoringOptions {
             "coachInterference" to "教练妨碍",
             "passingRunner" to "超越前位跑者",
         )
+    val adjudicationBallStatuses = linkedMapOf(
+        "live" to "活球",
+        "dead" to "死球",
+        "delayedDead" to "延迟死球",
+        "umpireDecision" to "按裁判宣判",
+    )
+
+    fun defaultViolationBallStatus(violation: String) = when (violation) {
+        "balk", "catcherInterference", "plateObstruction", "obstruction", "fakeTag", "detachedEquipment" -> "delayedDead"
+        "passingRunner" -> "live"
+        "quickPitch", "illegalPitch", "foreignSubstance" -> "umpireDecision"
+        else -> "dead"
+    }
+
     val ballTypes =
         linkedMapOf(
             "ground" to "地滚",

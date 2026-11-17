@@ -5,12 +5,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
@@ -20,18 +23,36 @@ import cc.baseballmaster.core.*
 import java.util.UUID
 
 @Composable
-internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "own", quickAdd: (Boolean) -> Unit) {
+internal fun RosterScreen(
+    model: ScorekeeperViewModel,
+    initialFilter: String = "own",
+    showTabHeader: Boolean = false,
+    initialTeamID: String = "",
+    quickAdd: (Boolean) -> Unit,
+) {
     var showSharing by rememberSaveable { mutableStateOf(false) }
-    var teamID by rememberSaveable { mutableStateOf("") }
+    var teamID by rememberSaveable(initialTeamID) { mutableStateOf(initialTeamID) }
     var filter by rememberSaveable { mutableStateOf(initialFilter) }
     var editingTeam by rememberSaveable { mutableStateOf(false) }
     var editingPlayer by rememberSaveable { mutableStateOf<String?>(null) }
     var viewingPlayer by rememberSaveable { mutableStateOf<String?>(null) }
     var removingPlayer by rememberSaveable { mutableStateOf<String?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
+    var addingBatch by rememberSaveable(teamID) { mutableStateOf(false) }
     val team = model.rosters.firstOrNull { it.id == teamID }
-    if (showSharing) TeamSharingScreen(model.sharing, model.teams) { showSharing = false }
-    if (filter == "own") ProductActionRow("球队共享", "队内名单、邀请与比赛", NavigationSymbols.roster, "open-team-sharing") { showSharing = true }
+    if (showSharing) TeamSharingScreen(model.sharing, model.teams,
+        statistics = { id, close ->
+            key(id) {
+                ProductPage("球队年度统计", onBack = close, backTag = "shared-stats-back") {
+                    StatisticsScreen(model, scopedSharedTeamID = id)
+                }
+            }
+        }) { showSharing = false }
+    val addTeam: @Composable () -> Unit = {
+        if (filter != "archived") RosterCreateMenu(filter == "opponent", { adding = true }, { quickAdd(filter == "opponent") })
+    }
+    if (showTabHeader) ProductTabHeader("球队", trailing = addTeam)
+    if (filter == "own") ProductActionRow("球队共享", "创建共享球队，或通过邀请加入", NavigationSymbols.roster, "open-team-sharing") { showSharing = true }
     val visibleTeams = model.rosters.filter {
         if (filter == "archived") it.archived
         else !it.archived && it.isOpponent == (filter == "opponent")
@@ -40,21 +61,16 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
         Text(if (filter == "opponent") "对手球队管理" else if (filter == "archived") "已移除球队" else "本机球队管理",
             Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Bold)
         Text("${visibleTeams.size} 支球队", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!showTabHeader) addTeam()
     }
-    Choices("名单", mapOf("own" to "我的球队", "opponent" to "对手", "archived" to "已移除"), filter) {
+    StatisticsSegmented("名单", mapOf("own" to "我的球队", "opponent" to "对手", "archived" to "已移除"), filter) {
         filter = it
-    }
-    Row(Modifier.fillMaxWidth()) {
-        TextButton({ adding = true }, Modifier.weight(1f).testTag("add-roster")) {
-            Text(if (filter == "opponent") "添加对手" else "添加球队")
-        }
-        TextButton({ quickAdd(filter == "opponent") }, Modifier.weight(1f).testTag("add-team")) { Text("批量创建") }
     }
     if (visibleTeams.isEmpty()) CardBlock {
         Text(if (filter == "opponent") "还没有对手球队" else if (filter == "archived") "没有已移除球队" else "还没有球队，历史比赛和统计仍可查看。",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    visibleTeams.forEach { t ->
+    visibleTeams.forEach { t -> key(t.id) {
         var menu by remember(t.id) { mutableStateOf(false) }
         CardBlock {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -63,16 +79,24 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     TeamMark(t.shortName.ifBlank { t.name }, 40)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(t.name, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.Start), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(t.name, Modifier.align(Alignment.CenterVertically), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            if (t.id == model.currentTeam?.id && !t.isOpponent && !t.archived) {
+                                Surface(Modifier.align(Alignment.CenterVertically).semantics { contentDescription = "当前球队" },
+                                    shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                                    Text("当前", Modifier.padding(horizontal = 7.dp, vertical = 2.dp), fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
+                            }
+                        }
                         Text(listOf(t.city.takeIf { it.isNotBlank() }, "${t.players.count { !it.archived }} 名球员").filterNotNull().joinToString(" · "),
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (t.id == model.currentTeam?.id && !t.isOpponent && !t.archived)
-                            Text("当前球队", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                     }
-                    Text("›", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Box {
-                    IconButton({ menu = true }, Modifier.size(36.dp).testTag("roster-menu-${t.id}")) {
+                    IconButton({ menu = true }, Modifier.size(48.dp).testTag("roster-menu-${t.id}")) {
                         Icon(Icons.Outlined.MoreVert, "${t.name}的球队操作", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     DropdownMenu(menu, { menu = false }, modifier = Modifier.semantics { testTagsAsResourceId = true }) {
@@ -85,7 +109,7 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
                 }
             }
         }
-    }
+    } }
     if (adding || editingTeam && team != null) {
         val original = if (adding) null else team
         key(original?.id) {
@@ -107,7 +131,7 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
             }
         }
     } else if (team != null) {
-        FormPage(team.shortName, model.busy, false, "unused", "", { teamID = "" }, {}) {
+        FormPage(team.shortName.ifBlank { team.name }, model.busy, false, "unused", "", { teamID = "" }, {}) {
             CardBlock {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     TeamMark(team.shortName.ifBlank { team.name }, 52)
@@ -121,7 +145,15 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("球队名单", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 TextButton({ editingTeam = true }, Modifier.testTag("edit-team-profile")) { Text("编辑球队", fontSize = 12.sp) }
-                TextButton({ editingPlayer = "new" }, Modifier.testTag("add-player")) { Text("添加", fontSize = 13.sp) }
+            }
+            if (!team.archived && team.source == "local") Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton({ editingPlayer = "new" }, Modifier.weight(1f).testTag("add-player")) { Text("添加球员") }
+                OutlinedButton({ addingBatch = true }, Modifier.weight(1f).testTag("add-players-batch")) { Text("批量添加") }
+            }
+            if (team.players.isEmpty()) CardBlock {
+                Text("名单中还没有球员", style = MaterialTheme.typography.titleSmall)
+                Text("可逐个添加，也可粘贴多行名单。", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             team.players.sortedWith(compareBy<Player> { it.number.toIntOrNull() ?: 0 }.thenBy { it.number }.thenBy { it.id })
                 .forEach { p ->
@@ -144,7 +176,7 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
                                 if (!team.isOpponent) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Box {
-                                IconButton({ menu = true }, Modifier.size(36.dp).testTag("roster-player-menu-${p.id}")) {
+                                IconButton({ menu = true }, Modifier.size(48.dp).testTag("roster-player-menu-${p.id}")) {
                                     Icon(Icons.Outlined.MoreVert, "管理${p.name}", Modifier.size(21.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 DropdownMenu(menu, { menu = false }, modifier = Modifier.semantics { testTagsAsResourceId = true }) {
@@ -169,6 +201,7 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
                 Text(if (team.archived) "恢复球队" else "移除球队（保留历史）")
             }
         }
+        if (addingBatch) RosterAppendScreen(team, model) { addingBatch = false }
         viewingPlayer?.let { pid -> team.players.firstOrNull { it.id == pid }?.let { player ->
             PlayerStatisticsDetail(team, SeasonPlayerStatistics(player, currentRoster = !player.archived), model) { viewingPlayer = null }
         } }
@@ -199,6 +232,21 @@ internal fun RosterScreen(model: ScorekeeperViewModel, initialFilter: String = "
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RosterCreateMenu(opponent: Boolean, add: () -> Unit, bulkAdd: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val title = if (opponent) "添加对手" else "添加球队"
+    Box {
+        IconButton({ open = true }, Modifier.size(48.dp).testTag("roster-open-create")) {
+            Icon(Icons.Outlined.Add, title, tint = MaterialTheme.colorScheme.primary)
+        }
+        DropdownMenu(open, { open = false }, Modifier.semantics { testTagsAsResourceId = true }) {
+            DropdownMenuItem(text = { Text(title) }, onClick = { open = false; add() }, modifier = Modifier.testTag("add-roster"))
+            DropdownMenuItem(text = { Text("批量创建") }, onClick = { open = false; bulkAdd() }, modifier = Modifier.testTag("add-team"))
         }
     }
 }

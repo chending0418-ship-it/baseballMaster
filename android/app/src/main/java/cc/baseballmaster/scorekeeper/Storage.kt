@@ -509,10 +509,11 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         }
     }
 
-    suspend fun updateRoster(team: Team) = db.withTransaction {
+    suspend fun updateRoster(team: Team, expected: Team? = null) = db.withTransaction {
         require(db.dao().allAppleBackups().none { source -> AppleSourceBackup.prepare(source.current).teams().any { it.id == team.id } }) { "iOS 导入球队的名单编辑尚未支持，原始备份及名单未修改" }
         val original = db.dao().team(team.id) ?: error("球队不存在")
         val prior = GameJson.decodeFromString<Team>(original.payload)
+        require(expected == null || prior == expected) { "名单已更新，请重新核对批量追加预览" }
         require(prior.source == "local") { "共享球队请通过授权同步入口管理" }
         require(
             team.source == prior.source &&

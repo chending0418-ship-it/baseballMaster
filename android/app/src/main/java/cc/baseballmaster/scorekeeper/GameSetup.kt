@@ -46,6 +46,7 @@ internal fun NewGameDialog(
     initialSchedule: Game? = null,
     games: List<Game> = emptyList(),
     defaultRecordingMethod: String = "traditional",
+    manageScheduledRoster: (Team) -> Unit = { manageOpponents() },
     save: (Game) -> Unit,
 ) {
     var recordType by rememberSaveable { mutableStateOf(if(initialSchedule?.isObservation == true) "spectator" else "team") }
@@ -96,12 +97,18 @@ internal fun NewGameDialog(
         mutableStateOf(formatMatchDate(System.currentTimeMillis() + 86_400_000, zoneID))
     }
     var backfillDateText by rememberSaveable { mutableStateOf(formatMatchDate(System.currentTimeMillis(), zoneID)) }
+    var scheduleOffset by rememberSaveable { mutableStateOf<String?>(null) }
+    var backfillOffset by rememberSaveable { mutableStateOf<String?>(null) }
     val scheduleDate =
-        if (scheduled) runCatching { parseMatchDate(date, zoneID) }.getOrNull() else null
-    val playedDate = if (backfill && !scheduled) runCatching { parseMatchDate(backfillDateText, zoneID) }.getOrNull() else null
+        if (scheduled) runCatching { parseMatchDate(date, zoneID, scheduleOffset) }.getOrNull() else null
+    val playedDate = if (backfill && !scheduled) runCatching { parseMatchDate(backfillDateText, zoneID, backfillOffset) }.getOrNull() else null
     val previous = rosters.firstOrNull { it.id == opponentID && !it.archived && it.isOpponent }
+    val knownScheduledRosters = initialSchedule != null && when (recordType) {
+        "spectator" -> spectatorAway != null && spectatorHome != null
+        else -> own != null && previous != null && shared == null
+    }
     val inputKey =
-        listOf(own?.id, originJSON, sharingChoiceJSON, opponentID, opponentName, roster, modeName, ownHome, ruleDraftJSON, scheduled, date, recordType, spectatorAwayID, spectatorHomeID, recordingMethod, backfill, backfillDateText, zoneID, configureScheduleNow)
+        listOf(own?.id, originJSON, sharingChoiceJSON, opponentID, opponentName, roster, modeName, ownHome, ruleDraftJSON, scheduled, date, recordType, spectatorAwayID, spectatorHomeID, recordingMethod, backfill, backfillDateText, zoneID, scheduleOffset, backfillOffset, configureScheduleNow)
             .joinToString("|")
     var preparedJSON by rememberSaveable(inputKey) { mutableStateOf("") }
     var issue by remember { mutableStateOf<String?>(null) }
@@ -121,8 +128,31 @@ internal fun NewGameDialog(
             modifier = Modifier.testTag("confirm-sample-opponent-roster")) { Text("替换名单") } },
         dismissButton = { TextButton(onClick = { confirmSampleRoster = false }) { Text("取消") } },
     )
+    val recordingSection: @Composable () -> Unit = {
+        Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("记录方式", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            SetupSegmented("记分方式", RecordingMethodLabels, recordingMethod) { recordingMethod = it }
+            Text(if (recordingMethod == "situation") "球型、落点和守备在同一个球场记录，再统一核对跑者。" else "先选打者最终位置，再判断原因。",
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    val rulesSection: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            SetupSectionTitle("比赛规则")
+            CardBlock {
+                SetupChoiceMenu("比赛模式", modeName, GameMode.entries.associate { it.name to it.title },
+                    "setup-game-mode", "choice-模式", NavigationSymbols.diamond) { modeName = it }
+                if (!basicSchedule) {
+                    HorizontalDivider()
+                    RuleDraftForm(mode, ruleDraft, ruleAdvanced, showRecordingMethod = false,
+                        onAdvancedChange = { ruleAdvanced = it },
+                        onDraftChange = { ruleDraftJSON = GameJson.encodeToString(it) })
+                }
+            }
+        }
+    }
     ProductPage(
-        title = if(initialSchedule == null) "新比赛" else "预告赛前设置",
+        title = if(initialSchedule == null) "新比赛" else "赛前设置",
         busy = busy || sourceBusy,
         actionEnabled = (if(recordType == "spectator") spectatorAway != null && spectatorHome != null && spectatorAway.id != spectatorHome.id
          else own != null && (previous != null || opponentName.isNotBlank() && (basicSchedule || roster.isNotBlank()))) &&
@@ -169,14 +199,33 @@ internal fun NewGameDialog(
                 .onFailure { issue = it.message }
         },
     ) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-            Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("记录方式", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                SetupSegmented("记分方式", RecordingMethodLabels, recordingMethod) { recordingMethod = it }
-                Text(if (recordingMethod == "situation") "球型、落点和守备在同一个球场记录，再统一核对跑者。" else "先选打者最终位置，再判断原因。",
-                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(if (knownScheduledRosters) UiSpacing.section else 22.dp)) {
+            if (knownScheduledRosters) {
+                CardBlock {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(SetupTeamsIcon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text("赛前准备", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    Text("核对名单和规则，再确认本场棒次与守位。已保存的信息可继续调整。",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.rowGap)) {
+                    SetupSectionTitle("球队名单", "不足时可先进入补充")
+                    val isSpectator = recordType == "spectator"
+                    val first = if (isSpectator) requireNotNull(spectatorAway) else requireNotNull(own)
+                    val second = if (isSpectator) requireNotNull(spectatorHome) else requireNotNull(previous)
+                    ProductActionRow(if (isSpectator) "客队名单" else "本队名单",
+                        "${first.name} · ${first.players.count { !it.archived }} 人", SetupTeamsIcon,
+                        tag = "setup-manage-scheduled-first", enabled = !busy && !sourceBusy) { manageScheduledRoster(first) }
+                    ProductActionRow(if (isSpectator) "主队名单" else "对手名单",
+                        "${second.name} · ${second.players.count { !it.archived }} 人", SetupTeamsIcon,
+                        tag = "setup-manage-opponents", enabled = !busy && !sourceBusy) { manageScheduledRoster(second) }
+                }
+                recordingSection()
+                rulesSection()
+            } else recordingSection()
+            if (!knownScheduledRosters) Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 SetupSectionTitle("参赛球队", if (basicSchedule) "安排时只需基本信息" else "第 1 步，共 2 步")
                 if (initialSchedule == null) SetupSegmented("记录类型", linkedMapOf("team" to "本队比赛", "spectator" to "观赛记录"), recordType) { recordType = it }
                 CardBlock {
@@ -311,9 +360,17 @@ internal fun NewGameDialog(
                             SetupValueRow("开赛时间", initialSchedule.scheduledAt?.let { formatMatchDate(it, initialSchedule.playedTimeZoneID) } ?: "尚未设置")
                         }
                         if (scheduled || backfill) {
-                            OutlinedTextField(if (scheduled) date else backfillDateText, { if (scheduled) date = it else backfillDateText = it },
-                                label = { Text(if (scheduled) "预告时间 yyyy-MM-dd HH:mm" else "比赛实际时间 yyyy-MM-dd HH:mm") },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp).testTag("setup-match-date"), singleLine = true, shape = RoundedCornerShape(12.dp))
+                            MatchDateTimeControls(
+                                text = if (scheduled) date else backfillDateText,
+                                zone = zoneID, scheduled = scheduled,
+                                selectedOffset = if (scheduled) scheduleOffset else backfillOffset,
+                                fieldTag = "setup-match-date", enabled = !busy && !sourceBusy,
+                                onTextChange = {
+                                    if (scheduled) { if (date != it) scheduleOffset = null; date = it }
+                                    else { if (backfillDateText != it) backfillOffset = null; backfillDateText = it }
+                                },
+                                onOffsetChange = { if (scheduled) scheduleOffset = it else backfillOffset = it },
+                            )
                             if (backfill) Text("选择实际比赛日期与时间，计时仍从开始记录后独立计算。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -328,19 +385,7 @@ internal fun NewGameDialog(
                     }
                 }
             }
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                SetupSectionTitle("比赛规则")
-                CardBlock {
-                    SetupChoiceMenu("比赛模式", modeName, GameMode.entries.associate { it.name to it.title },
-                        "setup-game-mode", "choice-模式", NavigationSymbols.diamond) { modeName = it }
-                    if (!basicSchedule) {
-                        HorizontalDivider()
-                        RuleDraftForm(mode, ruleDraft, ruleAdvanced, showRecordingMethod = false,
-                            onAdvancedChange = { ruleAdvanced = it },
-                            onDraftChange = { ruleDraftJSON = GameJson.encodeToString(it) })
-                    }
-                }
-            }
+            if (!knownScheduledRosters) rulesSection()
             if (recordType == "team" && previous == null && !basicSchedule) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     SetupSectionTitle("对方球员名单")
@@ -535,10 +580,14 @@ private val SetupTeamsIcon = ImageVector.Builder("球队名单", 24.dp, 24.dp, 2
 internal fun PendingScheduleScreen(game: Game, model: ScorekeeperViewModel, quickAdd: (Boolean) -> Unit) {
     var configuring by rememberSaveable(game.id) { mutableStateOf(false) }
     var managing by rememberSaveable(game.id) { mutableStateOf(false) }
+    var managingOpponent by rememberSaveable(game.id) { mutableStateOf(game.isObservation) }
+    var managingTeamID by rememberSaveable(game.id) { mutableStateOf("") }
     var editingTime by rememberSaveable(game.id) { mutableStateOf(false) }
     var dateRevision by rememberSaveable(game.id) { mutableLongStateOf(game.revision) }
     if (configuring) NewGameDialog(model.teams, model.rosters, model.sharing, model.busy,
-        dismiss = { configuring = false }, manageOpponents = { managing = true }, initialSchedule = game, games = model.games,
+        dismiss = { configuring = false }, manageOpponents = { managingOpponent = true; managingTeamID = ""; managing = true },
+        initialSchedule = game, games = model.games,
+        manageScheduledRoster = { team -> managingOpponent = team.isOpponent; managingTeamID = team.id; managing = true },
         save = { prepared -> model.configureScheduledGame(prepared, game.revision) { configuring = false } })
     else ProductPage(title="比赛安排",busy=model.busy,onBack={model.open(null)},actionLabel="赛前设置",actionTag="configure-pending-schedule",onAction={configuring=true},modal=true) {
         CardBlock {
@@ -558,11 +607,15 @@ internal fun PendingScheduleScreen(game: Game, model: ScorekeeperViewModel, quic
             Text(if(game.isObservation) "观赛记录 · 不计本队战绩" else "本队比赛", fontSize = 13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text("双方队伍和时间已保存，开赛前可继续配置名单、规则和阵容。",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        ProductActionRow("管理球队和名单","核对参赛球队的实际球员",tag="pending-manage-rosters",enabled=!model.busy) { managing=true }
+        ProductActionRow("管理球队和名单","核对参赛球队的实际球员",tag="pending-manage-rosters",enabled=!model.busy) {
+            managingOpponent = game.isObservation
+            managingTeamID = ""
+            managing = true
+        }
         ProductActionRow("修改预告时间",tag="pending-edit-time",enabled=!model.busy) {dateRevision=game.revision;editingTime=true}
     }
     if(managing) FormPage("管理球队和名单", model.busy, true, "close-scheduled-rosters", "完成", { managing = false }, { managing = false }) {
-        RosterScreen(model, initialFilter = if(game.isObservation) "opponent" else "own", quickAdd = quickAdd)
+        RosterScreen(model, initialFilter = if(managingOpponent) "opponent" else "own", initialTeamID = managingTeamID, quickAdd = quickAdd)
     }
     if(editingTime) MatchTimeEditor(game, model.busy, { editingTime = false }) { model.command(it, dateRevision) { editingTime = false } }
 }

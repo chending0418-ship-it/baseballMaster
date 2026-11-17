@@ -144,7 +144,7 @@ class Ios311ParityFlowTest {
     @Test fun mainTabsAndBatchRosterRemainAvailable() {
         launch(); shot("home-tabs")
         click("home-rules-help"); shot("rules"); device.pressBack()
-        click("tab-1"); screenControl("add-team"); shot("teams"); click("add-team"); shot("batch-roster"); device.pressBack()
+        click("tab-1"); screenControl("roster-open-create"); shot("teams"); click("roster-open-create"); click("add-team"); shot("batch-roster"); device.pressBack()
         click("tab-2"); screenControl("stats-team-picker"); shot("statistics")
         click("tab-3"); screenControl("open-app-settings"); shot("profile")
         click("open-app-settings"); shot("settings"); device.pressBack()
@@ -206,7 +206,7 @@ class Ios311ParityFlowTest {
         launch()
         val priorRecord = NativeUi.find(device, By.res("home-team-record")).text
         click("new-game"); input("opponent-name", "草稿必须保留")
-        click("setup-manage-opponents"); click("add-team")
+        click("setup-manage-opponents"); click("roster-open-create"); click("add-team")
         val bulkName = "批量对手 ${UUID.randomUUID().toString().take(5)}"
         input("team-name", bulkName); input("team-roster", roster); click("save-team")
         click("close-setup-opponents")
@@ -289,6 +289,7 @@ class Ios311ParityFlowTest {
             assertFalse(device.hasObject(By.res("pitch-ball"))); assertFalse(device.hasObject(By.res("start-confirmed-game")))
             shot("basic-schedule-${if(observation) "observation" else "owned"}")
             click("pending-edit-time"); assertFalse(device.hasObject(By.res("choice-时间用途-played")))
+            click("match-time-manual")
             input("match-time", "2030-06-01 11:30"); input("match-zone", "Asia/Shanghai")
             if(!observation) {
                 val resumed = java.util.concurrent.CountDownLatch(1)
