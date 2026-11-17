@@ -12,8 +12,8 @@ android {
         applicationId = "cc.baseballmaster.scorekeeper.preview"
         minSdk = 31
         targetSdk = 37
-        versionCode = providers.gradleProperty("previewVersionCode").orElse("12").get().toInt()
-        versionName = "1.0.1"
+        versionCode = providers.gradleProperty("previewVersionCode").orElse("15").get().toInt()
+        versionName = "0.8.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -35,7 +35,6 @@ android {
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 dependencies {
     implementation(project(":core"))
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.activity:activity-compose:1.11.0")
     implementation("androidx.window:window:1.5.0")

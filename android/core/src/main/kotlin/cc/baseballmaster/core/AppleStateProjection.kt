@@ -38,7 +38,7 @@ internal class AppleStateProjection private constructor(
             val cn=p.text("chineseName");val en=p.text("englishName");val number=labels.firstOrNull() ?: "—"
             return Player(uuid(p.getValue("id")),cn.ifEmpty {en.ifEmpty {"#$number"}},number,en,p.number("primaryPosition"),labels,cn)
         }
-        private fun team(raw: JsonObject,our: String?): Team = Team(uuid(raw.getValue("id")),raw.text("name"),raw.array("players").map {player(it.jsonObject)},
+        internal fun team(raw: JsonObject,our: String?): Team = Team(uuid(raw.getValue("id")),raw.text("name"),raw.array("players").map {player(it.jsonObject)},
             isOpponent=uuid(raw.getValue("id"))!=our,city=raw.optional("city")?.jsonPrimitive?.content.orEmpty(),shortName=raw.optional("shortName")?.jsonPrimitive?.content ?: raw.text("name"))
         internal fun rules(raw: JsonObject): Rules {
             val mode=GameMode.valueOf(raw.optional("mode")?.jsonPrimitive?.content ?: "standard")
@@ -104,8 +104,6 @@ internal class AppleStateProjection private constructor(
                 historySourceID=stored.optional("historySourceID")?.let(::uuid),createdAt=requireNotNull(date(stored.getValue("createdAt"))),updatedAt=requireNotNull(date(stored.getValue("updatedAt"))))
             val usage=pitcherUsage(state,rules.mode)
             g.pitcherInnings=usage.first.toMutableMap()
-            g.pitcherInningUsageCurrent=true
-            g.pitcherInningHistoryIncomplete=usage.second
             g.validate()
             val warnings=buildSet {
                 if(usage.second) add("pitcherInningHistoryIncomplete")
@@ -126,55 +124,24 @@ internal class AppleStateProjection private constructor(
         private fun pitcherUsage(state: JsonObject,mode: GameMode): Pair<Map<String,Set<Int>>,Boolean> {
             if(mode==GameMode.coachPitch) return emptyMap<String,Set<Int>>() to false
             val result=mutableMapOf<String,Set<Int>>();var started=false;var opening=false;var previous: Int?=null;var incomplete=false
-            fun pitcher(s: JsonObject?) = s?.optional(if (s.flag("isTop",true)) "activeHomePitcherID" else "activeAwayPitcherID")?.let(::uuid)
-            fun half(s: JsonObject) = (s.number("inning",1)-1)*2+if (s.flag("isTop",true)) 0 else 1
-            fun observe(s: JsonObject?) {
-                if (s == null) { incomplete = true; return }
-                if (pitcher(s) == null) incomplete = true
-                val current = half(s)
-                if (previous?.let { current !in it..(it + 1) } ?: (current != 0)) incomplete = true
-                previous = current
-            }
             fun include(s: JsonObject?) {
-                val pid = pitcher(s)
-                if (s == null || pid == null) { incomplete = true; return }
-                result[pid] = result[pid].orEmpty() + s.number("inning",1)
+                val pitcher=s?.optional(if(s.flag("isTop",true)) "activeHomePitcherID" else "activeAwayPitcherID")?.let(::uuid)
+                if(s==null || pitcher==null) {incomplete=true;return}
+                val inning=s.number("inning",1);val half=(inning-1)*2+if(s.flag("isTop",true)) 0 else 1
+                if(previous==null && half!=0 || previous?.let {half<it || half>it+1}==true) incomplete=true
+                previous=half;result[pitcher]=(result[pitcher] ?: emptySet())+inning
             }
-            for (raw in state.array("scoringEvents")) {
-                val e = raw.jsonObject
-                val notation = e.optional("notation")?.jsonPrimitive?.content
-                val category = e.text("category")
-                if (notation == "PREGAME-LINEUP") continue
-                if (notation == "PLAY") { started = true; opening = true }
-                if (category in setOf("pitch","battedBall","runner","out","violation","tiebreak") || notation in setOf("HALF-END","RESUME")) started = true
-                if (!started) continue
-                val before = e.optional("beforeSituation")?.jsonObject
-                val after = e.optional("afterSituation")?.jsonObject
-                observe(before)
-                observe(after)
-                if (notation == "PLAY") {
-                    include(after)
-                } else if (category == "substitution" && before != null && after != null && half(before) == half(after)) {
-                    if (pitcher(before) != pitcher(after)) include(after)
-                } else {
-                    val thrown = e.optional("illegalPitch")?.jsonObject?.optional("wasThrown")?.jsonPrimitive?.boolean
-                    val actuallyPitched = thrown ?: (
-                        category == "pitch" ||
-                        category == "battedBall" && notation !in setOf("IBB", "BB") ||
-                        category == "out" && notation in setOf("K WP/PB", "K-BUNT") ||
-                        category == "runner" && notation in setOf("WP", "PB", "WP/PB?")
-                    )
-                    if (actuallyPitched) include(before)
-                    val pid = pitcher(before)
-                    if (category == "violation" && notation == "IP-B" && thrown == null &&
-                        before != null && pid != null && before.number("inning",1) !in result[pid].orEmpty()
-                    ) incomplete = true
-                }
+            for(raw in state.array("scoringEvents")) {
+                val e=raw.jsonObject;val notation=e.optional("notation")?.jsonPrimitive?.content
+                if(notation=="PREGAME-LINEUP") continue
+                if(notation=="PLAY") {started=true;opening=true}
+                if(e.text("category") in setOf("pitch","battedBall","runner","out","violation","tiebreak") || notation in setOf("HALF-END","RESUME")) started=true
+                if(started) {include(e.optional("beforeSituation")?.jsonObject);include(e.optional("afterSituation")?.jsonObject)}
             }
             val hasState=state.optional("clockRunningSince")!=null || state.optional("clockElapsedSeconds")!=null || state.number("inning",1)>1 || !state.flag("isTop",true) || state.number("outs")>0 || state.array("baseRunners").isNotEmpty() ||
                 state.array("homeRunsByInning").any {it.jsonPrimitive.int>0} || state.array("awayRunsByInning").any {it.jsonPrimitive.int>0} ||
                 listOf("batting","pitching").any {key ->state.array(key).chunked(2).any {it[1].jsonObject.values.any {v ->v.jsonPrimitive.int!=0}}}
-            if(started || hasState) {observe(state);if(!opening) incomplete=true}
+            if(started || hasState) {include(state);if(!opening) incomplete=true}
             return result to incomplete
         }
     }

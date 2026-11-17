@@ -2,19 +2,35 @@ package cc.baseballmaster.scorekeeper
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.AppleArchiveHistory
 import cc.baseballmaster.core.AppleTeamArchive
 import kotlinx.coroutines.CancellationException
@@ -224,30 +240,43 @@ internal fun ArchiveGameHistory(stored: JsonObject, secure: Boolean = false, dis
     val sections = listOf("逐球日志", "记分事件", "打席", "历史操作", "更正审计")
     val rows = listOf(history.logs, history.events, history.appearances, history.operations, history.corrections)[section]
     fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val appearanceNumbers = remember(history) {
+        history.appearances.mapIndexed { index, row -> row.text("id").lowercase() to index + 1 }.toMap()
+    }
     FormPage("档案比赛历史", false, true, "", "", dismiss, {},secure=secure) {
         Text("原始只读历史", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("archive-history-title"))
-        Text("保留原编号及顺序，不从当前局面推算历史；此页不能续记或撤回更正。")
         if (!history.hasJournal) Text("此记录没有操作日志，无法据此完整重放或纠错。")
-        sections.forEachIndexed { index, title ->
-            TextButton(onClick = { section = index; page = 0 }, modifier = Modifier.testTag("archive-history-section-$index")) {
-                Text("${if (section == index) "● " else ""}$title")
-            }
-        }
+        HistorySections(sections, section) { section = it; page = 0 }
         Text("${sections[section]} · ${rows.size} 条", modifier = Modifier.testTag("archive-history-count"))
         if (rows.isEmpty()) Text("原文件未包含此类记录")
         rows.drop(page * 20).take(20).forEachIndexed { index, row ->
+            val number = page * 20 + index + 1
             CardBlock {
-                Text("${page * 20 + index + 1}. ${row.text("title").ifBlank { row.text("text").ifBlank { row.text("reason") } }}", fontWeight = FontWeight.Bold)
-                Text("ID: ${row.text("id")}")
+                if (section == 2) Text("第 $number 打席", fontWeight = FontWeight.Bold)
+                else {
+                    val title = row.text("title").ifBlank { row.text("text").ifBlank { row.text("reason") } }
+                    Text("$number. $title", fontWeight = FontWeight.Bold)
+                    Text("ID: ${row.text("id")}")
+                }
                 when (section) {
                     0 -> Text("第 ${row.text("inning")} 局${if (row.text("isTop") == "true") "上" else "下"}")
                     1 -> {
                         Text("${row.text("category")} · ${row.text("notation")}")
-                        Text("关联日志：${row.text("logEntryID")}\n关联打席：${row.text("plateAppearanceID")}")
+                        Text("关联日志：${row.text("logEntryID")}")
+                        appearanceNumbers[row.text("plateAppearanceID").lowercase()]?.let { Text("关联打席：第 $it 打席") }
                     }
                     2 -> {
                         Text("第 ${row.text("inning")} 局${if (row.text("isTop") == "true") "上" else "下"} · ${if (row.text("completed") == "true") "已完成" else "未完成"}${if (row.text("interrupted") == "true") " · 中断" else ""}")
-                        Text("打者：${row["batterIDs"]?.jsonArray?.joinToString { it.jsonPrimitive.content }.orEmpty()}")
+                        val batters = row.getValue("batterIDs").jsonArray.joinToString("、") { item ->
+                            val player = history.playersByID[item.jsonPrimitive.content.lowercase()]
+                            if (player == null) "历史球员"
+                            else {
+                                val name = player.chineseName.orEmpty().ifBlank { player.englishName.ifBlank { "姓名未记录" } }
+                                val numbers = player.jerseyNumbers.joinToString(" / ") { "#$it" }
+                                if (numbers.isEmpty()) name else "$numbers $name"
+                            }
+                        }
+                        Text("打者：${batters.ifEmpty { "未记录" }}")
                     }
                     3 -> {
                         Text("${row["command"]?.jsonObject?.keys?.joinToString().orEmpty()}${if (row.text("edited") == "true") " · 已编辑" else ""}${if (row.text("inserted") == "true") " · 补记" else ""}")
@@ -263,5 +292,42 @@ internal fun ArchiveGameHistory(stored: JsonObject, secure: Boolean = false, dis
             }
         }
         ArchivePages(page, rows.size, enabled = true) { page = it }
+    }
+}
+
+@Composable
+private fun HistorySections(sections: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val fontScale = LocalDensity.current.fontScale
+        val columns = when {
+            maxWidth >= (308 * fontScale).dp -> 5
+            maxWidth >= (188 * fontScale).dp -> 3
+            else -> 2
+        }
+        val colors = MaterialTheme.colorScheme
+        Column(
+            Modifier.fillMaxWidth().selectableGroup().clip(RoundedCornerShape(12.dp))
+                .background(colors.onSurface.copy(alpha = 0.05f)).padding(3.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            sections.withIndex().toList().chunked(columns).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    row.forEach { (index, title) ->
+                        val active = index == selected
+                        Box(
+                            Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(9.dp))
+                                .then(if (active) Modifier.background(colors.surface) else Modifier)
+                                .selectable(active, role = Role.Tab, onClick = { if (!active) onSelect(index) })
+                                .testTag("archive-history-section-$index").padding(horizontal = 3.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(title, fontSize = 12.sp, textAlign = TextAlign.Center,
+                                color = if (active) colors.primary else colors.onSurfaceVariant,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                }
+            }
+        }
     }
 }

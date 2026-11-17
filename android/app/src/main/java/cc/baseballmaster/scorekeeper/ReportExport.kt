@@ -2,7 +2,6 @@ package cc.baseballmaster.scorekeeper
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
@@ -10,9 +9,9 @@ import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
 import cc.baseballmaster.core.*
 import java.io.File
+import java.nio.file.Files
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.UUID
 
 /** Print-oriented local reports. The caller chooses whether to share the generated private file. */
 internal object ReportExport {
@@ -24,7 +23,6 @@ internal object ReportExport {
 
     /** Coordinates and pagination follow iOS ReportPDFCanvas (UIKit uses top-left text bounds). */
     internal class Writer(
-        context: Context,
         val kind: String, val title: String, portrait: Boolean = false,
         subtitle: String = kind, generatedAt: Long = System.currentTimeMillis(),
     ) : AutoCloseable {
@@ -33,8 +31,6 @@ internal object ReportExport {
         private val bottom get() = height - 42f
         private val contentWidth get() = width - margin * 2
         private val document = PdfDocument()
-        private val brand = BitmapFactory.decodeResource(context.resources, R.drawable.product_brand_horizontal)
-        private val brandPaint = Paint(Paint.FILTER_BITMAP_FLAG)
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var page: PdfDocument.Page? = null
         private var pageNumber = 0
@@ -73,11 +69,11 @@ internal object ReportExport {
             page?.let(document::finishPage); pageNumber++
             page = document.startPage(PdfDocument.PageInfo.Builder(width, height, pageNumber).create())
             page!!.canvas.drawColor(Color.WHITE)
-            page!!.canvas.drawProductBrand(brand, margin, 16f, 21f, brandPaint)
+            draw("BASEBALLMASTER", margin, 20f, 11f, true, limit = 250f)
             draw(kind, width / 2f, 20f, 10f, true, green, width / 2f - margin, Paint.Align.RIGHT)
-            paint.color = green; page!!.canvas.drawRect(margin, 43f, width - margin, 45f, paint)
+            paint.color = green; page!!.canvas.drawRect(margin, 42f, width - margin, 44f, paint)
             if (pageNumber > 1) draw(title.take(72), margin, 49f, 8f, color = secondary)
-            draw("本地记录导出  |  $generatedText", margin, height - 24f, 8f,
+            draw("BaseballMaster  |  本地记录导出  |  $generatedText", margin, height - 24f, 8f,
                 color = secondary, limit = contentWidth - 100)
             draw("第 $pageNumber 页", width - margin - 90, height - 24f, 8f,
                 color = secondary, limit = 90f, align = Paint.Align.RIGHT)
@@ -205,7 +201,7 @@ internal object ReportExport {
         }
         fun pageBreak() = nextPage()
         fun save(file: File) { page?.let(document::finishPage); page = null; file.outputStream().use(document::writeTo) }
-        override fun close() { try { document.close() } finally { brand.recycle() } }
+        override fun close() { document.close() }
     }
     private fun number(n: Double?) = n?.let { String.format(Locale.US, "%.3f", it).let { formatted -> if (it < 1) formatted.removePrefix("0") else formatted } } ?: "-"
     private fun playerNumbers(p: Player) = p.jerseyNumbers.ifEmpty { listOf(p.number) }.joinToString(" / ") { "#$it" }
@@ -248,15 +244,18 @@ internal object ReportExport {
         }
     }
 
-    private fun file(context: Context, kind: String): File = File(context.cacheDir, "reports").let {
-        check(it.isDirectory || it.mkdirs())
-        File(it, "BaseballMaster-$kind-${UUID.randomUUID()}.pdf")
+    private fun file(context: Context, label: String): File {
+        val root = Files.createDirectories(File(context.cacheDir, "reports").toPath())
+        val directory = Files.createTempDirectory(root, "pdf-")
+        return directory.resolve("BaseballMaster-$label.pdf").toFile()
     }
-    fun team(context: Context, team: Team, year: Int, mode: GameMode?, summary: SeasonStatistics, isFiltered: Boolean = false): File {
-        val file = file(context, "team")
+    fun team(context: Context, team: Team, year: Int, mode: GameMode?, summary: SeasonStatistics,
+        isFiltered: Boolean = false, sourceNote: String? = null): File {
+        val file = file(context, "球队年度报告-$year")
         val scope = ReportStatisticsProjection.scope(summary.games)
-        Writer(context, "ANNUAL REPORT / 球队年度报告", team.name,
-            subtitle = "$year · ${if (isFiltered) "所选比赛统计" else "完整球队年度数据"} · ${summary.games.size} 场已结束比赛").use { w ->
+        Writer("ANNUAL REPORT / 球队年度报告", team.name,
+            subtitle = "$year · ${if (isFiltered) "所选比赛统计" else if (sourceNote == null) "完整球队年度数据" else "球队年度统计"} · ${summary.games.size} 场已结束比赛").use { w ->
+            sourceNote?.let { w.line("共享球队 · $it", 9f, muted = true) }
             if (summary.incomplete > 0) w.line("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold = true)
             w.metrics(listOf("比赛" to "${summary.games.size}", "胜 / 负 / 平" to "${summary.wins} / ${summary.losses} / ${summary.ties}",
                 "得分" to "${summary.runs}", "失分" to "${summary.runsAllowed}",
@@ -283,12 +282,14 @@ internal object ReportExport {
     }
     private fun eraText(p: PitchingLine) = if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", p.earnedRuns * 21.0 / p.outsRecorded) else "-"
     private fun innings(p: PitchingLine) = "${p.outsRecorded / 3}.${p.outsRecorded % 3}"
-    fun player(context: Context, team: Team, year: Int, row: SeasonPlayerStatistics, games: List<Game> = emptyList(), eligibleGameCount: Int = row.games): File {
-        val file = file(context, "player")
+    fun player(context: Context, team: Team, year: Int, row: SeasonPlayerStatistics, games: List<Game> = emptyList(),
+        eligibleGameCount: Int = row.games, sourceNote: String? = null): File {
+        val file = file(context, "球员个人报告-$year")
         val scope = ReportStatisticsProjection.scope(games)
         val p = row.player
-        Writer(context, "PLAYER REPORT / 球员个人报告", p.name,
+        Writer("PLAYER REPORT / 球员个人报告", p.name,
             subtitle = "${p.englishName} · ${playerNumbers(p)} · ${team.name} · $year\n范围：已选 ${row.games} / $eligibleGameCount 场比赛").use { w ->
+            sourceNote?.let { w.line("共享球队 · $it", 9f, muted = true) }
             if (scope.incompleteGames > 0) w.line("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold = true)
             w.metrics(listOf("已选比赛" to "${row.games}", "打率 AVG" to number(if (row.batting.atBats > 0) row.batting.average else null),
                 "安打 H" to "${row.batting.hits}", "打点 RBI" to "${row.batting.runsBattedIn}", "投球局数 IP" to innings(row.pitching),
@@ -348,11 +349,18 @@ internal object ReportExport {
         else -> "比赛"
     }
     fun game(context: Context, game: Game, playByPlay: Boolean, textOnly: Boolean = false, appearanceID: String? = null): File {
-        val file = file(context, if (playByPlay) "plays" else "game")
-        if (playByPlay) writeAppearances(context, file, game, textOnly, appearanceID) else writeBoxScore(context, file, game)
+        val label = when {
+            !playByPlay -> "单场比赛战报"
+            appearanceID == null && textOnly -> "逐打席文字简版"
+            appearanceID == null -> "逐打席详细版"
+            textOnly -> "单打席文字简版"
+            else -> "单打席详细版"
+        }
+        val file = file(context, label)
+        if (playByPlay) writeAppearances(file, game, textOnly, appearanceID) else writeBoxScore(file, game)
         return file
     }
-    private fun writeAppearances(context: Context, file: File, game: Game, textOnly: Boolean, appearanceID: String?) {
+    private fun writeAppearances(file: File, game: Game, textOnly: Boolean, appearanceID: String?) {
         val all = AppearanceProjection.build(game)
         val commandsByID = game.journal.associate { it.id to it.command }
         val selected = if (appearanceID == null) all else all.filter { it.id == appearanceID }
@@ -371,7 +379,7 @@ internal object ReportExport {
             else if (appearanceID == null) "逐打席比赛速报" else "${sequence(selected.first())}速报"
         val kind = if (textOnly) "逐打席 / 文字简版" else "PLAY BY PLAY / 逐打席速报"
         val subtitle = "${game.away.name} vs ${game.home.name} · ${gameDate(game)} · ${if (game.isFinal) "已结束" else "进行中"}"
-        Writer(context, kind, title, portrait = textOnly, subtitle = subtitle +
+        Writer(kind, title, portrait = textOnly, subtitle = subtitle +
             if (!textOnly && game.rules.mode == GameMode.slowPitch) " · ${rulesText(game.rules)}" else "").use { w ->
             if (textOnly && game.rules.mode == GameMode.slowPitch) w.line(rulesText(game.rules), muted = true)
             if (game.statisticsIncomplete || game.incompletePrefix) w.line("过程或责任待确认 · 统计可能不完整", bold = true)
@@ -412,11 +420,11 @@ internal object ReportExport {
             w.save(file)
         }
     }
-    private fun writeBoxScore(context: Context, file: File, game: Game) {
+    private fun writeBoxScore(file: File, game: Game) {
         val r = game.rules
         val subtitle = "比赛时间：${gameDate(game)} · ${if (game.isFinal) "已结束" else "进行中 / 非最终数据"} · " +
             if (r.mode == GameMode.slowPitch) rulesText(r) else "规定 ${r.innings} 局"
-        Writer(context, "BOX SCORE / 单场比赛战报", "${game.away.name} vs ${game.home.name}", subtitle = subtitle).use { w ->
+        Writer("BOX SCORE / 单场比赛战报", "${game.away.name} vs ${game.home.name}", subtitle = subtitle).use { w ->
             if (game.statisticsIncomplete || game.incompletePrefix) w.line("过程或责任待确认 · 统计可能不完整", bold = true)
             w.metrics(listOf("客队 · ${game.away.shortName.take(14)}" to "${game.awayRuns}", "主队 · ${game.home.shortName.take(14)}" to "${game.homeRuns}",
                 "安打 H（客 / 主）" to "${game.awayHits} / ${game.homeHits}", "失误 E（客 / 主）" to "${game.awayErrors} / ${game.homeErrors}"))

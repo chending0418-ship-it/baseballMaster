@@ -81,10 +81,10 @@ class Ios311ParityFlowTest {
         repeat(3) { device.findObject(By.scrollable(true))?.scroll(Direction.UP, 1f) }
         device.waitForIdle(500)
     }
-    private fun seed(mode: GameMode = GameMode.standard, rules: Rules = Rules(mode)): Game = db { _, repo ->
+    private fun seed(mode: GameMode = GameMode.standard): Game = db { _, repo ->
         val roster = (1..12).joinToString("\n") { "球员$it,$it" }
         val team = repo.createTeam("0.8 对齐 ${UUID.randomUUID().toString().take(5)}", roster)
-        repo.createGame(team, "iOS 对照队", roster, mode, false, rules)
+        repo.createGame(team, "iOS 对照队", roster, mode, false, Rules(mode))
     }
     private fun shot(name: String) {
         device.waitForIdle(500)
@@ -95,22 +95,6 @@ class Ios311ParityFlowTest {
         device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-$name.png"))
         device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "081-regression-$name.xml"))
     }
-    @Test fun pregameScoreboardShowsElapsedOrRemainingClock() {
-        val ordinary = seed()
-        val timed = seed(rules = Rules(timed = true, timeLimitMinutes = 90))
-        launch()
-        click("game-${ordinary.id}")
-        assertEquals("正 0:00", screenControl("game-clock").text)
-        click("back-home")
-        click("game-${timed.id}")
-        assertEquals("倒 90:00", screenControl("game-clock").text)
-        click("toggle-game-clock")
-        await(timed.id) { it.clockRunningSince != null }
-        val running = stored(timed.id)
-        assertEquals(0, running.totalPitches)
-        assertFalse(running.isPregame)
-    }
-
     @Test fun mainScoringControlsAndSpecialActionsMatchIosHierarchy() {
         val game = seed()
         launch(); click("game-${game.id}")
@@ -271,19 +255,11 @@ class Ios311ParityFlowTest {
             val (own, opponent) = db { _, repo -> repo.createTeam("预告本队 ${UUID.randomUUID().toString().take(5)}", roster) to repo.createTeam("预告对手 ${UUID.randomUUID().toString().take(5)}", roster, true) }
             launch(); click("new-game")
             chooseRoster("setup-own-team", own); chooseRoster("setup-opponent", opponent)
-            click("setup-scheduled-toggle"); click("configure-schedule-now")
-            click("rule-advanced-toggle"); input("rule-pitch-limit", "３")
-            click("start-game"); confirmLineups()
+            click("setup-scheduled-toggle"); click("configure-schedule-now"); click("start-game"); confirmLineups()
             val game = awaitCreatedGame { it.ourTeamID == own.id }
             assertTrue(game.isScheduled); assertFalse(game.openingPitchRecorded)
-            assertEquals(3, game.rules.pitchLimit)
             assertFalse(device.hasObject(By.res("pitch-ball")))
             click("activate-scheduled"); await(game.id) { !it.isScheduled }
-            click("scoring-more")
-            NativeUi.find(device, By.text("本场比赛规则")).click()
-            assertEquals("3", NativeUi.find(device, By.res("rule-pitch-limit")).text)
-            shot("scheduled-pitch-limit-readback")
-            device.pressBack(); device.waitForIdle(500)
             click("pitch-ball"); screenControl("confirm-opening-pitch").click()
             await(game.id) { it.balls == 1 && it.openingPitchRecorded }
             shot("scheduled-match-entered")

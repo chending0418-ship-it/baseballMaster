@@ -99,52 +99,11 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     /** Recording task snapshots contain the full journal and must never enter the Activity Bundle. */
     internal var scoringTaskSource by mutableStateOf<Game?>(null)
     private var sharedPresence: kotlinx.coroutines.Job?=null
-    private var broadcastWorker: kotlinx.coroutines.Job? = null
-    private var pendingBroadcast: Game? = null
-    private var broadcastForeground = false
-    // This binding is set by the user's confirmation, independently of team membership.
-    private var selectedLocalBroadcastGameID: String?
-        get() = settings.getString("selected_local_broadcast_game_id", null)
-        set(value) { settings.edit().putString("selected_local_broadcast_game_id", value).apply() }
-
-    internal fun requestFixedBroadcast(game: Game) {
-        if (!broadcastForeground || recoveryRequired || loading || game.id != selectedLocalBroadcastGameID ||
-            game.isPregame || game.isObservation || game.practice || game.isScheduled) return
-        pendingBroadcast = game
-        if (broadcastWorker?.isActive == true) return
-        broadcastWorker = viewModelScope.launch {
-            while (broadcastForeground && !recoveryRequired) {
-                val latest = pendingBroadcast ?: break
-                pendingBroadcast = null
-                if (latest.id != selectedLocalBroadcastGameID) continue
-                try {
-                    val result = sharing.resumeBroadcast(latest)
-                    if (result?.selected != true && latest.id == selectedLocalBroadcastGameID)
-                        selectedLocalBroadcastGameID = null
-                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (_: Exception) { /* A failed broadcast never changes the local record. */ }
-            }
-        }
-    }
-
-    internal suspend fun selectFixedBroadcast(game: Game, selection: BroadcastSelection): TeamBroadcastStatus? {
-        val current = openedGame
-        check(current?.id == game.id && current.revision == game.revision && !recoveryRequired && !loading) { "比赛已变化，请重新核对" }
-        val status = sharing.publishBroadcast(game, selection)
-        if (status?.selected == true) selectedLocalBroadcastGameID = game.id
-        return status
-    }
     internal fun setLiveForeground(active: Boolean) {
         live.setForeground(active);sharedPresence?.cancel();sharedPresence=null
-        broadcastForeground = active
-        if (!active) { broadcastWorker?.cancel(); broadcastWorker = null; pendingBroadcast = null }
         if(active) sharedPresence=viewModelScope.launch {
             while(true) {
-                if(!loading && !recoveryRequired) {
-                    openedGame?.let(::requestFixedBroadcast)
-                    runCatching { sharing.maintainFixedSharedBroadcast(); sharing.maintainSharedLive() }
-                        .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
-                }
+                if(!loading && !recoveryRequired) runCatching {sharing.maintainSharedLive()}.onFailure {if(it is kotlinx.coroutines.CancellationException) throw it}
                 kotlinx.coroutines.delay(10_000)
             }
         }
@@ -182,8 +141,44 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
             catch(_: Exception) {error="链接状态尚未保存，原链接仍保留，请重试。"}
         }}
     }
-    internal val voice = VoiceAccess(SealedVoiceDevice(application))
     private val settings = application.getSharedPreferences("baseballmaster-settings", 0)
+    internal var websiteRelease by mutableStateOf<WebsiteAndroidRelease?>(null)
+        private set
+    internal var checkingUpdate by mutableStateOf(false)
+        private set
+    internal var updateCheckFailed by mutableStateOf(false)
+        private set
+    private var lastAutomaticUpdateCheck: Long? = null
+    private var dismissedUpdateBuild by mutableIntStateOf(settings.getInt("dismissedUpdateBuild", 0))
+    internal val advertisedUpdate get() = websiteRelease?.takeIf {
+        it.build > maxOf(BuildConfig.VERSION_CODE, dismissedUpdateBuild)
+    }
+
+    internal fun dismissUpdate(build: Int) {
+        dismissedUpdateBuild = build
+        settings.edit().putInt("dismissedUpdateBuild", build).apply()
+    }
+
+    internal fun checkForUpdate(manual: Boolean = false) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (checkingUpdate || !manual && lastAutomaticUpdateCheck?.let { now - it < 60 * 60 * 1000L } == true) return
+        lastAutomaticUpdateCheck = now
+        checkingUpdate = true
+        updateCheckFailed = false
+        viewModelScope.launch {
+            try {
+                websiteRelease = withContext(Dispatchers.IO) { WebsiteAndroidRelease.read() }
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                websiteRelease = null
+                updateCheckFailed = true
+            } finally {
+                checkingUpdate = false
+            }
+        }
+    }
+
     internal var appAppearance by mutableStateOf(settings.getString("appAppearance","system")?.takeIf {it in setOf("system","light","dark")} ?: "system")
         private set
     internal var showPracticeGuidance by mutableStateOf(settings.getBoolean("showPracticeGuidance",true))
@@ -348,9 +343,6 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
 
     internal suspend fun restoreDeviceBackup(bytes: ByteArray) {
         live.prepareForRestore()
-        sharing.clearBroadcastBinding()
-        selectedLocalBroadcastGameID = null
-        broadcastWorker?.cancel(); pendingBroadcast = null
         val selected = withContext(Dispatchers.IO) {
             repository.migrateLegacyTeamArchives(getApplication())
             repository.restoreDeviceBackup(bytes)
@@ -391,15 +383,11 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private fun accept(game: Game) {
         if (game.practice) practiceGame = game
         else games = listOf(game) + games.filter { it.id != game.id }
-        if(!game.practice) {
-            live.requestSync()
-            requestFixedBroadcast(game)
-        }
+        if(!game.practice) live.requestSync()
     }
 
     fun deleteGame(game: Game) = commit {
         repository.deleteGame(game.id, game.revision)
-        if (selectedLocalBroadcastGameID == game.id) selectedLocalBroadcastGameID = null
         if (live.bindings.any { it.gameID == game.id }) live.close(game.id)
         if (openedGameID == game.id) open(null)
         games = games.filterNot { it.id == game.id }
@@ -528,11 +516,6 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         }
         historyDraft = null
         historyDraftSaved = false
-        done()
-    }
-
-    fun appendRoster(expected: Team, text: String, done: () -> Unit) = commit {
-        repository.appendRoster(expected, text)
         done()
     }
 
@@ -754,10 +737,19 @@ private fun rememberSaveableState(initial: Int) =
 
 @Composable
 private fun BrandHeader() {
-    Column {
-        ProductBrand(reverse = MaterialTheme.colorScheme.surface.luminance() < .5f, tile = 34.dp)
-        Text("每一球 都有迹可循", Modifier.padding(start = 8.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Image(
+            painterResource(R.drawable.app_icon),
+            "棒球比赛记录大师图标",
+            Modifier.size(42.dp).clip(RoundedCornerShape(11.dp)),
+        )
+        Column {
+            Text("棒球比赛记录大师", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Text("每一球 都有迹可循", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        }
     }
 }
 
@@ -814,6 +806,14 @@ private fun ProductBottomNavigation(selected: Int, onSelected: (Int) -> Unit) {
 
 @Composable
 private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame: () -> Unit) {
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(model, lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) model.checkForUpdate()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     val team = model.currentTeam
     val ongoing = model.games.filter { !it.isFinal && !it.isScheduled }
     val scheduled = model.games.filter { it.isScheduled && !it.isFinal }.sortedBy { it.scheduledAt }
@@ -841,6 +841,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         Icon(Icons.Outlined.AddCircle, null, Modifier.size(18.dp)); Spacer(Modifier.width(7.dp))
         Text(if (ongoing.isEmpty()) "开始新比赛" else "再开始一场比赛", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
+    model.advertisedUpdate?.let { WebsiteUpdateNotice(it, onDismiss = { model.dismissUpdate(it.build) }) }
     if (scheduled.isNotEmpty()) {
         SectionTitle("即将进行", "${scheduled.size} 场")
         scheduled.forEach { game -> HomeGameRow(game, model) }
@@ -1014,11 +1015,11 @@ private fun ProfileScreen(model: ScorekeeperViewModel, manageTeams: ()->Unit) {
     SectionTitle("本机数据与设置", null)
     ProfileMenuRow("本地数据", "查看存储范围与数据数量", Icons.Outlined.AccountBox, "open-local-data") { page = "data" }
     ProfileMenuRow("App 设置", "外观与辅助提示", Icons.Outlined.Settings, "open-app-settings") { page = "settings" }
-    ProfileMenuRow("关于棒球比赛记录大师", "版本信息与数据说明", Icons.Outlined.Info, "open-app-about") { page = "about" }
+    ProfileMenuRow("关于 BaseballMaster", "版本信息与数据说明", Icons.Outlined.Info, "open-app-about") { page = "about" }
     when(page) {
         "data"->LocalDataScreen(model,{page=null;manageTeams()}) {page=null}
         "settings"->AppSettingsScreen(model) {page=null}
-        "about"->AppAboutScreen {page=null}
+        "about"->AppAboutScreen(model) {page=null}
     }
 }
 
@@ -1165,7 +1166,6 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                                 DropdownMenu(menu, { menu = false }) {
                                     listOf("比赛结果" to "results", "文字直播" to "live", "双方阵容与打序" to "lineup", "比赛计时" to "clock",
                                         "比赛时间／预告" to "time", "本场比赛规则" to "rules", "完整记录与纠错" to "history", "报告与更多操作" to "more")
-                                        .let { if (!game.isObservation && !game.practice) it + ("球队固定转播源" to "team-broadcast") else it }
                                         .forEach { (label, target) -> DropdownMenuItem(text = { Text(label) }, enabled = !locked,
                                             onClick = { menu = false; requestedPanel = target }) }
                                 }
@@ -1174,14 +1174,13 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                     },
                     scoreboard = {
                         val timer: @Composable () -> Unit = {
-                            if (game.clockHasStarted || !game.practice && !game.isScheduled && !game.isFinal) {
-                                val remaining = game.remainingTime(now).takeIf { game.clockDisplayMode == "remaining" }
-                                val seconds = (remaining ?: game.elapsed(now)) / 1000
+                            if (game.clockHasStarted || game.rules.timed) {
+                                val seconds = (if (game.clockDisplayMode == "remaining") game.remainingTime(now) ?: game.elapsed(now) else game.elapsed(now)) / 1000
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("${if (remaining != null) "倒" else "正"} ${seconds / 60}:${"%02d".format(kotlin.math.abs(seconds % 60))}",
+                                    Text("${if (game.clockDisplayMode == "remaining") "倒" else "正"} ${seconds / 60}:${"%02d".format(kotlin.math.abs(seconds % 60))}",
                                         Modifier.testTag("game-clock").clickable(enabled = !locked) { requestedPanel = "clock" },
                                         fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
-                                    if (!game.isFinal && !game.isScheduled) TextButton({ model.command(Command("clock", text = if (game.clockRunningSince == null) "resume" else "pause")) },
+                                    if (!game.isFinal) TextButton({ model.command(Command("clock", text = if (game.clockRunningSince == null) "resume" else "pause")) },
                                         enabled = !locked && !model.busy, modifier = Modifier.size(28.dp).testTag("toggle-game-clock"), contentPadding = PaddingValues(0.dp)) {
                                         Text(if (game.clockRunningSince == null) "▶" else "Ⅱ", fontSize = 10.sp)
                                     }
