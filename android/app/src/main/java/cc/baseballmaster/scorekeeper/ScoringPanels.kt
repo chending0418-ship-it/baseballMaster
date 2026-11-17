@@ -310,7 +310,12 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
             }
             "correction" -> ManualSituationEditor(snapshot, model.busy, close, save)
             "special" -> ProductPage("特殊／判罚", model.busy, close, modal = true) {
-                ProductActionRow("触身球", "打者获判上一垒", tag = "special-hitByPitch", enabled = enabled) { save(Command("hitByPitch")) }
+                val hitByPitchDetail = if (snapshot.rules.mode == GameMode.coachPitch)
+                    "继续打击，计入本打席球数"
+                else "自动上一垒并推进被迫跑者"
+                ProductActionRow("打者被球击中", hitByPitchDetail, tag = "special-hitByPitch", enabled = enabled) {
+                    save(Command("hitByPitch"))
+                }
                 if (game.rules.mode != GameMode.coachPitch)
                     ProductActionRow("故意保送", "按现场判给打者上一垒", tag = "special-intentionalWalk", enabled = enabled) { save(Command("intentionalWalk")) }
                 if (game.rules.mode == GameMode.standard)

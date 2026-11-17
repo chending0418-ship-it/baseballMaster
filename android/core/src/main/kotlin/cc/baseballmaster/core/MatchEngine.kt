@@ -86,6 +86,12 @@ object MatchEngine {
                 state.clockHasStarted = true
                 state.clockElapsedMs = input.clockElapsedMs
                 state.clockRunningSince = input.clockRunningSince
+                // The first scoring command can start Play Ball. Undoing the
+                // pitch preserves both the clock and the confirmed mound entry.
+                val opening = state.situation()
+                if (state.rules.mode != GameMode.coachPitch &&
+                    opening.inning in input.pitcherInnings[opening.pitcherID].orEmpty()
+                ) state.includeMoundAppearance(opening)
             }
             state.playedAt = input.playedAt
             state.playedTimeZoneID = input.playedTimeZoneID

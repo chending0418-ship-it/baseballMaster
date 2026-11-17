@@ -166,7 +166,7 @@ internal fun ReportPdfPreview(
                 else -> CircularProgressIndicator(Modifier.testTag("report-preview-loading"))
             }
         }
-        if (bounds != null || issue) {
+        if (bounds != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onSave, Modifier.weight(1f).testTag("report-preview-save"), enabled = !busy) { Text("保存到文件") }
                 Box(Modifier.weight(1f)) {

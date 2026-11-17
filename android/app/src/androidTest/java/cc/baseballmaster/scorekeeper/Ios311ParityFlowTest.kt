@@ -91,8 +91,8 @@ class Ios311ParityFlowTest {
         inst.waitForIdleSync()
         val frame = java.util.concurrent.CountDownLatch(1)
         inst.runOnMainSync { android.view.Choreographer.getInstance().postFrameCallback { android.view.Choreographer.getInstance().postFrameCallback { frame.countDown() } } }
-        assertTrue(frame.await(3, java.util.concurrent.TimeUnit.SECONDS))
-        device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-$name.png"))
+        frame.await(3, java.util.concurrent.TimeUnit.SECONDS)
+        assertTrue(device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-$name.png")))
         device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "081-regression-$name.xml"))
     }
     @Test fun mainScoringControlsAndSpecialActionsMatchIosHierarchy() {
@@ -132,6 +132,37 @@ class Ios311ParityFlowTest {
             shot("special-${mode.name}"); device.pressBack(); click("back-home")
         }
     }
+
+    @Test fun coachHitByPitchCountsOnePitchAndKeepsTheSameBatterAndRunner() {
+        val game = db { _, repository ->
+            val roster = (1..9).joinToString("\n") { "球员$it,$it" }
+            val away = repository.createTeam("教练投手验收 ${UUID.randomUUID().toString().take(5)}", roster)
+            val home = repository.createTeam("教练投手对照", roster, true)
+            val rules = Rules(GameMode.coachPitch, coachPitchLimit = 6)
+            val match = MatchFactory.create(UUID.randomUUID().toString(), home = home, away = away, rules = rules, ourTeamID = away.id)
+            match.bases = listOf(null, away.players[1].id, null)
+            repository.createPreparedGame(match)
+        }
+        launch()
+        click("game-${game.id}")
+        click("record-special")
+        assertNotNull(NativeUi.find(device, By.text("继续打击，计入本打席球数")))
+        shot("coach-hbp-menu")
+        click("special-hitByPitch")
+        await(game.id) { it.totalPitches == 1 }
+        val updated = stored(game.id)
+        assertEquals(game.revision + 1, updated.revision)
+        assertEquals(1, updated.appearancePitches)
+        assertEquals(game.outs, updated.outs)
+        assertEquals(game.batter.id, updated.batter.id)
+        assertEquals(game.bases, updated.bases)
+        assertEquals(game.batting, updated.batting)
+        assertEquals(game.pitching, updated.pitching)
+        assertEquals("HBP-CONTINUE", updated.entries.last().notation)
+        assertNotNull(NativeUi.find(device, By.text("教练投手 · 本打席 1 / 6 球")))
+        shot("coach-hbp-after")
+    }
+
     @Test fun deleteIsConfirmedAndAffectsOnlySelectedLocalRecord() {
         val game = seed(); val other = seed()
         launch(); click("game-menu-${game.id}")

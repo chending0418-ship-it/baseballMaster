@@ -138,6 +138,24 @@ class LocalScoringRuleParityTest {
     }
 
     @Test
+    fun undoOfTheFirstPitchKeepsTheImplicitPlayBallPitcherInning() {
+        val initial = seed(Rules(pitcherInningsLimit = 1))
+        val pitcher = initial.pitcher.id
+        assertTrue(initial.pitcherInnings.isEmpty())
+        val first = MatchEngine.apply(initial, Command("pitch", pitch = PitchAction.ball, at = 1_000))
+        val undone = MatchEngine.undo(first)
+        assertEquals(1_000L, undone.clockRunningSince)
+        assertEquals(0, undone.totalPitches)
+        assertNull(undone.pitching[pitcher])
+        assertEquals(setOf(1), undone.pitcherInnings[pitcher])
+        assertTrue(undone.ruleNotices(1_000).any { "已达到 1 局登板额度" in it })
+        val redone = MatchEngine.redo(undone)
+        assertEquals(1, redone.totalPitches)
+        assertEquals(first.pitching, redone.pitching)
+        assertEquals(first.pitcherInnings, redone.pitcherInnings)
+    }
+
+    @Test
     fun basicAndProTimePlayKeepTheScoreAndPitcherLinesConsistentThroughReplay() {
         for (pro in listOf(false, true)) {
             var game = seed(Rules(recordingMethod = if (pro) "situation" else "traditional"))
