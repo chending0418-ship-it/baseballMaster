@@ -37,7 +37,13 @@ import kotlinx.coroutines.withContext
 internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPanel: String = "", handled: () -> Unit = {},
     initialPanel: String = "",
     closeInitialResults: (() -> Unit)? = null,
-    host: (@Composable (controls: @Composable () -> Unit, task: @Composable () -> Unit, inlineTask: Boolean, locked: Boolean) -> Unit)? = null,
+    host: (@Composable (
+        controls: @Composable () -> Unit,
+        finishActions: @Composable () -> Unit,
+        task: @Composable () -> Unit,
+        inlineTask: Boolean,
+        locked: Boolean,
+    ) -> Unit)? = null,
 ) {
     var panel by rememberSaveable(game.id) { mutableStateOf(initialPanel) }
     var returnPanel by rememberSaveable(game.id) { mutableStateOf("") }
@@ -62,6 +68,37 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
     var openingPlay by rememberSaveable(game.id) { mutableStateOf(false) }
     var confirmEndHalf by rememberSaveable(game.id) { mutableStateOf(false) }
     var confirmTimeEnd by rememberSaveable(game.id) { mutableStateOf(false) }
+    val finishActions: @Composable () -> Unit = {
+        if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
+            Row(Modifier.fillMaxWidth().testTag("scorekeeping-finish-actions"), verticalAlignment = Alignment.CenterVertically) {
+                val actionEnabled = enabled && panel.isEmpty()
+                val touchHeight = Modifier.heightIn(min = 48.dp)
+                val padding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
+                TextButton({ confirmEndHalf = true }, enabled = actionEnabled,
+                    modifier = touchHeight.testTag("end-half"), contentPadding = padding) {
+                    Text("结束半局", fontSize = 13.sp)
+                }
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center) {
+                    if (game.rules.recordingMethod == "situation" && game.journal.take(game.cursor).any { it.command.kind == "play" }) {
+                        TextButton({ open("amend-observation") }, enabled = actionEnabled,
+                            modifier = touchHeight.testTag("amend-situation-play"), contentPadding = padding) {
+                            Text("补充这球", fontSize = 12.sp)
+                        }
+                    }
+                    if (game.strikes == 2 && game.rules.mode != GameMode.slowPitch) {
+                        TextButton({ model.command(Command("foulBunt")) }, enabled = actionEnabled,
+                            modifier = touchHeight.testTag("foul-bunt-strikeout"), contentPadding = padding) {
+                            Text("触击界外出局", fontSize = 12.sp)
+                        }
+                    }
+                }
+                TextButton({ open("finish") }, enabled = actionEnabled,
+                    modifier = touchHeight.testTag("finish-game"), contentPadding = padding) {
+                    Text("结束比赛", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
     val reachedTimeLimit by produceState(game.hasReachedTimeLimit(System.currentTimeMillis()),
         game.id, game.isFinal, game.isScheduled, game.rules, game.clockHasStarted, game.clockElapsedMs, game.clockRunningSince) {
         value = game.hasReachedTimeLimit(System.currentTimeMillis())
@@ -96,16 +133,6 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
         } else {
             ScoreControl("修正", "open-state-correction", Modifier.weight(1f), enabled && panel.isEmpty(), color = Color(0xFF9F4C0D), compact = true) { open("correction") }
             ScoreControl("阵容", "open-substitutions", Modifier.weight(1f), enabled && panel.isEmpty(), compact = true) { open("substitution") }
-        }
-    }
-    if (!game.isFinal && game.rules.recordingMethod == "situation" && game.journal.take(game.cursor).any { it.command.kind == "play" })
-        TextButton({ open("amend-observation") }, Modifier.fillMaxWidth().heightIn(min = 30.dp).testTag("amend-situation-play"), enabled = enabled && panel.isEmpty()) { Text("补充这球", fontSize = 12.sp) }
-    if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton({ confirmEndHalf = true }, enabled = enabled && panel.isEmpty(), modifier = Modifier.testTag("end-half")) { Text("结束半局", fontSize = 13.sp) }
-            if (game.strikes == 2 && game.rules.mode != GameMode.slowPitch)
-                TextButton({ model.command(Command("foulBunt")) }, enabled = enabled && panel.isEmpty(), modifier = Modifier.testTag("foul-bunt-strikeout")) { Text("触击界外出局", fontSize = 12.sp) }
-            TextButton({ open("finish") }, enabled = enabled && panel.isEmpty(), modifier = Modifier.testTag("finish-game")) { Text("结束比赛", fontSize = 13.sp) }
         }
     }
     if (confirmEndHalf) AlertDialog(modifier = Modifier.semantics { testTagsAsResourceId = true }, onDismissRequest = { confirmEndHalf = false }, title = { Text("结束本半局？") },
@@ -424,8 +451,8 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
     }
     }
     }
-    if (host != null) host(controls, task, inlineTask && panel == "play", panel.isNotEmpty())
-    else { controls(); task() }
+    if (host != null) host(controls, finishActions, task, inlineTask && panel == "play", panel.isNotEmpty())
+    else { controls(); finishActions(); task() }
 }
 
 @Composable

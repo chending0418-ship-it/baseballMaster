@@ -205,12 +205,52 @@ class Product085VisualParityTest {
 
     @Test fun scoring() {
         for (mode in listOf("basic", "pro")) {
-            launch(); match(mode); node(By.res("record-play")); shot("live-$mode")
+            launch(); match(mode)
+            assertFirstScoringScreen()
+            shot("live-$mode")
             if (mode == "basic") {
                 click("record-play"); node(By.res("arrival-1")); shot("basic-entry")
             } else {
+                device.findObject(By.res("open-compact-field"))?.let { field ->
+                    field.click()
+                    assertTrue(device.wait(Until.hasObject(By.res("compact-field-dialog")), 5000))
+                    device.pressBack()
+                    assertFirstScoringScreen()
+                }
+                click("end-half")
+                assertTrue(device.wait(Until.hasObject(By.res("confirm-end-half")), 5000))
+                device.pressBack()
+                click("finish-game")
+                click("finish-scorerDecision")
+                assertTrue(device.wait(Until.hasObject(By.res("confirm-finish-game")), 5000))
+                tap(By.text("取消"))
+                device.pressBack()
+                assertFirstScoringScreen()
                 click("record-runner"); shot("runner-menu")
             }
         }
+    }
+
+    private fun assertFirstScoringScreen() {
+        assertTrue(device.wait(Until.hasObject(By.res("finish-game")), 8000))
+        UiTreeCache.refresh()
+        val window = requireNotNull(device.findObject(By.res("portrait-app"))).visibleBounds
+        val density = context.resources.displayMetrics.density
+        val controls = mapOf(
+            "pitch-ball" to 42, "pitch-calledStrike" to 42, "pitch-swingingStrike" to 42, "pitch-foul" to 42,
+            "record-play" to 44, "record-runner" to 44, "record-special" to 44,
+            "undo" to 38, "redo" to 38, "open-state-correction" to 38, "open-substitutions" to 38,
+            "end-half" to 48, "finish-game" to 48,
+        )
+        for ((tag, minimumHeight) in controls) {
+            val button = requireNotNull(device.findObject(By.res(tag))) { "$tag must be visible without scrolling" }
+            assertTrue("$tag must fit in the first screen: ${button.visibleBounds}",
+                (tag == "redo" || button.isEnabled) && window.contains(button.visibleBounds) &&
+                    button.visibleBounds.height() >= minimumHeight * density - 2)
+        }
+        val half = requireNotNull(device.findObject(By.res("end-half"))).visibleBounds
+        val finish = requireNotNull(device.findObject(By.res("finish-game"))).visibleBounds
+        assertEquals("The two end actions must share one row", half.centerY(), finish.centerY())
+        assertTrue(half.right <= finish.left)
     }
 }

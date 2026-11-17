@@ -20,6 +20,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +41,7 @@ internal fun AdaptiveScoreWorkbench(
     toolbar: @Composable () -> Unit,
     scoreboard: @Composable () -> Unit,
     controls: @Composable () -> Unit,
+    finishActions: @Composable () -> Unit,
     task: @Composable () -> Unit,
     openPanel: (String) -> Unit,
 ) {
@@ -50,123 +52,131 @@ internal fun AdaptiveScoreWorkbench(
     val outerScroll = rememberScrollState()
     val leftScroll = rememberScrollState()
     val rightScroll = rememberScrollState()
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        val viewportHeight = maxHeight
-        val canCollapseField = !wide && !inlineTask && !game.isFinal && !game.isScheduled && viewportHeight < 620.dp
-        val scroll = if (!wide && !inlineTask) Modifier.verticalScroll(outerScroll) else Modifier
-        Layout(
-            modifier = Modifier.widthIn(max = 1280.dp).fillMaxWidth().then(scroll)
-                .onGloballyPositioned { origin = it.positionInWindow() }
-                .testTag(if (wide) "scorekeeping-wide-layout" else "scorekeeping-compact-layout"),
-            content = {
-                Box { toolbar() }
-                Box {
-                    if (wide) Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                        Column {
-                            scoreboard()
-                            HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                            WorkbenchLineScore(game)
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            val viewportHeight = maxHeight
+            val canCollapseField = !wide && !inlineTask && !game.isFinal && !game.isScheduled && viewportHeight < 620.dp
+            val scroll = if (!wide && !inlineTask) Modifier.verticalScroll(outerScroll) else Modifier
+            Layout(
+                modifier = Modifier.widthIn(max = 1280.dp).fillMaxWidth().then(scroll)
+                    .onGloballyPositioned { origin = it.positionInWindow() }
+                    .testTag(if (wide) "scorekeeping-wide-layout" else "scorekeeping-compact-layout"),
+                content = {
+                    Box { toolbar() }
+                    Box {
+                        if (wide) Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                            Column {
+                                scoreboard()
+                                HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                WorkbenchLineScore(game)
+                            }
+                        } else scoreboard()
+                    }
+                    Column(Modifier.then(if (wide) Modifier.verticalScroll(leftScroll) else Modifier),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                            Column {
+                                Field(game, if (wide) Modifier.height(320.dp) else Modifier.weight(1f))
+                                WorkbenchCurrentPlayers(game, locked, ruleNotices, openPanel)
+                            }
                         }
-                    } else scoreboard()
-                }
-                Column(Modifier.then(if (wide) Modifier.verticalScroll(leftScroll) else Modifier),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                        Column {
-                            Field(game, if (wide) Modifier.height(320.dp) else Modifier.weight(1f))
-                            WorkbenchCurrentPlayers(game, locked, ruleNotices, openPanel)
+                        if (wide) {
+                            WorkbenchMatchup(game)
+                            WorkbenchLineups(game, locked, openPanel)
                         }
                     }
-                    if (wide) {
-                        WorkbenchMatchup(game)
-                        WorkbenchLineups(game, locked, openPanel)
+                    Column(Modifier.then(if (wide) Modifier.verticalScroll(rightScroll) else Modifier),
+                        verticalArrangement = Arrangement.spacedBy(if (wide) 12.dp else 6.dp)) {
+                        if (wide) WorkbenchHeading("现场记录", if (game.isFinal) "本场已结束" else "当前打席 · 第 ${game.batterIndex + 1} 棒")
+                        controls()
+                        if (wide) {
+                            finishActions()
+                            WorkbenchRecentLog(game)
+                            WorkbenchAppearances(game, locked, openPanel)
+                        }
                     }
-                }
-                Column(Modifier.then(if (wide) Modifier.verticalScroll(rightScroll) else Modifier),
-                    verticalArrangement = Arrangement.spacedBy(if (wide) 12.dp else 6.dp)) {
-                    if (wide) WorkbenchHeading("现场记录", if (game.isFinal) "本场已结束" else "当前打席 · 第 ${game.batterIndex + 1} 棒")
-                    controls()
-                    if (wide) {
-                        WorkbenchRecentLog(game)
-                        WorkbenchAppearances(game, locked, openPanel)
+                    Box(Modifier.testTag("workbench-recording-host")) { task() }
+                    Box {
+                        if (canCollapseField) CompactWorkbenchContext(game, locked, ruleNotices,
+                            dialogFieldHeight = (viewportHeight * .6f).coerceAtMost(260.dp), openPanel = openPanel)
                     }
-                }
-                Box(Modifier.testTag("workbench-recording-host")) { task() }
-                Box {
-                    if (canCollapseField) CompactWorkbenchContext(game, locked, ruleNotices,
-                        dialogFieldHeight = (viewportHeight * .6f).coerceAtMost(260.dp), openPanel = openPanel)
-                }
-            },
-        ) { measurables, constraints ->
-            val width = constraints.maxWidth
-            val fullHeight = with(density) { viewportHeight.roundToPx() }
-            val pad = 12.dp.roundToPx()
-            val gap = (if (wide) 16.dp else 7.dp).roundToPx()
-            val innerWidth = (width - pad * 2).coerceAtLeast(0)
-            val header = measurables[0].measure(Constraints(maxWidth = innerWidth))
-            val summary = measurables[1].measure(Constraints(maxWidth = innerWidth))
-            val bodyY = pad + header.height + gap + summary.height + gap
-            val bodyHeight = (fullHeight - bodyY - pad).coerceAtLeast(0)
-            val localFold = fold?.bounds?.translate(-origin.x, -origin.y)
-            val splitVertically = wide && fold?.vertical == true && localFold != null &&
-                localFold.left > width * .24f && localFold.right < width * .76f
-            val horizontalFold = fold?.takeIf { !it.vertical }?.bounds?.translate(-origin.x, -origin.y)
-                ?.takeIf { it.top > bodyY + 160.dp.toPx() && it.bottom < fullHeight - 160.dp.toPx() }
-            var leftX = pad
-            var rightX = pad
-            var leftY = bodyY
-            var rightY = bodyY
-            val left: androidx.compose.ui.layout.Placeable
-            val right: androidx.compose.ui.layout.Placeable
-            val editor: androidx.compose.ui.layout.Placeable
-            val layoutHeight: Int
-            if (wide && horizontalFold != null) {
-                val topHeight = (horizontalFold.top.toInt() - gap - bodyY).coerceAtLeast(0)
-                rightY = horizontalFold.bottom.toInt() + gap
-                val lowerHeight = (fullHeight - rightY - pad).coerceAtLeast(0)
-                left = measurables[2].measure(Constraints.fixed(innerWidth, topHeight))
-                right = measurables[3].measure(Constraints.fixed(innerWidth, lowerHeight))
-                editor = measurables[4].measure(Constraints.fixed(if (inlineTask) innerWidth else 0, if (inlineTask) lowerHeight else 0))
-                layoutHeight = fullHeight
-            } else if (wide) {
-                val leftWidth = if (splitVertically) (localFold!!.left.toInt() - pad - gap / 2).coerceAtLeast(0)
-                    else ((innerWidth - gap) * .54f).toInt()
-                rightX = if (splitVertically) localFold!!.right.toInt() + gap / 2 else pad + leftWidth + gap
-                val rightWidth = (width - pad - rightX).coerceAtLeast(0)
-                left = measurables[2].measure(Constraints.fixed(leftWidth, bodyHeight))
-                right = measurables[3].measure(Constraints.fixed(rightWidth, bodyHeight))
-                editor = measurables[4].measure(Constraints.fixed(if (inlineTask) rightWidth else 0, if (inlineTask) bodyHeight else 0))
-                layoutHeight = fullHeight
-            } else if (inlineTask) {
-                left = measurables[2].measure(Constraints.fixed(0, 0))
-                right = measurables[3].measure(Constraints.fixed(0, 0))
-                editor = measurables[4].measure(Constraints.fixed(innerWidth, bodyHeight))
-                layoutHeight = fullHeight
-            } else {
-                right = measurables[3].measure(Constraints(maxWidth = innerWidth))
-                val remaining = bodyHeight - right.height - gap
-                val minimumFieldCard = if (viewportHeight >= 660.dp && density.fontScale <= 1.2f) {
-                    300.dp.roundToPx()
-                } else 270.dp.roundToPx()
-                // Keep the normal field card on tall phones. On a short window
-                // use the context card when the full field would crowd the controls.
-                left = if (canCollapseField && remaining < minimumFieldCard) {
-                    measurables[5].measure(Constraints.fixedWidth(innerWidth))
+                },
+            ) { measurables, constraints ->
+                val width = constraints.maxWidth
+                val fullHeight = with(density) { viewportHeight.roundToPx() }
+                val pad = 12.dp.roundToPx()
+                val gap = (if (wide) 16.dp else 7.dp).roundToPx()
+                val innerWidth = (width - pad * 2).coerceAtLeast(0)
+                val header = measurables[0].measure(Constraints(maxWidth = innerWidth))
+                val summary = measurables[1].measure(Constraints(maxWidth = innerWidth))
+                val bodyY = pad + header.height + gap + summary.height + gap
+                val bodyHeight = (fullHeight - bodyY - pad).coerceAtLeast(0)
+                val localFold = fold?.bounds?.translate(-origin.x, -origin.y)
+                val splitVertically = wide && fold?.vertical == true && localFold != null &&
+                    localFold.left > width * .24f && localFold.right < width * .76f
+                val horizontalFold = fold?.takeIf { !it.vertical }?.bounds?.translate(-origin.x, -origin.y)
+                    ?.takeIf { it.top > bodyY + 160.dp.toPx() && it.bottom < fullHeight - 160.dp.toPx() }
+                var leftX = pad
+                var rightX = pad
+                var leftY = bodyY
+                var rightY = bodyY
+                val left: androidx.compose.ui.layout.Placeable
+                val right: androidx.compose.ui.layout.Placeable
+                val editor: androidx.compose.ui.layout.Placeable
+                val layoutHeight: Int
+                if (wide && horizontalFold != null) {
+                    val topHeight = (horizontalFold.top.toInt() - gap - bodyY).coerceAtLeast(0)
+                    rightY = horizontalFold.bottom.toInt() + gap
+                    val lowerHeight = (fullHeight - rightY - pad).coerceAtLeast(0)
+                    left = measurables[2].measure(Constraints.fixed(innerWidth, topHeight))
+                    right = measurables[3].measure(Constraints.fixed(innerWidth, lowerHeight))
+                    editor = measurables[4].measure(Constraints.fixed(if (inlineTask) innerWidth else 0, if (inlineTask) lowerHeight else 0))
+                    layoutHeight = fullHeight
+                } else if (wide) {
+                    val leftWidth = if (splitVertically) (localFold!!.left.toInt() - pad - gap / 2).coerceAtLeast(0)
+                        else ((innerWidth - gap) * .54f).toInt()
+                    rightX = if (splitVertically) localFold!!.right.toInt() + gap / 2 else pad + leftWidth + gap
+                    val rightWidth = (width - pad - rightX).coerceAtLeast(0)
+                    left = measurables[2].measure(Constraints.fixed(leftWidth, bodyHeight))
+                    right = measurables[3].measure(Constraints.fixed(rightWidth, bodyHeight))
+                    editor = measurables[4].measure(Constraints.fixed(if (inlineTask) rightWidth else 0, if (inlineTask) bodyHeight else 0))
+                    layoutHeight = fullHeight
+                } else if (inlineTask) {
+                    left = measurables[2].measure(Constraints.fixed(0, 0))
+                    right = measurables[3].measure(Constraints.fixed(0, 0))
+                    editor = measurables[4].measure(Constraints.fixed(innerWidth, bodyHeight))
+                    layoutHeight = fullHeight
                 } else {
-                    measurables[2].measure(Constraints.fixed(innerWidth, maxOf(minimumFieldCard, remaining)))
+                    right = measurables[3].measure(Constraints(maxWidth = innerWidth))
+                    val remaining = bodyHeight - right.height - gap
+                    val minimumFieldCard = if (viewportHeight >= 660.dp && density.fontScale <= 1.2f) {
+                        300.dp.roundToPx()
+                    } else 270.dp.roundToPx()
+                    // Keep the normal field card on tall phones. On a short window
+                    // use the context card when the full field would crowd the controls.
+                    left = if (canCollapseField && remaining < minimumFieldCard) {
+                        measurables[5].measure(Constraints.fixedWidth(innerWidth))
+                    } else {
+                        measurables[2].measure(Constraints.fixed(innerWidth, maxOf(minimumFieldCard, remaining)))
+                    }
+                    rightY = bodyY + left.height + gap
+                    editor = measurables[4].measure(Constraints.fixed(0, 0))
+                    layoutHeight = maxOf(fullHeight, rightY + right.height + pad)
                 }
-                rightY = bodyY + left.height + gap
-                editor = measurables[4].measure(Constraints.fixed(0, 0))
-                layoutHeight = maxOf(fullHeight, rightY + right.height + pad)
+                layout(width, layoutHeight) {
+                    header.placeRelative(pad, pad)
+                    summary.placeRelative(pad, pad + header.height + gap)
+                    if (!inlineTask || wide) left.placeRelative(leftX, leftY)
+                    if (!inlineTask) right.placeRelative(rightX, rightY)
+                    editor.placeRelative(rightX, rightY)
+                }
             }
-            layout(width, layoutHeight) {
-                header.placeRelative(pad, pad)
-                summary.placeRelative(pad, pad + header.height + gap)
-                if (!inlineTask || wide) left.placeRelative(leftX, leftY)
-                if (!inlineTask) right.placeRelative(rightX, rightY)
-                editor.placeRelative(rightX, rightY)
+        }
+        if (!wide && !inlineTask) {
+            Box(Modifier.widthIn(max = 1280.dp).fillMaxWidth().padding(horizontal = 12.dp)) {
+                finishActions()
             }
         }
     }
@@ -190,7 +200,11 @@ private fun CompactWorkbenchContext(
     ) {
         Column {
             WorkbenchCurrentPlayers(game, locked, notices, openPanel)
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 listOf("一垒", "二垒", "三垒").forEachIndexed { index, base ->
                     val id = game.bases[index]
                     val player = game.battingTeam.players.firstOrNull { it.id == id }
@@ -200,18 +214,24 @@ private fun CompactWorkbenchContext(
                         contentColor = if (id == null) colors.onSurface else colors.onPrimaryContainer,
                         shape = RoundedCornerShape(8.dp),
                     ) {
-                        Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Column(Modifier.padding(horizontal = 5.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(base, style = MaterialTheme.typography.labelMedium)
                             Text(player?.let { "#${it.number} ${it.name}" } ?: if (id == null) "无人" else "有人",
-                                style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
-                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                style = MaterialTheme.typography.labelLarge, fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
-            }
-            TextButton({ showField = true }, enabled = !locked,
-                modifier = Modifier.align(Alignment.End).padding(end = 8.dp).heightIn(min = 48.dp).testTag("open-compact-field")) {
-                Text("查看球场")
+                TextButton(
+                    onClick = { showField = true },
+                    enabled = !locked,
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .testTag("open-compact-field")
+                        .semantics { contentDescription = "查看球场" },
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                ) {
+                    Text("球场", fontSize = 12.sp, maxLines = 1)
+                }
             }
         }
     }

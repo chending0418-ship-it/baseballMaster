@@ -1294,7 +1294,7 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
         ScoringPanels(game, model, requestedPanel, { requestedPanel = "" },
             initialPanel = if (openedOnResults) "results" else "",
             closeInitialResults = if (openedOnResults) ({ model.open(null) }) else null,
-            host = { panelControls, task, inlineTask, locked ->
+            host = { panelControls, finishActions, task, inlineTask, locked ->
                 val enabled = !model.busy && !locked && !game.isFinal && !game.isScheduled && game.pendingDecision == null
                 val canChangeRecordingMethod = enabled && game.appleSourceID == null
                 val currentMethod = RecordingMethodLabels.getValue(game.rules.recordingMethod)
@@ -1450,6 +1450,7 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                         Text("已保存 ${game.totalPitches} 球", Modifier.fillMaxWidth().testTag("save-status"),
                             textAlign = TextAlign.Center, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
+                    finishActions = finishActions,
                     task = task,
                     openPanel = { if (!locked) requestedPanel = it },
                 )
