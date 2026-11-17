@@ -585,6 +585,15 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             } else MatchEngine.apply(it, command, operationID)
         }
 
+    suspend fun changeRecordingMethod(
+        gameID: String,
+        method: String,
+        baseRevision: Long,
+        operationID: String = UUID.randomUUID().toString(),
+    ): Game = mutate(gameID, baseRevision, operationID, "recording-method:$method") {
+        MatchEngine.changeRecordingMethod(it, method)
+    }
+
     suspend fun undo(
         gameID: String,
         baseRevision: Long,

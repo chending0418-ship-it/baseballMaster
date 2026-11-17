@@ -158,6 +158,10 @@ data class Decision(
     val fielding: Fielding? = null,
 ) // origin 0=batter, 1..3=base; destination -1=out, 0=hold, 1..3=base, 4=score
 
+/** A recorded fielding error. A missing fielder means the scorer will identify them later. */
+@Serializable
+data class RunnerErrorResponsibility(val fielderID: String? = null)
+
 @Serializable
 data class Fielding(
     val route: List<Int> = emptyList(),
@@ -325,6 +329,10 @@ data class Command(
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val lineupReplacements: Map<String, String>? = null,
+    // Null preserves runner errors authored before responsibility could be recorded.
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val runnerErrorResponsibility: RunnerErrorResponsibility? = null,
 )
 
 @Serializable

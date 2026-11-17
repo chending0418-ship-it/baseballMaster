@@ -23,7 +23,11 @@ class ReportExportTest {
         game = MatchEngine.apply(game, Command("pitch", pitch = PitchAction.calledStrike))
         game = MatchEngine.apply(game, Command("pitcher", playerID = "home-11"))
         game = MatchEngine.apply(game, Command("pitch", pitch = PitchAction.ball))
-        game = MatchEngine.apply(game, Command("play", outcome = Outcome.single))
+        for (hit in listOf(Outcome.single, Outcome.double, Outcome.triple, Outcome.homeRun)) {
+            game = MatchEngine.apply(game, Command("play", outcome = hit))
+        }
+        repeat(4) { game = MatchEngine.apply(game, Command("pitch", pitch = PitchAction.ball)) }
+        game = MatchEngine.apply(game, Command("hitByPitch"))
         game = game.copy(
             ourTeamID = game.away.id, isFinal = true, statisticsIncomplete = true,
             playedAt = java.time.Instant.parse("2026-06-01T12:00:00Z").toEpochMilli(),
@@ -32,6 +36,7 @@ class ReportExportTest {
             },
         )
         val summary = SeasonStatisticsCalculator.calculate(game.away, listOf(game), 2026)
+        assertEquals(10, summary.batting.totalBases)
         val row = summary.players.first { it.player.id == "away-1" }
         val coach = game.copy(rules = Rules(GameMode.coachPitch))
         val coachSummary = SeasonStatisticsCalculator.calculate(coach.away, listOf(coach), 2026)
@@ -42,12 +47,14 @@ class ReportExportTest {
         data class Artifact(val name: String, val file: File, val required: List<String>, val forbidden: List<String> = emptyList())
         val artifacts = listOf(
             Artifact("an04-regression-boxscore", ReportExport.game(context, game, false),
-                listOf("主队球员11", "统计可能不完整", "数据待复核"), listOf("主队球员13", "客队球员13")),
+                listOf("主队球员11", "统计可能不完整", "数据待复核", "TB 打击总垒数"), listOf("主队球员13", "客队球员13")),
             Artifact("an04-regression-detailed", ReportExport.game(context, game, true), listOf("复核保留标记")),
             Artifact("an04-regression-text", ReportExport.game(context, game, true, textOnly = true),
                 listOf("复核保留标记", "投手：#1 主队球员1", "主队球员11")),
             Artifact("an04-regression-personal", ReportExport.player(context, game.away, 2026, row, listOf(game)),
                 listOf("统计可能不完整", "所选比赛有 1 条待确认记录")),
+            Artifact("085-regression-season-team", ReportExport.team(context, game.away, 2026, null, summary, isFiltered = true),
+                listOf("TB 打击总垒数", "客队球员1")),
             Artifact("an04-regression-coach-team", ReportExport.team(context, coach.away, 2026, GameMode.coachPitch, coachSummary),
                 listOf("教练投手模式：投手数据不适用")),
             Artifact("an04-regression-coach-player", ReportExport.player(context, coach.away, 2026, coachRow, listOf(coach)),

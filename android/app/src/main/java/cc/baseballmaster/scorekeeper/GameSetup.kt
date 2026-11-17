@@ -33,6 +33,8 @@ import java.util.UUID
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
+internal val RecordingMethodLabels = linkedMapOf("traditional" to "基础版", "situation" to "Pro 版")
+
 @Composable
 internal fun NewGameDialog(
     teams: List<Team>,
@@ -43,10 +45,11 @@ internal fun NewGameDialog(
     manageOpponents: () -> Unit = {},
     initialSchedule: Game? = null,
     games: List<Game> = emptyList(),
+    defaultRecordingMethod: String = "traditional",
     save: (Game) -> Unit,
 ) {
     var recordType by rememberSaveable { mutableStateOf(if(initialSchedule?.isObservation == true) "spectator" else "team") }
-    var recordingMethod by rememberSaveable { mutableStateOf(initialSchedule?.rules?.recordingMethod ?: "traditional") }
+    var recordingMethod by rememberSaveable { mutableStateOf(initialSchedule?.rules?.recordingMethod ?: defaultRecordingMethod) }
     val opponents = rosters.filter { it.isOpponent && !it.archived && it.source == "local" }
     var spectatorAwayID by rememberSaveable { mutableStateOf(initialSchedule?.away?.id ?: opponents.firstOrNull()?.id.orEmpty()) }
     var spectatorHomeID by rememberSaveable { mutableStateOf(initialSchedule?.home?.id ?: opponents.getOrNull(1)?.id.orEmpty()) }
@@ -169,7 +172,7 @@ internal fun NewGameDialog(
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(22.dp)) {
             Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("记录方式", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                SetupSegmented("记分方式", linkedMapOf("traditional" to "基础版", "situation" to "Pro 版"), recordingMethod) { recordingMethod = it }
+                SetupSegmented("记分方式", RecordingMethodLabels, recordingMethod) { recordingMethod = it }
                 Text(if (recordingMethod == "situation") "球型、落点和守备在同一个球场记录，再统一核对跑者。" else "先选打者最终位置，再判断原因。",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

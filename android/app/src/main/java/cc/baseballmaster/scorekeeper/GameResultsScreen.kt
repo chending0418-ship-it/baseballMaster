@@ -78,7 +78,7 @@ internal fun GameResultsScreen(game: Game, model: ScorekeeperViewModel, close: (
             if (category == "pitching" && game.rules.mode == GameMode.coachPitch) Text("教练投手模式：投手数据不适用", fontSize = 13.sp)
             else {
                 val columns = when (category) {
-                    "batting" -> listOf("PA", "AB", "R", "H", "RBI", "BB", "SO", "SB")
+                    "batting" -> listOf("PA", "AB", "R", "H", "TB", "RBI", "BB", "SO", "SB")
                     "pitching" -> listOf("IP", "P", "SO", "H", "R", "ER", "BB")
                     else -> listOf("PO", "A", "E", "DP")
                 }
@@ -94,7 +94,7 @@ internal fun GameResultsScreen(game: Game, model: ScorekeeperViewModel, close: (
                             participants.mapNotNull { id -> team.players.firstOrNull { it.id == id } }.forEach { player ->
                                 HorizontalDivider(Modifier.width(tableWidth), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
                                 val values = when (category) {
-                                    "batting" -> (game.batting[player.id] ?: BattingLine()).let { listOf(it.plateAppearances, it.atBats, it.runs, it.hits, it.runsBattedIn, it.walks, it.strikeouts, it.stolenBases).map(Int::toString) }
+                                    "batting" -> (game.batting[player.id] ?: BattingLine()).let { listOf(it.plateAppearances, it.atBats, it.runs, it.hits, it.totalBases, it.runsBattedIn, it.walks, it.strikeouts, it.stolenBases).map(Int::toString) }
                                     "pitching" -> (game.pitching[player.id] ?: PitchingLine()).let { listOf("${it.outsRecorded / 3}.${it.outsRecorded % 3}", "${it.pitches}", "${it.strikeouts}", "${it.hits}", "${it.runs}", "${it.earnedRuns}", "${it.walks}") }
                                     else -> (game.fielding[player.id] ?: FieldingLine()).let { listOf(it.putouts, it.assists, it.errors, it.doublePlays).map(Int::toString) }
                                 }

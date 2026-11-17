@@ -790,6 +790,7 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
             "batter",
             "pinchRunner",
             "fielder",
+            "doubleSwitch" -> HistorySubstitutionEditor(before, record, model.busy, { screen = "detail" }, ::amend)
             "position" -> ParitySubstitutionEditor(before, model.busy, { screen = "detail" }, ::amend)
             else ->
                 FormPage("更正记录", model.busy, false, "unused", "", { screen = "detail" }, {}) {
@@ -908,7 +909,7 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
                 },
                 Modifier.testTag("delete-correction"),
             ) {
-                Text("从草稿删除此操作")
+                Text(if (record.command.kind == "doubleSwitch") "撤掉整条误记换人" else "从草稿删除此操作")
             }
         }
         return
@@ -1141,24 +1142,28 @@ private fun HistoryResponsibilityEditor(
             )
         },
     ) {
-        Text("补记失误不会增加打席或投球；责任未确认时标记统计可能不完整。", fontSize = 12.sp)
-        before.fieldingTeam.players
-            .filter { it.id in before.fieldingPositions.values }
-            .forEach { player ->
-                val count = credits.firstOrNull { it.playerID == player.id }?.count ?: 0
-                Choices(
-                    "${player.name} #${player.number}",
-                    (0..9).associate { it.toString() to if (it == 0) "无" else "$it 次" },
-                    count.toString(),
-                ) { value ->
-                    val n = value.toInt()
-                    creditJSON =
-                        GameJson.encodeToString(
-                            credits.filter { it.playerID != player.id } +
-                                if (n > 0) listOf(ErrorCredit(player.id, n)) else emptyList()
-                        )
+        if (record.command.runnerErrorResponsibility != null) {
+            Text("这球已计一次球队失误。修改责任人请返回后选择「编辑」。", fontSize = 12.sp)
+        } else {
+            Text("补记失误不会增加打席或投球；责任未确认时标记统计可能不完整。", fontSize = 12.sp)
+            before.fieldingTeam.players
+                .filter { it.id in before.fieldingPositions.values }
+                .forEach { player ->
+                    val count = credits.firstOrNull { it.playerID == player.id }?.count ?: 0
+                    Choices(
+                        "${player.name} #${player.number}",
+                        (0..9).associate { it.toString() to if (it == 0) "无" else "$it 次" },
+                        count.toString(),
+                    ) { value ->
+                        val n = value.toInt()
+                        creditJSON =
+                            GameJson.encodeToString(
+                                credits.filter { it.playerID != player.id } +
+                                    if (n > 0) listOf(ErrorCredit(player.id, n)) else emptyList()
+                            )
+                    }
                 }
-            }
+        }
         Row {
             Checkbox(reviewed, { reviewed = it })
             Text("人工确认本事件打点与投手责任", Modifier.padding(top = 13.dp))

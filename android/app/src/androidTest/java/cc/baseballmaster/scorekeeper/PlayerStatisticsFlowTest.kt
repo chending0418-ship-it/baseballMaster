@@ -110,7 +110,7 @@ class PlayerStatisticsFlowTest {
             scope("2026 年 · 已选 1 / 1 场")
             totals(1)
             expectDescription("stats-player-batting-上垒率 OBP", "上垒率 OBP：1.000")
-            expectDescription("stats-player-batting-垒打数 TB", "垒打数 TB：4")
+            expectDescription("stats-player-batting-打击总垒数 TB", "打击总垒数 TB：4")
             expectText("stats-player-recent3-totals", "1 场 · 1 安打 · 1 打数 · 1 打点")
             expectText("stats-player-recent10-totals", "1 场 · 1 安打 · 1 打数 · 1 打点")
             expectText("stats-player-game-date-${fixture.standard.id}", "2026-01-02 00:30 · Asia/Shanghai")

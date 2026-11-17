@@ -123,6 +123,7 @@ class Product081PlayFlowTest {
         val runner = game.bases[2]!!
         open(game); click("pro-outcome-double"); click("choice-球型-line"); tapField(); click("fielding-8")
         click("play-next")
+        click("runner-card-3")
         click("choice-最终位置-3-0")
         shot("pro-runner-review-portrait")
         device.setOrientationLeft(); device.waitForIdle(500)
@@ -188,9 +189,10 @@ class Product081PlayFlowTest {
         shot("pro-review-initial-viewport-after-contact-scroll")
         // Direct native lookups prove this is the first review viewport; they do
         // not scroll the clipped text back into view to make the check pass.
-        val pending = visibleAtCurrentScroll(By.text("尚未提交"), 12)
         val summary = visibleAtCurrentScroll(By.text(Outcome.groundOut.title + " · " + ScoringOptions.ballTypes["ground"].orEmpty()), 18)
-        assertTrue(pending.visibleBounds.bottom <= summary.visibleBounds.top)
+        val board = requireNotNull(device.findObject(By.res("runner-base-diamond")))
+        assertTrue(summary.visibleBounds.bottom <= board.visibleBounds.top)
+        assertFalse(device.hasObject(By.text("尚未提交")))
         assertEquals("Moving to review must not commit a pitch or clock change", before, payload(game.id))
         device.pressBack(); device.waitForIdle(500); UiTreeCache.refresh()
         val type = NativeUi.find(device, By.res("choice-球型-ground"))

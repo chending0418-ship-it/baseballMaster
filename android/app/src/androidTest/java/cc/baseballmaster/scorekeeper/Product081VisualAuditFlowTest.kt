@@ -76,13 +76,13 @@ class Product081VisualAuditFlowTest {
     private fun verifyInitialReview(summary: String) {
         UiTreeCache.refresh()
         val viewport = requireNotNull(device.findObject(By.res("product-page-scroll"))).visibleBounds
-        listOf("尚未提交" to 12, summary to 18).forEach { (label, minimumHeightDp) ->
-            val bounds = requireNotNull(device.findObject(By.text(label))).visibleBounds
-            assertTrue("The initial review summary must be fully visible before any scrolling: $label",
-                bounds.height() >= minimumHeightDp * context.resources.displayMetrics.density - 2 &&
-                    bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
-        }
-        checks += "unscrolled initial review: pending status and full result summary within content viewport"
+        val bounds = requireNotNull(device.findObject(By.text(summary))).visibleBounds
+        assertTrue("The initial review summary must be fully visible before any scrolling: $summary",
+            bounds.height() >= 18 * context.resources.displayMetrics.density - 2 &&
+                bounds.top >= viewport.top && bounds.bottom <= viewport.bottom)
+        assertNotNull(device.findObject(By.res("runner-base-diamond")))
+        assertFalse(device.hasObject(By.text("尚未提交")))
+        checks += "unscrolled initial review: full result summary and four-base runner board"
     }
     private fun verifyInitialProField() {
         UiTreeCache.refresh()
@@ -144,11 +144,11 @@ class Product081VisualAuditFlowTest {
         device.swipe(viewport.centerX(), viewport.centerY() + distance / 2,
             viewport.centerX(), viewport.centerY() - distance / 2, 25)
         device.waitForIdle(500)
-        ready("stats-player-batting-垒打数 TB")
+        ready("stats-player-batting-打击总垒数 TB")
         UiTreeCache.refresh()
         val currentViewport = requireNotNull(device.findObject(By.res("product-page-scroll"))).visibleBounds
         val density = context.resources.displayMetrics.density
-        listOf("打席 PA", "垒打数 TB").forEach { label ->
+        listOf("打席 PA", "打击总垒数 TB").forEach { label ->
             val bounds = requireNotNull(device.findObject(By.res("stats-player-batting-$label"))).visibleBounds
             assertTrue("The full counting-statistics table must fit its scrolled photograph", bounds.height() >= 40 * density - 2 &&
                 bounds.top >= currentViewport.top && bounds.bottom <= currentViewport.bottom)
@@ -358,7 +358,7 @@ class Product081VisualAuditFlowTest {
             click("arrival-1"); text("已记录：到一垒")
             shot("basic-cause", "基础版击球", "到一垒 → 原因", "已选结果摘要、安打/失误等原因卡与返回关系。")
             click("cause-single"); ready("save-play"); verifyInitialReview("一垒安打")
-            shot("basic-runner-review", "基础版击球", "原因 → 核对跑者（尚未提交）", "按人折叠卡、建议进垒、进垒原因、保存前提示和唯一提交边界。")
+            shot("basic-runner-review", "基础版击球", "原因 → 核对跑者（尚未提交）", "四垒图、建议进垒、进垒原因、保存前提示和唯一提交边界。")
             click("cancel-play"); unchanged(fixture.basic, baselines.getValue(fixture.basic.id), "Cancelling the basic review does not save a ball, revision or clock change")
 
             open(fixture.pro); ready("record-play")

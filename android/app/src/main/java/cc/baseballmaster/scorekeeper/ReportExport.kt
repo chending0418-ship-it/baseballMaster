@@ -120,6 +120,8 @@ internal object ReportExport {
             val columnWeights = weights ?: headers.indices.map { if (it == 0) 3f else 1f }
             require(columnWeights.size == headers.size && columnWeights.all { it > 0 })
             val widths = columnWeights.map { contentWidth * it / columnWeights.sum() }
+            // Narrow numeric columns use less inset so three-letter headings stay readable.
+            val insets = widths.map { if (it < 28f) 2f else 5f }
             val leading = 12f; val padding = if (compact) 3f else 5f; val headerHeight = if (compact) 22f else 24f
             fun header(continued: Boolean) {
                 val heading = title + if (continued) " (续)" else ""
@@ -129,7 +131,7 @@ internal object ReportExport {
                 paint.color = navy; page!!.canvas.drawRect(margin, y, width - margin, y + headerHeight, paint)
                 var x = margin
                 headers.forEachIndexed { i, label ->
-                    draw(label, x + 5, y + 6, 8f, true, Color.WHITE, widths[i] - 10,
+                    draw(label, x + insets[i], y + 6, 8f, true, Color.WHITE, widths[i] - 2 * insets[i],
                         if (i == 0) Paint.Align.LEFT else Paint.Align.CENTER); x += widths[i]
                 }
                 y += headerHeight
@@ -138,11 +140,11 @@ internal object ReportExport {
             if (rows.isEmpty()) { y += 6; line(emptyTableMessage, 9f, muted = true); return }
             rows.forEachIndexed { rowIndex, row ->
                 val total = row.firstOrNull() == "合计"
-                val cells = row.mapIndexed { i, value -> wrap(value, widths[i] - 10, 8.5f, total) }
+                val cells = row.mapIndexed { i, value -> wrap(value, widths[i] - 2 * insets[i], 8.5f, total) }
                 val lineCount = cells.maxOf { it.size }
                 var keep = lineCount * leading + padding * 2
                 rows.getOrNull(rowIndex + 1)?.takeIf { it.firstOrNull() == "合计" }?.let { next ->
-                    keep += next.mapIndexed { i, value -> wrap(value, widths[i] - 10, 8.5f, true).size }.max() * leading + padding * 2
+                    keep += next.mapIndexed { i, value -> wrap(value, widths[i] - 2 * insets[i], 8.5f, true).size }.max() * leading + padding * 2
                 }
                 if (y + keep > bottom && keep < bottom - 120) { nextPage(); header(true) }
                 var offset = 0
@@ -154,8 +156,8 @@ internal object ReportExport {
                     page!!.canvas.drawRect(margin, y, width - margin, y + rowHeight, paint)
                     var x = margin
                     cells.forEachIndexed { i, cell ->
-                        for (n in offset until minOf(offset + count, cell.size)) draw(cell[n], x + 5,
-                            y + padding + (n - offset) * leading, 8.5f, total, limit = widths[i] - 10,
+                        for (n in offset until minOf(offset + count, cell.size)) draw(cell[n], x + insets[i],
+                            y + padding + (n - offset) * leading, 8.5f, total, limit = widths[i] - 2 * insets[i],
                             align = if (i == 0) Paint.Align.LEFT else Paint.Align.CENTER)
                         x += widths[i]
                     }
@@ -211,7 +213,7 @@ internal object ReportExport {
     private fun tables(w: Writer, players: List<SeasonPlayerStatistics>, gameCount: Int, coachOnly: Boolean = false,
                        titlePrefix: String = "", compact: Boolean = false, includeTotal: Boolean = true,
                        categories: Set<String> = setOf("batting", "pitching", "fielding")) {
-        fun batting(name: String, games: Int, b: BattingLine) = listOf(name, "$games", "${b.plateAppearances}", "${b.atBats}", "${b.runs}", "${b.hits}", "${b.doubles}", "${b.triples}", "${b.homeRuns}", "${b.runsBattedIn}", "${b.walks}", "${b.hitByPitch}", "${b.strikeouts}", "${b.stolenBases}", number(if (b.atBats > 0) b.average else null), number(if (b.atBats + b.walks + b.hitByPitch + b.sacrifices > 0) b.onBasePercentage else null), number(if (b.atBats > 0) b.slugging else null), number(if (b.atBats > 0) b.onBasePercentage + b.slugging else null))
+        fun batting(name: String, games: Int, b: BattingLine) = listOf(name, "$games", "${b.plateAppearances}", "${b.atBats}", "${b.runs}", "${b.hits}", "${b.doubles}", "${b.triples}", "${b.homeRuns}", "${b.totalBases}", "${b.runsBattedIn}", "${b.walks}", "${b.hitByPitch}", "${b.strikeouts}", "${b.stolenBases}", number(if (b.atBats > 0) b.average else null), number(if (b.atBats + b.walks + b.hitByPitch + b.sacrifices > 0) b.onBasePercentage else null), number(if (b.atBats > 0) b.slugging else null), number(if (b.atBats > 0) b.onBasePercentage + b.slugging else null))
         fun pitching(name: String, p: PitchingLine) = listOf(name, "${p.outsRecorded / 3}.${p.outsRecorded % 3}", "${p.battersFaced}", "${p.hits}", "${p.runs}", "${p.earnedRuns}", "${p.walks}", "${p.hitByPitch}", "${p.strikeouts}", "${p.wildPitches}", "${p.pitches}", "${p.strikes}", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", p.earnedRuns * 21.0 / p.outsRecorded) else "-", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", (p.walks + p.hits) * 3.0 / p.outsRecorded) else "-")
         fun fielding(name: String, f: FieldingLine): List<String> {
             val total = f.putouts + f.assists + f.errors
@@ -222,8 +224,8 @@ internal object ReportExport {
         players.forEach { addBatting(batTotal, it.batting); addPitching(pitchTotal, it.pitching); addFielding(fieldTotal, it.fielding) }
         val bats = players.map { batting(name(it), it.games, it.batting) } + if (includeTotal && players.isNotEmpty()) listOf(batting("合计", gameCount, batTotal)) else emptyList()
         if ("batting" in categories) {
-            w.table("${titlePrefix.ifEmpty { "打击" }} · BATTING", listOf("球员", "G", "PA", "AB", "R", "H", "2B", "3B", "HR", "RBI", "BB", "HBP", "SO", "SB", "AVG", "OBP", "SLG", "OPS"), bats,
-                listOf(4f) + List(17) { 1f }, compact)
+            w.table("${titlePrefix.ifEmpty { "打击" }} · BATTING", listOf("球员", "G", "PA", "AB", "R", "H", "2B", "3B", "HR", "TB", "RBI", "BB", "HBP", "SO", "SB", "AVG", "OBP", "SLG", "OPS"), bats,
+                listOf(4f) + List(18) { 1f }, compact)
             val extras = players.filter { it.batting.caughtStealing + it.batting.sacrifices > 0 }.joinToString("；") { "${name(it)}：CS ${it.batting.caughtStealing}，SAC ${it.batting.sacrifices}" }
             if (extras.isNotEmpty()) w.line("其他进攻记录：$extras", 9f, muted = true)
         }
@@ -305,10 +307,10 @@ internal object ReportExport {
                 return "${gameDate(g).substringBefore(' ')}\n${(if (home) g.away else g.home).name}\n${if (our == their) "平" else if (our > their) "胜" else "负"} $our : $their"
             }
             w.pageBreak()
-            w.table("逐场打击 · BATTING GAME LOG", listOf("日期 / 对手 / 结果", "PA", "AB", "R", "H", "HR", "RBI", "BB", "SO", "AVG"), games.map { g ->
+            w.table("逐场打击 · BATTING GAME LOG", listOf("日期 / 对手 / 结果", "PA", "AB", "R", "H", "HR", "TB", "RBI", "BB", "SO", "AVG"), games.map { g ->
                 val b = g.batting[p.id] ?: BattingLine()
-                listOf(label(g), "${b.plateAppearances}", "${b.atBats}", "${b.runs}", "${b.hits}", "${b.homeRuns}", "${b.runsBattedIn}", "${b.walks}", "${b.strikeouts}", number(if (b.atBats > 0) b.average else null))
-            }, listOf(5f) + List(9) { 1f })
+                listOf(label(g), "${b.plateAppearances}", "${b.atBats}", "${b.runs}", "${b.hits}", "${b.homeRuns}", "${b.totalBases}", "${b.runsBattedIn}", "${b.walks}", "${b.strikeouts}", number(if (b.atBats > 0) b.average else null))
+            }, listOf(5f) + List(10) { 1f })
             w.table("逐场投手 · PITCHING GAME LOG", listOf("日期 / 对手 / 结果", "IP", "H", "R", "ER", "BB", "SO", "P", "ERA"), games.map { g ->
                 val pitch = g.pitching[p.id]
                 listOf(label(g)) + if (g.rules.mode == GameMode.coachPitch) List(8) { "不适用" } else if (pitch == null) List(8) { "-" } else
@@ -332,7 +334,7 @@ internal object ReportExport {
     private fun legend(w: Writer) {
         w.line("统计口径与缩写", 11f, true)
         w.line("比率按累计原始数据计算；ERA 按 7 局计算。IP 小数位为出局数，0.1 表示 1 人出局。\"-\" 表示未进行、无记录或无可用分母。DP 为球员参与双杀次数，合计不等同于球队双杀次数。", 8f, muted = true)
-        w.line("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · TC 守备机会 · FPCT 守备率", 8f, muted = true)
+        w.line("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · TB 打击总垒数 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · TC 守备机会 · FPCT 守备率", 8f, muted = true)
     }
     internal fun eventCategory(e: PitchEntry, command: Command? = null): String = when (e.kind) {
         "pitch" -> "投球"

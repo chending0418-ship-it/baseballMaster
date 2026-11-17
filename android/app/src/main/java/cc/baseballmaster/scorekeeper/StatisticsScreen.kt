@@ -40,7 +40,7 @@ import java.util.Locale
 private enum class StatsCategory(val label: String) { BATTING("打击"), PITCHING("投手"), FIELDING("守备") }
 private enum class StatsMetric(val label: String, val category: StatsCategory, val lowFirst: Boolean = false) {
     AVG("打率 AVG", StatsCategory.BATTING), OPS("攻击指数 OPS", StatsCategory.BATTING),
-    HITS("安打 H", StatsCategory.BATTING), HOMERS("本垒打 HR", StatsCategory.BATTING),
+    HITS("安打 H", StatsCategory.BATTING), TOTAL_BASES("打击总垒数 TB", StatsCategory.BATTING), HOMERS("本垒打 HR", StatsCategory.BATTING),
     RBI("打点 RBI", StatsCategory.BATTING), STOLEN("盗垒 SB", StatsCategory.BATTING),
     PA("打席 PA", StatsCategory.BATTING), ERA("防御率 ERA", StatsCategory.PITCHING, true),
     WHIP("每局被上垒率 WHIP", StatsCategory.PITCHING, true), SO("三振 SO", StatsCategory.PITCHING),
@@ -64,6 +64,7 @@ private fun recorded(row: SeasonPlayerStatistics, category: StatsCategory): Bool
 }
 private fun metricValue(row: SeasonPlayerStatistics, metric: StatsMetric): Double? = when (metric) {
     StatsMetric.AVG -> avg(row.batting); StatsMetric.OPS -> ops(row.batting)
+    StatsMetric.TOTAL_BASES -> row.batting.totalBases.toDouble()
     StatsMetric.HITS -> row.batting.hits.toDouble(); StatsMetric.HOMERS -> row.batting.homeRuns.toDouble()
     StatsMetric.RBI -> row.batting.runsBattedIn.toDouble(); StatsMetric.STOLEN -> row.batting.stolenBases.toDouble()
     StatsMetric.PA -> row.batting.plateAppearances.toDouble(); StatsMetric.ERA -> era(row.pitching)
@@ -76,7 +77,7 @@ private fun metricValue(row: SeasonPlayerStatistics, metric: StatsMetric): Doubl
 
 @Composable
 private fun StatsPicker(label: String, selected: String, values: Map<String, String>, tag: String, modifier: Modifier = Modifier, onSelect: (String) -> Unit) {
-    Box(modifier) { ProductMenuPicker(label, selected, values, tag, onSelect) }
+    Box(modifier) { ProductMenuPicker(label, selected, values, tag, onSelect = onSelect) }
 }
 
 @Composable
@@ -143,7 +144,7 @@ private fun PlayerStatisticsMetrics(category: StatsCategory, row: SeasonPlayerSt
                     "得分 R" to "${b.runs}", "打点 RBI" to "${b.runsBattedIn}", "二垒安打 2B" to "${b.doubles}",
                     "三垒安打 3B" to "${b.triples}", "本垒打 HR" to "${b.homeRuns}", "保送 BB" to "${b.walks}",
                     "触身球 HBP" to "${b.hitByPitch}", "三振 SO" to "${b.strikeouts}", "盗垒 SB" to "${b.stolenBases}",
-                    "盗垒失败 CS" to "${b.caughtStealing}", "牺牲打 SAC" to "${b.sacrifices}", "垒打数 TB" to "${b.totalBases}",
+                    "盗垒失败 CS" to "${b.caughtStealing}", "牺牲打 SAC" to "${b.sacrifices}", "打击总垒数 TB" to "${b.totalBases}",
                 ), "stats-player-batting")
             }
         }
@@ -416,7 +417,7 @@ internal fun StatisticsScreen(
         else when (category) {
             StatsCategory.BATTING -> {
                 val b = summary.batting
-                StatisticsMetricGrid(listOf("打率 AVG" to rate(avg(b)), "上垒率 OBP" to rate(if (b.atBats + b.walks + b.hitByPitch + b.sacrifices > 0) b.onBasePercentage else null), "长打率 SLG" to rate(if (b.atBats > 0) b.slugging else null), "攻击指数 OPS" to rate(ops(b)), "打席 PA" to "${b.plateAppearances}", "打数 AB" to "${b.atBats}", "安打 H" to "${b.hits}", "本垒打 HR" to "${b.homeRuns}", "打点 RBI" to "${b.runsBattedIn}", "保送 BB" to "${b.walks}", "三振 SO" to "${b.strikeouts}", "盗垒 SB" to "${b.stolenBases}"))
+                StatisticsMetricGrid(listOf("打率 AVG" to rate(avg(b)), "上垒率 OBP" to rate(if (b.atBats + b.walks + b.hitByPitch + b.sacrifices > 0) b.onBasePercentage else null), "长打率 SLG" to rate(if (b.atBats > 0) b.slugging else null), "攻击指数 OPS" to rate(ops(b)), "打席 PA" to "${b.plateAppearances}", "打数 AB" to "${b.atBats}", "安打 H" to "${b.hits}", "打击总垒数 TB" to "${b.totalBases}", "本垒打 HR" to "${b.homeRuns}", "打点 RBI" to "${b.runsBattedIn}", "保送 BB" to "${b.walks}", "三振 SO" to "${b.strikeouts}", "盗垒 SB" to "${b.stolenBases}"))
             }
             StatsCategory.PITCHING -> {
                 val p = summary.pitching
@@ -468,7 +469,7 @@ internal fun StatisticsScreen(
                 }
                 Text("›", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(when (category) { StatsCategory.BATTING -> "打率 ${rate(avg(row.batting))} · 安打 ${row.batting.hits} · 打点 ${row.batting.runsBattedIn}"; StatsCategory.PITCHING -> "ERA ${pitchRate(era(row.pitching))} · ${innings(row.pitching)} 局 · 三振 ${row.pitching.strikeouts}"; StatsCategory.FIELDING -> "守备率 ${rate(fpct(row.fielding))} · 刺杀 ${row.fielding.putouts} · 助杀 ${row.fielding.assists}" })
+            Text(when (category) { StatsCategory.BATTING -> "打率 ${rate(avg(row.batting))} · 安打 ${row.batting.hits} · TB ${row.batting.totalBases} · 打点 ${row.batting.runsBattedIn}"; StatsCategory.PITCHING -> "ERA ${pitchRate(era(row.pitching))} · ${innings(row.pitching)} 局 · 三振 ${row.pitching.strikeouts}"; StatsCategory.FIELDING -> "守备率 ${rate(fpct(row.fielding))} · 刺杀 ${row.fielding.putouts} · 助杀 ${row.fielding.assists}" })
         }
     }
     if (ownsScope && filterOpen) {
@@ -607,7 +608,7 @@ internal fun PlayerStatisticsDetail(
                     }
                 }
                 when (playerCategory) {
-                    StatsCategory.BATTING -> game.batting[player.player.id]?.let { Text("打数 ${it.atBats} · 安打 ${it.hits} · 打点 ${it.runsBattedIn}", fontSize = 12.sp) } ?: Text("无打击记录", fontSize = 12.sp)
+                    StatsCategory.BATTING -> game.batting[player.player.id]?.let { Text("打数 ${it.atBats} · 安打 ${it.hits} · TB ${it.totalBases} · 打点 ${it.runsBattedIn}", fontSize = 12.sp) } ?: Text("无打击记录", fontSize = 12.sp)
                     StatsCategory.PITCHING -> if (game.rules.mode == GameMode.coachPitch) Text("教练投手模式：投手数据不适用", fontSize = 12.sp)
                         else game.pitching[player.player.id]?.let { Text("投球 ${innings(it)} 局 · 三振 ${it.strikeouts} · ERA ${pitchRate(era(it))}", fontSize = 12.sp) } ?: Text("无投手记录", fontSize = 12.sp)
                     StatsCategory.FIELDING -> game.fielding[player.player.id]?.let { Text("刺杀 ${it.putouts} · 助杀 ${it.assists} · 失误 ${it.errors}", fontSize = 12.sp) } ?: Text("无守备记录", fontSize = 12.sp)

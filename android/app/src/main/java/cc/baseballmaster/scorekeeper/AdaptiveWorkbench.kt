@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -19,9 +20,12 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
@@ -48,6 +52,7 @@ internal fun AdaptiveScoreWorkbench(
     val rightScroll = rememberScrollState()
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         val viewportHeight = maxHeight
+        val canCollapseField = !wide && !inlineTask && !game.isFinal && !game.isScheduled && viewportHeight < 620.dp
         val scroll = if (!wide && !inlineTask) Modifier.verticalScroll(outerScroll) else Modifier
         Layout(
             modifier = Modifier.widthIn(max = 1280.dp).fillMaxWidth().then(scroll)
@@ -89,6 +94,10 @@ internal fun AdaptiveScoreWorkbench(
                     }
                 }
                 Box(Modifier.testTag("workbench-recording-host")) { task() }
+                Box {
+                    if (canCollapseField) CompactWorkbenchContext(game, locked, ruleNotices,
+                        dialogFieldHeight = (viewportHeight * .6f).coerceAtMost(260.dp), openPanel = openPanel)
+                }
             },
         ) { measurables, constraints ->
             val width = constraints.maxWidth
@@ -136,12 +145,16 @@ internal fun AdaptiveScoreWorkbench(
                 editor = measurables[4].measure(Constraints.fixed(innerWidth, bodyHeight))
                 layoutHeight = fullHeight
             } else {
-                // Reserve the actual recording controls first. The field uses the
-                // remaining height, so a rule notice never pushes primary actions
-                // below a standard phone's first viewport. Short windows still scroll.
                 right = measurables[3].measure(Constraints(maxWidth = innerWidth))
-                val fieldCardHeight = maxOf(270.dp.roundToPx(), bodyHeight - right.height - gap)
-                left = measurables[2].measure(Constraints.fixed(innerWidth, fieldCardHeight))
+                val remaining = bodyHeight - right.height - gap
+                val minimumFieldCard = 270.dp.roundToPx()
+                // Keep the normal field card on tall phones. On a short window
+                // use the context card when the full field would crowd the controls.
+                left = if (canCollapseField && remaining < minimumFieldCard) {
+                    measurables[5].measure(Constraints.fixedWidth(innerWidth))
+                } else {
+                    measurables[2].measure(Constraints.fixed(innerWidth, maxOf(minimumFieldCard, remaining)))
+                }
                 rightY = bodyY + left.height + gap
                 editor = measurables[4].measure(Constraints.fixed(0, 0))
                 layoutHeight = maxOf(fullHeight, rightY + right.height + pad)
@@ -154,6 +167,60 @@ internal fun AdaptiveScoreWorkbench(
                 editor.placeRelative(rightX, rightY)
             }
         }
+    }
+}
+
+@Composable
+private fun CompactWorkbenchContext(
+    game: Game,
+    locked: Boolean,
+    notices: List<String>,
+    dialogFieldHeight: Dp,
+    openPanel: (String) -> Unit,
+) {
+    var showField by rememberSaveable(game.id) { mutableStateOf(false) }
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier.fillMaxWidth().testTag("scorekeeping-compact-bases"),
+        shape = RoundedCornerShape(16.dp),
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.outlineVariant),
+    ) {
+        Column {
+            WorkbenchCurrentPlayers(game, locked, notices, openPanel)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("一垒", "二垒", "三垒").forEachIndexed { index, base ->
+                    val id = game.bases[index]
+                    val player = game.battingTeam.players.firstOrNull { it.id == id }
+                    Surface(
+                        modifier = Modifier.weight(1f).testTag("compact-base-${index + 1}"),
+                        color = if (id == null) colors.surfaceContainerHighest else colors.primaryContainer,
+                        contentColor = if (id == null) colors.onSurface else colors.onPrimaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(base, style = MaterialTheme.typography.labelMedium)
+                            Text(player?.let { "#${it.number} ${it.name}" } ?: if (id == null) "无人" else "有人",
+                                style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+            TextButton({ showField = true }, enabled = !locked,
+                modifier = Modifier.align(Alignment.End).padding(end = 8.dp).heightIn(min = 48.dp).testTag("open-compact-field")) {
+                Text("查看球场")
+            }
+        }
+    }
+    if (showField) {
+        AlertDialog(
+            modifier = Modifier.testTag("compact-field-dialog").semantics { testTagsAsResourceId = true },
+            onDismissRequest = { showField = false },
+            title = { Text("守备站位") },
+            text = { Field(game, Modifier.height(dialogFieldHeight)) },
+            confirmButton = { TextButton({ showField = false }) { Text("完成") } },
+        )
     }
 }
 

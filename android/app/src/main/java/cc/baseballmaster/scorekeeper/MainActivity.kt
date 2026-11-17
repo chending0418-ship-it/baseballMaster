@@ -185,6 +185,18 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         private set
     internal var showRuleExamples by mutableStateOf(settings.getBoolean("showRuleExamples",true))
         private set
+    internal var defaultRecordingMethod by mutableStateOf(
+        settings.getString("defaultRecordingMethod", null)?.takeIf { it in RecordingMethodLabels } ?: "traditional",
+    )
+        private set
+
+    internal fun setDefaultRecordingMethod(method: String) {
+        require(method in RecordingMethodLabels)
+        if (defaultRecordingMethod == method) return
+        settings.edit().putString("defaultRecordingMethod", method).apply()
+        defaultRecordingMethod = method
+    }
+
     internal fun setAppearance(value: String) {require(value in setOf("system","light","dark"));settings.edit().putString("appAppearance",value).apply();appAppearance=value}
     internal fun setPracticeGuidance(value: Boolean) {settings.edit().putBoolean("showPracticeGuidance",value).apply();showPracticeGuidance=value}
     internal fun setRuleExamples(value: Boolean) {settings.edit().putBoolean("showRuleExamples",value).apply();showRuleExamples=value}
@@ -411,6 +423,18 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
                 accept(MatchEngine.apply(game, command))
             } else accept(repository.command(game.id, command, baseRevision ?: game.revision))
             done()
+        }
+    }
+
+    fun changeRecordingMethod(method: String, baseRevision: Long) {
+        val game = openedGame ?: return
+        if (game.rules.recordingMethod == method) return
+        commit {
+            check(game.revision == baseRevision) { "比赛已更新，请重新核对记录方式" }
+            accept(
+                if (game.practice) MatchEngine.changeRecordingMethod(game, method)
+                else repository.changeRecordingMethod(game.id, method, baseRevision),
+            )
         }
     }
 
@@ -722,6 +746,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
             model.busy,
             { newGame = false },
             games = model.games,
+            defaultRecordingMethod = model.defaultRecordingMethod,
             manageOpponents = { manageOpponents = true },
         ) { prepared ->
             model.createPreparedGame(prepared) { newGame = false }
@@ -815,10 +840,17 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         onDispose { lifecycle.removeObserver(observer) }
     }
     val team = model.currentTeam
-    val ongoing = model.games.filter { !it.isFinal && !it.isScheduled }
-    val scheduled = model.games.filter { it.isScheduled && !it.isFinal }.sortedBy { it.scheduledAt }
-    val completed = model.games.filter { it.isFinal }.sortedWith(compareByDescending<Game> {
-        it.playedAt ?: it.startedAt ?: it.scheduledAt ?: it.createdAt }.thenBy { it.id })
+    val games = model.games
+    val (ongoing, scheduled, completed) = remember(games) {
+        Triple(
+            games.filter { !it.isFinal && !it.isScheduled },
+            games.filter { it.isScheduled && !it.isFinal }.sortedBy { it.scheduledAt },
+            games.filter { it.isFinal }.sortedWith(compareByDescending<Game> {
+                it.playedAt ?: it.startedAt ?: it.scheduledAt ?: it.createdAt
+            }.thenBy { it.id }),
+        )
+    }
+    val teamRecord = remember(games, team?.id) { HomeSummary.record(games, team?.id).label }
     Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (team != null) TeamMark(team.name, 48)
@@ -829,7 +861,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = CircleShape) {
-            Text(HomeSummary.record(model.games, team?.id).label, Modifier.testTag("home-team-record")
+            Text(teamRecord, Modifier.testTag("home-team-record")
                 .padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 11.sp,
                 fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         }
@@ -1014,7 +1046,7 @@ private fun ProfileScreen(model: ScorekeeperViewModel, manageTeams: ()->Unit) {
     ProfileMenuRow("练习一局", "独立练习，不影响正式比赛数据", NavigationSymbols.diamond, "open-practice-inning") { model.practice() }
     SectionTitle("本机数据与设置", null)
     ProfileMenuRow("本地数据", "查看存储范围与数据数量", Icons.Outlined.AccountBox, "open-local-data") { page = "data" }
-    ProfileMenuRow("App 设置", "外观与辅助提示", Icons.Outlined.Settings, "open-app-settings") { page = "settings" }
+    ProfileMenuRow("App 设置", "默认记录方式、外观与辅助提示", Icons.Outlined.Settings, "open-app-settings") { page = "settings" }
     ProfileMenuRow("关于 BaseballMaster", "版本信息与数据说明", Icons.Outlined.Info, "open-app-about") { page = "about" }
     when(page) {
         "data"->LocalDataScreen(model,{page=null;manageTeams()}) {page=null}
@@ -1118,6 +1150,7 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
     val wide = LocalWorkbenchWide.current
     var requestedPanel by rememberSaveable(game.id) { mutableStateOf("") }
     var openingPitch by rememberSaveable(game.id) { mutableStateOf<String?>(null) }
+    var recordingMethodRevision by rememberSaveable(game.id) { mutableStateOf<Long?>(null) }
     var menu by remember { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(game.id) {
@@ -1136,6 +1169,26 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
         ScoringPanels(game, model, requestedPanel, { requestedPanel = "" },
             host = { panelControls, task, inlineTask, locked ->
                 val enabled = !model.busy && !locked && !game.isFinal && !game.isScheduled && game.pendingDecision == null
+                val canChangeRecordingMethod = enabled && game.appleSourceID == null
+                val currentMethod = RecordingMethodLabels.getValue(game.rules.recordingMethod)
+                recordingMethodRevision?.let { revision ->
+                    val nextMethod = if (game.rules.recordingMethod == "situation") "traditional" else "situation"
+                    val nextLabel = RecordingMethodLabels.getValue(nextMethod)
+                    AlertDialog(
+                        modifier = Modifier.semantics { testTagsAsResourceId = true },
+                        onDismissRequest = { recordingMethodRevision = null },
+                        title = { Text("记录方式") },
+                        text = { Text("当前为$currentMethod。切换后会接着记录当前打席，已保存的球数和明细会保留。") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = { recordingMethodRevision = null; model.changeRecordingMethod(nextMethod, revision) },
+                                enabled = canChangeRecordingMethod,
+                                modifier = Modifier.testTag("confirm-recording-method"),
+                            ) { Text("切换至$nextLabel") }
+                        },
+                        dismissButton = { TextButton({ recordingMethodRevision = null }) { Text("取消") } },
+                    )
+                }
                 AdaptiveScoreWorkbench(game, inlineTask, locked, game.ruleNotices(now),
                     toolbar = {
                         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1164,6 +1217,14 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                                     Icon(Icons.Outlined.MoreVert, "比赛菜单", Modifier.size(21.dp))
                                 }
                                 DropdownMenu(menu, { menu = false }) {
+                                    if (!game.isFinal && !game.isScheduled && game.appleSourceID == null) {
+                                        DropdownMenuItem(
+                                            text = { Text("记录方式：$currentMethod") },
+                                            enabled = canChangeRecordingMethod,
+                                            modifier = Modifier.testTag("scoring-recording-method"),
+                                            onClick = { menu = false; recordingMethodRevision = game.revision },
+                                        )
+                                    }
                                     listOf("比赛结果" to "results", "文字直播" to "live", "双方阵容与打序" to "lineup", "比赛计时" to "clock",
                                         "比赛时间／预告" to "time", "本场比赛规则" to "rules", "完整记录与纠错" to "history", "报告与更多操作" to "more")
                                         .forEach { (label, target) -> DropdownMenuItem(text = { Text(label) }, enabled = !locked,
