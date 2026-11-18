@@ -1,48 +1,47 @@
 <!doctype html>
 <html lang="zh-CN">
 <meta charset="utf-8">
-<title>棒球比赛记录大师 · iOS 3.1.3</title>
+<title>棒球比赛记录大师 · iOS 3.1.3 功能一览</title>
 <style>
 *{box-sizing:border-box}
-:root{--ink:#102f2a;--paper:#f6f4eb;--rule:#bfc8ba}
+:root{--paper:#f6f4eb;--ink:#12372e;--rule:#bfcbc0}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:"PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}
-main{width:1080px;height:1800px;overflow:hidden}
-h1,h2,p,figure,dl,dt,dd{margin:0}img{display:block}
-header{height:105px;display:grid;place-items:center;background:#092a2a;position:relative}
-header img{height:58px}header span{position:absolute;right:68px;font:450 28px "Helvetica Neue",sans-serif;color:#cbd9c9}
-.hero{height:555px;position:relative;isolation:isolate;color:#fffdf2}
-.field{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;object-position:center 51%}
-.hero:after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(0deg,rgba(6,27,23,.85),transparent 66%)}
-.scorebug{position:absolute;top:37px;left:46px;width:424px;filter:drop-shadow(0 2px 7px #10222055)}
-.hero-copy{position:absolute;bottom:39px;left:65px}
-h1{font:650 94px/1.12 "Songti SC",serif;letter-spacing:-.045em}
-.hero-copy p{margin-top:13px;font-size:32px;line-height:1.5;color:#f6f4e7}
-h2{font-size:47px;font-weight:650;line-height:1.22;letter-spacing:-.05em}
-.copy{font-size:30px;line-height:1.5;letter-spacing:-.026em;color:#42584e}
-.pair{height:371px;margin:0 64px;display:grid;grid-template-columns:1fr 1fr;gap:66px;padding:42px 0 26px;position:relative}
-.pair:after{content:"";width:1px;background:var(--rule);position:absolute;top:45px;bottom:37px;left:50%}
-.pair .copy{margin-top:11px}.pair figure{height:168px;margin-top:12px;display:flex;align-items:center}
-.schedule img{width:100%;border-radius:13px}.runners img{height:166px;width:auto;margin:auto}
-.analysis{height:405px;background:#dbe6d3;position:relative;overflow:hidden;display:flex;align-items:center;padding:0 64px}
-.analysis h2{font:700 62px/1.22 "Songti SC",serif;letter-spacing:-.05em}
-.analysis .copy{margin-top:17px;color:#284b3a}
-.sheet{position:absolute;width:398px;top:36px;left:602px;transform:rotate(3deg);box-shadow:0 8px 34px #10392930;background:#fff;padding:6px}
-.sheet img{width:100%;height:auto}
-.stats{height:250px;margin:0 64px;padding:33px 0 0}.stats h2{font-size:43px}
-dl{display:flex;gap:0;margin-top:22px;border-top:1px solid var(--rule);padding-top:18px}
-dl div{display:flex;align-items:baseline;gap:14px;flex:1}dt{font:500 52px/1.1 Baskerville,Georgia,serif;color:#214f40}dd{font-size:28px;color:#345446}
-footer{height:114px;background:#092a2a;color:#e5eddf;display:flex;justify-content:space-between;align-items:center;padding:0 64px}footer img{height:32px}footer p{font-size:29px}
+main{width:1080px;height:1800px}
+h1,h2,p,figure,dl,dd{margin:0}img{display:block}
+header{height:364px;position:relative;isolation:isolate;overflow:hidden;background:#092a2a;color:#fffdf2}
+.field{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;object-position:50% 47%}
+header:after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#092a2af5 0%,#092a2ad9 38%,#092a2a18 88%),linear-gradient(0deg,#092a2a88,transparent)}
+.brand{height:110px;display:grid;place-items:center}.brand img{height:52px}
+.intro{position:absolute;left:68px;bottom:48px}.intro p{font-size:29px;font-weight:500;letter-spacing:.12em;color:#e2efca}
+h1{margin:5px 0 0 -4px;font:550 112px/1.06 "Helvetica Neue",Arial,sans-serif;letter-spacing:-.055em}
+.features{padding:0 68px}
+.feature{height:266px;display:grid;grid-template-columns:1fr 348px;column-gap:34px;align-items:center;border-bottom:1px solid var(--rule)}
+.feature:last-child{border:0}.index{font:600 25px/1.3 "Helvetica Neue",Arial,sans-serif;letter-spacing:.045em;color:#55715f}
+h2{margin:9px 0 11px;font-size:49px;font-weight:640;line-height:1.18;letter-spacing:-.05em}
+.copy{color:#40594d;font-size:30px;line-height:1.43;letter-spacing:-.018em}
+.visual{height:178px;width:100%;display:grid;place-items:center;overflow:hidden}
+.schedule img{width:100%;border-radius:10px}.runners img{height:100%;max-height:178px}
+.report{background:#dce7db;position:relative;border-radius:5px}.report img{width:268px;position:absolute;top:17px;left:40px;transform:rotate(-3deg);box-shadow:3px 6px 14px #264a3833}
+.metrics{width:100%;display:flex;align-items:center;justify-content:space-between}
+.metrics div{text-align:center}.metrics dt{font:500 43px/1.2 Baskerville,Georgia,serif}.metrics dd{font-size:23px;color:#476052;margin-top:7px}
+.broadcast img{width:100%;border-radius:7px}
+footer{height:106px;background:#092a2a;color:#e6edde;display:flex;align-items:center;justify-content:space-between;padding:0 68px}
+footer img{height:31px}footer p{font-size:29px;letter-spacing:.015em}
 </style>
 <main>
-<header><img src="{{product}}" alt="棒球比赛记录大师"><span>iOS 3.1.3</span></header>
-<section class="hero"><img class="field" src="{{ballpark}}" alt=""><img class="scorebug" src="{{scoreboard}}" alt="OBS 比分与投手叠加示例，海浪 2 比 1 飞鹰">
-<div class="hero-copy"><h1>OBS 现场转播</h1><p>用浏览器源叠加比分、投手、当前打者和双方阵容。</p></div></section>
-<div class="pair">
-<section class="schedule"><h2>球队赛程</h2><p class="copy">队员打开「比赛」看赛程。</p><figure><img src="{{schedule}}" alt="队员看到的对阵、时间与场地"></figure></section>
-<section class="runners"><h2>四垒核对与赛中纠错</h2><p class="copy">核对跑者去向，改正换人记录。</p><figure><img src="{{runners}}" alt="打者与跑者的四垒核对图"></figure></section>
+<header><img class="field" src="{{ballpark}}" alt=""><div class="brand"><img src="{{product}}" alt="棒球比赛记录大师"></div>
+<div class="intro"><p>版本功能一览</p><h1>iOS 3.1.3</h1></div></header>
+<div class="features">
+<section class="feature"><div><p class="index">Feature 1</p><h2>球队赛程</h2><p class="copy">发布后，队员在「比赛 → 即将进行」<br>查看对手、时间和场地。</p></div>
+<figure class="visual schedule"><img src="{{schedule}}" alt="成员首页的球队赛程卡"></figure></section>
+<section class="feature"><div><p class="index">Feature 2</p><h2>在线比赛分析</h2><p class="copy">按单场、全年或选定场次复盘，<br>分享文字或 PDF 报告。</p></div>
+<figure class="visual report"><img src="{{report}}" alt="海浪对飞鹰的单场 A4 分析报告"></figure></section>
+<section class="feature"><div><p class="index">Feature 3</p><h2>四垒核对与赛中纠错</h2><p class="copy">核对打者与跑者去向，<br>回到原记录更正换人。</p></div>
+<figure class="visual runners"><img src="{{runners}}" alt="四垒图上的打者与跑者去向"></figure></section>
+<section class="feature"><div><p class="index">Feature 4</p><h2>打击与捕手统计</h2><p class="copy">单场、球队汇总与相关报表，<br>都能查看这三项统计。</p></div>
+<div class="visual"><dl class="metrics"><div><dt>TB</dt><dd>打击总垒数</dd></div><div><dt>CCS</dt><dd>捕手阻杀</dd></div><div><dt>PB</dt><dd>捕逸</dd></div></dl></div></section>
+<section class="feature"><div><p class="index">Feature 5</p><h2>OBS 现场转播</h2><p class="copy">用浏览器源叠加比分、投手、<br>当前打者和双方阵容。</p></div>
+<figure class="visual broadcast"><img src="{{scoreboard}}" alt="OBS 比分与投手浏览器源示例"></figure></section>
 </div>
-<section class="analysis"><div><h2>在线比赛分析</h2><p class="copy">复盘单场、全年或指定场次，<br>分享文字或 PDF 报告。</p></div>
-<figure class="sheet"><img src="{{report}}" alt="海浪对飞鹰的单场分析报告，含 MVP、比赛综述与关键局面"></figure></section>
-<section class="stats"><h2>打击与捕手统计</h2><dl><div><dt>TB</dt><dd>打击总垒数</dd></div><div><dt>CCS</dt><dd>捕手阻杀</dd></div><div><dt>PB</dt><dd>捕逸</dd></div></dl></section>
-<footer><img src="{{signature}}" alt="BaseballMaster"><p>切换页面、翻看长记录更流畅。</p></footer>
+<footer><img src="{{signature}}" alt="BaseballMaster"><p>切换页面、翻看比赛记录更流畅。</p></footer>
 </main>
