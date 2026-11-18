@@ -45,7 +45,7 @@ async function wechat() {
     return "data:image/png;base64," + pixels.toString("base64");
   }
   const assets = {
-    product, signature, ballpark: image("ballpark.webp"), scoreboard: image("obs-score.png"),
+    product, signature, downloadQR: image("download-qr.png"), ballpark: image("ballpark.webp"), scoreboard: image("obs-score.png"),
     schedule: await excerpt("schedule.png", {left:47, top:1365, width:1113, height:338}),
     runners: await excerpt("runner-iphone.png", {left:52, top:817, width:1101, height:910}),
     report: await excerpt("analysis.png", {left:12, top:515, width:1182, height:1668})
