@@ -10171,7 +10171,8 @@ extension GameStoreTests {
         let store = GameStore(persistenceURL: url)
         let own = try XCTUnwrap(store.currentTeam), opponent = try XCTUnwrap(store.opponentTeams.first)
         let client = try matchClient()
-        let directory = TeamSharingStore(service: client, storage: V30DirectoryMemoryStorage())
+        let cache = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: client, storage: cache)
         store.teamSharing = directory
         await directory.connect()
         let ok = await directory.submit(.create(name: own.name, nickname:"教练", localTeamID:own.id, profile:nil))
@@ -10179,10 +10180,16 @@ extension GameStoreTests {
         let team = try XCTUnwrap(directory.teams.first)
         let date = Date().addingTimeInterval(86400)
         let id = store.scheduleGame(ourTeam:own,opponent:opponent,isHome:false,scheduledAt:date)
-        var saved = try XCTUnwrap(store.games.first { $0.id == id })
-        let request = TeamScheduleRequest(expectedRevision:0,startsAt:Int64(date.timeIntervalSince1970*1000),away:own.name,home:opponent.name,venue:"二号场",cancelled:false)
-        saved.schedulePublication = LocalSchedulePublication(teamID:team.id,pending:request)
-        try store.persistenceStore.upsertGame(saved)
+        let unavailable = try TeamServiceClient(baseURL: URL(string:"http://127.0.0.1:1/api/v3")!, vault:V30MemoryTeamCredential(value:TeamDeviceKeychain.randomSecret()))
+        store.teamSharing = TeamSharingStore(service:unavailable, storage:cache)
+        store.teamSharing.loadCachedDirectory()
+        do {
+            try await store.publishSchedule(id,date:date,venue:"二号场")
+            XCTFail("An unreachable service cannot confirm publication")
+        } catch {
+            XCTAssertNotNil(store.games.first(where: { $0.id == id })?.schedulePublication?.pending)
+        }
+        let request = try XCTUnwrap(store.games.first(where: { $0.id == id })?.schedulePublication?.pending)
         struct Receipt: Decodable { let revision: Int }
         let first: Receipt = try await client.request("PUT",path:"teams/\(team.id)/schedules/\(id)",body:request)
         XCTAssertEqual(first.revision,1)
