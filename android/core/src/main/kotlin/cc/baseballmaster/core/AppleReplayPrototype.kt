@@ -54,7 +54,8 @@ internal object AppleReplayPrototype {
         val destination = d["destination"]!!.jsonObject.let { o -> when {
             "hold" in o -> 0; "out" in o -> -1; "score" in o -> 4; "base" in o -> o["base"]!!.jsonObject.int("_0"); else -> error("跑垒结果不受支持")
         } }
-        return Decision(id(d.text("id")), origin, destination)
+        return Decision(id(d.text("id")), origin, destination, runnerDefense =
+            d.optional("defense")?.jsonObject?.let(AppleHistoryCommandCodec::decodeRunnerDefense))
     }
     private fun fielding(f: JsonObject) = Fielding(route = f.array("route").map { it.jsonPrimitive.int }, errorPosition = f.optional("errorPosition")?.jsonPrimitive?.intOrNull,
         status = f.optional("status")?.jsonPrimitive?.content ?: error("缺少守备状态"))
@@ -108,7 +109,12 @@ internal object AppleReplayPrototype {
             "runner" -> {
                 require(observation == null)
                 val names = mapOf("偷垒成功" to "stolenBase", "双重盗垒" to "doubleSteal", "延迟盗垒" to "delayedSteal", "守备转传时额外进垒" to "relayAdvance", "守备失误造成额外进垒" to "defensiveErrorAdvance", "跑垒出局" to "caughtStealing", "牵制出局" to "pickoff", "触杀出局" to "tagOut", "封杀出局" to "forceOut", "申诉出局" to "appealOut", "离垒过早" to "leftEarly", "漏踩垒位" to "missedBase", "跑出限制道" to "outOfBasePath", "超越前位跑者" to "passedRunner", "跑者妨碍守备" to "runnerInterference", "跑垒员被击球击中" to "runnerHitByBall", "教练员帮助跑者" to "coachAssistance", "球太偏，跑者进垒" to "wildPitch", "捕手漏球，跑者进垒" to "passedBall", "球漏过去，分不清原因" to "uncertainLooseBall", "投手犯规，跑者进垒" to "balk")
-                Command("runner", runnerKind = names[fields.text("_0")] ?: error("跑垒事件不受支持"), decisions = fields.array("_1").map(::decision), timingRunCounts = fields.optional("_2")?.jsonPrimitive?.booleanOrNull, at = at)
+                Command(
+                    "runner", runnerKind = names[fields.text("_0")] ?: error("跑垒事件不受支持"),
+                    decisions = fields.array("_1").map(::decision),
+                    timingRunCounts = fields.optional("_2")?.jsonPrimitive?.booleanOrNull, at = at,
+                    runnerErrorResponsibility = fields.optional("responsibility")?.jsonObject?.let(AppleHistoryCommandCodec::decodeRunnerError),
+                )
             }
             "hitByPitch", "intentionalWalk", "foulBunt", "endHalf", "skipTB" -> {
                 require(observation == null && fields.isEmpty())

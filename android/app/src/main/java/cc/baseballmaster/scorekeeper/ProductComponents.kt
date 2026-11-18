@@ -57,6 +57,8 @@ internal fun ProductPage(
     actionAtTop: Boolean = false,
     headerTrailing: (@Composable () -> Unit)? = null,
     scrollKey: Any? = null,
+    actionSummary: (@Composable () -> Unit)? = null,
+    scrollableContent: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val embedded = LocalProductTaskEmbedded.current
@@ -86,14 +88,17 @@ internal fun ProductPage(
                         Text(if (busy) "保存中…" else actionLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     } else Spacer(Modifier.width(44.dp))
                 }
-                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)
-                    .testTag("product-page-scroll").padding(horizontal = 18.dp, vertical = 14.dp),
+                val contentScroll = if (scrollableContent) Modifier.verticalScroll(scroll).testTag("product-page-scroll") else Modifier
+                Column(Modifier.weight(1f).fillMaxWidth().then(contentScroll).padding(horizontal = 18.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     saved.SaveableStateProvider("page-content") { content() }
                 }
                 if (actionLabel.isNotEmpty() && !actionAtTop) {
                     Surface(color = MaterialTheme.colorScheme.background) {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            actionSummary?.invoke()
                             PrimaryProductButton(if (busy) "保存中…" else actionLabel, actionTag,
                                 enabled = actionEnabled && !busy, onClick = onAction)
                         }
@@ -118,7 +123,9 @@ internal fun ProductPage(
                 sheetGesturesEnabled = false, dragHandle = null,
                 containerColor = MaterialTheme.colorScheme.background, contentColor = foreground,
                 sheetMaxWidth = 720.dp) {
-                page(Modifier.fillMaxWidth().fillMaxHeight(.97f).imePadding())
+                page(Modifier.fillMaxWidth().fillMaxHeight(.97f)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    .imePadding())
             }
         }
         else -> Dialog(
@@ -192,17 +199,17 @@ internal fun ProductToggleRow(title: String, subtitle: String = "", checked: Boo
 
 @Composable
 internal fun ProductMenuPicker(label: String, selected: String, values: Map<String, String>,
-    tag: String = "", onSelect: (String) -> Unit) {
+    tag: String = "", enabled: Boolean = true, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { expanded = true }.testTag(tag),
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = enabled) { expanded = true }.testTag(tag),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(label, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
             Text(values[selected] ?: "请选择", Modifier.widthIn(max = 240.dp), fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.End)
             Text("⌃⌄", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
         }
-        DropdownMenu(expanded, { expanded = false }, modifier = Modifier.semantics { testTagsAsResourceId = true }) {
+        DropdownMenu(expanded && enabled, { expanded = false }, modifier = Modifier.semantics { testTagsAsResourceId = true }) {
             values.forEach { (key, title) -> DropdownMenuItem(text = { Text(title) },
                 modifier = Modifier.testTag("$tag-option-$key"),
                 onClick = { expanded = false; onSelect(key) }) }

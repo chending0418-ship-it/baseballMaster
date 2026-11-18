@@ -42,6 +42,8 @@ fun addPitching(a: PitchingLine, b: PitchingLine) {
 }
 fun addFielding(a: FieldingLine, b: FieldingLine) {
     a.putouts += b.putouts; a.assists += b.assists; a.errors += b.errors; a.doublePlays += b.doublePlays
+    b.catcherCaughtStealing?.let { a.catcherCaughtStealing = (a.catcherCaughtStealing ?: 0) + it }
+    b.passedBalls?.let { a.passedBalls = (a.passedBalls ?: 0) + it }
 }
 
 object SeasonStatisticsCalculator {
@@ -64,7 +66,7 @@ object SeasonStatisticsCalculator {
             val theirs = if (home) game.awayRuns else game.homeRuns
             runs += ours; runsAllowed += theirs
             when { ours > theirs -> wins++; ours < theirs -> losses++; else -> ties++ }
-            pending += game.entries.count { it.incomplete }
+            pending += game.entries.count { it.needsReview }
             if (game.statisticsIncomplete || game.incompletePrefix) incomplete++
             for (participant in ReportStatisticsProjection.gameParticipants(game, team.id)) {
                 val p = participant.player

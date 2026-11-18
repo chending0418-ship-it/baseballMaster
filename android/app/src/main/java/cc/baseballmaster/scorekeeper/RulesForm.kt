@@ -1,13 +1,11 @@
 package cc.baseballmaster.scorekeeper
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
@@ -25,7 +23,7 @@ internal data class RuleDraft(
     val pitchLimit: String = "",
     val pitcherInnings: String = "",
     val timed: Boolean = false,
-    val extraFoul: Boolean = true,
+    val extraFoul: Boolean? = null,
     val dh: Boolean = false,
     val twoWay: Boolean = false,
     val method: String = "traditional",
@@ -38,22 +36,20 @@ internal data class RuleDraft(
             return value.toIntOrNull()?.takeIf { it in range }
                 ?: error("$label 请填写 ${range.first}–${range.last}")
         }
-        val normalizedPitchLimit = pitchLimit.trim().map {
-            if (it in '０'..'９') '0' + (it - '０') else it
-        }.joinToString("")
+        require(mode != GameMode.slowPitch || extraFoul != null) { "开赛前请选择两好后的界外规则" }
         require(!timed || timeMinutes.isNotBlank()) { "时间赛请填写比赛时限" }
         return Rules(
             mode = mode,
             initialBalls = n("初始坏球", balls, 0..3)!!,
             initialStrikes = n("初始好球", strikes, 0..2)!!,
             coachPitchLimit = n("规定投球数", coachLimit, 1..20)!!,
-            oneExtraFoul = extraFoul,
+            oneExtraFoul = extraFoul ?: true,
             innings = n("局数", innings, 1..99)!!,
             timed = timed,
             timeLimitMinutes = n("比赛时限", timeMinutes, 1..600, true),
             inningsLimit = n("时间赛局数上限", inningLimit, 1..99, true),
             halfRunLimit = n("半局得分上限", runLimit, 1..99, true),
-            pitchLimit = n("投手球数上限", normalizedPitchLimit, 1..1_000_000, true),
+            pitchLimit = n("投手球数上限", pitchLimit, 1..1000, true),
             pitcherInningsLimit = n("投手局数上限", pitcherInnings, 1..99, true),
             timeWarningMinutes = n("时间提醒", timeWarning, 1..600, true),
             pitchWarningRemaining = n("球数提醒", pitchWarning, 1..1000, true),
@@ -64,6 +60,14 @@ internal data class RuleDraft(
     }
 
     companion object {
+        fun forSetup(mode: GameMode, savedRules: Rules?): RuleDraft {
+            val existing = savedRules?.takeIf { it.mode == mode }
+            val draft = from(existing ?: Rules(mode))
+            return if (mode == GameMode.slowPitch && existing == null)
+                draft.copy(timeMinutes = "", extraFoul = null)
+            else draft
+        }
+
         fun from(r: Rules) =
             RuleDraft(
                 r.innings.toString(),
@@ -179,7 +183,11 @@ internal fun RuleDraftForm(
         Choices(
             "两好球后界外",
             mapOf("extra" to "额外一次界外", "out" to "直接出局"),
-            if (draft.extraFoul) "extra" else "out",
+            when (draft.extraFoul) {
+                true -> "extra"
+                false -> "out"
+                null -> ""
+            },
         ) { v ->
             update { it.copy(extraFoul = v == "extra") }
         }
@@ -206,9 +214,8 @@ internal fun RuleDraftForm(
     if (mode != GameMode.coachPitch) {
         OutlinedTextField(
             draft.pitchLimit,
-            { v -> update { it.copy(pitchLimit = v) } },
+            { v -> update { it.copy(pitchLimit = value(v)) } },
             label = { Text("投手球数上限（留空不限制）") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.testTag("rule-pitch-limit"),
         )
@@ -222,15 +229,9 @@ internal fun RuleDraftForm(
         OutlinedTextField(
             draft.pitcherInnings,
             { v -> update { it.copy(pitcherInnings = value(v)) } },
-            label = { Text("投手登板局数上限（留空不限制）") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            label = { Text("投手局数上限（留空不限制）") },
             singleLine = true,
             modifier = Modifier.testTag("rule-pitcher-innings"),
-        )
-        Text(
-            "达到球数或登板局数上限时只提醒，可继续记分。确认登板即计一局；自动沿用投手时，实际投球才计入新局。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
     if (mode == GameMode.standard)
@@ -253,21 +254,6 @@ internal fun RuleDraftForm(
         )
 }
 
-internal fun parseMatchDate(text: String, zone: String): Long =
-    java.time.LocalDateTime.parse(
-            text.trim(),
-            java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm")
-                .withResolverStyle(java.time.format.ResolverStyle.STRICT),
-        )
-        .atZone(java.time.ZoneId.of(zone))
-        .toInstant()
-        .toEpochMilli()
-
-internal fun formatMatchDate(date: Long, zone: String): String =
-    java.time.Instant.ofEpochMilli(date)
-        .atZone(java.time.ZoneId.of(zone))
-        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-
 @Composable
 internal fun MatchTimeEditor(
     game: Game,
@@ -275,22 +261,22 @@ internal fun MatchTimeEditor(
     dismiss: () -> Unit,
     save: (Command) -> Unit,
 ) {
+    val initial = game.playedAt ?: game.startedAt ?: game.scheduledAt ?: System.currentTimeMillis()
     var text by rememberSaveable {
-        mutableStateOf(
-            formatMatchDate(
-                game.playedAt ?: game.startedAt ?: game.scheduledAt ?: System.currentTimeMillis(),
-                game.playedTimeZoneID,
-            )
-        )
+        mutableStateOf(formatMatchDate(initial, game.playedTimeZoneID))
     }
     var zone by rememberSaveable { mutableStateOf(game.playedTimeZoneID) }
+    var offset by rememberSaveable { mutableStateOf<String?>(
+        java.time.Instant.ofEpochMilli(initial).atZone(java.time.ZoneId.of(zone)).offset.id,
+    ) }
     var reason by rememberSaveable { mutableStateOf("") }
     var scheduled by rememberSaveable { mutableStateOf(game.isScheduled) }
-    val date = runCatching { parseMatchDate(text, zone) }.getOrNull()
+    val date = runCatching { parseMatchDate(text, zone.trim(), offset) }.getOrNull()
+    val ready = date != null && matchDateIssue(date, scheduled, System.currentTimeMillis()) == null
     FormPage(
         "比赛时间",
         busy,
-        date != null && (scheduled || reason.isNotBlank()),
+        ready && (scheduled || reason.isNotBlank()),
         "save-match-time",
         "保存",
         dismiss,
@@ -299,7 +285,7 @@ internal fun MatchTimeEditor(
                 Command(
                     if (scheduled) "schedule" else "date",
                     dateMillis = date,
-                    timeZoneID = zone,
+                    timeZoneID = zone.trim(),
                     text = reason,
                 )
             )
@@ -313,14 +299,9 @@ internal fun MatchTimeEditor(
             ) {
                 scheduled = it == "schedule"
             }
-        OutlinedTextField(
-            text,
-            { text = it },
-            label = { Text("日期时间 yyyy-MM-dd HH:mm") },modifier=Modifier.testTag("match-time"),
-            singleLine = true,
-        )
-        OutlinedTextField(zone, { zone = it }, label = { Text("时区") },modifier=Modifier.testTag("match-zone"), singleLine = true)
+        MatchDateTimeControls(text, zone.trim(), scheduled, offset, "match-time", enabled = !busy,
+            onTextChange = { if (text != it) offset = null; text = it }, onOffsetChange = { offset = it })
+        OutlinedTextField(zone, { if (zone != it) offset = null; zone = it }, label = { Text("时区") },modifier=Modifier.testTag("match-zone"), singleLine = true)
         if (!scheduled) OutlinedTextField(reason, { reason = it }, label = { Text("更正原因") },modifier=Modifier.testTag("match-time-reason"))
-        if (date == null) Text("请核对日期格式与时区。", color = MaterialTheme.colorScheme.error)
     }
 }

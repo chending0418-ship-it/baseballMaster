@@ -11,13 +11,13 @@ data class ReportStatisticsScope(
 object ReportStatisticsProjection {
     fun scope(games: List<Game>) = ReportStatisticsScope(
         incompleteGames = games.count { it.statisticsIncomplete || it.incompletePrefix },
-        pendingRecords = games.sumOf { game -> game.entries.count { it.incomplete } },
+        pendingRecords = games.sumOf { game -> game.entries.count { it.needsReview } },
         coachPitchOnly = games.isNotEmpty() && games.all { it.rules.mode == GameMode.coachPitch },
     )
 
     fun eventDescription(event: PitchEntry, textOnly: Boolean = false): String {
         val review = event.reviewNote?.takeIf { it.isNotEmpty() }
-        return event.text + (if (event.incomplete) "（待确认）" else "") +
+        return event.text + (if (event.needsReview) "（待确认）" else "") +
             (review?.let { if (textOnly) "（复核：$it）" else "\n复核：$it" } ?: "")
     }
 
@@ -65,7 +65,8 @@ object ReportStatisticsProjection {
         val order = (if (home) game.homeOrder else game.awayOrder) ?: team.players.map { it.id }
         val defense = (if (home) game.homePositions else game.awayPositions)?.values
             ?: team.players.take(game.rules.fielders).map { it.id }
-        val recorded = (game.batting.keys + game.pitching.keys + game.fielding.keys +
+        val fielding = game.reportFielding
+        val recorded = (game.batting.keys + game.pitching.keys + fielding.keys +
             game.exitedPlayers + defense).toSet()
         val ids = (order + team.players.filter { it.id in recorded }.map { it.id }).distinct()
         val roster = team.players.associateBy { it.id }
@@ -76,7 +77,7 @@ object ReportStatisticsProjection {
                     batting = game.batting[id]?.copy() ?: BattingLine(),
                     pitching = if (game.rules.mode == GameMode.coachPitch) PitchingLine()
                         else game.pitching[id]?.copy() ?: PitchingLine(),
-                    fielding = game.fielding[id]?.copy() ?: FieldingLine(),
+                    fielding = fielding[id]?.copy() ?: FieldingLine(),
                 )
             }
         }

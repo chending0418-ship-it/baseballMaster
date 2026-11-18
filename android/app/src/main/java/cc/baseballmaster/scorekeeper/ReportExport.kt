@@ -2,17 +2,18 @@ package cc.baseballmaster.scorekeeper
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
 import cc.baseballmaster.core.*
 import java.io.File
+import java.nio.file.Files
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.UUID
 
 /** Print-oriented local reports. The caller chooses whether to share the generated private file. */
 internal object ReportExport {
@@ -22,26 +23,35 @@ internal object ReportExport {
     private const val margin = 36f
     internal const val emptyTableMessage = "暂无符合当前范围的记录。"
 
+    internal data class AnalysisBrand(val identity: Bitmap, val signoff: Bitmap)
+
     /** Coordinates and pagination follow iOS ReportPDFCanvas (UIKit uses top-left text bounds). */
     internal class Writer(
-        context: Context,
         val kind: String, val title: String, portrait: Boolean = false,
         subtitle: String = kind, generatedAt: Long = System.currentTimeMillis(),
+        private val analysisBrand: AnalysisBrand? = null,
     ) : AutoCloseable {
         private val width = if (portrait) 595 else 842
         private val height = if (portrait) 842 else 595
-        private val bottom get() = height - 42f
+        private val analysis = analysisBrand != null
+        private val margin = if (analysis) 54f else ReportExport.margin
+        private val bottom get() = height - if (analysis) 67f else 42f
         private val contentWidth get() = width - margin * 2
+        private val navy = if (analysis) Color.rgb(11, 25, 51) else ReportExport.navy
+        private val green = if (analysis) Color.rgb(9, 42, 42) else ReportExport.green
         private val document = PdfDocument()
-        private val brand = BitmapFactory.decodeResource(context.resources, R.drawable.product_brand_horizontal)
-        private val brandPaint = Paint(Paint.FILTER_BITMAP_FLAG)
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var page: PdfDocument.Page? = null
         private var pageNumber = 0
         private var y = 0f
         private val generatedText = java.time.Instant.ofEpochMilli(generatedAt).atZone(java.time.ZoneId.systemDefault())
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-        init { nextPage(); line(title, 25f, true); line(subtitle, 10f, muted = true); y += 8 }
+        init {
+            nextPage()
+            line(title, if (analysis) 29f else 25f, true)
+            line(subtitle, if (analysis) 11f else 10f, muted = true)
+            y += 8
+        }
         private fun font(size: Float, bold: Boolean) {
             paint.textSize = size
             paint.typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
@@ -60,11 +70,19 @@ internal object ReportExport {
             font(size, bold)
             return text.split('\n').flatMap { raw ->
                 if (raw.isEmpty()) listOf("") else buildList {
-                    var rest = raw
-                    while (rest.isNotEmpty()) {
-                        var n = paint.breakText(rest, true, limit.coerceAtLeast(1f), null).coerceAtLeast(1)
-                        if (n < rest.length && Character.isHighSurrogate(rest[n - 1])) n = if (n > 1) n - 1 else 2
-                        add(rest.substring(0, n)); rest = rest.substring(n)
+                    val breaks = if (analysis) android.icu.text.BreakIterator.getLineInstance(Locale.SIMPLIFIED_CHINESE)
+                        .apply { setText(raw) } else null
+                    var start = 0
+                    while (start < raw.length) {
+                        val count = paint.breakText(raw, start, raw.length, true, limit.coerceAtLeast(1f), null).coerceAtLeast(1)
+                        var end = start + count
+                        if (end < raw.length) {
+                            val boundary = breaks?.preceding(end + 1)
+                            if (boundary != null && boundary > start) end = boundary
+                            if (Character.isHighSurrogate(raw[end - 1])) end += if (end - start > 1) -1 else 1
+                        }
+                        add(raw.substring(start, end))
+                        start = end
                     }
                 }
             }
@@ -73,23 +91,82 @@ internal object ReportExport {
             page?.let(document::finishPage); pageNumber++
             page = document.startPage(PdfDocument.PageInfo.Builder(width, height, pageNumber).create())
             page!!.canvas.drawColor(Color.WHITE)
-            page!!.canvas.drawProductBrand(brand, margin, 16f, 21f, brandPaint)
+            if (analysisBrand != null) {
+                analysisPage(analysisBrand)
+                return
+            }
+            draw("BASEBALLMASTER", margin, 20f, 11f, true, limit = 250f)
             draw(kind, width / 2f, 20f, 10f, true, green, width / 2f - margin, Paint.Align.RIGHT)
-            paint.color = green; page!!.canvas.drawRect(margin, 43f, width - margin, 45f, paint)
+            paint.color = green; page!!.canvas.drawRect(margin, 42f, width - margin, 44f, paint)
             if (pageNumber > 1) draw(title.take(72), margin, 49f, 8f, color = secondary)
-            draw("本地记录导出  |  $generatedText", margin, height - 24f, 8f,
+            draw("BaseballMaster  |  本地记录导出  |  $generatedText", margin, height - 24f, 8f,
                 color = secondary, limit = contentWidth - 100)
             draw("第 $pageNumber 页", width - margin - 90, height - 24f, 8f,
                 color = secondary, limit = 90f, align = Paint.Align.RIGHT)
             y = if (pageNumber == 1) 62f else 70f
         }
+
+        private fun analysisPage(brand: AnalysisBrand) {
+            val canvas = page!!.canvas
+            fun logo(bitmap: Bitmap, top: Float, height: Float) {
+                val logoWidth = height * bitmap.width / bitmap.height
+                canvas.drawBitmap(bitmap, null, RectF(margin, top, margin + logoWidth, top + height),
+                    Paint(Paint.FILTER_BITMAP_FLAG))
+            }
+            logo(brand.identity, 40f, 22f)
+            draw(kind, width / 2f, 45f, 10f, true, green, contentWidth / 2f, Paint.Align.RIGHT)
+            paint.color = green
+            canvas.drawRect(margin, 73f, width - margin, 74f, paint)
+            paint.color = Color.rgb(212, 222, 217)
+            canvas.drawRect(margin, height - 52f, width - margin, height - 51.5f, paint)
+            logo(brand.signoff, height - 44f, 10f)
+            draw("第 $pageNumber 页", width - margin - 90, height - 45f, 9f, color = secondary, limit = 90f, align = Paint.Align.RIGHT)
+            if (pageNumber > 1) draw(wrap(title, size = 9f).first(), margin, 81f, 9f, color = secondary)
+            y = if (pageNumber == 1) 91f else 105f
+        }
+
         private fun ensure(space: Float) { if (y + space > bottom) nextPage() }
         fun line(text: String, size: Float = 10f, bold: Boolean = false, muted: Boolean = false) {
-            val leading = kotlin.math.ceil(size * 1.5f)
+            val leading = kotlin.math.ceil(size * if (analysis) 1.65f else 1.5f)
             wrap(text, size = size, bold = bold).forEach {
                 ensure(leading); draw(it, margin, y, size, bold, if (muted) secondary else navy); y += leading
             }
             y += 7
+        }
+
+        fun section(title: String, paragraphs: List<String>) {
+            val first = paragraphs.firstOrNull() ?: return
+            val firstHeight = minOf(2, wrap(first, size = 12f).size) * 20f
+            ensure(firstHeight + 37f)
+            line(title, 15f, true)
+            paragraphs.forEach { line(it, 12f) }
+            y += 7f
+        }
+
+        fun highlight(title: String, detail: String) {
+            val inset = 14f
+            val innerWidth = contentWidth - 2 * inset
+            val heading = wrap(title, innerWidth, 15f, true)
+            val lines = wrap(detail, innerWidth, 12f)
+            val block = 2 * inset + heading.size * 22f + lines.size * 20f + 3f
+            if (block > bottom - 105f) {
+                section(title, listOf(detail))
+                return
+            }
+            ensure(block)
+            paint.color = Color.rgb(240, 245, 242)
+            page!!.canvas.drawRect(margin, y, width - margin, y + block, paint)
+            var position = y + inset
+            for (line in heading) {
+                draw(line, margin + inset, position, 15f, true, green, innerWidth)
+                position += 22f
+            }
+            position += 3f
+            for (line in lines) {
+                draw(line, margin + inset, position, 12f, limit = innerWidth)
+                position += 20f
+            }
+            y += block + 17f
         }
         fun textRecord(title: String, body: String) {
             val lines = wrap(body, size = 11f)
@@ -119,12 +196,18 @@ internal object ReportExport {
                 y += 68
             }
         }
-        fun table(title: String, headers: List<String>, rows: List<List<String>>, weights: List<Float>? = null, compact: Boolean = false) {
+        fun table(title: String, headers: List<String>, rows: List<List<String>>, weights: List<Float>? = null, compact: Boolean = false,
+                  leftAlignedColumns: Set<Int> = setOf(0)) {
             require(headers.isNotEmpty() && rows.all { it.size == headers.size })
             val columnWeights = weights ?: headers.indices.map { if (it == 0) 3f else 1f }
             require(columnWeights.size == headers.size && columnWeights.all { it > 0 })
             val widths = columnWeights.map { contentWidth * it / columnWeights.sum() }
-            val leading = 12f; val padding = if (compact) 3f else 5f; val headerHeight = if (compact) 22f else 24f
+            // Narrow numeric columns use less inset so three-letter headings stay readable.
+            val insets = widths.map { if (it < 28f) 2f else 5f }
+            val leading = if (analysis) 17f else 12f
+            val fontSize = if (analysis) 11f else 8.5f
+            val padding = if (compact) 3f else 5f
+            val headerHeight = if (compact) 22f else 24f
             fun header(continued: Boolean) {
                 val heading = title + if (continued) " (续)" else ""
                 val headingHeight = wrap(heading, size = 12f, bold = true).size * 18f + 7
@@ -133,8 +216,8 @@ internal object ReportExport {
                 paint.color = navy; page!!.canvas.drawRect(margin, y, width - margin, y + headerHeight, paint)
                 var x = margin
                 headers.forEachIndexed { i, label ->
-                    draw(label, x + 5, y + 6, 8f, true, Color.WHITE, widths[i] - 10,
-                        if (i == 0) Paint.Align.LEFT else Paint.Align.CENTER); x += widths[i]
+                    draw(label, x + insets[i], y + 6, if (analysis) 10f else 8f, true, Color.WHITE, widths[i] - 2 * insets[i],
+                        if (i in leftAlignedColumns) Paint.Align.LEFT else Paint.Align.CENTER); x += widths[i]
                 }
                 y += headerHeight
             }
@@ -142,11 +225,11 @@ internal object ReportExport {
             if (rows.isEmpty()) { y += 6; line(emptyTableMessage, 9f, muted = true); return }
             rows.forEachIndexed { rowIndex, row ->
                 val total = row.firstOrNull() == "合计"
-                val cells = row.mapIndexed { i, value -> wrap(value, widths[i] - 10, 8.5f, total) }
+                val cells = row.mapIndexed { i, value -> wrap(value, widths[i] - 2 * insets[i], fontSize, total) }
                 val lineCount = cells.maxOf { it.size }
                 var keep = lineCount * leading + padding * 2
                 rows.getOrNull(rowIndex + 1)?.takeIf { it.firstOrNull() == "合计" }?.let { next ->
-                    keep += next.mapIndexed { i, value -> wrap(value, widths[i] - 10, 8.5f, true).size }.max() * leading + padding * 2
+                    keep += next.mapIndexed { i, value -> wrap(value, widths[i] - 2 * insets[i], fontSize, true).size }.max() * leading + padding * 2
                 }
                 if (y + keep > bottom && keep < bottom - 120) { nextPage(); header(true) }
                 var offset = 0
@@ -158,9 +241,9 @@ internal object ReportExport {
                     page!!.canvas.drawRect(margin, y, width - margin, y + rowHeight, paint)
                     var x = margin
                     cells.forEachIndexed { i, cell ->
-                        for (n in offset until minOf(offset + count, cell.size)) draw(cell[n], x + 5,
-                            y + padding + (n - offset) * leading, 8.5f, total, limit = widths[i] - 10,
-                            align = if (i == 0) Paint.Align.LEFT else Paint.Align.CENTER)
+                        for (n in offset until minOf(offset + count, cell.size)) draw(cell[n], x + insets[i],
+                            y + padding + (n - offset) * leading, fontSize, total, limit = widths[i] - 2 * insets[i],
+                            align = if (i in leftAlignedColumns) Paint.Align.LEFT else Paint.Align.CENTER)
                         x += widths[i]
                     }
                     y += rowHeight; offset += count
@@ -205,7 +288,7 @@ internal object ReportExport {
         }
         fun pageBreak() = nextPage()
         fun save(file: File) { page?.let(document::finishPage); page = null; file.outputStream().use(document::writeTo) }
-        override fun close() { try { document.close() } finally { brand.recycle() } }
+        override fun close() { document.close() }
     }
     private fun number(n: Double?) = n?.let { String.format(Locale.US, "%.3f", it).let { formatted -> if (it < 1) formatted.removePrefix("0") else formatted } } ?: "-"
     private fun playerNumbers(p: Player) = p.jerseyNumbers.ifEmpty { listOf(p.number) }.joinToString(" / ") { "#$it" }
@@ -215,19 +298,21 @@ internal object ReportExport {
     private fun tables(w: Writer, players: List<SeasonPlayerStatistics>, gameCount: Int, coachOnly: Boolean = false,
                        titlePrefix: String = "", compact: Boolean = false, includeTotal: Boolean = true,
                        categories: Set<String> = setOf("batting", "pitching", "fielding")) {
-        fun batting(name: String, games: Int, b: BattingLine) = listOf(name, "$games", "${b.plateAppearances}", "${b.atBats}", "${b.runs}", "${b.hits}", "${b.doubles}", "${b.triples}", "${b.homeRuns}", "${b.runsBattedIn}", "${b.walks}", "${b.hitByPitch}", "${b.strikeouts}", "${b.stolenBases}", number(if (b.atBats > 0) b.average else null), number(if (b.atBats + b.walks + b.hitByPitch + b.sacrifices > 0) b.onBasePercentage else null), number(if (b.atBats > 0) b.slugging else null), number(if (b.atBats > 0) b.onBasePercentage + b.slugging else null))
+        fun batting(name: String, games: Int, b: BattingLine) = listOf(name, "$games", "${b.plateAppearances}", "${b.atBats}", "${b.runs}", "${b.hits}", "${b.doubles}", "${b.triples}", "${b.homeRuns}", "${b.totalBases}", "${b.runsBattedIn}", "${b.walks}", "${b.hitByPitch}", "${b.strikeouts}", "${b.stolenBases}", number(if (b.atBats > 0) b.average else null), number(if (b.atBats + b.walks + b.hitByPitch + b.sacrifices > 0) b.onBasePercentage else null), number(if (b.atBats > 0) b.slugging else null), number(if (b.atBats > 0) b.onBasePercentage + b.slugging else null))
         fun pitching(name: String, p: PitchingLine) = listOf(name, "${p.outsRecorded / 3}.${p.outsRecorded % 3}", "${p.battersFaced}", "${p.hits}", "${p.runs}", "${p.earnedRuns}", "${p.walks}", "${p.hitByPitch}", "${p.strikeouts}", "${p.wildPitches}", "${p.pitches}", "${p.strikes}", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", p.earnedRuns * 21.0 / p.outsRecorded) else "-", if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", (p.walks + p.hits) * 3.0 / p.outsRecorded) else "-")
         fun fielding(name: String, f: FieldingLine): List<String> {
             val total = f.putouts + f.assists + f.errors
-            return listOf(name, "${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}", "$total", number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null))
+            return listOf(name, "${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}",
+                f.catcherCaughtStealing?.toString() ?: "-", f.passedBalls?.toString() ?: "-", "$total",
+                number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null))
         }
         fun name(p: SeasonPlayerStatistics) = playerName(p.player) + if (p.currentRoster) "" else "（历史）"
         val batTotal = BattingLine(); val pitchTotal = PitchingLine(); val fieldTotal = FieldingLine()
         players.forEach { addBatting(batTotal, it.batting); addPitching(pitchTotal, it.pitching); addFielding(fieldTotal, it.fielding) }
         val bats = players.map { batting(name(it), it.games, it.batting) } + if (includeTotal && players.isNotEmpty()) listOf(batting("合计", gameCount, batTotal)) else emptyList()
         if ("batting" in categories) {
-            w.table("${titlePrefix.ifEmpty { "打击" }} · BATTING", listOf("球员", "G", "PA", "AB", "R", "H", "2B", "3B", "HR", "RBI", "BB", "HBP", "SO", "SB", "AVG", "OBP", "SLG", "OPS"), bats,
-                listOf(4f) + List(17) { 1f }, compact)
+            w.table("${titlePrefix.ifEmpty { "打击" }} · BATTING", listOf("球员", "G", "PA", "AB", "R", "H", "2B", "3B", "HR", "TB", "RBI", "BB", "HBP", "SO", "SB", "AVG", "OBP", "SLG", "OPS"), bats,
+                listOf(4f) + List(18) { 1f }, compact)
             val extras = players.filter { it.batting.caughtStealing + it.batting.sacrifices > 0 }.joinToString("；") { "${name(it)}：CS ${it.batting.caughtStealing}，SAC ${it.batting.sacrifices}" }
             if (extras.isNotEmpty()) w.line("其他进攻记录：$extras", 9f, muted = true)
         }
@@ -243,20 +328,23 @@ internal object ReportExport {
         if ("fielding" in categories) {
             val fielders = players.filter { it.fielding != FieldingLine() }
             val defense = fielders.map { fielding(name(it), it.fielding) } + if (includeTotal && fielders.isNotEmpty()) listOf(fielding("合计", fieldTotal)) else emptyList()
-            w.table("${titlePrefix.ifEmpty { "守备" }} · FIELDING", listOf("球员", "PO", "A", "E", "DP", "TC", "FPCT"), defense,
-                listOf(4f, 1f, 1f, 1f, 1f, 1f, 1.5f), compact)
+            w.table("${titlePrefix.ifEmpty { "守备" }} · FIELDING", listOf("球员", "PO", "A", "E", "DP", "CCS", "PB", "TC", "FPCT"), defense,
+                listOf(4f, 1f, 1f, 1f, 1f, 1f, 1f, 1f, 1.5f), compact)
         }
     }
 
-    private fun file(context: Context, kind: String): File = File(context.cacheDir, "reports").let {
-        check(it.isDirectory || it.mkdirs())
-        File(it, "BaseballMaster-$kind-${UUID.randomUUID()}.pdf")
+    private fun file(context: Context, label: String): File {
+        val root = Files.createDirectories(File(context.cacheDir, "reports").toPath())
+        val directory = Files.createTempDirectory(root, "pdf-")
+        return directory.resolve("BaseballMaster-$label.pdf").toFile()
     }
-    fun team(context: Context, team: Team, year: Int, mode: GameMode?, summary: SeasonStatistics, isFiltered: Boolean = false): File {
-        val file = file(context, "team")
+    fun team(context: Context, team: Team, year: Int, mode: GameMode?, summary: SeasonStatistics,
+        isFiltered: Boolean = false, sourceNote: String? = null): File {
+        val file = file(context, "球队年度报告-$year")
         val scope = ReportStatisticsProjection.scope(summary.games)
-        Writer(context, "ANNUAL REPORT / 球队年度报告", team.name,
-            subtitle = "$year · ${if (isFiltered) "所选比赛统计" else "完整球队年度数据"} · ${summary.games.size} 场已结束比赛").use { w ->
+        Writer("ANNUAL REPORT / 球队年度报告", team.name,
+            subtitle = "$year · ${if (isFiltered) "所选比赛统计" else if (sourceNote == null) "完整球队年度数据" else "球队年度统计"} · ${summary.games.size} 场已结束比赛").use { w ->
+            sourceNote?.let { w.line("共享球队 · $it", 9f, muted = true) }
             if (summary.incomplete > 0) w.line("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold = true)
             w.metrics(listOf("比赛" to "${summary.games.size}", "胜 / 负 / 平" to "${summary.wins} / ${summary.losses} / ${summary.ties}",
                 "得分" to "${summary.runs}", "失分" to "${summary.runsAllowed}",
@@ -283,12 +371,14 @@ internal object ReportExport {
     }
     private fun eraText(p: PitchingLine) = if (p.outsRecorded > 0) String.format(Locale.US, "%.2f", p.earnedRuns * 21.0 / p.outsRecorded) else "-"
     private fun innings(p: PitchingLine) = "${p.outsRecorded / 3}.${p.outsRecorded % 3}"
-    fun player(context: Context, team: Team, year: Int, row: SeasonPlayerStatistics, games: List<Game> = emptyList(), eligibleGameCount: Int = row.games): File {
-        val file = file(context, "player")
+    fun player(context: Context, team: Team, year: Int, row: SeasonPlayerStatistics, games: List<Game> = emptyList(),
+        eligibleGameCount: Int = row.games, sourceNote: String? = null): File {
+        val file = file(context, "球员个人报告-$year")
         val scope = ReportStatisticsProjection.scope(games)
         val p = row.player
-        Writer(context, "PLAYER REPORT / 球员个人报告", p.name,
+        Writer("PLAYER REPORT / 球员个人报告", p.name,
             subtitle = "${p.englishName} · ${playerNumbers(p)} · ${team.name} · $year\n范围：已选 ${row.games} / $eligibleGameCount 场比赛").use { w ->
+            sourceNote?.let { w.line("共享球队 · $it", 9f, muted = true) }
             if (scope.incompleteGames > 0) w.line("统计范围包含过程或责任待确认的比赛，统计可能不完整。", bold = true)
             w.metrics(listOf("已选比赛" to "${row.games}", "打率 AVG" to number(if (row.batting.atBats > 0) row.batting.average else null),
                 "安打 H" to "${row.batting.hits}", "打点 RBI" to "${row.batting.runsBattedIn}", "投球局数 IP" to innings(row.pitching),
@@ -304,20 +394,21 @@ internal object ReportExport {
                 return "${gameDate(g).substringBefore(' ')}\n${(if (home) g.away else g.home).name}\n${if (our == their) "平" else if (our > their) "胜" else "负"} $our : $their"
             }
             w.pageBreak()
-            w.table("逐场打击 · BATTING GAME LOG", listOf("日期 / 对手 / 结果", "PA", "AB", "R", "H", "HR", "RBI", "BB", "SO", "AVG"), games.map { g ->
+            w.table("逐场打击 · BATTING GAME LOG", listOf("日期 / 对手 / 结果", "PA", "AB", "R", "H", "HR", "TB", "RBI", "BB", "SO", "AVG"), games.map { g ->
                 val b = g.batting[p.id] ?: BattingLine()
-                listOf(label(g), "${b.plateAppearances}", "${b.atBats}", "${b.runs}", "${b.hits}", "${b.homeRuns}", "${b.runsBattedIn}", "${b.walks}", "${b.strikeouts}", number(if (b.atBats > 0) b.average else null))
-            }, listOf(5f) + List(9) { 1f })
+                listOf(label(g), "${b.plateAppearances}", "${b.atBats}", "${b.runs}", "${b.hits}", "${b.homeRuns}", "${b.totalBases}", "${b.runsBattedIn}", "${b.walks}", "${b.strikeouts}", number(if (b.atBats > 0) b.average else null))
+            }, listOf(5f) + List(10) { 1f })
             w.table("逐场投手 · PITCHING GAME LOG", listOf("日期 / 对手 / 结果", "IP", "H", "R", "ER", "BB", "SO", "P", "ERA"), games.map { g ->
                 val pitch = g.pitching[p.id]
                 listOf(label(g)) + if (g.rules.mode == GameMode.coachPitch) List(8) { "不适用" } else if (pitch == null) List(8) { "-" } else
                     listOf(innings(pitch), "${pitch.hits}", "${pitch.runs}", "${pitch.earnedRuns}", "${pitch.walks}", "${pitch.strikeouts}", "${pitch.pitches}", eraText(pitch))
             }, listOf(5f) + List(8) { 1f })
-            w.table("逐场守备 · FIELDING GAME LOG", listOf("日期 / 对手 / 结果", "PO", "A", "E", "DP", "FPCT"), games.map { g ->
-                val f = g.fielding[p.id]; val total = f?.let { it.putouts + it.assists + it.errors } ?: 0
-                listOf(label(g)) + if (f == null) List(5) { "-" } else listOf("${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}",
+            w.table("逐场守备 · FIELDING GAME LOG", listOf("日期 / 对手 / 结果", "PO", "A", "E", "DP", "CCS", "PB", "FPCT"), games.map { g ->
+                val f = g.reportFielding[p.id]; val total = f?.let { it.putouts + it.assists + it.errors } ?: 0
+                listOf(label(g)) + if (f == null) List(7) { "-" } else listOf("${f.putouts}", "${f.assists}", "${f.errors}", "${f.doublePlays}",
+                    f.catcherCaughtStealing?.toString() ?: "-", f.passedBalls?.toString() ?: "-",
                     number(if (total > 0) (f.putouts + f.assists).toDouble() / total else null))
-            }, listOf(5f) + List(5) { 1f })
+            }, listOf(5f) + List(7) { 1f })
             legend(w); w.save(file)
         }
         return file
@@ -331,7 +422,8 @@ internal object ReportExport {
     private fun legend(w: Writer) {
         w.line("统计口径与缩写", 11f, true)
         w.line("比率按累计原始数据计算；ERA 按 7 局计算。IP 小数位为出局数，0.1 表示 1 人出局。\"-\" 表示未进行、无记录或无可用分母。DP 为球员参与双杀次数，合计不等同于球队双杀次数。", 8f, muted = true)
-        w.line("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · TC 守备机会 · FPCT 守备率", 8f, muted = true)
+        w.line("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · TB 打击总垒数 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · TC 守备机会 · FPCT 守备率 · CCS 捕手阻杀 · PB 捕逸", 8f, muted = true)
+        w.line("CCS、PB 只计归属已确认的记录；横线表示无可核对的数据。", 8f, muted = true)
     }
     internal fun eventCategory(e: PitchEntry, command: Command? = null): String = when (e.kind) {
         "pitch" -> "投球"
@@ -348,11 +440,18 @@ internal object ReportExport {
         else -> "比赛"
     }
     fun game(context: Context, game: Game, playByPlay: Boolean, textOnly: Boolean = false, appearanceID: String? = null): File {
-        val file = file(context, if (playByPlay) "plays" else "game")
-        if (playByPlay) writeAppearances(context, file, game, textOnly, appearanceID) else writeBoxScore(context, file, game)
+        val label = when {
+            !playByPlay -> "单场比赛战报"
+            appearanceID == null && textOnly -> "逐打席文字简版"
+            appearanceID == null -> "逐打席详细版"
+            textOnly -> "单打席文字简版"
+            else -> "单打席详细版"
+        }
+        val file = file(context, label)
+        if (playByPlay) writeAppearances(file, game, textOnly, appearanceID) else writeBoxScore(file, game)
         return file
     }
-    private fun writeAppearances(context: Context, file: File, game: Game, textOnly: Boolean, appearanceID: String?) {
+    private fun writeAppearances(file: File, game: Game, textOnly: Boolean, appearanceID: String?) {
         val all = AppearanceProjection.build(game)
         val commandsByID = game.journal.associate { it.id to it.command }
         val selected = if (appearanceID == null) all else all.filter { it.id == appearanceID }
@@ -371,7 +470,7 @@ internal object ReportExport {
             else if (appearanceID == null) "逐打席比赛速报" else "${sequence(selected.first())}速报"
         val kind = if (textOnly) "逐打席 / 文字简版" else "PLAY BY PLAY / 逐打席速报"
         val subtitle = "${game.away.name} vs ${game.home.name} · ${gameDate(game)} · ${if (game.isFinal) "已结束" else "进行中"}"
-        Writer(context, kind, title, portrait = textOnly, subtitle = subtitle +
+        Writer(kind, title, portrait = textOnly, subtitle = subtitle +
             if (!textOnly && game.rules.mode == GameMode.slowPitch) " · ${rulesText(game.rules)}" else "").use { w ->
             if (textOnly && game.rules.mode == GameMode.slowPitch) w.line(rulesText(game.rules), muted = true)
             if (game.statisticsIncomplete || game.incompletePrefix) w.line("过程或责任待确认 · 统计可能不完整", bold = true)
@@ -412,11 +511,11 @@ internal object ReportExport {
             w.save(file)
         }
     }
-    private fun writeBoxScore(context: Context, file: File, game: Game) {
+    private fun writeBoxScore(file: File, game: Game) {
         val r = game.rules
         val subtitle = "比赛时间：${gameDate(game)} · ${if (game.isFinal) "已结束" else "进行中 / 非最终数据"} · " +
             if (r.mode == GameMode.slowPitch) rulesText(r) else "规定 ${r.innings} 局"
-        Writer(context, "BOX SCORE / 单场比赛战报", "${game.away.name} vs ${game.home.name}", subtitle = subtitle).use { w ->
+        Writer("BOX SCORE / 单场比赛战报", "${game.away.name} vs ${game.home.name}", subtitle = subtitle).use { w ->
             if (game.statisticsIncomplete || game.incompletePrefix) w.line("过程或责任待确认 · 统计可能不完整", bold = true)
             w.metrics(listOf("客队 · ${game.away.shortName.take(14)}" to "${game.awayRuns}", "主队 · ${game.home.shortName.take(14)}" to "${game.homeRuns}",
                 "安打 H（客 / 主）" to "${game.awayHits} / ${game.homeHits}", "失误 E（客 / 主）" to "${game.awayErrors} / ${game.homeErrors}"))

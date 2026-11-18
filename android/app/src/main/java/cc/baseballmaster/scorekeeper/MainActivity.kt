@@ -14,10 +14,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
@@ -41,6 +44,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.semantics.text
@@ -61,11 +67,16 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cc.baseballmaster.core.*
 import kotlin.math.*
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
@@ -99,57 +110,162 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     /** Recording task snapshots contain the full journal and must never enter the Activity Bundle. */
     internal var scoringTaskSource by mutableStateOf<Game?>(null)
     private var sharedPresence: kotlinx.coroutines.Job?=null
-    private var broadcastWorker: kotlinx.coroutines.Job? = null
-    private var pendingBroadcast: Game? = null
-    private var broadcastForeground = false
-    // This binding is set by the user's confirmation, independently of team membership.
-    private var selectedLocalBroadcastGameID: String?
-        get() = settings.getString("selected_local_broadcast_game_id", null)
-        set(value) { settings.edit().putString("selected_local_broadcast_game_id", value).apply() }
-
-    internal fun requestFixedBroadcast(game: Game) {
-        if (!broadcastForeground || recoveryRequired || loading || game.id != selectedLocalBroadcastGameID ||
-            game.isPregame || game.isObservation || game.practice || game.isScheduled) return
-        pendingBroadcast = game
-        if (broadcastWorker?.isActive == true) return
-        broadcastWorker = viewModelScope.launch {
-            while (broadcastForeground && !recoveryRequired) {
-                val latest = pendingBroadcast ?: break
-                pendingBroadcast = null
-                if (latest.id != selectedLocalBroadcastGameID) continue
-                try {
-                    val result = sharing.resumeBroadcast(latest)
-                    if (result?.selected != true && latest.id == selectedLocalBroadcastGameID)
-                        selectedLocalBroadcastGameID = null
-                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (_: Exception) { /* A failed broadcast never changes the local record. */ }
-            }
-        }
+    internal val fixedBroadcast by lazy {
+        TeamBroadcastCoordinator(
+            application, sharing, viewModelScope,
+            canSync = { !loading && !recoveryRequired },
+            localGame = { id -> games.firstOrNull { it.id == id } },
+            activeLocalGame = { openedGame },
+        )
     }
 
-    internal suspend fun selectFixedBroadcast(game: Game, selection: BroadcastSelection): TeamBroadcastStatus? {
-        val current = openedGame
-        check(current?.id == game.id && current.revision == game.revision && !recoveryRequired && !loading) { "比赛已变化，请重新核对" }
-        val status = sharing.publishBroadcast(game, selection)
-        if (status?.selected == true) selectedLocalBroadcastGameID = game.id
-        return status
-    }
     internal fun setLiveForeground(active: Boolean) {
+        fixedBroadcast.setForeground(active)
         live.setForeground(active);sharedPresence?.cancel();sharedPresence=null
-        broadcastForeground = active
-        if (!active) { broadcastWorker?.cancel(); broadcastWorker = null; pendingBroadcast = null }
         if(active) sharedPresence=viewModelScope.launch {
             while(true) {
-                if(!loading && !recoveryRequired) {
-                    openedGame?.let(::requestFixedBroadcast)
-                    runCatching { sharing.maintainFixedSharedBroadcast(); sharing.maintainSharedLive() }
-                        .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
-                }
+                if(!loading && !recoveryRequired) runCatching {sharing.maintainSharedLive()}.onFailure {if(it is kotlinx.coroutines.CancellationException) throw it}
                 kotlinx.coroutines.delay(10_000)
             }
         }
     }
-    internal val sharing by lazy { AndroidTeamSharing(repository,androidTeamDirectory(application,"https://baseballmaster.cc/api/v3")) }
+    internal val sharing by lazy {
+        val testSession = if (BuildConfig.DEBUG) androidTeamDirectoryTestOverride?.invoke(application) else null
+        AndroidTeamSharing(repository, testSession ?: androidTeamDirectory(application, "https://baseballmaster.cc/api/v3"))
+    }
+    internal var analysisPreparation by mutableStateOf<Deferred<AnalysisSource>?>(null)
+        private set
+
+    internal fun openGameAnalysis(game: Game) = prepareAnalysis { AnalysisSource.single(game) }
+
+    internal fun openSeasonAnalysis(team: Team, year: Int, statistics: SeasonStatistics, filtered: Boolean) =
+        prepareAnalysis { AnalysisSource.season(team, year, statistics, filtered) }
+
+    private fun prepareAnalysis(build: () -> AnalysisSource) {
+        if (analysisPreparation == null) {
+            analysisPreparation = viewModelScope.async(Dispatchers.Default) { build() }
+        }
+    }
+
+    internal fun closeGameAnalysis() {
+        analysisPreparation?.cancel()
+        analysisPreparation = null
+    }
+
+    internal var scheduleFeed by mutableStateOf(TeamScheduleFeed())
+        private set
+    internal var scheduleRefreshing by mutableStateOf(false)
+        private set
+    internal var scheduleSubmitting by mutableStateOf(false)
+        private set
+    private var scheduleProblem by mutableStateOf<Pair<String, String>?>(null)
+    private var scheduleReadGeneration = 0L
+    private var lastScheduleReadAt: Long? = null
+    private var scheduleRefreshRequested = false
+    private val scheduleReadMutex = Mutex()
+
+    internal fun schedulePublication(game: Game) = scheduleFeed.publications[game.id.lowercase()]
+    internal fun scheduleNotice(game: Game) = latestLocalScheduleNotice(game, scheduleFeed)
+    internal fun scheduleIssue(key: String) = scheduleProblem?.takeIf { it.first == key }?.second
+    internal fun canManageRemoteSchedule(notice: TeamScheduleNotice) =
+        scheduleFeed.memberships.any { it.id.equals(notice.teamID, true) && it.role == TeamRole.admin }
+
+    private suspend fun readLocalScheduleState(): Boolean {
+        val cached = sharing.scheduleState()
+        val memberships = cached.memberships.mapTo(hashSetOf()) { it.id.lowercase() }
+        val old = scheduleFeed
+        val next = cached.copy(
+            notices = old.notices.filter { it.teamID.lowercase() in memberships },
+            message = old.message?.takeIf { memberships.isNotEmpty() },
+        )
+        scheduleFeed = next
+        val authorityChanged = old.memberships != next.memberships || old.bindings != next.bindings
+        if (authorityChanged) lastScheduleReadAt = null
+        return authorityChanged
+    }
+
+    internal fun refreshTeamSchedules(force: Boolean = false) {
+        if (recoveryRequired) return
+        if (scheduleRefreshing) {
+            scheduleRefreshRequested = scheduleRefreshRequested || force
+            return
+        }
+        scheduleRefreshing = true
+        var generation = scheduleReadGeneration
+        viewModelScope.launch {
+            try {
+                val shouldRead = scheduleReadMutex.withLock {
+                    readLocalScheduleState()
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (scheduleFeed.memberships.isEmpty() || !force && lastScheduleReadAt?.let { now - it < 60_000L } == true) return@withLock false
+                    generation = scheduleReadGeneration
+                    lastScheduleReadAt = now
+                    true
+                }
+                if (shouldRead) {
+                    val updated = sharing.teamSchedules()
+                    if (generation == scheduleReadGeneration) scheduleFeed = updated
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                if (generation == scheduleReadGeneration) {
+                    scheduleFeed = scheduleFeed.copy(notices = emptyList(),
+                        message = "球队赛程暂时无法读取，请刷新重试。")
+                }
+            } finally {
+                scheduleRefreshing = false
+                if (scheduleRefreshRequested) {
+                    scheduleRefreshRequested = false
+                    refreshTeamSchedules(force = true)
+                }
+            }
+        }
+    }
+
+    internal fun updateTeamSchedule(
+        game: Game, startsAt: Long, venue: String, cancelled: Boolean = false, expectedRevision: Long? = null,
+    ) = submitTeamSchedule(game.id) { sharing.publishSchedule(game.id, startsAt, venue, cancelled, expectedRevision) }
+
+    internal fun retryTeamSchedule(game: Game) =
+        submitTeamSchedule(game.id) { sharing.retrySchedulePublication(game.id) }
+
+    internal fun updateRemoteSchedule(notice: TeamScheduleNotice, startsAt: Long, venue: String, cancelled: Boolean = false) =
+        submitTeamSchedule(notice.key) { sharing.updateRemoteSchedule(notice, startsAt, venue, cancelled) }
+
+    internal fun retryRemoteSchedule(notice: TeamScheduleNotice) =
+        submitTeamSchedule(notice.key) { sharing.retrySchedulePublication(notice.id, notice.teamID) }
+
+    private fun submitTeamSchedule(key: String, action: suspend () -> TeamSchedulePublication) {
+        if (scheduleSubmitting || recoveryRequired) return
+        scheduleSubmitting = true
+        scheduleProblem = null
+        viewModelScope.launch {
+            try {
+                action()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (fault: TeamServiceFault) {
+                val text = if (fault.code == "schedule_changed") "球队赛程已变化，请核对最新安排后再提交。"
+                    else fault.message ?: "球队发布尚未确认，请重试。"
+                scheduleProblem = key to text
+            } catch (failure: Exception) {
+                val text = if (failure is IllegalArgumentException || failure is IllegalStateException) failure.message else null
+                scheduleProblem = key to (text ?: "球队发布尚未确认。请联网重试，原安排仍保留。")
+            } finally {
+                try {
+                    scheduleReadMutex.withLock { readLocalScheduleState() }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    scheduleProblem = key to "赛程状态暂时无法读取，请刷新核对。"
+                } finally {
+                    scheduleSubmitting = false
+                }
+                refreshTeamSchedules(force = true)
+            }
+        }
+    }
     internal val launchRepository by lazy {AndroidLaunchScreenRepository.standard(application)}
     internal var launchDismissed by mutableStateOf(false)
         private set
@@ -182,14 +298,62 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
             catch(_: Exception) {error="链接状态尚未保存，原链接仍保留，请重试。"}
         }}
     }
-    internal val voice = VoiceAccess(SealedVoiceDevice(application))
     private val settings = application.getSharedPreferences("baseballmaster-settings", 0)
+    internal var websiteRelease by mutableStateOf<WebsiteAndroidRelease?>(null)
+        private set
+    internal var checkingUpdate by mutableStateOf(false)
+        private set
+    internal var updateCheckFailed by mutableStateOf(false)
+        private set
+    private var lastAutomaticUpdateCheck: Long? = null
+    private var dismissedUpdateBuild by mutableIntStateOf(settings.getInt("dismissedUpdateBuild", 0))
+    internal val advertisedUpdate get() = websiteRelease?.takeIf {
+        it.build > maxOf(BuildConfig.VERSION_CODE, dismissedUpdateBuild)
+    }
+
+    internal fun dismissUpdate(build: Int) {
+        dismissedUpdateBuild = build
+        settings.edit().putInt("dismissedUpdateBuild", build).apply()
+    }
+
+    internal fun checkForUpdate(manual: Boolean = false) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (checkingUpdate || !manual && lastAutomaticUpdateCheck?.let { now - it < 60 * 60 * 1000L } == true) return
+        lastAutomaticUpdateCheck = now
+        checkingUpdate = true
+        updateCheckFailed = false
+        viewModelScope.launch {
+            try {
+                websiteRelease = withContext(Dispatchers.IO) { WebsiteAndroidRelease.read() }
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                websiteRelease = null
+                updateCheckFailed = true
+            } finally {
+                checkingUpdate = false
+            }
+        }
+    }
+
     internal var appAppearance by mutableStateOf(settings.getString("appAppearance","system")?.takeIf {it in setOf("system","light","dark")} ?: "system")
         private set
     internal var showPracticeGuidance by mutableStateOf(settings.getBoolean("showPracticeGuidance",true))
         private set
     internal var showRuleExamples by mutableStateOf(settings.getBoolean("showRuleExamples",true))
         private set
+    internal var defaultRecordingMethod by mutableStateOf(
+        settings.getString("defaultRecordingMethod", null)?.takeIf { it in RecordingMethodLabels } ?: "traditional",
+    )
+        private set
+
+    internal fun setDefaultRecordingMethod(method: String) {
+        require(method in RecordingMethodLabels)
+        if (defaultRecordingMethod == method) return
+        settings.edit().putString("defaultRecordingMethod", method).apply()
+        defaultRecordingMethod = method
+    }
+
     internal fun setAppearance(value: String) {require(value in setOf("system","light","dark"));settings.edit().putString("appAppearance",value).apply();appAppearance=value}
     internal fun setPracticeGuidance(value: Boolean) {settings.edit().putBoolean("showPracticeGuidance",value).apply();showPracticeGuidance=value}
     internal fun setRuleExamples(value: Boolean) {settings.edit().putBoolean("showRuleExamples",value).apply();showRuleExamples=value}
@@ -272,6 +436,21 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     }
 
     init {
+        viewModelScope.launch {
+            sharing.scheduleChanges.collect {
+                try {
+                    val authorityChanged = scheduleReadMutex.withLock { readLocalScheduleState() }
+                    if (authorityChanged) {
+                        scheduleReadGeneration++
+                        refreshTeamSchedules(force = true)
+                    }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    scheduleFeed = TeamScheduleFeed(message = "球队赛程暂时无法读取，请刷新重试。")
+                }
+            }
+        }
         viewModelScope.launch {incomingLinkMutex.withLock {
             try {incomingTeamLink=sharing.state().incomingLinks.firstOrNull()}
             catch(_: Exception) {error="共享链接暂时无法读取，本机比赛仍可使用；请保留原链接与本机资料。"}
@@ -348,12 +527,14 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
 
     internal suspend fun restoreDeviceBackup(bytes: ByteArray) {
         live.prepareForRestore()
-        sharing.clearBroadcastBinding()
-        selectedLocalBroadcastGameID = null
-        broadcastWorker?.cancel(); pendingBroadcast = null
-        val selected = withContext(Dispatchers.IO) {
-            repository.migrateLegacyTeamArchives(getApplication())
-            repository.restoreDeviceBackup(bytes)
+        fixedBroadcast.clearBinding()
+        val selected = try {
+            withContext(Dispatchers.IO) {
+                repository.migrateLegacyTeamArchives(getApplication())
+                repository.restoreDeviceBackup(bytes)
+            }
+        } finally {
+            withContext(kotlinx.coroutines.NonCancellable) { fixedBroadcast.finishRestore() }
         }
         rememberCurrentTeam(selected)
         live.requestSync()
@@ -391,15 +572,22 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private fun accept(game: Game) {
         if (game.practice) practiceGame = game
         else games = listOf(game) + games.filter { it.id != game.id }
-        if(!game.practice) {
+        if (!game.practice) {
             live.requestSync()
-            requestFixedBroadcast(game)
+            fixedBroadcast.requestSync(game.id)
         }
     }
 
     fun deleteGame(game: Game) = commit {
+        if (game.isScheduled) {
+            val state = sharing.scheduleState()
+            val publication = state.publications[game.id.lowercase()]
+            check(state.teamFor(game.ourTeamID) == null ||
+                publication?.let { it.pending == null && !it.needsReview && (it.notice == null || it.cancelled) } != false) {
+                "请先打开比赛安排，取消球队赛程并确认结果，再删除本机安排。"
+            }
+        }
         repository.deleteGame(game.id, game.revision)
-        if (selectedLocalBroadcastGameID == game.id) selectedLocalBroadcastGameID = null
         if (live.bindings.any { it.gameID == game.id }) live.close(game.id)
         if (openedGameID == game.id) open(null)
         games = games.filterNot { it.id == game.id }
@@ -423,6 +611,18 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
                 accept(MatchEngine.apply(game, command))
             } else accept(repository.command(game.id, command, baseRevision ?: game.revision))
             done()
+        }
+    }
+
+    fun changeRecordingMethod(method: String, baseRevision: Long) {
+        val game = openedGame ?: return
+        if (game.rules.recordingMethod == method) return
+        commit {
+            check(game.revision == baseRevision) { "比赛已更新，请重新核对记录方式" }
+            accept(
+                if (game.practice) MatchEngine.changeRecordingMethod(game, method)
+                else repository.changeRecordingMethod(game.id, method, baseRevision),
+            )
         }
     }
 
@@ -531,13 +731,15 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         done()
     }
 
-    fun appendRoster(expected: Team, text: String, done: () -> Unit) = commit {
-        repository.appendRoster(expected, text)
+    fun updateRoster(team: Team, done: () -> Unit = {}) = commit {
+        repository.updateRoster(team)
         done()
     }
 
-    fun updateRoster(team: Team, done: () -> Unit = {}) = commit {
-        repository.updateRoster(team)
+    fun appendRoster(team: Team, input: String, confirmedWarnings: Boolean, done: () -> Unit) = commit {
+        require(!team.archived && team.source == "local") { "只有本机现役球队可以追加队员" }
+        val players = RosterAppend.preview(input, team.players).confirmedPlayers(confirmedWarnings)
+        repository.updateRoster(team.copy(players = team.players + players), expected = team)
         done()
     }
 
@@ -553,7 +755,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         done()
     }
 
-    fun createPreparedGame(game: Game, done: () -> Unit) = commit {
+    fun createPreparedGame(game: Game, publishSchedule: Boolean = false, done: () -> Unit) = commit {
         val created = when {
             game.sharedRosterOrigin != null -> repository.createSharedRosterGame(game)
             game.ourTeamID == null -> repository.createObservationGame(game)
@@ -563,6 +765,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         accept(created)
         open(created.id)
         done()
+        if (publishSchedule) updateTeamSchedule(created, requireNotNull(created.scheduledAt), created.scheduleVenue.orEmpty())
     }
 
     override fun onCleared() {
@@ -602,11 +805,11 @@ internal fun BaseballTheme(appearance: String = "system", content: @Composable (
             if (dark)
                 darkColorScheme(
                     primary = Color(0xFF48B889),
-                    onPrimary = Color.White,
+                    onPrimary = Color(0xFF111820),
                     primaryContainer = Color(0xFF173D30),
                     onPrimaryContainer = Color(0xFFC6EEDB),
                     secondary = Color(0xFF48B889),
-                    onSecondary = Color.White,
+                    onSecondary = Color(0xFF111820),
                     onSecondaryContainer = Color(0xFFC6EEDB),
                     error = Color(0xFFFF8B82),
                     onError = Color(0xFF4A1513),
@@ -667,7 +870,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
     var rulesHelp by rememberSaveable { mutableStateOf(false) }
     if (rulesHelp) RulesScreen(showExamples = model.showRuleExamples) { rulesHelp = false }
     model.incomingTeamLink?.let {link -> key(link.id) {
-        if(model.incomingLinkVisible) TeamSharingScreen(model.sharing,model.teams,incoming=link) {model.closeTeamLink(link.id)}
+        if(model.incomingLinkVisible) TeamSharingScreen(model.sharing,model.teams,incoming=link, broadcast=model.fixedBroadcast) {model.closeTeamLink(link.id)}
         else AlertDialog(onDismissRequest={},title={Text("有链接待核对")},text={Text(if(link.kind==IncomingTeamLinkKind.join) "之前的球队邀请已保留。核对球队与角色后再加入。" else "之前的设备配对链接已保留。选择球队并核对两台设备的短语后再授权。")},
             confirmButton={TextButton(onClick=model::resumeTeamLink) {Text("继续核对")}},dismissButton={TextButton(onClick={model.closeTeamLink(link.id)}) {Text("关闭此链接")}})
     } }
@@ -688,30 +891,32 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                     Text(model.error ?: "原始数据已保留，请联系支持。")
                 }
             else if (game != null) {
-                if(game.scheduledSetupPending) PendingScheduleScreen(game, model) { opponent -> createOpponent = opponent; createTeam = true }
+                if (game.scheduledSetupPending || game.isScheduled && (
+                        !game.scheduleVenue.isNullOrBlank() || model.schedulePublication(game) != null || model.scheduleNotice(game) != null ||
+                            model.scheduleFeed.teamFor(game.ourTeamID) != null
+                    )) PendingScheduleScreen(game, model) { opponent -> createOpponent = opponent; createTeam = true }
                 else GameScreen(game, model)
             }
             else tabStates.SaveableStateProvider(tab) {
-                Column(
-                    Modifier.widthIn(max = 1000.dp).fillMaxSize()
-                        .verticalScroll(key(tab) { rememberScrollState() })
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(UiSpacing.section),
-                ) {
-                    if (tab != 2) Box(Modifier.fillMaxWidth()) { Text(
-                        listOf("比赛", "球队", "统计", "我的")[tab],
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                    )
-                    if (tab == 0) IconButton({ rulesHelp = true }, Modifier.align(Alignment.CenterEnd).testTag("home-rules-help")) { Icon(Icons.Outlined.Info, "规则帮助") }
-                    }
-                    when (tab) {
-                        0 -> HomeScreen(model, { createOpponent = false; createTeam = true }, { newGame = true })
-                        1 -> RosterScreen(model) { opponent -> createOpponent = opponent; createTeam = true }
-                        2 -> StatisticsScreen(model)
-                        else -> ProfileScreen(model) {tab=1}
+                if (tab == 0) {
+                    HomeScreen(model, { createOpponent = false; createTeam = true }, { newGame = true }) { rulesHelp = true }
+                } else {
+                    Column(
+                        Modifier.widthIn(max = 720.dp).fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = UiSpacing.page, vertical = UiSpacing.rowGap),
+                        verticalArrangement = Arrangement.spacedBy(UiSpacing.section),
+                    ) {
+                        when (tab) {
+                            1 -> {
+                                RosterScreen(model, showTabHeader = true) { opponent -> createOpponent = opponent; createTeam = true }
+                            }
+                            2 -> StatisticsScreen(model)
+                            else -> {
+                                ProductTabHeader("我的")
+                                ProfileScreen(model) { tab = 1 }
+                            }
+                        }
                     }
                 }
             }
@@ -739,12 +944,38 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
             model.busy,
             { newGame = false },
             games = model.games,
+            defaultRecordingMethod = model.defaultRecordingMethod,
             manageOpponents = { manageOpponents = true },
+            scheduleFeed = model.scheduleFeed,
+            publish = { prepared -> model.createPreparedGame(prepared, publishSchedule = true) { newGame = false } },
         ) { prepared ->
             model.createPreparedGame(prepared) { newGame = false }
         }
     if (manageOpponents) FormPage("对手球队与名单", model.busy, true, "close-setup-opponents", "完成", { manageOpponents = false }, { manageOpponents = false }) {
         RosterScreen(model, initialFilter = "opponent") { opponent -> createOpponent = opponent; createTeam = true }
+    }
+    model.analysisPreparation?.let { preparation ->
+        key(preparation) {
+            val result by produceState<Result<AnalysisSource>?>(null) {
+                value = try {
+                    Result.success(preparation.await())
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (failure: Exception) {
+                    Result.failure(failure)
+                }
+            }
+            val source = result?.getOrNull()
+            if (source != null) {
+                AnalysisScreen(source, model.sharing, close = model::closeGameAnalysis)
+            } else {
+                ProductPage("比赛分析", onBack = model::closeGameAnalysis, backLabel = "关闭", modal = true) {
+                    val failure = result?.exceptionOrNull()
+                    if (failure == null) CircularProgressIndicator(Modifier.size(24.dp))
+                    else Text(failure.localizedMessage ?: "这份比赛数据暂时无法分析。")
+                }
+            }
+        }
     }
 }
 
@@ -754,10 +985,19 @@ private fun rememberSaveableState(initial: Int) =
 
 @Composable
 private fun BrandHeader() {
-    Column {
-        ProductBrand(reverse = MaterialTheme.colorScheme.surface.luminance() < .5f, tile = 34.dp)
-        Text("每一球 都有迹可循", Modifier.padding(start = 8.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Image(
+            painterResource(R.drawable.app_icon),
+            "棒球比赛记录大师图标",
+            Modifier.size(42.dp).clip(RoundedCornerShape(11.dp)),
+        )
+        Column {
+            Text("棒球比赛记录大师", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Text("每一球 都有迹可循", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        }
     }
 }
 
@@ -778,33 +1018,44 @@ internal fun CardBlock(modifier: Modifier = Modifier, content: @Composable Colum
 }
 
 @Composable
+internal fun ProductTabHeader(
+    title: String,
+    leading: (@Composable () -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Box(Modifier.fillMaxWidth().heightIn(min = 52.dp), contentAlignment = Alignment.Center) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center, modifier = Modifier
+                .padding(horizontal = if (leading != null || trailing != null) 68.dp else 8.dp)
+                .semantics { heading() })
+        if (leading != null) Box(Modifier.align(Alignment.CenterStart)) { leading() }
+        if (trailing != null) Box(Modifier.align(Alignment.CenterEnd)) { trailing() }
+    }
+}
+
+@Composable
 private fun ProductBottomNavigation(selected: Int, onSelected: (Int) -> Unit) {
-    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 10.dp),
+    val colors = MaterialTheme.colorScheme
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = UiSpacing.page, vertical = UiSpacing.rowGap),
         contentAlignment = Alignment.Center) {
-        Surface(Modifier.widthIn(max = 540.dp).fillMaxWidth(), color = MaterialTheme.colorScheme.surface.copy(alpha = .97f),
-            shape = RoundedCornerShape(50), shadowElevation = 5.dp,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .7f))) {
-            Row(Modifier.padding(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Surface(Modifier.widthIn(max = 540.dp).fillMaxWidth(), color = colors.surface,
+            shape = RoundedCornerShape(28.dp), border = BorderStroke(1.dp, colors.outlineVariant)) {
+            Row(Modifier.padding(4.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val icons = listOf(NavigationSymbols.diamond, NavigationSymbols.roster, NavigationSymbols.statistics, NavigationSymbols.profile)
                 listOf("比赛", "球队", "统计", "我的").forEachIndexed { index, label ->
                     val active = selected == index
-                    val tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                    Column(Modifier.weight(1f).clip(RoundedCornerShape(50))
-                        .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = .12f) else Color.Transparent)
-                        .selectable(active, role = Role.Tab, onClick = { onSelected(index) })
-                        .testTag("tab-$index").padding(vertical = 7.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        if (index == 0) Canvas(Modifier.size(26.dp)) {
-                            val unit = size.minDimension / 24f
-                            listOf(12f to 4f, 4f to 12f, 20f to 12f, 12f to 20f).forEach { (x, y) ->
-                                val diamond = Path().apply {
-                                    moveTo(x * unit, (y - 3.6f) * unit); lineTo((x + 4f) * unit, y * unit)
-                                    lineTo(x * unit, (y + 3.6f) * unit); lineTo((x - 4f) * unit, y * unit); close()
-                                }
-                                drawPath(diamond, tint)
-                            }
-                        } else Icon(icons[index], null, Modifier.size(26.dp), tint = tint)
-                        Text(label, fontSize = 11.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, color = tint)
+                    val tint = if (active) colors.onPrimaryContainer else colors.onSurfaceVariant
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(24.dp))
+                            .background(if (active) colors.primaryContainer else Color.Transparent)
+                            .selectable(active, role = Role.Tab, onClick = { onSelected(index) })
+                            .testTag("tab-$index").heightIn(min = 52.dp).padding(vertical = 5.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+                    ) {
+                        Icon(icons[index], null, Modifier.size(23.dp), tint = tint)
+                        Text(label, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium, color = tint)
                     }
                 }
             }
@@ -813,82 +1064,241 @@ private fun ProductBottomNavigation(selected: Int, onSelected: (Int) -> Unit) {
 }
 
 @Composable
-private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame: () -> Unit) {
+private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame: () -> Unit, rules: () -> Unit) {
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(model, lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) model.checkForUpdate()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(model, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) {
+                model.refreshTeamSchedules()
+                delay(60_000)
+            }
+        }
+    }
     val team = model.currentTeam
-    val ongoing = model.games.filter { !it.isFinal && !it.isScheduled }
-    val scheduled = model.games.filter { it.isScheduled && !it.isFinal }.sortedBy { it.scheduledAt }
-    val completed = model.games.filter { it.isFinal }.sortedWith(compareByDescending<Game> {
-        it.playedAt ?: it.startedAt ?: it.scheduledAt ?: it.createdAt }.thenBy { it.id })
-    Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (team != null) TeamMark(team.name, 48)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(team?.name ?: "尚未创建球队", Modifier.testTag("home-team-name"), fontSize = 22.sp,
-                fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("${java.time.Year.now()} 年 · ${team?.players?.count { !it.archived } ?: 0} 名球员", fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = CircleShape) {
-            Text(HomeSummary.record(model.games, team?.id).label, Modifier.testTag("home-team-record")
-                .padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 11.sp,
-                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        }
+    val games = model.games
+    val (ongoing, completed) = remember(games) {
+        Pair(
+            games.filter { !it.isFinal && !it.isScheduled },
+            games.filter { it.isFinal }.sortedWith(compareByDescending<Game> {
+                it.playedAt ?: it.startedAt ?: it.scheduledAt ?: it.createdAt
+            }.thenBy { it.id }),
+        )
     }
-    if (team == null) OutlinedButton(addTeam, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("create-team"),
-        shape = RoundedCornerShape(14.dp)) { Text("创建球队", fontWeight = FontWeight.SemiBold) }
-    Button(newGame, Modifier.fillMaxWidth().heightIn(min = 50.dp).testTag("new-game"), shape = RoundedCornerShape(15.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = ProductGreen, contentColor = Color.White)) {
-        Icon(Icons.Outlined.AddCircle, null, Modifier.size(18.dp)); Spacer(Modifier.width(7.dp))
-        Text(if (ongoing.isEmpty()) "开始新比赛" else "再开始一场比赛", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-    }
-    if (scheduled.isNotEmpty()) {
-        SectionTitle("即将进行", "${scheduled.size} 场")
-        scheduled.forEach { game -> HomeGameRow(game, model) }
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("正在进行", Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        TextButton({ model.practice() }, modifier = Modifier.heightIn(min = 34.dp).testTag("start-practice")) {
-            Text("练习记分", fontSize = 12.sp)
+    val feed = model.scheduleFeed
+    var scheduleExpiry by remember { mutableLongStateOf(0L) }
+    val scheduled = remember(games, feed, scheduleExpiry) { upcomingSchedules(games, feed, System.currentTimeMillis()) }
+    val nextExpiry = scheduled.firstOrNull { it is UpcomingSchedule.Member }?.startsAt
+    LaunchedEffect(nextExpiry) {
+        if (nextExpiry != null) {
+            var wait = nextExpiry - System.currentTimeMillis()
+            while (wait >= 0) {
+                delay(wait + 1)
+                wait = nextExpiry - System.currentTimeMillis()
+            }
+            scheduleExpiry++
         }
     }
-    if (ongoing.isEmpty()) EmptyCard("没有进行中的比赛", Icons.Outlined.PlayArrow)
-    ongoing.forEach { game -> HomeGameRow(game, model) }
-    SectionTitle("最近比赛", "按比赛日期排序")
-    if (completed.isEmpty()) EmptyCard("还没有已完成的比赛", Icons.Outlined.DateRange)
-    completed.forEach { game -> HomeGameRow(game, model) }
+    var managedScheduleKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedSchedule = scheduled.filterIsInstance<UpcomingSchedule.Member>()
+        .firstOrNull { it.notice.key == managedScheduleKey }?.notice
+    val adminSchedule = selectedSchedule?.takeIf(model::canManageRemoteSchedule)
+    LaunchedEffect(managedScheduleKey, adminSchedule, model.scheduleRefreshing) {
+        if (managedScheduleKey != null && adminSchedule == null && !model.scheduleRefreshing) managedScheduleKey = null
+    }
+    val teamRecord = remember(games, team?.id) { HomeSummary.record(games, team?.id).label }
+    val update = model.advertisedUpdate
+    LazyColumn(
+        modifier = Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("home-games-list"),
+        contentPadding = PaddingValues(horizontal = UiSpacing.page, vertical = UiSpacing.rowGap),
+        verticalArrangement = Arrangement.spacedBy(UiSpacing.rowGap),
+    ) {
+        item(key = "title") {
+            ProductTabHeader("比赛", trailing = {
+                IconButton(rules, Modifier.size(48.dp).testTag("home-rules-help")) {
+                    Icon(Icons.Outlined.Info, "规则帮助", tint = MaterialTheme.colorScheme.primary)
+                }
+            })
+        }
+        item(key = "identity") { HomeTeamHeader(team, teamRecord) }
+        item(key = "new-match") {
+            Column(verticalArrangement = Arrangement.spacedBy(UiSpacing.rowGap)) {
+                if (team == null) OutlinedButton(addTeam, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("create-team"),
+                    shape = MaterialTheme.shapes.medium) { Text("创建球队") }
+                Button(newGame, Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("new-game"),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = ButtonDefaults.buttonColors(containerColor = ProductGreen, contentColor = Color.White)) {
+                    Icon(Icons.Outlined.AddCircle, null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(UiSpacing.rowGap))
+                    Text(if (ongoing.isEmpty()) "开始新比赛" else "再开始一场比赛",
+                        style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        if (update != null) item(key = "website-update") { WebsiteUpdateNotice(update, onDismiss = { model.dismissUpdate(update.build) }) }
+        if (scheduled.isNotEmpty() || feed.memberships.isNotEmpty() || feed.message != null) {
+            item(key = "scheduled-header") {
+                Row(Modifier.padding(top = UiSpacing.rowGap), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { SectionTitle("即将进行", "${scheduled.size} 场") }
+                    if (feed.memberships.isNotEmpty() || feed.message != null) {
+                        TextButton(onClick = { model.refreshTeamSchedules(force = true) }, enabled = !model.scheduleRefreshing,
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("team-schedule-refresh")) {
+                            Text(if (model.scheduleRefreshing) "刷新中…" else if (feed.message != null) "重试" else "刷新")
+                        }
+                    }
+                }
+            }
+            feed.message?.let { message ->
+                item(key = "schedule-feed-error") {
+                    Text(message, Modifier.testTag("team-schedule-feed-error"),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            items(scheduled, key = { it.key }) { entry ->
+                when (entry) {
+                    is UpcomingSchedule.Local -> HomeGameRow(entry.game, model, entry.publication, entry.notice)
+                    is UpcomingSchedule.Member -> TeamScheduleNoticeRow(
+                        entry.notice,
+                        onManage = if (model.canManageRemoteSchedule(entry.notice)) {
+                            { managedScheduleKey = entry.notice.key }
+                        } else null,
+                    )
+                }
+            }
+        }
+        item(key = "ongoing-header") {
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(UiSpacing.rowGap),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("正在进行", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.semantics { heading() })
+                    if (ongoing.isNotEmpty()) Text("${ongoing.size} 场", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton({ model.practice() }, modifier = Modifier.heightIn(min = 48.dp).testTag("start-practice"),
+                    contentPadding = PaddingValues(horizontal = 8.dp)) { Text("练习记分") }
+            }
+        }
+        if (ongoing.isEmpty()) item(key = "ongoing-empty") {
+            EmptyCard("没有进行中的比赛", Icons.Outlined.PlayArrow)
+        }
+        else items(ongoing, key = { "match-${it.id}" }) { HomeGameRow(it, model) }
+        item(key = "recent-header") {
+            Box(Modifier.padding(top = UiSpacing.rowGap)) { SectionTitle("最近比赛", "按比赛日期排序") }
+        }
+        if (completed.isEmpty()) item(key = "completed-empty") {
+            EmptyCard("还没有已完成的比赛", Icons.Outlined.DateRange)
+        }
+        else items(completed, key = { "match-${it.id}" }) { HomeGameRow(it, model) }
+    }
+    if (adminSchedule != null) RemoteTeamScheduleScreen(adminSchedule, model) { managedScheduleKey = null }
 }
 
 @Composable
-private fun HomeGameRow(game: Game, model: ScorekeeperViewModel) {
-    val outcome = when {
-        game.isScheduled -> "预"
-        !game.isFinal -> "赛"
-        game.isObservation -> "看"
+private fun HomeTeamHeader(team: Team?, record: String) {
+    val colors = MaterialTheme.colorScheme
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp)) {
+        val wrapRecord = maxWidth < 300.dp * fontScale.coerceAtLeast(1f)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (team != null) TeamMark(team.name, 48)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(team?.name ?: "尚未创建球队", Modifier.testTag("home-team-name"),
+                    style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                if (team != null) {
+                    Text("${java.time.Year.now()} 年 · ${team.players.count { !it.archived }} 名球员",
+                        style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    if (wrapRecord) HomeRecordPill(record, Modifier.padding(top = 4.dp))
+                } else Text("创建球队后可管理名单和查看统计",
+                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
+            if (team != null && !wrapRecord) HomeRecordPill(record)
+        }
+    }
+}
+
+@Composable
+private fun HomeRecordPill(record: String, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    Surface(modifier, color = colors.primaryContainer, contentColor = colors.onPrimaryContainer, shape = CircleShape) {
+        Text(record, Modifier.testTag("home-team-record").padding(horizontal = 10.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun HomeGameRow(
+    game: Game, model: ScorekeeperViewModel, publication: TeamSchedulePublication? = null, notice: TeamScheduleNotice? = null,
+) {
+    val colors = MaterialTheme.colorScheme
+    val result = when {
+        !game.isFinal -> null
+        game.isObservation -> "观"
         game.ourTeamID == game.home.id -> when { game.homeRuns > game.awayRuns -> "胜"; game.homeRuns < game.awayRuns -> "负"; else -> "平" }
         game.ourTeamID == game.away.id -> when { game.awayRuns > game.homeRuns -> "胜"; game.awayRuns < game.homeRuns -> "负"; else -> "平" }
         else -> "完"
     }
-    val badge = when (outcome) { "胜" -> Color(0xFF43A881); "负" -> Color(0xFFD76A60); "平" -> Color(0xFFCF974B); else -> MaterialTheme.colorScheme.primary }
-    Surface(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { model.open(game.id) }
-        .testTag("game-${game.id}"), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))) {
-        Row(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 2.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(31.dp).background(badge, CircleShape), contentAlignment = Alignment.Center) {
-                Text(outcome, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    val date = if (game.isScheduled) notice?.startsAt ?: game.scheduledAt
+        else game.playedAt ?: game.startedAt ?: game.createdAt.takeIf { it > 0 }
+    val detail = when {
+        game.isScheduled -> date?.let { formatMatchDate(it, game.playedTimeZoneID) } ?: "时间待定"
+        game.isFinal -> date?.let { formatMatchDate(it, game.playedTimeZoneID) }.orEmpty()
+        else -> buildString {
+            append("${game.inning}局${if (game.isTop) "上" else "下"}")
+            val runnerCount = game.bases.count { it != null }
+            if (runnerCount > 0) append(" · $runnerCount 名跑者在垒")
+        }
+    }
+    Surface(Modifier.fillMaxWidth(), color = colors.surface, shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, colors.outlineVariant)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.weight(1f).heightIn(min = 62.dp)
+                    .clickable(role = Role.Button) { model.open(game.id) }.testTag("game-${game.id}")
+                    .padding(start = UiSpacing.cardInset, top = UiSpacing.rowGap, bottom = UiSpacing.rowGap),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(UiSpacing.rowGap),
+            ) {
+                if (game.isScheduled || result != null) {
+                    val background = if (result == "负") colors.errorContainer else colors.primaryContainer
+                    val tint = if (result == "负") colors.onErrorContainer else colors.onPrimaryContainer
+                    Box(Modifier.size(30.dp).background(background, CircleShape), contentAlignment = Alignment.Center) {
+                        if (game.isScheduled) Icon(Icons.Outlined.DateRange, null, Modifier.size(17.dp), tint = tint)
+                        else Text(result.orEmpty(), style = MaterialTheme.typography.labelMedium, color = tint, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("${game.away.shortName} 对 ${game.home.shortName}", style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    if (game.isScheduled) (notice?.venue ?: game.scheduleVenue)?.takeIf { it.isNotBlank() }?.let { venue ->
+                        Text(venue, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    }
+                    if (!game.isScheduled && !game.isFinal) {
+                        Text(if (game.isObservation) "继续观赛记录" else "继续比赛", Modifier.testTag("continue-game"),
+                            style = MaterialTheme.typography.labelLarge, color = colors.primary, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                if (game.isScheduled) {
+                    val status = when {
+                        publication?.pending != null || publication?.needsReview == true -> "待确认"
+                        notice?.cancelled == true -> "已取消"
+                        notice != null -> "球队赛程"
+                        game.isObservation -> "观赛"
+                        else -> "本队"
+                    }
+                    Text(status, style = MaterialTheme.typography.labelMedium,
+                        color = if (notice?.cancelled == true) colors.error else colors.primary)
+                }
+                else Text("${game.awayRuns} : ${game.homeRuns}", style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold, maxLines = 1)
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("${game.away.shortName} 对 ${game.home.shortName}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                val date = if (game.isScheduled) game.scheduledAt else game.playedAt ?: game.startedAt ?: game.createdAt.takeIf { it > 0 }
-                Text(if (game.isScheduled) date?.let { formatMatchDate(it, game.playedTimeZoneID) } ?: "时间待定"
-                    else if (!game.isFinal) "${game.inning}局${if (game.isTop) "上" else "下"} · ${if (game.isObservation) "继续观赛记录" else "继续比赛"}"
-                    else date?.let { formatMatchDate(it, game.playedTimeZoneID) }.orEmpty(),
-                    Modifier.then(if (!game.isScheduled && !game.isFinal) Modifier.testTag("continue-game") else Modifier),
-                    fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (!game.isScheduled) Text("${game.awayRuns} - ${game.homeRuns}", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             GameDeleteControl(game, model)
         }
     }
@@ -899,7 +1309,9 @@ private fun GameDeleteControl(game: Game, model: ScorekeeperViewModel) {
     var menu by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
     Box {
-        IconButton({ menu = true }, Modifier.size(32.dp).testTag("game-menu-${game.id}")) { Icon(Icons.Outlined.MoreVert, "比赛操作", Modifier.size(18.dp)) }
+        IconButton({ menu = true }, Modifier.size(48.dp).testTag("game-menu-${game.id}")) {
+            Icon(Icons.Outlined.MoreVert, "${game.away.shortName} 对 ${game.home.shortName}的比赛操作", Modifier.size(20.dp))
+        }
         DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem(text = { Text(if(game.isScheduled) "删除安排" else "删除比赛") }, onClick = { menu = false; confirm = true })
         }
@@ -928,9 +1340,10 @@ internal fun TeamMark(name: String, size: Int) {
 @Composable
 private fun SectionTitle(title: String, detail: String?) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f).semantics { heading() })
         if (detail != null)
-            Text(detail, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -994,46 +1407,68 @@ private fun TeamsScreen(teams: List<Team>, add: () -> Unit) {
 }
 
 @Composable
-private fun ProfileScreen(model: ScorekeeperViewModel, manageTeams: ()->Unit) {
+private fun ProfileScreen(model: ScorekeeperViewModel, manageTeams: () -> Unit) {
     var showRules by rememberSaveable { mutableStateOf(false) }
-    var page by rememberSaveable {mutableStateOf<String?>(null)}
-    if (showRules) RulesScreen(showExamples=model.showRuleExamples) { showRules = false }
-    CardBlock {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Icon(NavigationSymbols.profile, null, Modifier.size(52.dp), tint = MaterialTheme.colorScheme.primary)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("本机记录员", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("当前球队 · ${model.currentTeam?.name ?: "尚未选择球队"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("本机保存", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
+    var page by rememberSaveable { mutableStateOf<String?>(null) }
+    if (showRules) RulesScreen(showExamples = model.showRuleExamples) { showRules = false }
+
+    val colors = MaterialTheme.colorScheme
+    val type = MaterialTheme.typography
+    CardBlock(Modifier.testTag("profile-identity")) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Surface(color = colors.primaryContainer, shape = CircleShape) {
+                Icon(NavigationSymbols.profile, null, Modifier.padding(6.dp).size(43.dp), tint = colors.primary)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("本机记分员", style = type.titleLarge, fontWeight = FontWeight.Bold)
+                Text("当前球队 · ${model.currentTeam?.name ?: "尚未选择球队"}", style = type.bodyMedium,
+                    color = colors.onSurfaceVariant)
+                Text("保存在此设备", style = type.labelMedium, color = colors.primary)
             }
         }
     }
-    SectionTitle("学习与帮助", null)
-    ProfileMenuRow("棒球规则查询", "常用规则解释与完整规则 PDF", Icons.AutoMirrored.Outlined.List, "open-rules") { showRules = true }
-    ProfileMenuRow("练习一局", "独立练习，不影响正式比赛数据", NavigationSymbols.diamond, "open-practice-inning") { model.practice() }
-    SectionTitle("本机数据与设置", null)
-    ProfileMenuRow("本地数据", "查看存储范围与数据数量", Icons.Outlined.AccountBox, "open-local-data") { page = "data" }
-    ProfileMenuRow("App 设置", "外观与辅助提示", Icons.Outlined.Settings, "open-app-settings") { page = "settings" }
-    ProfileMenuRow("关于棒球比赛记录大师", "版本信息与数据说明", Icons.Outlined.Info, "open-app-about") { page = "about" }
-    when(page) {
-        "data"->LocalDataScreen(model,{page=null;manageTeams()}) {page=null}
-        "settings"->AppSettingsScreen(model) {page=null}
-        "about"->AppAboutScreen {page=null}
+    ProfileSection("学习与帮助") {
+        ProfileMenuRow("棒球规则查询", "常用规则解释与完整规则 PDF", Icons.AutoMirrored.Outlined.List, "open-rules") { showRules = true }
+        ProfileMenuRow("练习一局", "独立练习，不影响正式比赛数据", NavigationSymbols.diamond, "open-practice-inning") { model.practice() }
+    }
+    ProfileSection("本机数据与设置") {
+        ProfileMenuRow("本地数据", "备份、恢复和已导入的资料", Icons.Outlined.AccountBox, "open-local-data") { page = "data" }
+        ProfileMenuRow("App 设置", "默认记录方式 · ${RecordingMethodLabels.getValue(model.defaultRecordingMethod)}",
+            Icons.Outlined.Settings, "open-app-settings") { page = "settings" }
+        ProfileMenuRow("关于 BaseballMaster", "版本信息与数据说明", Icons.Outlined.Info, "open-app-about") { page = "about" }
+    }
+    when (page) {
+        "data" -> LocalDataScreen(model, { page = null; manageTeams() }) { page = null }
+        "settings" -> AppSettingsScreen(model) { page = null }
+        "about" -> AppAboutScreen(model) { page = null }
+    }
+}
+
+@Composable
+private fun ProfileSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = UiSpacing.rowGap), verticalArrangement = Arrangement.spacedBy(UiSpacing.rowGap)) {
+        SectionTitle(title, null)
+        content()
     }
 }
 
 @Composable
 private fun ProfileMenuRow(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tag: String, action: () -> Unit) {
-    CardBlock(Modifier.fillMaxWidth().testTag(tag).clickable(onClick = action)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp)) {
-                Icon(icon, null, Modifier.padding(8.dp).size(21.dp), tint = MaterialTheme.colorScheme.primary)
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = action, modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp).testTag(tag),
+        shape = MaterialTheme.shapes.medium, color = colors.surface, border = BorderStroke(1.dp, colors.outlineVariant),
+    ) {
+        Row(Modifier.padding(horizontal = UiSpacing.cardInset, vertical = UiSpacing.rowGap),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Surface(color = colors.primaryContainer, shape = MaterialTheme.shapes.small) {
+                Icon(icon, null, Modifier.padding(8.dp).size(21.dp), tint = colors.primary)
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             }
-            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(19.dp), tint = colors.onSurfaceVariant)
         }
     }
 }
@@ -1115,8 +1550,11 @@ private fun TeamDialog(busy: Boolean, opponent: Boolean, dismiss: () -> Unit, sa
 @Composable
 private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
     val wide = LocalWorkbenchWide.current
+    var openedOnResults by rememberSaveable(game.id) { mutableStateOf(game.isFinal && !game.practice) }
+    LaunchedEffect(game.isFinal) { if (!game.isFinal) openedOnResults = false }
     var requestedPanel by rememberSaveable(game.id) { mutableStateOf("") }
     var openingPitch by rememberSaveable(game.id) { mutableStateOf<String?>(null) }
+    var recordingMethodRevision by rememberSaveable(game.id) { mutableStateOf<Long?>(null) }
     var menu by remember { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(game.id) {
@@ -1133,66 +1571,120 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
         dismissButton = { TextButton({ openingPitch = null; requestedPanel = "lineup" }) { Text("继续设置阵容") } })
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         ScoringPanels(game, model, requestedPanel, { requestedPanel = "" },
-            host = { panelControls, task, inlineTask, locked ->
+            initialPanel = if (openedOnResults) "results" else "",
+            closeInitialResults = if (openedOnResults) ({ model.open(null) }) else null,
+            host = { panelControls, finishActions, task, inlineTask, locked ->
                 val enabled = !model.busy && !locked && !game.isFinal && !game.isScheduled && game.pendingDecision == null
+                val canChangeRecordingMethod = enabled && game.appleSourceID == null
+                val currentMethod = RecordingMethodLabels.getValue(game.rules.recordingMethod)
+                recordingMethodRevision?.let { revision ->
+                    val nextMethod = if (game.rules.recordingMethod == "situation") "traditional" else "situation"
+                    val nextLabel = RecordingMethodLabels.getValue(nextMethod)
+                    AlertDialog(
+                        modifier = Modifier.semantics { testTagsAsResourceId = true },
+                        onDismissRequest = { recordingMethodRevision = null },
+                        title = { Text("记录方式") },
+                        text = { Text("当前为$currentMethod。切换后会接着记录当前打席，已保存的球数和明细会保留。") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = { recordingMethodRevision = null; model.changeRecordingMethod(nextMethod, revision) },
+                                enabled = canChangeRecordingMethod,
+                                modifier = Modifier.testTag("confirm-recording-method"),
+                            ) { Text("切换至$nextLabel") }
+                        },
+                        dismissButton = { TextButton({ recordingMethodRevision = null }) { Text("取消") } },
+                    )
+                }
                 AdaptiveScoreWorkbench(game, inlineTask, locked, game.ruleNotices(now),
                     toolbar = {
-                        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton({ model.open(null) }, enabled = !locked, modifier = Modifier.size(40.dp).testTag("back-home")) {
-                                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回比赛", tint = MaterialTheme.colorScheme.primary)
-                            }
-                            Text(if (game.isObservation) "观赛记分" else "现场记分", Modifier.weight(1f),
-                                fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (!game.practice) {
-                                IconButton({ requestedPanel = "live" }, enabled = !locked, modifier = Modifier.size(34.dp).testTag("open-live-broadcast")) {
-                                    Icon(Icons.Outlined.Share, "文字直播与分享", Modifier.size(21.dp))
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            val largerText = (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f)
+                            val showBroadcast = !game.practice && maxWidth >= 324.dp + 148.dp * largerText
+                            val showPoster = showBroadcast && maxWidth >= 372.dp + 148.dp * largerText
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                                IconButton({ model.open(null) }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("back-home")) {
+                                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回比赛", tint = MaterialTheme.colorScheme.primary)
                                 }
-                                IconButton({ requestedPanel = "poster" }, enabled = !locked, modifier = Modifier.size(34.dp).testTag("open-game-poster")) {
-                                    Icon(Icons.Outlined.AddCircle, "比赛宣传海报", Modifier.size(21.dp))
+                                Text(if (game.isObservation) "观赛记分" else "现场记分", Modifier.weight(1f),
+                                    fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (showBroadcast) {
+                                    IconButton({ requestedPanel = "live" }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("open-live-broadcast")) {
+                                        Icon(Icons.Outlined.Share, "文字直播与分享", Modifier.size(21.dp))
+                                    }
                                 }
-                            }
-                            IconButton({ requestedPanel = "history" }, enabled = !locked, modifier = Modifier.size(34.dp).testTag("game-history")) {
-                                Icon(Icons.Outlined.Refresh, "纠正记录", Modifier.size(21.dp))
-                            }
-                            TextButton({ requestedPanel = "results" }, enabled = !locked,
-                                modifier = Modifier.height(40.dp).testTag("game-results"), contentPadding = PaddingValues(horizontal = 6.dp)) {
-                                Text("比赛结果", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            Box {
-                                IconButton({ menu = true }, enabled = !locked, modifier = Modifier.size(30.dp).testTag("scoring-more")) {
-                                    Icon(Icons.Outlined.MoreVert, "比赛菜单", Modifier.size(21.dp))
+                                if (showPoster) {
+                                    IconButton({ requestedPanel = "poster" }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("open-game-poster")) {
+                                        Icon(Icons.Outlined.AddCircle, "比赛宣传海报", Modifier.size(21.dp))
+                                    }
                                 }
-                                DropdownMenu(menu, { menu = false }) {
-                                    listOf("比赛结果" to "results", "文字直播" to "live", "双方阵容与打序" to "lineup", "比赛计时" to "clock",
-                                        "比赛时间／预告" to "time", "本场比赛规则" to "rules", "完整记录与纠错" to "history", "报告与更多操作" to "more")
-                                        .let { if (!game.isObservation && !game.practice) it + ("球队固定转播源" to "team-broadcast") else it }
-                                        .forEach { (label, target) -> DropdownMenuItem(text = { Text(label) }, enabled = !locked,
-                                            onClick = { menu = false; requestedPanel = target }) }
+                                IconButton({ requestedPanel = "history" }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("game-history")) {
+                                    Icon(Icons.Outlined.Refresh, "纠正记录", Modifier.size(21.dp))
+                                }
+                                TextButton({ requestedPanel = "results" }, enabled = !locked,
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("game-results"), contentPadding = PaddingValues(horizontal = 6.dp)) {
+                                    Text("比赛结果", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                                Box {
+                                    IconButton({ menu = true }, enabled = !locked, modifier = Modifier.size(48.dp).testTag("scoring-more")) {
+                                        Icon(Icons.Outlined.MoreVert, "比赛菜单", Modifier.size(21.dp))
+                                    }
+                                    DropdownMenu(menu, { menu = false }) {
+                                        if (!game.practice && !showBroadcast) DropdownMenuItem(
+                                            text = { Text("文字直播与分享") }, modifier = Modifier.testTag("open-live-broadcast"),
+                                            onClick = { menu = false; requestedPanel = "live" },
+                                        )
+                                        if (!game.practice && !game.isObservation && !game.isScheduled) DropdownMenuItem(
+                                            text = { Text("球队固定转播源") },
+                                            modifier = Modifier.testTag("open-team-broadcast"),
+                                            onClick = { menu = false; requestedPanel = "team-broadcast" },
+                                        )
+                                        if (!game.practice && !showPoster) DropdownMenuItem(
+                                            text = { Text("比赛宣传海报") }, modifier = Modifier.testTag("open-game-poster"),
+                                            onClick = { menu = false; requestedPanel = "poster" },
+                                        )
+                                        if (!game.isFinal && !game.isScheduled && game.appleSourceID == null) {
+                                            DropdownMenuItem(
+                                                text = { Text("记录方式：$currentMethod") },
+                                                enabled = canChangeRecordingMethod,
+                                                modifier = Modifier.testTag("scoring-recording-method"),
+                                                onClick = { menu = false; recordingMethodRevision = game.revision },
+                                            )
+                                        }
+                                        listOf("比赛结果" to "results", "双方阵容与打序" to "lineup", "比赛计时" to "clock",
+                                            "比赛时间／预告" to "time", "本场比赛规则" to "rules", "完整记录与纠错" to "history", "报告与更多操作" to "more")
+                                            .forEach { (label, target) -> DropdownMenuItem(text = { Text(label) }, enabled = !locked,
+                                                onClick = { menu = false; requestedPanel = target }) }
+                                    }
                                 }
                             }
                         }
                     },
                     scoreboard = {
                         val timer: @Composable () -> Unit = {
-                            if (game.clockHasStarted || !game.practice && !game.isScheduled && !game.isFinal) {
-                                val remaining = game.remainingTime(now).takeIf { game.clockDisplayMode == "remaining" }
-                                val seconds = (remaining ?: game.elapsed(now)) / 1000
+                            if (game.clockHasStarted || game.rules.timed) {
+                                val seconds = (if (game.clockDisplayMode == "remaining") game.remainingTime(now) ?: game.elapsed(now) else game.elapsed(now)) / 1000
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("${if (remaining != null) "倒" else "正"} ${seconds / 60}:${"%02d".format(kotlin.math.abs(seconds % 60))}",
-                                        Modifier.testTag("game-clock").clickable(enabled = !locked) { requestedPanel = "clock" },
-                                        fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
-                                    if (!game.isFinal && !game.isScheduled) TextButton({ model.command(Command("clock", text = if (game.clockRunningSince == null) "resume" else "pause")) },
-                                        enabled = !locked && !model.busy, modifier = Modifier.size(28.dp).testTag("toggle-game-clock"), contentPadding = PaddingValues(0.dp)) {
-                                        Text(if (game.clockRunningSince == null) "▶" else "Ⅱ", fontSize = 10.sp)
+                                    TextButton({ requestedPanel = "clock" }, enabled = !locked, contentPadding = PaddingValues(horizontal = 2.dp),
+                                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag("game-clock")) {
+                                        Text("${if (game.clockDisplayMode == "remaining") "倒" else "正"} ${seconds / 60}:${"%02d".format(kotlin.math.abs(seconds % 60))}",
+                                            fontSize = 10.sp, maxLines = 1)
+                                    }
+                                    if (!game.isFinal) TextButton({ model.command(Command("clock", text = if (game.clockRunningSince == null) "resume" else "pause")) },
+                                        enabled = !locked && !model.busy, modifier = Modifier.size(48.dp).testTag("toggle-game-clock")
+                                            .semantics { contentDescription = if (game.clockRunningSince == null) "继续计时" else "暂停计时" },
+                                        contentPadding = PaddingValues(0.dp)) {
+                                        Text(if (game.clockRunningSince == null) "▶" else "Ⅱ", Modifier.clearAndSetSemantics {}, fontSize = 10.sp)
                                     }
                                 }
                             } else Text(game.rules.mode.title, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
                         }
                         val counts: @Composable () -> Unit = {
+                            val colors = MaterialTheme.colorScheme
+                            val dark = colors.surface.luminance() < .4f
                             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                MiniCount("B", game.balls, 3, Accent, "坏球")
-                                MiniCount("S", game.strikes, 2, Color(0xFFA35513), "好球")
-                                MiniCount("O", game.outs, 2, Color(0xFFC7463D), "出局")
+                                MiniCount("B", game.balls, 3, colors.primary, "坏球")
+                                MiniCount("S", game.strikes, 2, if (dark) Color(0xFFF5AC68) else Color(0xFFA35513), "好球")
+                                MiniCount("O", game.outs, 2, if (dark) colors.error else Color(0xFFC7463D), "出局")
                             }
                         }
                         if (wide) {
@@ -1225,7 +1717,7 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
-                                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Column(horizontalAlignment = Alignment.End) {
                                     timer()
                                     counts()
                                 }
@@ -1235,8 +1727,12 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                     controls = {
                         if (game.canSwapOpeningSides && !game.isFinal && !game.isScheduled)
                             TextButton({ model.command(Command("swap")) }, enabled = enabled,
-                                modifier = Modifier.fillMaxWidth().height(30.dp).testTag("swap-opening-sides")) { Text("互换先攻／后攻", fontSize = 11.sp) }
-                        if (game.rules.mode == GameMode.coachPitch) Text("教练投手 · 本打席 ${game.appearancePitches} 球", fontSize = 11.sp)
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("swap-opening-sides")) { Text("互换先攻／后攻", fontSize = 11.sp) }
+                        if (game.rules.mode == GameMode.coachPitch) Text(
+                            "教练投手 · 本打席 ${game.appearancePitches} / ${game.rules.coachPitchLimit} 球",
+                            Modifier.testTag("coach-pitch-progress"), fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         if (!game.isFinal && !game.isScheduled && game.pendingDecision == null) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                 PitchAction.entries.forEach { action ->
@@ -1253,16 +1749,16 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                                     Button({ pitch(action) }, enabled = enabled,
                                         contentPadding = PaddingValues(horizontal = 2.dp), shape = RoundedCornerShape(10.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = Color.White),
-                                        modifier = Modifier.weight(1f).height(42.dp).testTag("pitch-${action.name}")) {
-                                        Text(title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("pitch-${action.name}")) {
+                                        Text(title, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold,
+                                            textAlign = TextAlign.Center)
                                     }
                                 }
                             }
                         }
                         panelControls()
-                        Text("已保存 ${game.totalPitches} 球", Modifier.fillMaxWidth().testTag("save-status"),
-                            textAlign = TextAlign.Center, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
+                    finishActions = finishActions,
                     task = task,
                     openPanel = { if (!locked) requestedPanel = it },
                 )
@@ -1273,12 +1769,14 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
 
 @Composable
 private fun MiniCount(label: String, value: Int, maximum: Int, color: Color, tag: String) {
+    val empty = if (MaterialTheme.colorScheme.surface.luminance() < .4f) Color(0xFF536574) else Color(0xFFDADFD9)
     Row(
         horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
+            Modifier.clearAndSetSemantics {},
             fontSize = 10.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Black,
@@ -1287,6 +1785,7 @@ private fun MiniCount(label: String, value: Int, maximum: Int, color: Color, tag
         Box(
             Modifier.testTag("count-$tag").semantics {
                 text = androidx.compose.ui.text.AnnotatedString("$value")
+                contentDescription = "$tag $value"
             }
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1294,7 +1793,7 @@ private fun MiniCount(label: String, value: Int, maximum: Int, color: Color, tag
                     Box(
                         Modifier.size(8.dp)
                             .background(
-                                if (index < value) color else Color(0xFFDADFD9),
+                                if (index < value) color else empty,
                                 RoundedCornerShape(50),
                             )
                     )
@@ -1308,6 +1807,7 @@ private fun MiniCount(label: String, value: Int, maximum: Int, color: Color, tag
 internal fun Field(game: Game, modifier: Modifier) {
     val field = if (MaterialTheme.colorScheme.background.luminance()<.5f) Color(0xFF245F49) else Color(0xFF2E765A)
     val dirt = if (MaterialTheme.colorScheme.background.luminance()<.5f) Color(0xFFA78356) else Color(0xFFD7B785)
+    val runners = game.bases.map { id -> game.battingTeam.players.firstOrNull { it.id == id } }
     BoxWithConstraints(
         modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(field.copy(alpha = .86f))
     ) {
@@ -1315,7 +1815,14 @@ internal fun Field(game: Game, modifier: Modifier) {
         val h = maxHeight.value
         if (h <= 100f || w <= 0f) {
             Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                game.bases.forEachIndexed { index, id -> Text("${index + 1}垒 · ${if (id == null) "无人" else "有人"}", fontSize = 11.sp, color = Color.White) }
+                runners.forEachIndexed { index, runner ->
+                    val occupant = when {
+                        runner != null -> "#${runner.number}"
+                        game.bases[index] != null -> "有人"
+                        else -> "无人"
+                    }
+                    Text("${index + 1}垒 · $occupant", fontSize = 11.sp, color = Color.White)
+                }
             }
             return@BoxWithConstraints
         }
@@ -1350,6 +1857,20 @@ internal fun Field(game: Game, modifier: Modifier) {
                     lineHeight = 11.sp,
                     color = if (index == 0) Color.White.copy(alpha = .75f) else Color(0xFF607284),
                 )
+            }
+        }
+        listOf(geometry.first, geometry.second, geometry.third).forEachIndexed { index, base ->
+            val runner = runners[index] ?: return@forEachIndexed
+            Box(
+                Modifier.offset((base.x - 18).dp, (base.y - 13).dp).size(36.dp, 26.dp)
+                    .testTag("field-runner-${index + 1}")
+                    .clearAndSetSemantics {
+                        contentDescription = "${index + 1}垒：${runner.name}，${runner.number}号"
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("#${runner.number}", color = Color(0xFF102A43), fontSize = 9.sp, lineHeight = 11.sp,
+                    fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
             }
         }
         Row(

@@ -12,6 +12,48 @@ internal object AppleHistoryCommandCodec {
     private fun JsonObject.optional(key: String)=get(key)?.takeUnless {it==JsonNull}
     private fun idList(values: Iterable<String>)=buildJsonArray {values.forEach {add(uid(it))}}
     private fun tagged(kind: String,values: JsonObject=buildJsonObject {})=buildJsonObject {put(kind,values)}
+    fun encodeRunnerError(value: RunnerErrorResponsibility): JsonObject =
+        value.fielderID?.let { tagged("fielder", buildJsonObject { put("_0", uid(it)) }) }
+            ?: tagged("pending")
+
+    fun decodeRunnerError(value: JsonObject): RunnerErrorResponsibility {
+        val entry = value.entries.singleOrNull() ?: error("跑垒失误归属无效")
+        val body = entry.value.jsonObject
+        return when (entry.key) {
+            "pending" -> {
+                require(body.isEmpty()) { "待确认的跑垒失误不应带有守备球员" }
+                RunnerErrorResponsibility()
+            }
+            "fielder" -> {
+                require(body.keys == setOf("_0")) { "跑垒失误归属缺少守备球员" }
+                RunnerErrorResponsibility(appleUUID(body.getValue("_0").jsonPrimitive.content))
+            }
+            else -> error("跑垒失误归属不受支持")
+        }
+    }
+    fun encodeRunnerDefense(credit: RunnerDefenseCredit): JsonObject = when (credit) {
+        RunnerDefenseCredit.NoCatcherAssist -> tagged("noCatcherAssist")
+        is RunnerDefenseCredit.CaughtStealing -> tagged("caughtStealing", buildJsonObject {
+            put("catcherID", uid(credit.catcherID))
+            put("receiverID", uid(credit.receiverID))
+            put("target", credit.target)
+        })
+        is RunnerDefenseCredit.PassedBall -> tagged("passedBall", buildJsonObject {
+            put("catcherID", uid(credit.catcherID))
+        })
+    }
+
+    fun decodeRunnerDefense(value: JsonObject): RunnerDefenseCredit {
+        val entry = value.entries.singleOrNull() ?: error("跑垒守备归属无效")
+        val body = entry.value.jsonObject
+        fun id(key: String) = appleUUID(body.getValue(key).jsonPrimitive.content)
+        return when (entry.key) {
+            "noCatcherAssist" -> RunnerDefenseCredit.NoCatcherAssist
+            "caughtStealing" -> RunnerDefenseCredit.CaughtStealing(id("catcherID"), id("receiverID"), body.getValue("target").jsonPrimitive.int)
+            "passedBall" -> RunnerDefenseCredit.PassedBall(id("catcherID"))
+            else -> error("跑垒守备归属不受支持")
+        }
+    }
     private fun player(p: Player,position: Int=p.position)=buildJsonObject {
         put("id",uid(p.id));put("chineseName",p.chineseName ?: p.name);put("englishName",p.englishName)
         put("numbers",buildJsonArray {p.jerseyNumbers.forEach {add(it.toInt())}});put("jerseyNumbers",buildJsonArray {p.jerseyNumbers.forEach {add(it)}})
@@ -21,6 +63,7 @@ internal object AppleHistoryCommandCodec {
         put("id",uid(d.playerID));put("player",player(people.getValue(d.playerID)))
         put("origin",if(d.origin==0) tagged("batter") else tagged("base",buildJsonObject {put("_0",d.origin)}))
         put("destination",when(d.destination) {-1->tagged("out");0->tagged("hold");4->tagged("score");in 1..3->tagged("base",buildJsonObject {put("_0",d.destination)});else->error("跑者去向无效")})
+        d.runnerDefense?.let { put("defense", encodeRunnerDefense(it)) }
     }
     private fun moves(values: List<Decision>,people: Map<String,Player>)=buildJsonArray {values.forEach {add(decision(it,people))}}
     internal fun defensive(c: Command,moves: List<Decision>): JsonObject? {
@@ -83,7 +126,12 @@ internal object AppleHistoryCommandCodec {
             "swap"->return tagged("swapOpeningSides")
             "pitch"->args {put("_0",requireNotNull(c.pitch).title)}
             "play"->args {put("_0",requireNotNull(c.outcome).title);defensive(c,effectiveMoves)?.let {put("_1",it)};put("_2",moves(effectiveMoves,people));c.timingRunCounts?.let {put("_3",it)}}
-            "runner"->args {put("_0",runners.getValue(requireNotNull(c.runnerKind)));put("_1",moves(effectiveMoves,people));c.timingRunCounts?.let {put("_2",it)}}
+            "runner"->args {
+                put("_0",runners.getValue(requireNotNull(c.runnerKind)))
+                put("_1",moves(effectiveMoves,people))
+                c.timingRunCounts?.let { put("_2", it) }
+                c.runnerErrorResponsibility?.let { put("responsibility", encodeRunnerError(it)) }
+            }
             "illegal"->args {c.pitch?.let {put("_0",it.title)};put("_1",c.wasThrown);c.outcome?.let {put("_2",it.title)};defensive(c,effectiveMoves)?.let {put("_3",it)};if(c.outcome!=null) put("_4",moves(effectiveMoves,people));c.timingRunCounts?.let {put("_5",it)};put("_6",c.penaltyApplied)}
             "hitByPitch","intentionalWalk","foulBunt","endHalf","skipTB"->args {}
             "droppedThirdStrike"->args {put("_0",moves(effectiveMoves,people))}

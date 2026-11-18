@@ -1,56 +1,154 @@
 package cc.baseballmaster.scorekeeper
 
 import cc.baseballmaster.core.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.serialization.json.JsonPrimitive
 
 /** App-facing suspend API. Local Room data is read only; bindings and shared
- * rosters stay in the independent encrypted directory, never imported over it.
+ * rosters stay in the independent encrypted directory. A confirmed schedule updates local planning fields only.
  */
-internal class AndroidTeamSharing(private val local: GameRepository, private val session: TeamDirectorySession) {
-    @Volatile private var sharedBroadcast: Pair<String, String>? = null
-    suspend fun broadcastTarget(game: Game) = withContext(Dispatchers.IO) { session.broadcastTarget(game) }
-    suspend fun broadcastSources(teamID: String) = withContext(Dispatchers.IO) { session.broadcastSources(teamID) }
-    suspend fun rotateBroadcast(teamID: String, code: String) = withContext(Dispatchers.IO) { session.rotateBroadcast(teamID, code) }
-    suspend fun publishBroadcast(game: Game, selection: BroadcastSelection) =
-        withContext(Dispatchers.IO) { session.publishLocalBroadcast(game, selection) }
-    suspend fun resumeBroadcast(game: Game) = withContext(Dispatchers.IO) { session.resumeLocalBroadcast(game) }
-    suspend fun publishSharedBroadcast(teamID: String, documentID: String, selection: BroadcastSelection) = withContext(Dispatchers.IO) {
-        session.publishSharedBroadcast(teamID, documentID, selection).also { status ->
-            if (status?.selected == true) sharedBroadcast = teamID to documentID
-        }
-    }
-    fun clearBroadcastBinding() { sharedBroadcast = null }
-    suspend fun maintainFixedSharedBroadcast() = withContext(Dispatchers.IO) {
-        val target = sharedBroadcast ?: return@withContext
-        try {
-            val status = session.publishSharedBroadcast(target.first, target.second)
-            if (status?.selected != true && sharedBroadcast == target) sharedBroadcast = null
-        } catch (e: TeamServiceFault) {
-            if (e.status in setOf(401, 403, 404, 409) && sharedBroadcast == target) sharedBroadcast = null
-            throw e
+internal class AndroidTeamSharing(internal val local: GameRepository, internal val session: TeamDirectorySession) {
+    private val scheduleLock = Mutex()
+    private val scheduleChangesState = MutableStateFlow(0L)
+    val scheduleChanges = scheduleChangesState.asStateFlow()
+
+    suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
+    suspend fun scheduleState() = withContext(Dispatchers.IO) { session.scheduleState() }
+
+    suspend fun teamSchedules(): TeamScheduleFeed = withContext(Dispatchers.IO) {
+        scheduleLock.withLock {
+            val feed = session.teamSchedules()
+            try {
+                applyScheduleReceipts(feed)
+                feed.copy(publications = session.scheduleState().publications)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                feed.copy(message = feed.message ?: "球队赛程已读取，本机安排暂未保存，请刷新重试。")
+            }
         }
     }
 
-    suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
+    suspend fun publishSchedule(gameID: String, startsAt: Long, venue: String, cancelled: Boolean = false, expectedRevision: Long? = null) =
+        changeSchedule {
+            val game = local.scheduledGame(gameID)
+            val ownID = requireNotNull(game.ourTeamID) { "这场比赛没有关联本队。" }
+            session.publishSchedule(ownID, game.id, startsAt, game.away.name, game.home.name, venue, cancelled, expectedRevision)
+        }
+
+    suspend fun updateRemoteSchedule(notice: TeamScheduleNotice, startsAt: Long, venue: String, cancelled: Boolean = false) =
+        changeSchedule { session.updateRemoteSchedule(notice, startsAt, venue, cancelled) }
+
+    suspend fun retrySchedulePublication(gameID: String, teamID: String? = null) =
+        changeSchedule {
+            if (teamID == null) local.scheduledGame(gameID)
+            session.retrySchedulePublication(gameID, teamID)
+        }
+
+    private suspend fun changeSchedule(action: suspend () -> TeamSchedulePublication): TeamSchedulePublication =
+        withContext(Dispatchers.IO) {
+            scheduleLock.withLock {
+                try {
+                    val result = action()
+                    if (result.local) {
+                        applyScheduleReceipts(session.scheduleState(), result.sourceID)
+                        session.scheduleState().publications[result.sourceID] ?: result
+                    } else result
+                } catch (fault: TeamServiceFault) {
+                    if (fault.status == 400 || fault.status == 409) {
+                        try {
+                            applyScheduleReceipts(session.scheduleState())
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (failure: Exception) {
+                            fault.addSuppressed(failure)
+                        }
+                    }
+                    throw fault
+                } finally {
+                    scheduleChangesState.update { it + 1 }
+                }
+            }
+        }
+
+    private suspend fun applyScheduleReceipts(feed: TeamScheduleFeed, sourceID: String? = null) {
+        for (publication in feed.publications.values) {
+            if (!publication.needsLocalSync || sourceID != null && publication.sourceID != sourceID) continue
+            val notice = requireNotNull(publication.notice)
+            val localIDs = feed.bindings.filter { it.cloudTeamID.equals(notice.teamID, true) }.map { it.localTeamID }
+            local.applyTeamScheduleNotice(notice, (localIDs + notice.teamID).toSet())
+            session.confirmScheduleLocalSync(notice)
+        }
+    }
+
+    private suspend fun <T> withScheduleChange(action: () -> T): T = withContext(Dispatchers.IO) {
+        try {
+            action()
+        } finally {
+            scheduleChangesState.update { it + 1 }
+        }
+    }
+
+    suspend fun sharedStatistics(selectedTeamID: String?, preferShared: Boolean, verifyAccess: Boolean = false): SharedStatisticsResult = withContext(Dispatchers.IO) {
+        val before = session.snapshot()
+        if (before.deviceID == null) return@withContext SharedStatisticsResult()
+        if (before.credentialExpired || before.requiresRecoveryReview)
+            return@withContext SharedStatisticsResult(message = "请在球队共享页面核对设备授权。")
+        var teamID = selectedTeamID
+        var message: String? = null
+        try {
+            val directory = session.refresh()
+            if (teamID == null && preferShared) teamID = directory.teams.firstOrNull()?.id
+            check(!session.snapshot().requiresRecoveryReview)
+            if (teamID != null && directory.teams.any { it.id == teamID }) {
+                session.roster(teamID)
+                val documents = session.matches(teamID)
+                for (document in documents) {
+                    ensureActive()
+                    if (document.mayCountInStatistics && document.payload == null) session.match(teamID, document.id)
+                }
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            if (verifyAccess) return@withContext SharedStatisticsResult(message = "未能核对这支球队的访问权限，请联网刷新。")
+            message = "共享统计暂未同步完成。已收到的近期版本可能不完整，请重试。"
+        }
+        val state = session.snapshot()
+        if (state.credentialExpired || state.requiresRecoveryReview)
+            return@withContext SharedStatisticsResult(message = "请在球队共享页面核对设备授权。")
+        val teams = state.directory?.teams.orEmpty()
+        if (teamID == null && preferShared) teamID = teams.firstOrNull()?.id
+        val membership = teams.firstOrNull { it.id == teamID }
+        val team = membership?.statisticsRoster(state.profiles[teamID]?.profile)
+        val games = if (membership == null) SharedStatisticsGames(emptyList(), 0) else
+            projectSharedStatistics(state.matches.values.asSequence().map { it.document }
+                .filter { it.teamID == membership.id }.asIterable())
+        SharedStatisticsResult(teams, team, games.games, games.unavailableCount, message)
+    }
     /** Complete source-backed final archives only; native Game JSON is never uploaded here. */
     suspend fun stageFinalArchive(backupID: String, gameID: String, teamID: String, confirmed: Boolean) = withContext(Dispatchers.IO) {
         session.stageFinalArchive(local.exportAppleBackup(backupID),gameID,teamID,confirmed)
     }
     suspend fun previewFinalArchive(key: String, independent: Boolean = false) = withContext(Dispatchers.IO) { session.previewFinalArchive(key,independent) }
     suspend fun sendFinalArchive(key: String) = withContext(Dispatchers.IO) { session.sendFinalArchive(key) }
-    suspend fun reconnect(confirmed: Boolean) = withContext(Dispatchers.IO) {session.reconnect(confirmed)}
+    suspend fun reconnect(confirmed: Boolean) = withScheduleChange { session.reconnect(confirmed) }
     suspend fun retainIncomingLink(link: IncomingTeamLink) = withContext(Dispatchers.IO) {session.retainIncomingLink(link)}
     suspend fun consumeIncomingLink(id: String) = withContext(Dispatchers.IO) {session.consumeIncomingLink(id)}
-    suspend fun reconcileAfterRecovery(confirmed: Boolean) = withContext(Dispatchers.IO) {session.reconcileAfterRecovery(confirmed)}
+    suspend fun reconcileAfterRecovery(confirmed: Boolean) = withScheduleChange { session.reconcileAfterRecovery(confirmed) }
     suspend fun dissolvedTeams() = withContext(Dispatchers.IO) {session.dissolvedTeams()}
     suspend fun prepareTeamDissolution(profile: SharedTeamProfile, name: String, confirmed: Boolean) = withContext(Dispatchers.IO) {session.prepareTeamDissolution(profile,name,confirmed)}
     suspend fun prepareTeamRestoration(team: DissolvedTeam, confirmed: Boolean) = withContext(Dispatchers.IO) {session.prepareTeamRestoration(team,confirmed)}
     suspend fun audit(teamID: String, from: Long, action: String, before: Long?) = withContext(Dispatchers.IO) {session.audit(teamID,from,action,before)}
-    suspend fun refresh() = withContext(Dispatchers.IO) { session.refresh() }
+    suspend fun refresh() = withScheduleChange { session.refresh() }
     suspend fun prepareCreate(name: String, nickname: String) = withContext(Dispatchers.IO) { session.prepareCreate(name,nickname) }
     suspend fun previewInvitation(input: String) = withContext(Dispatchers.IO) { session.invitationPreview(input) }
     suspend fun prepareJoin(input: String, nickname: String) = withContext(Dispatchers.IO) { session.prepareJoin(TeamServiceLink.invitation(input),nickname) }
@@ -64,14 +162,12 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
         session.prepareCreate(team,nickname)
     }
     suspend fun prepareProfile(teamID: String, revision: Long, name: String, shortName: String, city: String) = withContext(Dispatchers.IO) { session.prepareProfile(teamID,revision,name,shortName,city) }
-    suspend fun preparePlayers(teamID: String, revision: Long, players: List<SharedRosterPlayer>) =
-        withContext(Dispatchers.IO) { session.preparePlayers(teamID, revision, players) }
     suspend fun preparePlayer(teamID: String, revision: Long, player: SharedRosterPlayer) = withContext(Dispatchers.IO) { session.preparePlayer(teamID,revision,player) }
     suspend fun prepareMember(teamID: String, member: SharedTeamMember, role: TeamRole, remove: Boolean = false) = withContext(Dispatchers.IO) { session.prepareMember(teamID,member,role,remove) }
     suspend fun prepareInvite(teamID: String, role: TeamRole) = withContext(Dispatchers.IO) { session.prepareInvite(teamID,role) }
     suspend fun prepareFixedInvite(teamID: String, rotate: Boolean = false) = withContext(Dispatchers.IO) { session.prepareFixedInvite(teamID,rotate) }
     suspend fun prepareRevoke(teamID: String, invitationID: String) = withContext(Dispatchers.IO) { session.prepareRevoke(teamID,invitationID) }
-    suspend fun sendPending() = withContext(Dispatchers.IO) { session.sendPending() }
+    suspend fun sendPending() = withScheduleChange { session.sendPending() }
     suspend fun keepRejectedAsDraft(operationID: String) = withContext(Dispatchers.IO) { session.keepRejectedAsDraft(operationID) }
     suspend fun archiveRejectedOperation(operationID: String, confirmed: Boolean) = withContext(Dispatchers.IO) { session.archiveRejectedOperation(operationID,confirmed) }
     suspend fun matches(teamID: String) = withContext(Dispatchers.IO) { session.matches(teamID) }
@@ -104,21 +200,7 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     }
     suspend fun participants(teamID: String, gameID: String) = withContext(Dispatchers.IO) { session.matchParticipants(teamID,gameID) }
     suspend fun prepareHandoff(expected: SharedMatchDocument, kind: MatchControl, targetDeviceID: String? = null, confirmRisk: Boolean = false) = withContext(Dispatchers.IO) { session.prepareMatchControl(expected,kind,targetDeviceID,confirmRisk) }
-    suspend fun sendHandoff(gameID: String) = withContext(Dispatchers.IO) {
-        val receipt = session.sendMatchControl(gameID)
-        if (receipt.request.kind == MatchControl.accept || receipt.request.kind == MatchControl.force) {
-            // Handoff has already succeeded. Resume only the source already selected
-            // for this match; a broadcast problem cannot undo the transfer.
-            runCatching {
-                val team = receipt.request.teamID
-                val current = session.match(team, gameID)
-                val original = (current.payload?.get("id") as? JsonPrimitive)?.content
-                if (original != null && session.broadcastSources(team).activeGameID.equals(original, true) &&
-                    session.publishSharedBroadcast(team, gameID)?.selected == true) sharedBroadcast = team to gameID
-            }
-        }
-        receipt
-    }
+    suspend fun sendHandoff(gameID: String) = withContext(Dispatchers.IO) { session.sendMatchControl(gameID) }
     suspend fun devices(teamID: String) = withContext(Dispatchers.IO) { session.teamDevices(teamID) }
     suspend fun pairing(pairingID: String) = withContext(Dispatchers.IO) { session.pairing(pairingID) }
     suspend fun previewPairing(teamID: String, token: String) = withContext(Dispatchers.IO) { session.previewPairing(teamID,token) }
@@ -134,3 +216,11 @@ internal class AndroidTeamSharing(private val local: GameRepository, private val
     suspend fun confirmRecoveryCardSaved(teamID: String, version: Long) = withContext(Dispatchers.IO) { session.confirmRecoveryCardSaved(teamID,version) }
     suspend fun quarantineRejectedSecurity(operationID: String, confirmed: Boolean) = withContext(Dispatchers.IO) { session.quarantineRejectedSecurity(operationID,confirmed) }
 }
+
+internal data class SharedStatisticsResult(
+    val memberships: List<RemoteTeam> = emptyList(),
+    val team: Team? = null,
+    val games: List<Game> = emptyList(),
+    val unavailableCount: Int = 0,
+    val message: String? = null,
+)

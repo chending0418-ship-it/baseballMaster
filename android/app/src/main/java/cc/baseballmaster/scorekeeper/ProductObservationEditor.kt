@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
@@ -136,6 +137,7 @@ internal fun ProductOptionGrid(
     selected: String?,
     columns: Int = 3,
     unavailable: (String) -> String? = { null },
+    minHeight: Dp = 40.dp,
     choose: (String) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -147,7 +149,7 @@ internal fun ProductOptionGrid(
                     val tint = if (isSelected) ProductAmber else MaterialTheme.colorScheme.primary
                     Surface(
                         onClick = { choose(key) }, enabled = enabled,
-                        modifier = Modifier.weight(1f).heightIn(min = 40.dp)
+                        modifier = Modifier.weight(1f).heightIn(min = minHeight)
                             .testTag("choice-$label-$key")
                             .semantics { this.selected = isSelected; role = Role.RadioButton },
                         shape = RoundedCornerShape(10.dp),

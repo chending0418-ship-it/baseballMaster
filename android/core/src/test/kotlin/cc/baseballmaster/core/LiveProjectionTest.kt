@@ -20,6 +20,29 @@ class LiveProjectionTest {
         assertEquals(9,a.getValue("home").jsonObject.getValue("lineup").jsonArray.size)
         assertTrue(a.getValue("hasStarted").jsonPrimitive.boolean)
     }
+    @Test fun batterAndOnDeckUseTheOffensiveSideEvenWhenJerseyNumbersMatch() {
+        fun team(id: String, label: String) = Team(id, label, (1..12).map {
+            Player("$id-$it", "$label$it", "$it", position = it.coerceAtMost(9))
+        })
+        var game = MatchFactory.create("live-batter-parity", team("home", "主"), team("away", "客"), Rules())
+        repeat(3) { game = MatchEngine.apply(game, Command("play", outcome = Outcome.single)) }
+
+        fun assertBatters(label: String, order: Int, next: List<String>) {
+            val live = LiveProjection.create(game)
+            assertEquals(label, live.getValue("batter").jsonObject.getValue("name").jsonPrimitive.content)
+            assertEquals(order, live.getValue("batterOrder").jsonPrimitive.int)
+            assertEquals(next, live.getValue("nextBatters").jsonArray.map {
+                it.jsonObject.getValue("player").jsonObject.getValue("name").jsonPrimitive.content
+            })
+        }
+        assertBatters("客4", 4, listOf("客5", "客6"))
+        game = MatchEngine.apply(game, Command("batter", playerID = "away-10"))
+        assertBatters("客10", 4, listOf("客5", "客6"))
+        repeat(9) { game = MatchEngine.apply(game, Command("pitch", pitch = PitchAction.calledStrike)) }
+        assertFalse(game.isTop)
+        assertBatters("主1", 1, listOf("主2", "主3"))
+    }
+
     @Test fun finalProjectionClosesTheUnfinishedAppearanceAndHasNoUpcomingOrCurrentBatterOrder() {
         var g=MatchEngine.apply(game(),Command("pitch",pitch=PitchAction.ball,at=1_800_000_000_000))
         g=MatchEngine.apply(g,Command("finish",text="scorerDecision",at=1_800_000_001_000))

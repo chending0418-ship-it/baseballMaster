@@ -24,9 +24,9 @@ enum class BroadcastSource(val title: String, val size: String, private val view
     away("客队阵容", "440 × 540", "lineup", "away"),
     home("主队阵容", "440 × 540", "lineup", "home");
 
-    fun url(code: String): String {
+    fun url(code: String, overlayBase: String = "https://baseballmaster.cc/livestreaming/novideo/overlay"): String {
         require(Regex("[A-Za-z0-9_-]{32}").matches(code))
-        return "https://baseballmaster.cc/livestreaming/novideo/overlay?view=$view" +
+        return "$overlayBase?view=$view" +
             (side?.let { "&team=$it" } ?: "") + "#team/$code"
     }
 }
@@ -52,7 +52,7 @@ fun TeamDirectorySession.broadcastTarget(game: Game): BroadcastTarget? = synchro
     val own = game.ourTeamID ?: return@synchronized null
     val id = game.sharedRosterOrigin?.teamID
         ?: state.bindings.singleOrNull { it.localTeamID.equals(own, true) }?.cloudTeamID
-        ?: return@synchronized null
+        ?: own
     val team = state.directory?.teams?.singleOrNull { it.id.equals(id, true) && it.role != TeamRole.member }
         ?: return@synchronized null
     BroadcastTarget(appleUUID(team.id), appleUUID(game.id))
@@ -74,20 +74,26 @@ fun TeamDirectorySession.rotateBroadcast(teamID: String, expectedCode: String): 
 }
 
 fun TeamDirectorySession.publishLocalBroadcast(game: Game, selection: BroadcastSelection): TeamBroadcastStatus? =
-    sendLocalBroadcast(game, selection)
+    sendLocalBroadcast(game, selection, followCurrent = false)
+
+fun TeamDirectorySession.startLocalBroadcast(game: Game): TeamBroadcastStatus? =
+    sendLocalBroadcast(game, null, followCurrent = false)
 
 fun TeamDirectorySession.resumeLocalBroadcast(game: Game): TeamBroadcastStatus? =
-    sendLocalBroadcast(game, null)
+    sendLocalBroadcast(game, null, followCurrent = true)
 
-private fun TeamDirectorySession.sendLocalBroadcast(game: Game, selection: BroadcastSelection?): TeamBroadcastStatus? = synchronized(storage.monitor) {
+private fun TeamDirectorySession.sendLocalBroadcast(
+    game: Game, selection: BroadcastSelection?, followCurrent: Boolean,
+): TeamBroadcastStatus? = synchronized(storage.monitor) {
     val target = broadcastTarget(game) ?: return@synchronized null
     if (selection != null) { refresh(); broadcastRole(target.teamID) }
-    if (game.isPregame || game.isFinal && selection != null) return@synchronized null
+    if (game.isPregame || game.isFinal && !followCurrent) return@synchronized null
     val snapshot = LiveProjection.create(game)
     val pitching = if (game.rules.mode == GameMode.coachPitch) null else (game.pitching[game.pitcher.id] ?: PitchingLine()).let {
         buildJsonObject { put("strikes", it.strikes); put("strikeouts", it.strikeouts) }
     }
-    publishBroadcast(target, snapshot, pitching, null, selection ?: BroadcastSelection(target.gameID))
+    val expected = selection ?: if (followCurrent) BroadcastSelection(target.gameID) else null
+    publishBroadcast(target, snapshot, pitching, null, expected)
 }
 
 fun TeamDirectorySession.publishSharedBroadcast(teamID: String, documentID: String, selection: BroadcastSelection? = null): TeamBroadcastStatus? =
@@ -117,19 +123,19 @@ fun TeamDirectorySession.publishSharedBroadcast(teamID: String, documentID: Stri
     }
 
 private fun TeamDirectorySession.publishBroadcast(
-    target: BroadcastTarget, snapshot: JsonObject, pitching: JsonObject?, epoch: Long?, selection: BroadcastSelection,
+    target: BroadcastTarget, snapshot: JsonObject, pitching: JsonObject?, epoch: Long?, selection: BroadcastSelection?,
 ): TeamBroadcastStatus? {
     if (snapshot["hasStarted"]?.jsonPrimitive?.boolean != true) return null
     val currentBatter = (snapshot["batter"] as? JsonObject)?.get("id")
     val entries = snapshot.getValue("entries").jsonArray.map { it.jsonObject }.filter {
-        it["status"]?.jsonPrimitive?.content == "completed" &&
+        it["kind"]?.jsonPrimitive?.content == "appearance" && it["status"]?.jsonPrimitive?.content == "completed" &&
             (it["player"] as? JsonObject)?.get("id") == currentBatter
     }.takeLast(3).map { JsonObject(it + ("details" to JsonArray(emptyList()))) }
     val compact = JsonObject(snapshot + mapOf("gameID" to JsonPrimitive(target.gameID), "entries" to JsonArray(entries),
         "notice" to JsonPrimitive(""), "nextBatters" to JsonArray(emptyList())))
     val response = client.transport.request("PUT", broadcastPath(target.teamID), buildJsonObject {
         put("snapshot", compact)
-        put("expectedGameID", selection.expectedGameID?.let(::appleUUID)?.let(::JsonPrimitive) ?: JsonNull)
+        if (selection != null) put("expectedGameID", selection.expectedGameID?.let(::appleUUID)?.let(::JsonPrimitive) ?: JsonNull)
         if (epoch != null) put("writerEpoch", epoch)
         if (pitching != null) put("pitching", pitching)
     })

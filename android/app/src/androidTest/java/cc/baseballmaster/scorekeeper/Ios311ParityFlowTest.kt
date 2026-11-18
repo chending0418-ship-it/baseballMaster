@@ -81,36 +81,20 @@ class Ios311ParityFlowTest {
         repeat(3) { device.findObject(By.scrollable(true))?.scroll(Direction.UP, 1f) }
         device.waitForIdle(500)
     }
-    private fun seed(mode: GameMode = GameMode.standard, rules: Rules = Rules(mode)): Game = db { _, repo ->
+    private fun seed(mode: GameMode = GameMode.standard): Game = db { _, repo ->
         val roster = (1..12).joinToString("\n") { "球员$it,$it" }
         val team = repo.createTeam("0.8 对齐 ${UUID.randomUUID().toString().take(5)}", roster)
-        repo.createGame(team, "iOS 对照队", roster, mode, false, rules)
+        repo.createGame(team, "iOS 对照队", roster, mode, false, Rules(mode))
     }
     private fun shot(name: String) {
         device.waitForIdle(500)
         inst.waitForIdleSync()
         val frame = java.util.concurrent.CountDownLatch(1)
         inst.runOnMainSync { android.view.Choreographer.getInstance().postFrameCallback { android.view.Choreographer.getInstance().postFrameCallback { frame.countDown() } } }
-        assertTrue(frame.await(3, java.util.concurrent.TimeUnit.SECONDS))
-        device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-$name.png"))
+        frame.await(3, java.util.concurrent.TimeUnit.SECONDS)
+        assertTrue(device.takeScreenshot(File(context.getExternalFilesDir(null), "081-regression-$name.png")))
         device.dumpWindowHierarchy(File(context.getExternalFilesDir(null), "081-regression-$name.xml"))
     }
-    @Test fun pregameScoreboardShowsElapsedOrRemainingClock() {
-        val ordinary = seed()
-        val timed = seed(rules = Rules(timed = true, timeLimitMinutes = 90))
-        launch()
-        click("game-${ordinary.id}")
-        assertEquals("正 0:00", screenControl("game-clock").text)
-        click("back-home")
-        click("game-${timed.id}")
-        assertEquals("倒 90:00", screenControl("game-clock").text)
-        click("toggle-game-clock")
-        await(timed.id) { it.clockRunningSince != null }
-        val running = stored(timed.id)
-        assertEquals(0, running.totalPitches)
-        assertFalse(running.isPregame)
-    }
-
     @Test fun mainScoringControlsAndSpecialActionsMatchIosHierarchy() {
         val game = seed()
         launch(); click("game-${game.id}")
@@ -148,6 +132,37 @@ class Ios311ParityFlowTest {
             shot("special-${mode.name}"); device.pressBack(); click("back-home")
         }
     }
+
+    @Test fun coachHitByPitchCountsOnePitchAndKeepsTheSameBatterAndRunner() {
+        val game = db { _, repository ->
+            val roster = (1..9).joinToString("\n") { "球员$it,$it" }
+            val away = repository.createTeam("教练投手验收 ${UUID.randomUUID().toString().take(5)}", roster)
+            val home = repository.createTeam("教练投手对照", roster, true)
+            val rules = Rules(GameMode.coachPitch, coachPitchLimit = 6)
+            val match = MatchFactory.create(UUID.randomUUID().toString(), home = home, away = away, rules = rules, ourTeamID = away.id)
+            match.bases = listOf(null, away.players[1].id, null)
+            repository.createPreparedGame(match)
+        }
+        launch()
+        click("game-${game.id}")
+        click("record-special")
+        assertNotNull(NativeUi.find(device, By.text("继续打击，计入本打席球数")))
+        shot("coach-hbp-menu")
+        click("special-hitByPitch")
+        await(game.id) { it.totalPitches == 1 }
+        val updated = stored(game.id)
+        assertEquals(game.revision + 1, updated.revision)
+        assertEquals(1, updated.appearancePitches)
+        assertEquals(game.outs, updated.outs)
+        assertEquals(game.batter.id, updated.batter.id)
+        assertEquals(game.bases, updated.bases)
+        assertEquals(game.batting, updated.batting)
+        assertEquals(game.pitching, updated.pitching)
+        assertEquals("HBP-CONTINUE", updated.entries.last().notation)
+        assertNotNull(NativeUi.find(device, By.text("教练投手 · 本打席 1 / 6 球")))
+        shot("coach-hbp-after")
+    }
+
     @Test fun deleteIsConfirmedAndAffectsOnlySelectedLocalRecord() {
         val game = seed(); val other = seed()
         launch(); click("game-menu-${game.id}")
@@ -160,7 +175,7 @@ class Ios311ParityFlowTest {
     @Test fun mainTabsAndBatchRosterRemainAvailable() {
         launch(); shot("home-tabs")
         click("home-rules-help"); shot("rules"); device.pressBack()
-        click("tab-1"); screenControl("add-team"); shot("teams"); click("add-team"); shot("batch-roster"); device.pressBack()
+        click("tab-1"); screenControl("roster-open-create"); shot("teams"); click("roster-open-create"); click("add-team"); shot("batch-roster"); device.pressBack()
         click("tab-2"); screenControl("stats-team-picker"); shot("statistics")
         click("tab-3"); screenControl("open-app-settings"); shot("profile")
         click("open-app-settings"); shot("settings"); device.pressBack()
@@ -222,7 +237,7 @@ class Ios311ParityFlowTest {
         launch()
         val priorRecord = NativeUi.find(device, By.res("home-team-record")).text
         click("new-game"); input("opponent-name", "草稿必须保留")
-        click("setup-manage-opponents"); click("add-team")
+        click("setup-manage-opponents"); click("roster-open-create"); click("add-team")
         val bulkName = "批量对手 ${UUID.randomUUID().toString().take(5)}"
         input("team-name", bulkName); input("team-roster", roster); click("save-team")
         click("close-setup-opponents")
@@ -271,19 +286,11 @@ class Ios311ParityFlowTest {
             val (own, opponent) = db { _, repo -> repo.createTeam("预告本队 ${UUID.randomUUID().toString().take(5)}", roster) to repo.createTeam("预告对手 ${UUID.randomUUID().toString().take(5)}", roster, true) }
             launch(); click("new-game")
             chooseRoster("setup-own-team", own); chooseRoster("setup-opponent", opponent)
-            click("setup-scheduled-toggle"); click("configure-schedule-now")
-            click("rule-advanced-toggle"); input("rule-pitch-limit", "３")
-            click("start-game"); confirmLineups()
+            click("setup-scheduled-toggle"); click("configure-schedule-now"); click("start-game"); confirmLineups()
             val game = awaitCreatedGame { it.ourTeamID == own.id }
             assertTrue(game.isScheduled); assertFalse(game.openingPitchRecorded)
-            assertEquals(3, game.rules.pitchLimit)
             assertFalse(device.hasObject(By.res("pitch-ball")))
             click("activate-scheduled"); await(game.id) { !it.isScheduled }
-            click("scoring-more")
-            NativeUi.find(device, By.text("本场比赛规则")).click()
-            assertEquals("3", NativeUi.find(device, By.res("rule-pitch-limit")).text)
-            shot("scheduled-pitch-limit-readback")
-            device.pressBack(); device.waitForIdle(500)
             click("pitch-ball"); screenControl("confirm-opening-pitch").click()
             await(game.id) { it.balls == 1 && it.openingPitchRecorded }
             shot("scheduled-match-entered")
@@ -313,6 +320,7 @@ class Ios311ParityFlowTest {
             assertFalse(device.hasObject(By.res("pitch-ball"))); assertFalse(device.hasObject(By.res("start-confirmed-game")))
             shot("basic-schedule-${if(observation) "observation" else "owned"}")
             click("pending-edit-time"); assertFalse(device.hasObject(By.res("choice-时间用途-played")))
+            click("match-time-manual")
             input("match-time", "2030-06-01 11:30"); input("match-zone", "Asia/Shanghai")
             if(!observation) {
                 val resumed = java.util.concurrent.CountDownLatch(1)

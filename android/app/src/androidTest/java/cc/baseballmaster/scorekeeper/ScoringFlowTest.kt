@@ -337,7 +337,7 @@ class ScoringFlowTest {
         launch()
         click("game-${identityFile.readText()}")
         assertFalse(device.hasObject(By.res("pitch-ball")))
-        click("game-history")
+        click("result-history-correction")
         assertNotNull(text("完整记录"))
         screenshot("04-restored-history")
         assertEquals(hashFile.readText(), sha(stored().second))

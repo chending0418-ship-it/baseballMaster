@@ -11,7 +11,14 @@ import androidx.compose.ui.unit.sp
 import cc.baseballmaster.core.*
 
 @Composable
-internal fun AdvancedPanel(game: Game, model: ScorekeeperViewModel, close: () -> Unit, initialPage: String = "menu") {
+internal fun AdvancedPanel(
+    game: Game,
+    model: ScorekeeperViewModel,
+    close: () -> Unit,
+    initialPage: String = "menu",
+    initialEventID: String? = null,
+    openHistory: (String) -> Unit = {},
+) {
     var page by rememberSaveable { mutableStateOf(initialPage) }
     val save: (Command) -> Unit = { model.command(it, game.revision) { if(initialPage == "review") close() else page = "menu" } }
     when (page) {
@@ -22,7 +29,8 @@ internal fun AdvancedPanel(game: Game, model: ScorekeeperViewModel, close: () ->
 
         "situation" -> ManualSituationEditor(game, model.busy, { page = "menu" }, save)
         "double" -> DoubleSwitchEditor(game, model.busy, { page = "menu" }, save)
-        "review" -> ReviewEditor(game, model.busy, { if(initialPage == "review") close() else page = "menu" }, save)
+        "review" -> ReviewEditor(game, model.busy, { if(initialPage == "review") close() else page = "menu" },
+            initialEventID, openHistory, save)
         else ->
             FormPage("局面与比赛决定", model.busy, false, "unused", "", close, {}) {
                 if (!game.isFinal) {
@@ -106,7 +114,7 @@ internal fun AdvancedPanel(game: Game, model: ScorekeeperViewModel, close: () ->
                 }
                 TextButton({page="note"},Modifier.testTag("game-note")){Text("比赛备注")}
             TextButton({ page = "review" }, Modifier.testTag("review-events")) {
-                    Text("待确认记录复核 · ${game.entries.count{it.incomplete}}")
+                    Text("待确认记录复核 · ${game.entries.count{it.needsReview}}")
                 }
                 Text("补正局面不推算缺失过程，原有统计会保留并提示不完整。", fontSize = 12.sp)
             }
@@ -248,20 +256,22 @@ internal fun DoubleSwitchEditor(
 }
 
 @Composable
-private fun ReviewEditor(game: Game, busy: Boolean, close: () -> Unit, save: (Command) -> Unit) {
-    var selected by rememberSaveable { mutableStateOf("") }
-    val entry = game.entries.firstOrNull { it.id == selected && it.incomplete }
+private fun ReviewEditor(game: Game, busy: Boolean, close: () -> Unit, initialEventID: String?,
+    openHistory: (String) -> Unit, save: (Command) -> Unit) {
+    var selected by rememberSaveable(initialEventID) { mutableStateOf(initialEventID.orEmpty()) }
+    val entry = game.entries.firstOrNull { it.id == selected && it.needsReview }
     if (entry == null)
         FormPage("待确认记录", busy, false, "unused", "", close, {}) {
             game.entries
-                .filter { it.incomplete }
+                .filter { it.needsReview }
                 .forEach { e ->
                     CardBlock {
                         Text("${e.inning}局${if(e.isTop)"上"else"下"} · ${e.text}")
-                        TextButton({ selected = e.id }) { Text("复核记录") }
+                        TextButton({ if (e.catcherAttributionPending) openHistory(e.id) else selected = e.id },
+                            Modifier.testTag("review-event-${e.id}")) { Text("复核记录") }
                     }
                 }
-            if (game.entries.none { it.incomplete }) Text("没有待确认记录")
+            if (game.entries.none { it.needsReview }) Text("没有待确认记录")
         }
     else
         key(entry.id) {
@@ -276,7 +286,7 @@ private fun ReviewEditor(game: Game, busy: Boolean, close: () -> Unit, save: (Co
                 title.isNotBlank() && note.isNotBlank() && (!needs || outcome.isNotBlank()),
                 "save-review",
                 "确认",
-                { selected = "" },
+                { if (initialEventID == entry.id) close() else selected = "" },
                 {
                     save(
                         Command(

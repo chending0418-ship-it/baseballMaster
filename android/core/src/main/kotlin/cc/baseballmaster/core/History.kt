@@ -89,6 +89,7 @@ object History {
             "batter" -> "代打"
             "pinchRunner" -> "代跑"
             "fielder" -> "守备换人"
+            "doubleSwitch" -> "双重换人"
             "position" -> "守位互换"
             "lineup" -> "阵容调整"
             "suspend" -> "比赛中断"
@@ -122,6 +123,56 @@ object History {
         require(index in 0..draft.records.size)
         return run(input.copy(checkpoint = draft.checkpoint), draft.records, index, false).game
             ?: error("无法重放此处之前的记录")
+    }
+
+    fun substitutionCandidates(before: Game, kind: String): List<Player> {
+        val batting = kind in setOf("batter", "pinchRunner")
+        val team = if (batting) before.battingTeam else before.fieldingTeam
+        val onField = if (batting) {
+            (if (before.isTop) before.awayPositions else before.homePositions)?.values
+                ?: team.players.take(before.rules.fielders).map { it.id }
+        } else before.fieldingPositions.values
+        val order = if (batting) before.battingOrder else
+            (if (before.isTop) before.homeOrder else before.awayOrder) ?: onField
+        val designatedHitter = if (before.isTop) before.homeDesignatedHitterID else before.awayDesignatedHitterID
+        return team.players.filter { player ->
+            !player.archived && player.id !in before.bases && when {
+                kind == "pitcher" && player.id == before.pitcher.id -> false
+                kind == "pitcher" && player.id in onField -> true
+                kind == "pitcher" && before.rules.twoWayEnabled && player.id == designatedHitter -> true
+                else -> player.id !in onField && player.id !in order
+            }
+        }
+    }
+
+    /** Keeping one half of a double switch becomes an ordinary fielding replacement. */
+    fun reviseDoubleSwitch(
+        before: Game,
+        original: Command,
+        firstIncoming: String?,
+        firstPosition: Int?,
+        secondIncoming: String?,
+        secondPosition: Int?,
+    ): Command {
+        require(original.kind == "doubleSwitch")
+        require(firstIncoming != null || secondIncoming != null) { "如两组都要撤掉，请返回并删除整条记录" }
+        if (firstIncoming != null && secondIncoming != null) {
+            val outgoing = setOf(original.playerID, original.secondPlayerID)
+            require(firstPosition != null && secondPosition != null && firstPosition != secondPosition &&
+                before.fieldingPositions[firstPosition] in outgoing && before.fieldingPositions[secondPosition] in outgoing) {
+                "请为两名替补选择不同的空出守位"
+            }
+            return original.copy(
+                replacementID = firstIncoming, position = firstPosition,
+                secondReplacementID = secondIncoming, secondPosition = secondPosition,
+            )
+        }
+        val outgoing = if (firstIncoming != null) original.playerID else original.secondPlayerID
+        val position = if (firstIncoming != null) firstPosition else secondPosition
+        require(position != null && before.fieldingPositions[position] == outgoing) {
+            "只保留一组时，请让替补接替本组退场球员的守位"
+        }
+        return Command("fielder", playerID = outgoing, replacementID = firstIncoming ?: secondIncoming, at = original.at)
     }
 
     fun insert(input: Game, draft: CorrectionDraft, index: Int, command: Command): CorrectionDraft {
@@ -171,6 +222,7 @@ object History {
             game.playedAt = input.playedAt
             game.playedTimeZoneID = input.playedTimeZoneID
             game.dateRevisions = input.dateRevisions
+            game.rules = game.rules.copy(recordingMethod = input.rules.recordingMethod)
             if (input.isFinal) game.endedAt = input.endedAt
             val changes = mutableListOf<String>()
             val ids = draft.records.map { it.id }.toSet()
@@ -199,13 +251,39 @@ object History {
             if (input.awayRuns != game.awayRuns || input.homeRuns != game.homeRuns)
                 changes +=
                     "比分 ${input.awayRuns}:${input.homeRuns} → ${game.awayRuns}:${game.homeRuns}"
+            if (input.awayErrors != game.awayErrors || input.homeErrors != game.homeErrors)
+                changes +=
+                    "球队失误：客队 ${input.awayErrors}→${game.awayErrors}，主队 ${input.homeErrors}→${game.homeErrors}"
+            val players = (game.home.players + game.away.players).associateBy { it.id }
+            fun name(id: String?) = players[id]?.let { "#${it.number} ${it.name}" } ?: "空"
+            fun lineupChanges(
+                team: Team,
+                beforeOrder: List<String>?, afterOrder: List<String>?,
+                beforePositions: Map<Int, String>?, afterPositions: Map<Int, String>?,
+            ) {
+                afterOrder?.forEachIndexed { index, id ->
+                    val old = beforeOrder?.getOrNull(index)
+                    if (old != id) changes += "${team.shortName} 第 ${index + 1} 棒 ${name(old)} → ${name(id)}"
+                }
+                afterPositions?.toSortedMap()?.forEach { (position, id) ->
+                    val old = beforePositions?.get(position)
+                    if (old != id) changes += "${team.shortName} ${ScoringOptions.positions[position - 1]} ${name(old)} → ${name(id)}"
+                }
+            }
+            lineupChanges(game.home, input.homeOrder, game.homeOrder, input.homePositions, game.homePositions)
+            lineupChanges(game.away, input.awayOrder, game.awayOrder, input.awayPositions, game.awayPositions)
+            game.bases.forEachIndexed { index, id ->
+                if (input.bases[index] != id) changes += "${index + 1} 垒 ${name(input.bases[index])} → ${name(id)}"
+            }
+            val oldFielding = input.reportFielding
+            val newFielding = game.reportFielding
             for (player in game.home.players + game.away.players) {
                 val oldBat = input.batting[player.id] ?: BattingLine()
                 val newBat = game.batting[player.id] ?: BattingLine()
                 val oldPitch = input.pitching[player.id] ?: PitchingLine()
                 val newPitch = game.pitching[player.id] ?: PitchingLine()
-                val oldField = input.fielding[player.id] ?: FieldingLine()
-                val newField = game.fielding[player.id] ?: FieldingLine()
+                val oldField = oldFielding[player.id] ?: FieldingLine()
+                val newField = newFielding[player.id] ?: FieldingLine()
                 val label = "${player.name} #${player.number}"
                 if (oldBat != newBat)
                     changes +=
@@ -215,7 +293,7 @@ object History {
                         "$label：投球 ${oldPitch.pitches}→${newPitch.pitches}，失分 ${oldPitch.runs}→${newPitch.runs}，自责分 ${oldPitch.earnedRuns}→${newPitch.earnedRuns}"
                 if (oldField != newField)
                     changes +=
-                        "$label：守备 PO ${oldField.putouts}→${newField.putouts}，A ${oldField.assists}→${newField.assists}，E ${oldField.errors}→${newField.errors}"
+                        "$label：守备 PO ${oldField.putouts}→${newField.putouts}，A ${oldField.assists}→${newField.assists}，E ${oldField.errors}→${newField.errors}，CCS ${oldField.catcherCaughtStealing ?: "—"}→${newField.catcherCaughtStealing ?: "—"}，PB ${oldField.passedBalls ?: "—"}→${newField.passedBalls ?: "—"}"
             }
             if (input.situation() != game.situation())
                 changes +=
@@ -273,7 +351,7 @@ object History {
         cursor: Int,
         strict: Boolean,
     ): CorrectionPreview {
-        var state = GameJson.decodeFromString<Game>(input.checkpoint ?: error("缺少可重放的检查点")).apply { restorePitcherInningUsage() }
+        var state = GameJson.decodeFromString<Game>(input.checkpoint ?: error("缺少可重放的检查点"))
         val aliases = mutableMapOf<String, String>()
         val normalized = mutableListOf<RecordedCommand>()
         val committedCommands = if (strict) input.journal.associate { it.id to it.command } else emptyMap()
@@ -308,6 +386,12 @@ object History {
                 val beforePitch = state.pitching.mapValues { it.value.copy() }
                 val oldPitcher = state.pitcher.id
                 val original = record.command
+                val recordsReceiverError = original.decisions.orEmpty().any {
+                    it.advancesFromBase && it.runnerDefense is RunnerDefenseCredit.CaughtStealing
+                }
+                require((original.runnerErrorResponsibility == null && !recordsReceiverError) || record.additionalErrors.isEmpty()) {
+                    "这球已有补记失误。请先清除补记，再确认这次跑垒失误的责任人"
+                }
                 val beforeCancel =
                     if (
                         records.getOrNull(index + 1)?.command?.adjudication?.previousPlay ==
@@ -351,7 +435,15 @@ object History {
                             ) {
                                 "跑者与补记后的垒况不同，请修改跑垒决定"
                             }
-                            d.copy(playerID = state.bases[d.origin - 1]!!)
+                            val credit = when (val defense = d.runnerDefense) {
+                                is RunnerDefenseCredit.CaughtStealing -> defense.copy(
+                                    catcherID = participant(defense.catcherID),
+                                    receiverID = participant(defense.receiverID),
+                                )
+                                is RunnerDefenseCredit.PassedBall -> defense.copy(catcherID = participant(defense.catcherID))
+                                else -> defense
+                            }
+                            d.copy(playerID = state.bases[d.origin - 1]!!, runnerDefense = credit)
                         }
                     }
                 var command = original.copy(decisions = decisions)
@@ -416,8 +508,15 @@ object History {
                 // Old journals may lack replacement metadata. Replay their exact old semantics;
                 // enforce the new boundary only for commands newly authored in this correction.
                 // edited/inserted flags persist after commit, so flags alone cannot identify new work.
-                val newlyAuthoredLineup = strict && committedCommands[record.id] != record.command
-                state = Session(state, command, record.id, validateNewLineupReplacements = newlyAuthoredLineup).run()
+                val newlyAuthored = strict && committedCommands[record.id] != record.command
+                if (newlyAuthored && command.kind in setOf("pitcher", "batter", "pinchRunner", "fielder", "doubleSwitch")) {
+                    val eligible = substitutionCandidates(state, command.kind).map { it.id }.toSet()
+                    val incoming = if (command.kind in setOf("fielder", "doubleSwitch")) command.replacementID else command.playerID
+                    require(incoming in eligible && (command.kind != "doubleSwitch" || command.secondReplacementID in eligible)) {
+                        "请选择当时可换入的球员"
+                    }
+                }
+                state = Session(state, command, record.id, validateNewLineupReplacements = newlyAuthored).run()
                 if (original.kind == "doubleSwitch") {
                     replacement(command.playerID!!, command.replacementID!!)
                     replacement(command.secondPlayerID!!, command.secondReplacementID!!)
@@ -477,8 +576,18 @@ object History {
                     state.entries =
                         state.entries.dropLast(1) + state.entries.last().copy(incomplete = true)
                 }
+                // These commands can follow a corrected replacement in the same lineup slot.
+                // Save the resolved outgoing ID with the new context so subsequent replay can find it.
+                val normalizedCommand = when (original.kind) {
+                    "fielder", "position", "doubleSwitch" -> original.copy(
+                        playerID = command.playerID, secondPlayerID = command.secondPlayerID,
+                    )
+                    "runner" -> if (original.decisions.orEmpty().any { it.runnerDefense != null }) command else original
+                    else -> original
+                }
                 normalized +=
                     record.copy(
+                        command = normalizedCommand,
                         context = beforeContext,
                         batterID = beforeBatter,
                         bases = beforeBases,

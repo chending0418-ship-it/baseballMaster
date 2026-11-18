@@ -15,6 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -32,7 +33,6 @@ internal fun PlayEditor(
     dismiss: () -> Unit,
     initial: Command? = null,
     onNeedsCorrection: (() -> Unit)? = null,
-    voiceConfirmation: Boolean = false,
     save: (Command) -> Unit,
 ) {
     val pro = if (initial != null) initial.observation != null || initial.recordingMethod == "situation"
@@ -43,7 +43,7 @@ internal fun PlayEditor(
     }
     val cmd = remember(json) { GameJson.decodeFromString<Command>(json) }
     var stage by rememberSaveable(game.id, game.revision) {
-        mutableStateOf(if (voiceConfirmation && initial?.observation?.precision == "unknown") "contact" else if (initial == null) "entry" else "review")
+        mutableStateOf(if (initial == null) "entry" else "review")
     }
     var arrival by rememberSaveable(game.id, game.revision) {
         mutableIntStateOf(initial?.decisions?.firstOrNull { it.origin == 0 }?.destination ?: 1)
@@ -114,8 +114,10 @@ internal fun PlayEditor(
         }
     }
     val command = finalCommand()
-    val preview = if (stage == "review") runCatching { MatchEngine.apply(game, command) }.getOrNull() else null
-    val reviewIssue = if (stage == "review") (if (pro) fieldIssue else null) ?: productCommandIssue(game, command) else null
+    val collision = if (stage == "review") runnerBaseConflict(cmd.decisions.orEmpty()) else null
+    val preview = if (stage == "review" && collision == null) runCatching { MatchEngine.apply(game, command) } else null
+    val reviewIssue = if (stage == "review") collision ?: (if (pro) fieldIssue else null)
+        ?: productCommandIssue(preview?.exceptionOrNull()) else null
     val requiresProReview = initial != null || game.bases.any { it != null } || cmd.outcome in
         listOf(Outcome.error, Outcome.fieldersChoice, Outcome.runnerTagOut, Outcome.infieldFly,
             Outcome.pending, Outcome.pendingOut, Outcome.other)
@@ -133,10 +135,10 @@ internal fun PlayEditor(
         issue = null
         when (stage) {
             "entry" -> dismiss()
-            "contact" -> if (voiceConfirmation && !contactFromReview) dismiss() else stage = if (contactFromReview) "review" else contactReturnStage
             "cause", "process" -> stage = "entry"
             "catalog" -> stage = catalogReturnStage
             "processResult" -> stage = "process"
+            "contact" -> stage = if (contactFromReview) "review" else contactReturnStage
             "defense" -> stage = "cause"
             else -> stage = if (pro) "contact" else if (productNeedsDefense(cmd.outcome ?: Outcome.other)) "defense" else "cause"
         }
@@ -149,7 +151,7 @@ internal fun PlayEditor(
         actionLabel = when (stage) {
             "contact" -> if (contactFromReview) "完成修改" else if (requiresProReview) "下一步 · 核对跑者" else "完成本球"
             "defense" -> if (productRequiresBasicReview(game, cmd.outcome ?: Outcome.other)) "下一步 · 核对跑者" else "确认本球"
-            "review" -> if (initial == null || voiceConfirmation) "确认本球" else "保存本球修改"
+            "review" -> if (initial == null) "确认本球" else "保存本球修改"
             else -> ""
         },
         actionEnabled = when (stage) { "contact" -> fieldIssue == null; "defense" -> defenseIssue == null; "review" -> reviewIssue == null; else -> false },
@@ -163,6 +165,7 @@ internal fun PlayEditor(
         },
         modal = true,
         scrollKey = stage,
+        actionSummary = preview?.getOrNull()?.let { after -> { ProductPlayPreview(game, command, after) } },
     ) {
         when (stage) {
             "entry" -> {
@@ -261,32 +264,33 @@ internal fun PlayEditor(
                 defenseIssue?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             "review" -> {
-                Text(if (initial == null || voiceConfirmation) "尚未提交" else "修改刚才这球 · 保存后替换", fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold, color = ProductAmber)
-                Text(productOutcomeTitle(cmd.outcome ?: Outcome.other) + if (pro) " · ${ScoringOptions.ballTypes[observation.type].orEmpty()}" else "",
-                    fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                if (pro) {
-                    observation.fielding?.let { Text(productFieldingSummary(game, it), fontSize = 12.sp) }
-                    observation.fielding?.errorPosition?.let { position ->
-                        Text("失误责任：${productFielderName(game, position)}", fontSize = 12.sp, color = ProductRed)
-                    }
-                    TextButton({ contactFromReview = true; stage = "contact" }, Modifier.testTag("edit-situation-field"),
-                        contentPadding = PaddingValues(0.dp)) { Text("${productLocationSummary(observation)} · 修改球场记录", fontSize = 12.sp) }
-                } else {
-                    cmd.fielding?.let { fielding ->
-                        Text(productFieldingSummary(game, fielding), fontSize = 12.sp)
-                        TextButton({ stage = "defense" }, contentPadding = PaddingValues(0.dp)) { Text("修改守备路线", fontSize = 12.sp) }
-                    }
+                if (initial != null) {
+                    Text("修改刚才这球 · 保存后替换", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ProductAmber)
+                }
+                val summary = productOutcomeTitle(cmd.outcome ?: Outcome.other) +
+                    if (pro) " · ${ScoringOptions.ballTypes[observation.type].orEmpty()}" else ""
+                val editLabel = if (pro) "修改球场记录" else cmd.fielding?.let { "修改守备路线" }
+                ProductPlayReviewHeader(summary, editLabel, pro, busy) {
+                    if (pro) { contactFromReview = true; stage = "contact" } else stage = "defense"
                 }
                 ProductRunnerDecisions(game, cmd.decisions.orEmpty(), pro,
-                    sharedFielding = observation.fielding ?: cmd.fielding) { transform ->
+                    sharedFielding = observation.fielding ?: cmd.fielding, showBoard = true) { transform ->
                     update { current -> current.copy(decisions = transform(current.decisions.orEmpty()), timingRunCounts = null) }
                 }
-                Text("进垒是建议值，按现场调整；点击姓名展开去向。", fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (MatchEngine.needsTiming(game, cmd)) ProductTimingChoice(cmd.timingRunCounts) { timing -> update { it.copy(timingRunCounts = timing) } }
-                if (preview != null) ProductPlayPreview(game, command, preview)
-                reviewIssue?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp,
+                val reviewedFielding = if (pro) observation.fielding else cmd.fielding
+                if (reviewedFielding != null || pro) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        reviewedFielding?.let { Text(productFieldingSummary(game, it), fontSize = 12.sp) }
+                        if (pro) {
+                            reviewedFielding?.errorPosition?.let { position ->
+                                Text("失误责任：${productFielderName(game, position)}", fontSize = 12.sp, color = ProductRed)
+                            }
+                            Text(productLocationSummary(observation), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                reviewIssue?.takeUnless { it == collision }?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp,
                     modifier = Modifier.testTag("review-validation-message")) }
             }
         }
@@ -296,6 +300,36 @@ internal fun PlayEditor(
             }
         }
         issue?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.testTag("play-issue")) }
+    }
+}
+
+@Composable
+private fun ProductPlayReviewHeader(summary: String, editLabel: String?, pro: Boolean, busy: Boolean, edit: () -> Unit) {
+    if (editLabel == null) {
+        Text(summary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        return
+    }
+    val editButton: @Composable () -> Unit = {
+        TextButton(edit, enabled = !busy,
+            modifier = Modifier.heightIn(min = 48.dp).then(if (pro) Modifier.testTag("edit-situation-field") else Modifier),
+            contentPadding = PaddingValues(horizontal = 4.dp)) {
+            Text(editLabel, fontSize = 12.sp)
+        }
+    }
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth >= 300.dp * fontScale.coerceAtLeast(1f)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(summary, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                editButton()
+            }
+        } else {
+            Column {
+                Text(summary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                editButton()
+            }
+        }
     }
 }
 
@@ -389,16 +423,26 @@ internal fun ProductRunnerDecisions(
     decisions: List<Decision>,
     pro: Boolean,
     sharedFielding: Fielding? = null,
+    showBoard: Boolean = false,
+    runnerDefenseEditor: (@Composable (Decision, (RunnerDefenseCredit?) -> Unit) -> Unit)? = null,
     change: ((List<Decision>) -> List<Decision>) -> Unit,
 ) {
     val identity = decisions.map { it.playerID }.sorted().joinToString("|")
-    var expanded by rememberSaveable(game.id, game.revision, identity) {
-        mutableStateOf(if (decisions.size > 3) null else decisions.firstOrNull { it.origin != 0 }?.playerID ?: decisions.firstOrNull()?.playerID)
+    var expanded by rememberSaveable(game.id, game.revision, identity, showBoard) {
+        val first = if (showBoard) decisions.firstOrNull { it.origin == 0 }
+            ?: decisions.firstOrNull { it.destination != 0 } ?: decisions.firstOrNull()
+        else if (decisions.size > 3) null else decisions.firstOrNull { it.origin != 0 } ?: decisions.firstOrNull()
+        mutableStateOf(first?.playerID)
     }
     var routeEditor by rememberSaveable(game.id, game.revision, identity) { mutableStateOf<String?>(null) }
-    decisions.sortedBy { it.origin }.forEach { decision ->
-        val player = game.battingTeam.players.firstOrNull { it.id == decision.playerID }
-        val name = player?.let { "#${it.number} ${it.name}" } ?: "球员"
+    var preview by rememberSaveable(game.id, game.revision, identity) { mutableStateOf(false) }
+    val visibleDecisions = if (showBoard) {
+        RunnerReviewBoard(game, decisions, expanded, preview, { preview = it }) { expanded = it }
+        if (preview) emptyList() else decisions.filter { it.playerID == expanded }
+    } else decisions.sortedBy { it.origin }
+    visibleDecisions.forEach { decision ->
+        val name = game.runnerName(decision)
+        val origin = if (decision.origin == 0) "打者" else "${decision.origin} 垒跑者"
         val open = expanded == decision.playerID
         fun modify(transform: (Decision) -> Decision) {
             change { current -> current.map { if (it.playerID == decision.playerID) transform(it) else it } }
@@ -406,17 +450,21 @@ internal fun ProductRunnerDecisions(
         Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(13.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))) {
             Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Surface(onClick = { expanded = if (open) null else decision.playerID }, color = Color.Transparent,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp).testTag("runner-card-${decision.origin}")) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(if (decision.origin == 0) "打者" else "${decision.origin} 垒跑者", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(name, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                if (showBoard) {
+                    Text("$origin · $name", Modifier.testTag("runner-focused-player"), style = MaterialTheme.typography.titleSmall)
+                } else {
+                    Surface(onClick = { expanded = if (open) null else decision.playerID }, color = Color.Transparent,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp).testTag("runner-card-${decision.origin}")) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(origin, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(name, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Text(productDestinationTitle(decision.destination), fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                color = if (decision.destination == -1) ProductRed else MaterialTheme.colorScheme.primary)
+                            Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                         }
-                        Text(productDestinationTitle(decision.destination), fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                            color = if (decision.destination == -1) ProductRed else MaterialTheme.colorScheme.primary)
-                        Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                     }
                 }
                 if (open) {
@@ -425,10 +473,16 @@ internal fun ProductRunnerDecisions(
                     ((decision.origin + 1).coerceAtLeast(1)..3).forEach { options[it.toString()] = "${it} 垒" }
                     options["4"] = "得分"
                     options["-1"] = "出局"
-                    ProductOptionGrid("最终位置-${decision.origin}", options, decision.destination.toString()) { destination ->
+                    ProductOptionGrid("最终位置-${decision.origin}", options, decision.destination.toString(),
+                        minHeight = if (showBoard) 48.dp else 40.dp) { destination ->
                         modify { current ->
                             val next = destination.toInt()
                             current.copy(destination = next,
+                                runnerDefense = when (val credit = current.runnerDefense) {
+                                    RunnerDefenseCredit.NoCatcherAssist -> credit.takeIf { next == -1 }
+                                    is RunnerDefenseCredit.CaughtStealing -> credit.takeIf { next == -1 || next >= credit.target }
+                                    else -> credit
+                                },
                                 cause = when {
                                     !pro -> current.cause
                                     next == 0 -> "hit"
@@ -439,6 +493,7 @@ internal fun ProductRunnerDecisions(
                                 fielding = if (pro && next == 0) null else if (pro && next == -1 && current.cause == "hit") current.fielding ?: Fielding(status = "") else current.fielding)
                         }
                     }
+                    runnerDefenseEditor?.invoke(decision) { credit -> modify { it.copy(runnerDefense = credit) } }
                     if (pro && decision.destination != 0) {
                         ProductRunnerCauseMenu(decision) { cause ->
                             modify { current -> current.copy(cause = cause,
@@ -511,7 +566,7 @@ private fun ProductPlayPreview(before: Game, command: Command, after: Game) {
     val baseText = if (outs >= 3 || after.bases.none { it != null }) "垒上无人"
         else after.bases.mapIndexedNotNull { index, id -> if (id == null) null else "${index + 1} 垒" }.joinToString("、") + "有人"
     Text("记录后：${after.awayRuns} : ${after.homeRuns} · $outs 出局 · $baseText", fontSize = 12.sp,
-        fontWeight = FontWeight.Bold, modifier = Modifier.testTag("play-save-preview"))
+        fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.testTag("play-save-preview"))
 }
 
 /** The runner menu starts with the event that happened, rather than a wall of event chips. */
@@ -523,19 +578,62 @@ internal fun ProductRunnerEditor(
     initial: Command? = null,
     save: (Command) -> Unit,
 ) {
-    var json by rememberSaveable(game.id, game.revision) { mutableStateOf(initial?.let { GameJson.encodeToString(it) }.orEmpty()) }
+    var json by rememberSaveable(game.id, game.revision, initial) {
+        val start = initial?.let { event ->
+            val kind = event.runnerKind
+            if (event.decisions == null && kind != null) {
+                event.copy(decisions = MatchEngine.suggestedRunner(game, kind))
+            } else event
+        }
+        mutableStateOf(start?.let { GameJson.encodeToString(it) }.orEmpty())
+    }
     val command = remember(json) { json.takeIf { it.isNotEmpty() }?.let { GameJson.decodeFromString<Command>(it) } }
-    var menu by rememberSaveable(game.id, game.revision) { mutableStateOf(initial == null) }
+    var menu by rememberSaveable(game.id, game.revision, initial) { mutableStateOf(initial == null) }
+    var passedBallCatcher by rememberSaveable(game.id, game.revision, initial) {
+        mutableStateOf(if (initial == null) game.fieldingPositions[2] else initial.decisions.orEmpty().firstNotNullOfOrNull {
+            (it.runnerDefense as? RunnerDefenseCredit.PassedBall)?.catcherID
+        })
+    }
     val options = ScoringOptions.runnerEvents.filterKeys { ScoringOptions.runnerAllowed(game.rules.mode, it) }
     fun update(transform: (Command) -> Command) { json = GameJson.encodeToString(transform(GameJson.decodeFromString(json))) }
-    val final = command?.let { it.copy(timingRunCounts = if (MatchEngine.needsTiming(game, it)) it.timingRunCounts else null) }
-    val issue = if (!menu && final != null) productCommandIssue(game, final) else null
-    val preview = if (!menu && final != null) runCatching { MatchEngine.apply(game, final) }.getOrNull() else null
+    val final = command?.let {
+        val moves = if (it.runnerKind == "passedBall") {
+            val firstAdvance = it.decisions.orEmpty().indexOfFirst(Decision::advancesFromBase)
+            it.decisions.orEmpty().mapIndexed { index, decision ->
+                decision.copy(runnerDefense = passedBallCatcher?.takeIf { index == firstAdvance }?.let { id -> RunnerDefenseCredit.PassedBall(id) })
+            }
+        } else it.decisions
+        it.copy(decisions = moves, timingRunCounts = if (MatchEngine.needsTiming(game, it)) it.timingRunCounts else null)
+    }
+    val collision = if (!menu && final != null) runnerBaseConflict(final.decisions.orEmpty()) else null
+    val needsErrorResponsibility = final?.runnerKind == "defensiveErrorAdvance" && final.runnerErrorResponsibility == null
+    val catcherIssue = when {
+        final?.runnerKind == "caughtStealing" && final.decisions.orEmpty().none {
+            it.destination == -1 || it.runnerDefense is RunnerDefenseCredit.CaughtStealing
+        } -> "请选择盗垒出局的跑者，或记录原可阻杀的接球失误。"
+        final?.runnerKind == "passedBall" && final.decisions.orEmpty().none(Decision::advancesFromBase) ->
+            "请选择因捕逸进垒的跑者。"
+        else -> null
+    }
+    val preview = remember(game, final, menu) {
+        if (!menu && final != null && collision == null && !needsErrorResponsibility && catcherIssue == null)
+            runCatching { MatchEngine.apply(game, final) } else null
+    }
+    val issue = when {
+        menu -> null
+        collision != null -> collision
+        needsErrorResponsibility -> "请选择失误责任人，或选责任人待确认。"
+        catcherIssue != null -> catcherIssue
+        else -> productCommandIssue(preview?.exceptionOrNull())
+    }
     ProductPage(title = if (menu) "跑者／出局" else "跑者现在在哪？", busy = busy,
         onBack = { if (menu || initial != null) dismiss() else menu = true }, backLabel = if (menu) "取消" else "返回",
         actionLabel = if (menu) "" else if (initial == null) "确认跑者变化" else "保存跑者修改",
         actionEnabled = final != null && issue == null, actionTag = "save-runner",
-        onAction = { if (final != null && issue == null) save(final) }, modal = true) {
+        onAction = { if (final != null && issue == null) save(final) }, modal = true,
+        scrollKey = if (menu) "runner-menu" else "runner-review",
+        actionSummary = if (final != null) preview?.getOrNull()?.let { after -> { ProductPlayPreview(game, final, after) } } else null,
+    ) {
         if (menu) {
             Surface(color = ProductAmber.copy(alpha = .10f), shape = RoundedCornerShape(12.dp)) {
                 Text("这里只处理跑者变化；坏球或好球仍用主页面按钮记录。", Modifier.fillMaxWidth().padding(12.dp),
@@ -591,13 +689,22 @@ internal fun ProductRunnerEditor(
             }
         } else if (command != null) {
             Text(options[command.runnerKind].orEmpty(), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("系统给出了常见去向；按现场实际位置点一下即可修改。", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            ProductRunnerDecisions(game, command.decisions.orEmpty(), false) { transform ->
+            ProductRunnerDecisions(game, command.decisions.orEmpty(), false, showBoard = true,
+                runnerDefenseEditor = if (command.runnerKind == "caughtStealing") { decision, change ->
+                    RunnerCaughtStealingPicker(game, decision, busy, change)
+                } else null) { transform ->
                 update { it.copy(decisions = transform(it.decisions.orEmpty()), timingRunCounts = null) }
             }
+            if (command.runnerKind == "passedBall") {
+                RunnerCatcherPicker(game, passedBallCatcher, busy) { passedBallCatcher = it }
+            }
+            if (command.runnerKind == "defensiveErrorAdvance") {
+                RunnerErrorResponsibilityPicker(game, command.runnerErrorResponsibility, busy) { value ->
+                    update { it.copy(runnerErrorResponsibility = value) }
+                }
+            }
             if (MatchEngine.needsTiming(game, command)) ProductTimingChoice(command.timingRunCounts) { timing -> update { it.copy(timingRunCounts = timing) } }
-            if (preview != null && final != null) ProductPlayPreview(game, final, preview)
-            issue?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+            issue?.takeUnless { it == collision }?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             TextButton(dismiss, Modifier.fillMaxWidth().testTag("cancel-runner"), enabled = !busy) { Text("取消本次跑垒", fontSize = 12.sp) }
         }
     }
@@ -674,8 +781,11 @@ private fun productObservationIssue(game: Game, observation: Observation, outcom
     }
 }
 
-private fun productCommandIssue(game: Game, command: Command): String? {
-    val failure = runCatching { MatchEngine.apply(game, command) }.exceptionOrNull() ?: return null
+private fun productCommandIssue(game: Game, command: Command): String? =
+    productCommandIssue(runCatching { MatchEngine.apply(game, command) }.exceptionOrNull())
+
+private fun productCommandIssue(failure: Throwable?): String? {
+    if (failure == null) return null
     val message = failure.message
     return if (message.isNullOrBlank() || message == "Failed requirement.") "请核对本球的跑者去向和守备记录。" else message
 }
