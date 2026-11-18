@@ -418,13 +418,13 @@ Android 已调整首页、球队、建赛、Pro 结果目录、球队／个人�
 
 ## iOS 3.1.3 三项 Android 接入计划
 
-[三项服务接入清单](<0.8.5 发布功能计划.md#ios313-services>)汇总排期、接口和验收。球队赛程已进入 Build 30 开发；在线比赛分析（G70／V50）与球队固定 OBS 转播源（L04／V89）待接入，交付构建待定。以下保留赛程与流畅度专项细节。
+[三项服务接入清单](<0.8.5 发布功能计划.md#ios313-services>)汇总排期、接口和验收。球队赛程已在 Build 30 实现，在线比赛分析（G70／V50）与球队固定 OBS 转播源（L04／V89）待接入，交付构建待定。以下保留赛程与流畅度专项细节。
 
 <a id="team-schedules-313"></a>
 
 ## iOS 3.1.3 对齐 · 球队赛程与流畅度（2026-11-18）
 
-Android 官网 0.8.5 Build 29 的验收以 iOS Build 5 为基线。本节登记后续 Android 工作，目标版本待定。iOS 3.1.3 的球队赛程服务已上线。当前 Android 官网包尚不能读取这类通知。[固定版本接口契约](https://github.com/chending0418-ship-it/baseballMaster/blob/554ccbf88c6c494bd09436383bbad83f73cc54ed/collaboration/PROTOCOL.md#球队赛程team-schedulesios-313-build-6)
+Android 官网 0.8.5 Build 29 的验收以 iOS Build 5 为基线。本节工作对应 Android 0.8.5 Build 30 本地签名候选。iOS 3.1.3 的球队赛程服务已上线。当前 Android 官网包尚不能读取这类通知。[固定版本接口契约](https://github.com/chending0418-ship-it/baseballMaster/blob/554ccbf88c6c494bd09436383bbad83f73cc54ed/collaboration/PROTOCOL.md#球队赛程team-schedulesios-313-build-6)
 
 | 待办 | 实施与验收 |
 | --- | --- |
@@ -434,4 +434,4 @@ Android 官网 0.8.5 Build 29 的验收以 iOS Build 5 为基线。本节登记�
 | 双端联调 | 独立身份实测 iOS 发布 → Android 成员查看，以及 Android 发布 → iOS 成员查看。两方向都验改期、取消、仅保存、发布者首页去重及成员权限。覆盖断网重启后重试、过期安排、退队和服务不可用。保留旧 Android 对本机赛程和球队档案的回归。 |
 | 流畅度 | 用同一份长比赛记录和年度统计分别测四个主页面切换、比赛／打席列表滚动、统计筛选。记录机型、场次数、帧耗时或卡顿帧及前后对照，核对结果一致；按 Android 自己的实测决定优化与发布表述。 |
 
-以上均待 Android 客户端实施或专项验收。官网分发版本和原 239 项验收结论继续见 [0.8.5 计划](<0.8.5 发布功能计划.md>)。
+Build 30 已生成本地签名候选。双端各自完成发布、改期、取消，并核对对端成员画面。两版的 48 场同库统计与覆盖安装后的数据已核对。[Build 30 专项验收](<0.8.5 发布功能计划.md#android-build30>)。
