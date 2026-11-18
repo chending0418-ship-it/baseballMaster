@@ -47,6 +47,8 @@ internal fun NewGameDialog(
     games: List<Game> = emptyList(),
     defaultRecordingMethod: String = "traditional",
     manageScheduledRoster: (Team) -> Unit = { manageOpponents() },
+    scheduleFeed: TeamScheduleFeed = TeamScheduleFeed(),
+    publish: ((Game) -> Unit)? = null,
     save: (Game) -> Unit,
 ) {
     var recordType by rememberSaveable { mutableStateOf(if(initialSchedule?.isObservation == true) "spectator" else "team") }
@@ -94,6 +96,9 @@ internal fun NewGameDialog(
     var scheduled by rememberSaveable { mutableStateOf(false) }
     var configureScheduleNow by rememberSaveable { mutableStateOf(false) }
     val basicSchedule = scheduled && !configureScheduleNow
+    var venue by rememberSaveable { mutableStateOf(initialSchedule?.scheduleVenue.orEmpty()) }
+    val publishTarget = if (publish != null && scheduled && recordType == "team") scheduleFeed.teamFor(own?.id) else null
+    var publishAfterLineup by rememberSaveable(publishTarget?.id) { mutableStateOf(false) }
     var date by rememberSaveable {
         mutableStateOf(formatMatchDate(System.currentTimeMillis() + 86_400_000, zoneID))
     }
@@ -109,8 +114,13 @@ internal fun NewGameDialog(
         else -> own != null && previous != null && shared == null
     }
     val inputKey =
-        listOf(own?.id, originJSON, sharingChoiceJSON, opponentID, opponentName, roster, modeName, ownHome, ruleDraftJSON, scheduled, date, recordType, spectatorAwayID, spectatorHomeID, recordingMethod, backfill, backfillDateText, zoneID, scheduleOffset, backfillOffset, configureScheduleNow)
+        listOf(own?.id, originJSON, sharingChoiceJSON, opponentID, opponentName, roster, modeName, ownHome, ruleDraftJSON, scheduled, date, recordType, spectatorAwayID, spectatorHomeID, recordingMethod, backfill, backfillDateText, zoneID, scheduleOffset, backfillOffset, configureScheduleNow, venue)
             .joinToString("|")
+    val boundLocalIds = teams.mapTo(hashSetOf()) { it.id.lowercase() }
+    val boundCloudIds = scheduleFeed.bindings.filter { it.localTeamID.lowercase() in boundLocalIds }
+        .mapTo(hashSetOf()) { it.cloudTeamID.lowercase() }
+    val sharedChoices = (scheduleFeed.memberships + sharedTeams).distinctBy { it.id.lowercase() }
+        .filter { it.id.lowercase() !in boundLocalIds && it.id.lowercase() !in boundCloudIds }
     var preparedJSON by rememberSaveable(inputKey) { mutableStateOf("") }
     var issue by remember { mutableStateOf<String?>(null) }
     val prepared =
@@ -118,7 +128,9 @@ internal fun NewGameDialog(
             preparedJSON.takeIf { it.isNotBlank() }?.let { GameJson.decodeFromString<Game>(it) }
         }
     if (prepared != null) {
-        PregameLineupConfirmation(prepared, games, busy, { preparedJSON = "" }) { save(it) }
+        PregameLineupConfirmation(prepared, games, busy, { preparedJSON = "" }) {
+            if (publishAfterLineup && publishTarget != null && publish != null) publish(it) else save(it)
+        }
         return
     }
     if (confirmSampleRoster) AlertDialog(
@@ -152,17 +164,13 @@ internal fun NewGameDialog(
             }
         }
     }
-    ProductPage(
-        title = if(initialSchedule == null) "新比赛" else "赛前设置",
-        busy = busy || sourceBusy,
-        actionEnabled = (if(recordType == "spectator") spectatorAway != null && spectatorHome != null && spectatorAway.id != spectatorHome.id
+    val ready = (if(recordType == "spectator") spectatorAway != null && spectatorHome != null && spectatorAway.id != spectatorHome.id
          else own != null && (previous != null || opponentName.isNotBlank() && (basicSchedule || roster.isNotBlank()))) &&
-            (basicSchedule || rules != null) && (!scheduled || scheduleDate != null && scheduleDate > System.currentTimeMillis()) && (!backfill || playedDate != null && playedDate <= System.currentTimeMillis()),
-        actionTag = "start-game",
-        actionLabel = if(basicSchedule) "保存比赛安排" else "下一步 · 确认双方阵容",
-        onBack = dismiss,
-        modal = false,
-        onAction = {
+        (basicSchedule || rules != null) &&
+        (!scheduled || scheduleDate != null && scheduleDate > System.currentTimeMillis() && validScheduleVenue(venue)) &&
+        (!backfill || playedDate != null && playedDate <= System.currentTimeMillis())
+    val canPublishNow = basicSchedule && publishTarget != null && publish != null
+    val submit: (Boolean) -> Unit = { publishNow ->
             runCatching {
                 val selectedRules = (rules ?: if(basicSchedule) Rules(mode) else error("请检查比赛规则")).copy(recordingMethod = recordingMethod)
                 val gameID = initialSchedule?.id ?: UUID.randomUUID().toString()
@@ -188,17 +196,41 @@ internal fun NewGameDialog(
                         it.scheduledAt = initialSchedule.scheduledAt
                         it.createdAt = initialSchedule.createdAt
                     }
+                    if (scheduled || initialSchedule != null) it.scheduleVenue = normalizeScheduleVenue(venue).takeIf(String::isNotEmpty)
                     it.playedTimeZoneID = zoneID
                     it.playedAt = playedDate
                     it.validate()
                 }
             }
                 .onSuccess {
-                    if(basicSchedule) save(it) else preparedJSON = GameJson.encodeToString(it)
+                    if (basicSchedule) {
+                        if (publishNow && publish != null) publish(it) else save(it)
+                    } else preparedJSON = GameJson.encodeToString(it)
                     issue = null
                 }
                 .onFailure { issue = it.message }
+    }
+    ProductPage(
+        title = if(initialSchedule == null) "新比赛" else "赛前设置",
+        busy = busy || sourceBusy,
+        actionEnabled = ready,
+        actionTag = if (canPublishNow) "publish-team-schedule" else "start-game",
+        actionLabel = when {
+            canPublishNow -> "发布到球队赛程"
+            basicSchedule -> "保存比赛安排"
+            else -> "下一步 · 确认双方阵容"
         },
+        onBack = dismiss,
+        modal = false,
+        onAction = { submit(canPublishNow) },
+        actionSummary = if (canPublishNow) {
+            {
+                OutlinedButton({ submit(false) }, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("start-game"),
+                    enabled = ready && !busy && !sourceBusy, shape = MaterialTheme.shapes.medium) {
+                    Text("仅保存比赛安排")
+                }
+            }
+        } else null,
     ) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(if (knownScheduledRosters) UiSpacing.section else 22.dp)) {
             if (knownScheduledRosters) {
@@ -261,7 +293,7 @@ internal fun NewGameDialog(
                                                 }
                                             },
                                         )
-                                        sharedTeams.forEach { membership ->
+                                        sharedChoices.forEach { membership ->
                                             DropdownMenuItem(
                                                 text = { Text("${membership.name} · ${membership.role.title()}") },
                                                 enabled = !busy && !sourceBusy,
@@ -372,6 +404,7 @@ internal fun NewGameDialog(
                                 },
                                 onOffsetChange = { if (scheduled) scheduleOffset = it else backfillOffset = it },
                             )
+                            if (scheduled) ScheduleVenueInput(venue, { venue = it }, !busy && !sourceBusy, "setup-schedule-venue")
                             if (backfill) Text("选择实际比赛日期与时间，计时仍从开始记录后独立计算。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -382,7 +415,13 @@ internal fun NewGameDialog(
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         HorizontalDivider()
                         SetupToggleRow("现在完成赛前设置", configureScheduleNow, "configure-schedule-now") { configureScheduleNow = it }
-                        if (basicSchedule) Text("先保存双方队伍和时间，开赛前再补充名单与比赛设置。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (publishTarget != null) {
+                            HorizontalDivider()
+                            if (configureScheduleNow) SetupToggleRow("确认阵容后发布到球队赛程", publishAfterLineup,
+                                "setup-publish-after-lineup") { publishAfterLineup = it }
+                            else Text("发布后，${publishTarget.name}成员可在「比赛 → 即将进行」查看。",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
@@ -402,7 +441,7 @@ internal fun NewGameDialog(
                     }
                 }
             }
-            if (recordType == "team") {
+            if (recordType == "team" && !scheduled) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     SetupSectionTitle("赛后共享")
                     CardBlock {
@@ -590,7 +629,17 @@ internal fun PendingScheduleScreen(game: Game, model: ScorekeeperViewModel, quic
         initialSchedule = game, games = model.games,
         manageScheduledRoster = { team -> managingOpponent = team.isOpponent; managingTeamID = team.id; managing = true },
         save = { prepared -> model.configureScheduledGame(prepared, game.revision) { configuring = false } })
-    else ProductPage(title="比赛安排",busy=model.busy,onBack={model.open(null)},actionLabel="赛前设置",actionTag="configure-pending-schedule",onAction={configuring=true},modal=true) {
+    else ProductPage(
+        title = "比赛安排",
+        busy = model.busy || model.scheduleSubmitting,
+        onBack = { model.open(null) },
+        actionLabel = if (game.scheduledSetupPending) "赛前设置" else "进入比赛",
+        actionTag = if (game.scheduledSetupPending) "configure-pending-schedule" else "activate-scheduled",
+        onAction = { if (game.scheduledSetupPending) configuring = true else model.command(Command("activate")) },
+        modal = true,
+    ) {
+        val publication = model.schedulePublication(game)
+        val notice = model.scheduleNotice(game)
         CardBlock {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -604,16 +653,24 @@ internal fun PendingScheduleScreen(game: Game, model: ScorekeeperViewModel, quic
                 }
             }
             HorizontalDivider()
-            Text(game.scheduledAt?.let { formatMatchDate(it, game.playedTimeZoneID) }.orEmpty(), Modifier.testTag("pending-schedule-date"),fontWeight=FontWeight.SemiBold)
+            Text((notice?.startsAt ?: game.scheduledAt)?.let { formatMatchDate(it, game.playedTimeZoneID) }.orEmpty(),
+                Modifier.testTag("pending-schedule-date"), fontWeight = FontWeight.SemiBold)
+            (notice?.venue ?: game.scheduleVenue)?.takeIf { it.isNotBlank() }?.let { location ->
+                Text(location, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text(if(game.isObservation) "观赛记录 · 不计本队战绩" else "本队比赛", fontSize = 13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text("双方队伍和时间已保存，开赛前可继续配置名单、规则和阵容。",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        ProductActionRow("管理球队和名单","核对参赛球队的实际球员",tag="pending-manage-rosters",enabled=!model.busy) {
-            managingOpponent = game.isObservation
-            managingTeamID = ""
-            managing = true
+        TeamScheduleControls(game, model)
+        if (game.scheduledSetupPending) {
+            Text("双方队伍和时间已保存，开赛前可继续配置名单、规则和阵容。",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            ProductActionRow("管理球队和名单","核对参赛球队的实际球员",tag="pending-manage-rosters",enabled=!model.busy && !model.scheduleSubmitting) {
+                managingOpponent = game.isObservation
+                managingTeamID = ""
+                managing = true
+            }
         }
-        ProductActionRow("修改预告时间",tag="pending-edit-time",enabled=!model.busy) {dateRevision=game.revision;editingTime=true}
+        if (publication == null && notice == null) ProductActionRow("修改预告时间", tag = "pending-edit-time",
+            enabled = !model.busy && !model.scheduleSubmitting) { dateRevision = game.revision; editingTime = true }
     }
     if(managing) FormPage("管理球队和名单", model.busy, true, "close-scheduled-rosters", "完成", { managing = false }, { managing = false }) {
         RosterScreen(model, initialFilter = if(managingOpponent) "opponent" else "own", initialTeamID = managingTeamID, quickAdd = quickAdd)

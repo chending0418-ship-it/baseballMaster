@@ -62,6 +62,7 @@ import kotlinx.serialization.json.*
     val watchLinks: Map<String,MatchWatchLink> = emptyMap(),val watchFailures: Map<String,DirectoryFailure> = emptyMap(),
     val finalArchivePending: Map<String,PendingFinalArchive> = emptyMap(),
     val finalArchiveReceipts: Map<String,FinalArchiveReceipt> = emptyMap(),
+    val schedulePublications: Map<String, TeamSchedulePublication> = emptyMap(),
 ) {
     override fun toString() = "TeamDirectoryState(pending=${pending?.kind}, requiresRecoveryReview=$requiresRecoveryReview)"
 }

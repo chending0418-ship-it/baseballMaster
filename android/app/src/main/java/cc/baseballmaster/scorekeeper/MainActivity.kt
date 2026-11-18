@@ -67,11 +67,14 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cc.baseballmaster.core.*
 import kotlin.math.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
@@ -114,7 +117,124 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
             }
         }
     }
-    internal val sharing by lazy { AndroidTeamSharing(repository,androidTeamDirectory(application,"https://baseballmaster.cc/api/v3")) }
+    internal val sharing by lazy {
+        val testSession = if (BuildConfig.DEBUG) androidTeamDirectoryTestOverride?.invoke(application) else null
+        AndroidTeamSharing(repository, testSession ?: androidTeamDirectory(application, "https://baseballmaster.cc/api/v3"))
+    }
+    internal var scheduleFeed by mutableStateOf(TeamScheduleFeed())
+        private set
+    internal var scheduleRefreshing by mutableStateOf(false)
+        private set
+    internal var scheduleSubmitting by mutableStateOf(false)
+        private set
+    private var scheduleProblem by mutableStateOf<Pair<String, String>?>(null)
+    private var scheduleReadGeneration = 0L
+    private var lastScheduleReadAt: Long? = null
+    private var scheduleRefreshRequested = false
+    private val scheduleReadMutex = Mutex()
+
+    internal fun schedulePublication(game: Game) = scheduleFeed.publications[game.id.lowercase()]
+    internal fun scheduleNotice(game: Game) = latestLocalScheduleNotice(game, scheduleFeed)
+    internal fun scheduleIssue(key: String) = scheduleProblem?.takeIf { it.first == key }?.second
+    internal fun canManageRemoteSchedule(notice: TeamScheduleNotice) =
+        scheduleFeed.memberships.any { it.id.equals(notice.teamID, true) && it.role == TeamRole.admin }
+
+    private suspend fun readLocalScheduleState(): Boolean {
+        val cached = sharing.scheduleState()
+        val memberships = cached.memberships.mapTo(hashSetOf()) { it.id.lowercase() }
+        val old = scheduleFeed
+        val next = cached.copy(
+            notices = old.notices.filter { it.teamID.lowercase() in memberships },
+            message = old.message?.takeIf { memberships.isNotEmpty() },
+        )
+        scheduleFeed = next
+        val authorityChanged = old.memberships != next.memberships || old.bindings != next.bindings
+        if (authorityChanged) lastScheduleReadAt = null
+        return authorityChanged
+    }
+
+    internal fun refreshTeamSchedules(force: Boolean = false) {
+        if (recoveryRequired) return
+        if (scheduleRefreshing) {
+            scheduleRefreshRequested = scheduleRefreshRequested || force
+            return
+        }
+        scheduleRefreshing = true
+        var generation = scheduleReadGeneration
+        viewModelScope.launch {
+            try {
+                val shouldRead = scheduleReadMutex.withLock {
+                    readLocalScheduleState()
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (scheduleFeed.memberships.isEmpty() || !force && lastScheduleReadAt?.let { now - it < 60_000L } == true) return@withLock false
+                    generation = scheduleReadGeneration
+                    lastScheduleReadAt = now
+                    true
+                }
+                if (shouldRead) {
+                    val updated = sharing.teamSchedules()
+                    if (generation == scheduleReadGeneration) scheduleFeed = updated
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                if (generation == scheduleReadGeneration) {
+                    scheduleFeed = scheduleFeed.copy(notices = emptyList(),
+                        message = "球队赛程暂时无法读取，请刷新重试。")
+                }
+            } finally {
+                scheduleRefreshing = false
+                if (scheduleRefreshRequested) {
+                    scheduleRefreshRequested = false
+                    refreshTeamSchedules(force = true)
+                }
+            }
+        }
+    }
+
+    internal fun updateTeamSchedule(
+        game: Game, startsAt: Long, venue: String, cancelled: Boolean = false, expectedRevision: Long? = null,
+    ) = submitTeamSchedule(game.id) { sharing.publishSchedule(game.id, startsAt, venue, cancelled, expectedRevision) }
+
+    internal fun retryTeamSchedule(game: Game) =
+        submitTeamSchedule(game.id) { sharing.retrySchedulePublication(game.id) }
+
+    internal fun updateRemoteSchedule(notice: TeamScheduleNotice, startsAt: Long, venue: String, cancelled: Boolean = false) =
+        submitTeamSchedule(notice.key) { sharing.updateRemoteSchedule(notice, startsAt, venue, cancelled) }
+
+    internal fun retryRemoteSchedule(notice: TeamScheduleNotice) =
+        submitTeamSchedule(notice.key) { sharing.retrySchedulePublication(notice.id, notice.teamID) }
+
+    private fun submitTeamSchedule(key: String, action: suspend () -> TeamSchedulePublication) {
+        if (scheduleSubmitting || recoveryRequired) return
+        scheduleSubmitting = true
+        scheduleProblem = null
+        viewModelScope.launch {
+            try {
+                action()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (fault: TeamServiceFault) {
+                val text = if (fault.code == "schedule_changed") "球队赛程已变化，请核对最新安排后再提交。"
+                    else fault.message ?: "球队发布尚未确认，请重试。"
+                scheduleProblem = key to text
+            } catch (failure: Exception) {
+                val text = if (failure is IllegalArgumentException || failure is IllegalStateException) failure.message else null
+                scheduleProblem = key to (text ?: "球队发布尚未确认。请联网重试，原安排仍保留。")
+            } finally {
+                try {
+                    scheduleReadMutex.withLock { readLocalScheduleState() }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    scheduleProblem = key to "赛程状态暂时无法读取，请刷新核对。"
+                } finally {
+                    scheduleSubmitting = false
+                }
+                refreshTeamSchedules(force = true)
+            }
+        }
+    }
     internal val launchRepository by lazy {AndroidLaunchScreenRepository.standard(application)}
     internal var launchDismissed by mutableStateOf(false)
         private set
@@ -285,6 +405,21 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     }
 
     init {
+        viewModelScope.launch {
+            sharing.scheduleChanges.collect {
+                try {
+                    val authorityChanged = scheduleReadMutex.withLock { readLocalScheduleState() }
+                    if (authorityChanged) {
+                        scheduleReadGeneration++
+                        refreshTeamSchedules(force = true)
+                    }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    scheduleFeed = TeamScheduleFeed(message = "球队赛程暂时无法读取，请刷新重试。")
+                }
+            }
+        }
         viewModelScope.launch {incomingLinkMutex.withLock {
             try {incomingTeamLink=sharing.state().incomingLinks.firstOrNull()}
             catch(_: Exception) {error="共享链接暂时无法读取，本机比赛仍可使用；请保留原链接与本机资料。"}
@@ -405,6 +540,14 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     }
 
     fun deleteGame(game: Game) = commit {
+        if (game.isScheduled) {
+            val state = sharing.scheduleState()
+            val publication = state.publications[game.id.lowercase()]
+            check(state.teamFor(game.ourTeamID) == null ||
+                publication?.let { it.pending == null && !it.needsReview && (it.notice == null || it.cancelled) } != false) {
+                "请先打开比赛安排，取消球队赛程并确认结果，再删除本机安排。"
+            }
+        }
         repository.deleteGame(game.id, game.revision)
         if (live.bindings.any { it.gameID == game.id }) live.close(game.id)
         if (openedGameID == game.id) open(null)
@@ -573,7 +716,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         done()
     }
 
-    fun createPreparedGame(game: Game, done: () -> Unit) = commit {
+    fun createPreparedGame(game: Game, publishSchedule: Boolean = false, done: () -> Unit) = commit {
         val created = when {
             game.sharedRosterOrigin != null -> repository.createSharedRosterGame(game)
             game.ourTeamID == null -> repository.createObservationGame(game)
@@ -583,6 +726,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         accept(created)
         open(created.id)
         done()
+        if (publishSchedule) updateTeamSchedule(created, requireNotNull(created.scheduledAt), created.scheduleVenue.orEmpty())
     }
 
     override fun onCleared() {
@@ -708,7 +852,10 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                     Text(model.error ?: "原始数据已保留，请联系支持。")
                 }
             else if (game != null) {
-                if(game.scheduledSetupPending) PendingScheduleScreen(game, model) { opponent -> createOpponent = opponent; createTeam = true }
+                if (game.scheduledSetupPending || game.isScheduled && (
+                        !game.scheduleVenue.isNullOrBlank() || model.schedulePublication(game) != null || model.scheduleNotice(game) != null ||
+                            model.scheduleFeed.teamFor(game.ourTeamID) != null
+                    )) PendingScheduleScreen(game, model) { opponent -> createOpponent = opponent; createTeam = true }
                 else GameScreen(game, model)
             }
             else tabStates.SaveableStateProvider(tab) {
@@ -760,6 +907,8 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
             games = model.games,
             defaultRecordingMethod = model.defaultRecordingMethod,
             manageOpponents = { manageOpponents = true },
+            scheduleFeed = model.scheduleFeed,
+            publish = { prepared -> model.createPreparedGame(prepared, publishSchedule = true) { newGame = false } },
         ) { prepared ->
             model.createPreparedGame(prepared) { newGame = false }
         }
@@ -862,16 +1011,44 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
+    LaunchedEffect(model, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) {
+                model.refreshTeamSchedules()
+                delay(60_000)
+            }
+        }
+    }
     val team = model.currentTeam
     val games = model.games
-    val (ongoing, scheduled, completed) = remember(games) {
-        Triple(
+    val (ongoing, completed) = remember(games) {
+        Pair(
             games.filter { !it.isFinal && !it.isScheduled },
-            games.filter { it.isScheduled && !it.isFinal }.sortedBy { it.scheduledAt },
             games.filter { it.isFinal }.sortedWith(compareByDescending<Game> {
                 it.playedAt ?: it.startedAt ?: it.scheduledAt ?: it.createdAt
             }.thenBy { it.id }),
         )
+    }
+    val feed = model.scheduleFeed
+    var scheduleExpiry by remember { mutableLongStateOf(0L) }
+    val scheduled = remember(games, feed, scheduleExpiry) { upcomingSchedules(games, feed, System.currentTimeMillis()) }
+    val nextExpiry = scheduled.firstOrNull { it is UpcomingSchedule.Member }?.startsAt
+    LaunchedEffect(nextExpiry) {
+        if (nextExpiry != null) {
+            var wait = nextExpiry - System.currentTimeMillis()
+            while (wait >= 0) {
+                delay(wait + 1)
+                wait = nextExpiry - System.currentTimeMillis()
+            }
+            scheduleExpiry++
+        }
+    }
+    var managedScheduleKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedSchedule = scheduled.filterIsInstance<UpcomingSchedule.Member>()
+        .firstOrNull { it.notice.key == managedScheduleKey }?.notice
+    val adminSchedule = selectedSchedule?.takeIf(model::canManageRemoteSchedule)
+    LaunchedEffect(managedScheduleKey, adminSchedule, model.scheduleRefreshing) {
+        if (managedScheduleKey != null && adminSchedule == null && !model.scheduleRefreshing) managedScheduleKey = null
     }
     val teamRecord = remember(games, team?.id) { HomeSummary.record(games, team?.id).label }
     val update = model.advertisedUpdate
@@ -903,11 +1080,35 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
             }
         }
         if (update != null) item(key = "website-update") { WebsiteUpdateNotice(update, onDismiss = { model.dismissUpdate(update.build) }) }
-        if (scheduled.isNotEmpty()) {
+        if (scheduled.isNotEmpty() || feed.memberships.isNotEmpty() || feed.message != null) {
             item(key = "scheduled-header") {
-                Box(Modifier.padding(top = UiSpacing.rowGap)) { SectionTitle("即将进行", "${scheduled.size} 场") }
+                Row(Modifier.padding(top = UiSpacing.rowGap), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { SectionTitle("即将进行", "${scheduled.size} 场") }
+                    if (feed.memberships.isNotEmpty() || feed.message != null) {
+                        TextButton(onClick = { model.refreshTeamSchedules(force = true) }, enabled = !model.scheduleRefreshing,
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("team-schedule-refresh")) {
+                            Text(if (model.scheduleRefreshing) "刷新中…" else if (feed.message != null) "重试" else "刷新")
+                        }
+                    }
+                }
             }
-            items(scheduled, key = { "match-${it.id}" }) { HomeGameRow(it, model) }
+            feed.message?.let { message ->
+                item(key = "schedule-feed-error") {
+                    Text(message, Modifier.testTag("team-schedule-feed-error"),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            items(scheduled, key = { it.key }) { entry ->
+                when (entry) {
+                    is UpcomingSchedule.Local -> HomeGameRow(entry.game, model, entry.publication, entry.notice)
+                    is UpcomingSchedule.Member -> TeamScheduleNoticeRow(
+                        entry.notice,
+                        onManage = if (model.canManageRemoteSchedule(entry.notice)) {
+                            { managedScheduleKey = entry.notice.key }
+                        } else null,
+                    )
+                }
+            }
         }
         item(key = "ongoing-header") {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -934,6 +1135,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         }
         else items(completed, key = { "match-${it.id}" }) { HomeGameRow(it, model) }
     }
+    if (adminSchedule != null) RemoteTeamScheduleScreen(adminSchedule, model) { managedScheduleKey = null }
 }
 
 @Composable
@@ -969,7 +1171,9 @@ private fun HomeRecordPill(record: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun HomeGameRow(game: Game, model: ScorekeeperViewModel) {
+private fun HomeGameRow(
+    game: Game, model: ScorekeeperViewModel, publication: TeamSchedulePublication? = null, notice: TeamScheduleNotice? = null,
+) {
     val colors = MaterialTheme.colorScheme
     val result = when {
         !game.isFinal -> null
@@ -978,7 +1182,8 @@ private fun HomeGameRow(game: Game, model: ScorekeeperViewModel) {
         game.ourTeamID == game.away.id -> when { game.awayRuns > game.homeRuns -> "胜"; game.awayRuns < game.homeRuns -> "负"; else -> "平" }
         else -> "完"
     }
-    val date = if (game.isScheduled) game.scheduledAt else game.playedAt ?: game.startedAt ?: game.createdAt.takeIf { it > 0 }
+    val date = if (game.isScheduled) notice?.startsAt ?: game.scheduledAt
+        else game.playedAt ?: game.startedAt ?: game.createdAt.takeIf { it > 0 }
     val detail = when {
         game.isScheduled -> date?.let { formatMatchDate(it, game.playedTimeZoneID) } ?: "时间待定"
         game.isFinal -> date?.let { formatMatchDate(it, game.playedTimeZoneID) }.orEmpty()
@@ -1010,13 +1215,25 @@ private fun HomeGameRow(game: Game, model: ScorekeeperViewModel) {
                     Text("${game.away.shortName} 对 ${game.home.shortName}", style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    if (game.isScheduled) (notice?.venue ?: game.scheduleVenue)?.takeIf { it.isNotBlank() }?.let { venue ->
+                        Text(venue, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    }
                     if (!game.isScheduled && !game.isFinal) {
                         Text(if (game.isObservation) "继续观赛记录" else "继续比赛", Modifier.testTag("continue-game"),
                             style = MaterialTheme.typography.labelLarge, color = colors.primary, fontWeight = FontWeight.SemiBold)
                     }
                 }
-                if (game.isScheduled) Text(if (game.isObservation) "观赛" else "本队",
-                    style = MaterialTheme.typography.labelMedium, color = colors.primary)
+                if (game.isScheduled) {
+                    val status = when {
+                        publication?.pending != null || publication?.needsReview == true -> "待确认"
+                        notice?.cancelled == true -> "已取消"
+                        notice != null -> "球队赛程"
+                        game.isObservation -> "观赛"
+                        else -> "本队"
+                    }
+                    Text(status, style = MaterialTheme.typography.labelMedium,
+                        color = if (notice?.cancelled == true) colors.error else colors.primary)
+                }
                 else Text("${game.awayRuns} : ${game.homeRuns}", style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold, maxLines = 1)
             }

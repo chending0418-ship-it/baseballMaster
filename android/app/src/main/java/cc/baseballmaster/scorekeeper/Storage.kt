@@ -101,6 +101,9 @@ interface LocalDao {
 
     @Query("SELECT * FROM games WHERE id = :id") suspend fun game(id: String): GameEntity?
 
+    @Query("SELECT * FROM games WHERE id = :id COLLATE NOCASE LIMIT 2")
+    suspend fun gamesMatchingScheduleID(id: String): List<GameEntity>
+
     @Query("SELECT * FROM operations") suspend fun allOperations(): List<OperationEntity>
 
     @Query("SELECT * FROM correction_drafts") suspend fun allCorrectionDrafts(): List<CorrectionDraftEntity>
@@ -335,6 +338,29 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
     val games
         get() = db.dao().games()
 
+    suspend fun scheduledGame(id: String): Game {
+        val game = db.dao().game(id)?.let(::decode) ?: error("比赛已不存在。")
+        require(game.isScheduled && !game.isFinal && !game.practice && game.appleSourceID == null) {
+            "只有本机未开赛的安排可以发布球队赛程。"
+        }
+        return game
+    }
+
+    /** A publication acknowledgement updates metadata without adding a scoring operation. */
+    suspend fun applyTeamScheduleNotice(notice: TeamScheduleNotice, ownTeamIDs: Set<String>) = db.withTransaction {
+        val row = db.dao().gamesMatchingScheduleID(notice.id).singleOrNull() ?: return@withTransaction
+        val game = decode(row)
+        if (!game.isScheduled || game.isFinal || game.practice || game.appleSourceID != null ||
+            ownTeamIDs.none { it.equals(game.ourTeamID, true) }) return@withTransaction
+        val venue = normalizeScheduleVenue(notice.venue).ifEmpty { null }
+        if (game.scheduledAt == notice.startsAt && game.scheduleVenue == venue) return@withTransaction
+        game.scheduledAt = notice.startsAt
+        game.scheduleVenue = venue
+        game.validate()
+        db.dao().updateGame(row.copy(payload = GameJson.encodeToString(game)))
+        beforeCommit()
+    }
+
     /** Delete one local record atomically; retained imported backup files stay intact. */
     suspend fun deleteGame(id: String, revision: Long) = db.withTransaction {
         val row = requireNotNull(db.dao().game(id)) { "比赛已不存在" }
@@ -498,7 +524,8 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                 homePitcherID = prepared.homePitcherID; awayPitcherID = prepared.awayPitcherID
                 homeDesignatedHitterID = prepared.homeDesignatedHitterID; awayDesignatedHitterID = prepared.awayDesignatedHitterID
                 sharedRosterOrigin = prepared.sharedRosterOrigin; postgameSharingChoice = prepared.postgameSharingChoice
-                scheduledAt = original.scheduledAt; playedTimeZoneID = prepared.playedTimeZoneID
+                scheduledAt = original.scheduledAt; scheduleVenue = original.scheduleVenue
+                playedTimeZoneID = prepared.playedTimeZoneID
                 createdAt = original.createdAt; revision = original.revision + 1; updatedAt = System.currentTimeMillis()
             }
             Participation.validate(next.rules, next.homeOrder!!, next.homePositions!!, next.homeDesignatedHitterID)

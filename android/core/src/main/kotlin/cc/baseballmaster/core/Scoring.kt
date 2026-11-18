@@ -519,6 +519,9 @@ data class Game(
     var historySourceID: String? = null,
     var updatedAt: Long = 0,
     var createdAt: Long = 0,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var scheduleVenue: String? = null,
 ) {
     val battingTeam
         get() = if (isTop) away else home
@@ -668,6 +671,7 @@ data class Game(
         clockElapsedMs + (clockRunningSince?.let { (at - it).coerceAtLeast(0) } ?: 0)
 
     fun validate() {
+        scheduleVenue?.let { require(it == normalizeScheduleVenue(it)) }
         if (scheduledSetupPending) {
             require(id.isNotBlank() && isScheduled && scheduledAt?.let { it > 0 } == true && !practice && appleSourceID == null)
             java.time.ZoneId.of(playedTimeZoneID)
@@ -678,7 +682,7 @@ data class Game(
             players.forEach(Roster::validate)
             sharedRosterOrigin?.validate(this)
             val planned = Game(id, home, away, rules, revision = revision,
-                scheduledAt = scheduledAt, playedTimeZoneID = playedTimeZoneID,
+                scheduledAt = scheduledAt, scheduleVenue = scheduleVenue, playedTimeZoneID = playedTimeZoneID,
                 isScheduled = true, scheduledSetupPending = true, ourTeamID = ourTeamID,
                 sharedRosterOrigin = sharedRosterOrigin, postgameSharingChoice = postgameSharingChoice,
                 createdAt = createdAt, updatedAt = updatedAt)

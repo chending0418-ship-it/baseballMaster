@@ -1,8 +1,8 @@
 package cc.baseballmaster.core
 
 object MatchFactory {
-    fun schedule(id: String, home: Team, away: Team, rules: Rules, at: Long, ourTeamID: String? = null): Game =
-        Game(id, home, away, rules, scheduledAt = at, isScheduled = true,
+    fun schedule(id: String, home: Team, away: Team, rules: Rules, at: Long, ourTeamID: String? = null, scheduleVenue: String? = null): Game =
+        Game(id, home, away, rules, scheduledAt = at, scheduleVenue = scheduleVenue?.let(::normalizeScheduleVenue)?.ifEmpty { null }, isScheduled = true,
             scheduledSetupPending = true, ourTeamID = ourTeamID, createdAt = System.currentTimeMillis())
             .also { it.validate() }
 
@@ -15,6 +15,7 @@ object MatchFactory {
         ourTeamID: String? = null,
         scheduledAt: Long? = null,
         practice: Boolean = false,
+        scheduleVenue: String? = null,
     ): Game {
         require(home.players.size >= rules.fielders && away.players.size >= rules.fielders) {
             "双方至少需要 ${rules.fielders} 名球员"
@@ -48,6 +49,7 @@ object MatchFactory {
                 awayRunsByInning = List(rules.innings) { 0 },
                 ourTeamID = ourTeamID,
                 scheduledAt = scheduledAt,
+                scheduleVenue = scheduleVenue?.let(::normalizeScheduleVenue)?.ifEmpty { null },
                 isScheduled = scheduledAt != null,
                 practice = practice,
                 createdAt = System.currentTimeMillis(),
