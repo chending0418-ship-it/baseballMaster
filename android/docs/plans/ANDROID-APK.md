@@ -416,6 +416,12 @@ Android 已调整首页、球队、建赛、Pro 结果目录、球队／个人�
 
 已交付 0.1.0（Build 7）、沿用 preview 包名和原测试证书；核心 180、App 75、API 31 直接交付 APK 的设备回归 18 项通过。正式赛后云端归档／旧关联更新和完整互导仍为后续事项。官网 APK 公网下载与本机 SHA-256 一致；源码分支和 PR 保持不合并。详见 [0.1 测试交付](../releases/0.1.0-TEST-HANDOFF.md)。
 
+## iOS 3.1.3 三项 Android 接入计划
+
+[三项服务接入清单](<0.8.5 发布功能计划.md#ios313-services>)汇总排期、接口和验收。球队赛程已进入 Build 30 开发；在线比赛分析（G70／V50）与球队固定 OBS 转播源（L04／V89）待接入，交付构建待定。以下保留赛程与流畅度专项细节。
+
+<a id="team-schedules-313"></a>
+
 ## iOS 3.1.3 对齐 · 球队赛程与流畅度（2026-11-18）
 
 Android 官网 0.8.5 Build 29 的验收以 iOS Build 5 为基线。本节登记后续 Android 工作，目标版本待定。iOS 3.1.3 的球队赛程服务已上线。当前 Android 官网包尚不能读取这类通知。[固定版本接口契约](https://github.com/chending0418-ship-it/baseballMaster/blob/554ccbf88c6c494bd09436383bbad83f73cc54ed/collaboration/PROTOCOL.md#球队赛程team-schedulesios-313-build-6)
