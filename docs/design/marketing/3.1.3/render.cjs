@@ -11,31 +11,53 @@ const image = file => "data:image/" + (file.endsWith(".svg") ? "svg+xml" : "png"
 const product = image("scorekeeper-horizontal-reverse.svg");
 const signature = image("baseballmaster-horizontal-reverse.svg");
 const bodyStyle = '*{box-sizing:border-box}html,body{margin:0;height:100%;width:100%;overflow:hidden}body{background:#092a2a;color:#faf9ed;font-family:"PingFang SC",-apple-system,sans-serif;-webkit-font-smoothing:antialiased}h1,h2,p{margin:0}img{display:block}';
-function storeScreen(file, title, detail) {
+const previous = "../../3.1.2/appstore/source/";
+const phoneScreens = [
+  ["01-现场记分", previous+"iphone-01.png", "现场记分", "每一球，都记在场上", "比分、垒况与场上球员，同屏查看。"],
+  ["02-球队统计", "statistics.png", "球队与球员统计", "看一场，也看一整年", "按球队、年度或场次查看打击、投手与守备统计。"],
+  ["03-记录方式", previous+"iphone-02.png", "记录方式", "基础版与 Pro 版", "按熟悉的方式开始记录，每场比赛都能选择。"],
+  ["04-击球落点", previous+"iphone-03.png", "Pro 记分", "从落点到传球", "点选击球落点，再依次记录守备路线。"],
+  ["05-击球结果", previous+"iphone-04.png", "击球结果", "这次击球，怎么记", "从安打、出局等结果中选择场上发生的那一种。"],
+  ["06-球队名单", previous+"iphone-05.png", "球队名单", "把队员一次录好", "批量输入名单，预览姓名与背号后确认。"],
+  ["07-球员落点", previous+"iphone-06.png", "球员统计", "回看每次击球去向", "按选定的比赛查看球员击球落点。"],
+  ["08-球队赛程", "schedule.png", "球队赛程", "下一场比赛，首页见", "队员在「比赛」查看对手、开赛时间和场地。"],
+  ["09-四垒确认", "runner-iphone.png", "跑者确认", "每个跑者去了哪一垒", "确认击球结果前，在四垒图上核对每个人的去向。"],
+  ["10-赛后分析", "analysis.png", "赛后分析", "从比分读回关键局面", "查看 MVP、比赛综述和球员评价，分享文字或 PDF。"]
+];
+const tabletScreens = [
+  ["01-现场记分", previous+"ipad-01.png", "iPad 现场记分", "球场和比分，同屏查看", "看清垒况和场上球员，记录每个打席。"],
+  ["02-球队名单", previous+"ipad-02.png", "球队名单", "赛前把名单备好", "批量输入球员，再逐项核对姓名与背号。"],
+  ["03-四垒确认", "runner-ipad.png", "跑者确认", "球场与跑者，同屏核对", "确认跑者去向时，仍能看到场上局面。"]
+];
+function storeScreen(file, label, title, detail) {
   return `<style>${bodyStyle}
-  main{height:100%;padding:4.5vh 6vw 3vh;display:flex;flex-direction:column;align-items:center;background:radial-gradient(ellipse at 50% 85%,#244f46,transparent 72%)}
-  header{align-self:center}header img{height:3.6vh}h1{margin-top:4vh;font-size:min(8.4vw,5.5vh);font-weight:650;letter-spacing:-.05em}
-  p{margin:1.1vh 0 2.8vh;font-size:min(3.6vw,2.2vh);color:#cfddd1}figure{flex:1;min-height:0;width:100%;margin:0;text-align:center}
-  figure img{display:inline-block;max-height:100%;max-width:100%;border-radius:2vh;box-shadow:0 1vh 3vh #00181480}footer{align-self:flex-start;padding-top:2vh}footer img{height:1.65vh}
-  </style><main><header><img src="${product}"></header><h1>${title}</h1><p>${detail}</p><figure><img src="${image(file)}"></figure><footer><img src="${signature}"></footer></main>`;
+  main{height:100%;position:relative;background:radial-gradient(ellipse at 60% 78%,#20483f,transparent 70%)}
+  header{position:absolute;top:3.7%;width:100%;display:flex;justify-content:center}header img{height:2.8vh}
+  section{position:absolute;top:10.5%;left:8%;right:7%}.kind{font-size:min(3.2vw,1.9vh);color:#c4dbac}
+  h1{font-size:min(8.4vw,5.1vh);line-height:1.25;letter-spacing:-.055em;margin:1.2vh 0}.detail{font-size:min(3.15vw,1.8vh);color:#d7e3d8}
+  figure{position:absolute;top:27.5%;bottom:6.7%;left:10%;right:10%;margin:0;display:flex;align-items:center;justify-content:center}
+  figure img{width:100%;height:100%;object-fit:contain}footer{position:absolute;bottom:2.8%;left:8%}footer img{height:1.3vh}
+  </style><main><header><img src="${product}"></header><section><p class="kind">${label}</p><h1>${title}</h1><p class="detail">${detail}</p></section><figure><img src="${image(file)}"></figure><footer><img src="${signature}"></footer></main>`;
 }
 async function wechat() {
-  // Preserve the actual section heading, schedule card, time and venue at a readable size.
-  const crop = await sharp(path.join(source, "schedule.png")).extract({left:32,top:1204,width:1142,height:511}).png().toBuffer();
+  async function excerpt(file, area) {
+    const pixels = await sharp(path.join(source,file)).extract(area).png().toBuffer();
+    return "data:image/png;base64," + pixels.toString("base64");
+  }
+  const schedule = await excerpt("schedule.png",{left:47,top:1365,width:1113,height:338});
+  const report = await excerpt("analysis.png",{left:109,top:683,width:987,height:521});
   return `<style>${bodyStyle}
-  main{height:1800px;position:relative;overflow:hidden;background:#092a2a}
-  header{height:168px;display:flex;align-items:center;justify-content:center}header img{height:76px}
-  .hero{padding:50px 73px 0;position:relative;z-index:1}.topline{color:#cde3a9;font-size:30px;letter-spacing:.08em}
-  h1{font-size:111px;line-height:1.13;font-weight:650;letter-spacing:-.065em;margin:22px 0 26px}h1 span{color:#d8eba9}
-  .desc{font-size:37px;line-height:1.55;color:#e2e9dd}
-  .sample{position:absolute;top:690px;left:71px;right:71px}.sample img{width:100%;border-radius:28px;box-shadow:0 16px 38px #00161455}
-  .sample p{font-size:23px;color:#b6c7bb;margin:17px 3px}
-  .lower{position:absolute;top:1222px;left:0;width:100%;height:578px;padding:48px 73px 0;background:#f3f1e6;color:#173e38}
-  .lower h2{font-size:57px;font-weight:650;line-height:1.25;letter-spacing:-.035em}.lower p{font-size:35px;line-height:1.52;margin:12px 0 22px}
-  .lower .compat{border-top:2px solid #aab8a7;padding-top:23px;font-size:31px;line-height:1.55;color:#34574d}
-  footer{position:absolute;bottom:0;background:#092a2a;height:112px;width:100%;padding:0 72px;display:flex;align-items:center;justify-content:space-between;color:#c3d1bd;font-size:25px}footer img{height:35px}
-  .field{width:680px;height:680px;border:2px solid #6c988342;border-radius:17% 75% 17% 17%;position:absolute;right:-415px;top:335px;transform:rotate(-45deg)}
-  </style><main><header><img src="${product}"></header><div class="field"></div><section class="hero"><div class="topline">球队赛程</div><h1>下一场在哪打<br><span>打开首页就知道</span></h1><p class="desc">记分员安排好比赛，点「发布到球队赛程」。<br>队员打开首页，就能查看对手、时间和场地。</p></section><div class="sample"><img src="data:image/png;base64,${crop.toString("base64")}"><p>队员的「比赛」首页 · 示例赛程</p></div><section class="lower"><h2>场边记分，切换更流畅</h2><p>翻看长比赛记录、切换球队和统计更顺手。<br>赛后还能生成比赛分析，分享文字或 PDF。</p><p class="compat">已加入球队的队员，将 iOS 版更新到 3.1.3，<br>在「比赛 → 即将进行」查看最新安排。</p></section><footer><img src="${signature}"><span>棒球 · 慢垒</span></footer></main>`;
+  main{height:1800px;position:relative}header{height:144px;display:grid;place-items:center}header img{height:62px}
+  .schedule{height:590px;padding:27px 69px 34px}.eyebrow{font-size:29px;font-weight:580;letter-spacing:.07em;color:#cde3ab}
+  h1,h2{font-size:77px;letter-spacing:-.055em;line-height:1.2;font-weight:650;margin:10px 0 14px}
+  .copy{font-size:31px;line-height:1.52}.schedule .copy{color:#e3e9dd}.schedule img{width:100%;margin-top:18px;border-radius:24px}
+  .report{height:730px;background:#f2f1e7;color:#183d37;padding:38px 69px 26px}.report .eyebrow{color:#4c6d5a}
+  .paper{display:flex;align-items:center;padding:10px 27px;background:white;border:1px solid #d1d9ce;border-radius:5px;margin-top:19px;height:370px;overflow:hidden}.paper img{width:100%;height:100%;object-fit:contain}
+  .speed{height:222px;padding:35px 69px 0;color:#f6f5e8}.speed h2{font-size:53px;line-height:1.3;margin:0 0 10px}.speed .copy{color:#d3ded2}
+  footer{margin:0 69px;height:110px;border-top:1px solid #56746a;display:flex;align-items:center;justify-content:space-between;color:#c1cdbb;font-size:23px}footer img{height:33px}
+  </style><main><header><img src="${product}"></header><section class="schedule"><p class="eyebrow">赛前 · 球队赛程</p><h1>下一场在哪打？</h1><p class="copy">记分员发布赛程，队员将 iOS 版更新到 3.1.3，<br>打开「比赛 → 即将进行」就能查看对手、时间和场地。</p><img src="${schedule}"></section>
+  <section class="report"><p class="eyebrow">赛后 · 比赛分析</p><h2>哪一球决定了胜负？</h2><p class="copy">从单场比赛读回关键局面、MVP 和球员表现。<br>也可按全年或选定场次生成报告，分享文字或 PDF。</p><div class="paper"><img src="${report}"></div></section>
+  <section class="speed"><h2>场边记分，切换更流畅</h2><p class="copy">切换比赛、球队和统计，或翻看较长的打席记录，都更顺手。</p></section><footer><img src="${signature}"><span>画面取自示例比赛</span></footer></main>`;
 }
 async function render() {
   const browser = await chromium.launch({executablePath:process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",headless:true});
@@ -47,21 +69,26 @@ async function render() {
       const destination = path.join(out,filename);
       fs.mkdirSync(path.dirname(destination),{recursive:true});
       const pixels = await page.screenshot();
-      await sharp(pixels).removeAlpha().png().toFile(destination);
+      const rgb = sharp(pixels).removeAlpha();
+      if (filename.endsWith(".jpg")) {
+        await rgb.jpeg({quality:88,mozjpeg:true,chromaSubsampling:"4:4:4"}).toFile(destination);
+      } else {
+        await rgb.png().toFile(destination);
+      }
     } finally { await page.close(); }
   }
   try {
     await draw(1080,1800,"微信宣传图.png",await wechat());
-    const screenshots = [
-      ["iphone-6.9/01-schedule","schedule.png","下一场比赛，首页见","在「即将进行」查看球队的对手、开赛时间与场地"],
-      ["iphone-6.9/02-runners","runner-iphone.png","每个跑者去了哪一垒","确认击球结果前，在四垒图上核对每个人的去向"],
-      ["iphone-6.9/03-analysis","analysis.png","赛后回看关键局面","按单场、全年或选定场次生成比赛分析"],
-      ["ipad-13/01-runners","runner-ipad.png","球场与跑者，同屏核对","在确认打者和跑者去向时，仍能看见场上局面"],
-      ["ipad-13/02-scoring","../../3.1.2/appstore/source/ipad-01.png","在 iPad 上逐球记分","查看比分、垒况和场上球员，记录每个打席"]
+    const devices = [
+      ["iphone-6.1",1179,2556,phoneScreens],
+      ["iphone-6.1-face-id",1170,2532,phoneScreens],
+      ["iphone-6.9",1320,2868,phoneScreens],
+      ["ipad-13",2064,2752,tabletScreens]
     ];
-    for (const [name,file,title,detail] of screenshots) {
-      const tablet = name.startsWith("ipad");
-      await draw(tablet?2064:1320,tablet?2752:2868,"screenshots/"+name+".png",storeScreen(file,title,detail));
+    for (const [group,width,height,screens] of devices) {
+      for (const [name,file,label,title,detail] of screens) {
+        await draw(width,height,`screenshots/${group}/${name}.jpg`,storeScreen(file,label,title,detail));
+      }
     }
   } finally { await browser.close(); }
 }
