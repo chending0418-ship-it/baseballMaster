@@ -10122,3 +10122,86 @@ extension GameStoreTests {
         XCTAssertEqual(filtered.input.players.first { filtered.names[$0.id] == first.compactName }?.batting[3], 2)
     }
 }
+
+extension GameStoreTests {
+    @MainActor func testTeamScheduleCrossDeviceHomePublication() async throws {
+        let publisher = try matchClient()
+        let writer = GameStore(persistenceURL: nil)
+        let team = try XCTUnwrap(writer.currentTeam)
+        let directory = TeamSharingStore(service: publisher, storage: V30DirectoryMemoryStorage())
+        writer.teamSharing = directory
+        await directory.connect()
+        let created = await directory.submit(.create(name: team.name, nickname: "记分员", localTeamID: team.id, profile: nil))
+        XCTAssertTrue(created, directory.errorMessage ?? "")
+        let target = try XCTUnwrap(directory.teams.first)
+        let reader = try await matchPartner(publisher, team: target.id, role: .member)
+        let member = GameStore(persistenceURL: nil)
+        member.teamSharing = TeamSharingStore(service: reader, storage: V30DirectoryMemoryStorage())
+        await member.teamSharing.connect()
+        let choices = writer.scheduleTeamChoices.filter { writer.scheduleTeam(for: $0.id)?.id == target.id }
+        XCTAssertEqual(choices.count, 1)
+        let next = Date().addingTimeInterval(86400)
+        let id = writer.scheduleGame(ourTeam: team, opponent: try XCTUnwrap(writer.opponentTeams.first), isHome: false, scheduledAt: next, venue: "二号场")
+        await member.refreshTeamSchedules()
+        XCTAssertTrue(member.visibleTeamSchedules.isEmpty)
+        try await writer.publishSchedule(id,date: next,venue:"二号场")
+        await writer.refreshTeamSchedules()
+        await member.refreshTeamSchedules()
+        XCTAssertTrue(writer.visibleTeamSchedules.isEmpty)
+        XCTAssertEqual(writer.scheduledGames.filter { $0.id == id }.count, 1)
+        XCTAssertEqual(member.visibleTeamSchedules.first?.id, id)
+        XCTAssertEqual(member.visibleTeamSchedules.first?.venue, "二号场")
+        XCTAssertFalse(member.games.contains { $0.id == id })
+        try await writer.publishSchedule(id,date:next.addingTimeInterval(3600),venue:"三号场")
+        await member.refreshTeamSchedules()
+        XCTAssertEqual(member.visibleTeamSchedules.map(\.venue), ["三号场"])
+        try await writer.publishSchedule(id,date:next.addingTimeInterval(3600),venue:"三号场",cancelled:true)
+        await member.refreshTeamSchedules()
+        XCTAssertEqual(member.visibleTeamSchedules.map(\.cancelled), [true])
+        XCTAssertTrue(writer.deleteGame(id:id))
+    }
+}
+
+extension GameStoreTests {
+    @MainActor func testPendingTeamScheduleSurvivesRelaunchAndLostReceipt() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("schedule.sqlite")
+        let store = GameStore(persistenceURL: url)
+        let own = try XCTUnwrap(store.currentTeam), opponent = try XCTUnwrap(store.opponentTeams.first)
+        let client = try matchClient()
+        let cache = V30DirectoryMemoryStorage()
+        let directory = TeamSharingStore(service: client, storage: cache)
+        store.teamSharing = directory
+        await directory.connect()
+        let ok = await directory.submit(.create(name: own.name, nickname:"教练", localTeamID:own.id, profile:nil))
+        XCTAssertTrue(ok)
+        let team = try XCTUnwrap(directory.teams.first)
+        let date = Date().addingTimeInterval(86400)
+        let id = store.scheduleGame(ourTeam:own,opponent:opponent,isHome:false,scheduledAt:date)
+        let unavailable = try TeamServiceClient(baseURL: URL(string:"http://127.0.0.1:1/api/v3")!, vault:V30MemoryTeamCredential(value:TeamDeviceKeychain.randomSecret()))
+        store.teamSharing = TeamSharingStore(service:unavailable, storage:cache)
+        store.teamSharing.loadCachedDirectory()
+        do {
+            try await store.publishSchedule(id,date:date,venue:"二号场")
+            XCTFail("An unreachable service cannot confirm publication")
+        } catch {
+            XCTAssertNotNil(store.games.first(where: { $0.id == id })?.schedulePublication?.pending)
+        }
+        let request = try XCTUnwrap(store.games.first(where: { $0.id == id })?.schedulePublication?.pending)
+        struct Receipt: Decodable { let revision: Int }
+        let first: Receipt = try await client.request("PUT",path:"teams/\(team.id)/schedules/\(id)",body:request)
+        XCTAssertEqual(first.revision,1)
+        let reopened = GameStore(persistenceURL:url)
+        reopened.teamSharing = directory
+        XCTAssertEqual(reopened.games.first(where: { $0.id == id })?.schedulePublication?.pending,request)
+        try await reopened.retrySchedulePublication(id)
+        let confirmed = try XCTUnwrap(reopened.games.first { $0.id == id })
+        XCTAssertNil(confirmed.schedulePublication?.pending)
+        XCTAssertEqual(confirmed.schedulePublication?.revision,1)
+        await reopened.refreshTeamSchedules()
+        XCTAssertEqual(reopened.teamSchedules.filter { $0.id == id }.count,1)
+        XCTAssertTrue(reopened.visibleTeamSchedules.isEmpty)
+    }
+}

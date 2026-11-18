@@ -301,6 +301,7 @@ struct SharedMatchFile: SharedMatchStorage {
         clean.publicationState = nil; clean.pendingPublicationRevisions = nil
         clean.postgameUploadTeamID = nil
         clean.postgameTargetConfigured = nil
+        clean.schedulePublication = nil
         clean.minimumWriterFormat = 2
         return ["formatVersion": .number(2), "payload": try .encode(clean), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(clean).data())]
     }

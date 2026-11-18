@@ -433,6 +433,8 @@ struct StoredGame: Identifiable, Equatable, Codable {
     /// A suggestion only; uploading always requires a separate post-game confirmation.
     var postgameUploadTeamID: UUID? = nil
     var postgameTargetConfigured: Bool? = nil
+    var scheduleVenue: String? = nil
+    var schedulePublication: LocalSchedulePublication? = nil
 
     init(
         id: UUID = UUID(),
