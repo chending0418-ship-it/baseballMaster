@@ -44,27 +44,24 @@ async function wechat() {
     const pixels = await sharp(path.join(source,file)).extract(area).png().toBuffer();
     return "data:image/png;base64," + pixels.toString("base64");
   }
-  const schedule = await excerpt("schedule.png",{left:47,top:1365,width:1113,height:338});
-  const report = await excerpt("analysis.png",{left:109,top:683,width:987,height:521});
-  return `<style>${bodyStyle}
-  main{height:1800px;position:relative}header{height:144px;display:grid;place-items:center}header img{height:62px}
-  .schedule{height:590px;padding:27px 69px 34px}.eyebrow{font-size:29px;font-weight:580;letter-spacing:.07em;color:#cde3ab}
-  h1,h2{font-size:77px;letter-spacing:-.055em;line-height:1.2;font-weight:650;margin:10px 0 14px}
-  .copy{font-size:31px;line-height:1.52}.schedule .copy{color:#e3e9dd}.schedule img{width:100%;margin-top:18px;border-radius:24px}
-  .report{height:730px;background:#f2f1e7;color:#183d37;padding:38px 69px 26px}.report .eyebrow{color:#4c6d5a}
-  .paper{display:flex;align-items:center;padding:10px 27px;background:white;border:1px solid #d1d9ce;border-radius:5px;margin-top:19px;height:370px;overflow:hidden}.paper img{width:100%;height:100%;object-fit:contain}
-  .speed{height:222px;padding:35px 69px 0;color:#f6f5e8}.speed h2{font-size:53px;line-height:1.3;margin:0 0 10px}.speed .copy{color:#d3ded2}
-  footer{margin:0 69px;height:110px;border-top:1px solid #56746a;display:flex;align-items:center;justify-content:space-between;color:#c1cdbb;font-size:23px}footer img{height:33px}
-  </style><main><header><img src="${product}"></header><section class="schedule"><p class="eyebrow">赛前 · 球队赛程</p><h1>下一场在哪打？</h1><p class="copy">记分员发布赛程，队员将 iOS 版更新到 3.1.3，<br>打开「比赛 → 即将进行」就能查看对手、时间和场地。</p><img src="${schedule}"></section>
-  <section class="report"><p class="eyebrow">赛后 · 比赛分析</p><h2>哪一球决定了胜负？</h2><p class="copy">从单场比赛读回关键局面、MVP 和球员表现。<br>也可按全年或选定场次生成报告，分享文字或 PDF。</p><div class="paper"><img src="${report}"></div></section>
-  <section class="speed"><h2>场边记分，切换更流畅</h2><p class="copy">切换比赛、球队和统计，或翻看较长的打席记录，都更顺手。</p></section><footer><img src="${signature}"><span>画面取自示例比赛</span></footer></main>`;
+  const assets = {
+    product, signature,
+    schedule: await excerpt("schedule.png", {left:47, top:1365, width:1113, height:338}),
+    runners: await excerpt("runner-iphone.png", {left:52, top:817, width:1101, height:910}),
+    report: await excerpt("analysis.png", {left:12, top:515, width:1182, height:1668})
+  };
+  const template = fs.readFileSync(path.join(__dirname, "wechat.html"), "utf8");
+  return template.replace(/\{\{(\w+)\}\}/g, (_,name) => {
+    if (!assets[name]) throw new Error("Unknown poster asset: " + name);
+    return assets[name];
+  });
 }
 async function render() {
   const browser = await chromium.launch({executablePath:process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",headless:true});
   async function draw(width,height,filename,html) {
     const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
     try {
-      await page.setContent('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'+html+'</html>');
+      await page.setContent(html.startsWith('<!doctype html>') ? html : '<!doctype html><html lang="zh-CN"><meta charset="utf-8">'+html+'</html>');
       await page.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map(img => img.decode())); });
       const destination = path.join(out,filename);
       fs.mkdirSync(path.dirname(destination),{recursive:true});
@@ -79,6 +76,7 @@ async function render() {
   }
   try {
     await draw(1080,1800,"微信宣传图.png",await wechat());
+    if (process.argv.includes("--wechat-only")) return;
     const devices = [
       ["iphone-6.1",1179,2556,phoneScreens],
       ["iphone-6.1-face-id",1170,2532,phoneScreens],

@@ -9,7 +9,7 @@
 | 本版计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；[上版计划](<plans/3.1.1 发布功能计划.md>) |
 | 3.1.3 TestFlight 候选 | [3.1.3 发布功能计划](<plans/3.1.3 发布功能计划.md>)。候选分支整合 [PR #67](https://github.com/chending0418-ship-it/baseballMaster/pull/67) 的记分、直播、纠错、统计和滚动改动，以及 [PR #68](https://github.com/chending0418-ship-it/baseballMaster/pull/68) 的[比赛分析与品牌 PDF](plans/比赛分析.md)。整合验收完成。Build 4 加入四垒跑者确认图和守备栏排版调整。用户于 2026-11-17 确认 Build 4 已从 TestFlight 安装，四个主 Tab 仍有卡顿。Build 5 已修正主 Tab 重复刷新与共享比赛的无变化写入，Pro 击球后复用四垒确认图，签名归档已交付，待用户上传及真机复核。线上球队服务已启用比赛分析。 |
 | 3.1.3 Build 6 | 已完成 Release 签名归档。11 月 18 日 13:27（北京时间）上海球队服务已启用球队赛程。公网独立记分员和成员身份验证了发布、查看、改期、取消和重试去重。2026-11-18，用户确认已将 Build 6 上传至 TestFlight。Apple 构建处理、测试组分发及真机安装待确认。见[版本计划 I313-11](<plans/3.1.3 发布功能计划.md>) 与[已合并 PR #71](https://github.com/chending0418-ship-it/baseballMaster/pull/71)。 |
-| 3.1.3 送审资料 | 发布分支已通过 [PR #72](https://github.com/chending0418-ship-it/baseballMaster/pull/72) 合入 main。[送审清单](releases/3.1.3/送审清单.md)含商店文案、审核步骤和待补的隐私说明与审核码；已备 6.1 英寸常驻功能与新版截图、含球队赛程及赛后 PDF 分析的微信一页图。 |
+| 3.1.3 送审资料 | 发布分支已通过 [PR #72](https://github.com/chending0418-ship-it/baseballMaster/pull/72) 合入 main。[送审清单](releases/3.1.3/送审清单.md)含商店文案、审核步骤和待补的隐私说明与审核码；已备 6.1 英寸常驻功能与新版截图、涵盖球队赛程、在线分析、四垒核对与纠错、打击与捕手统计的微信一页图。 |
 | 捕手守备统计 | [3.1.3 的 Build 3](<plans/3.1.3 发布功能计划.md>) 已支持捕手阻杀 CCS 和捕逸 PB 的记分、守备统计与 PDF。 |
 | 后续版本 | [3.1.5 发布功能计划](<plans/3.1.5 发布功能计划.md>)。转播交接与重启串场已修复，待用模拟器配合 OBS 检查及部署。总 Admin 已上线语音开启码管理和发放备注，App 单局面录入已接入。主屏幕改名已核对，Duo 外屏图标文字会截断。单投手球数可直接输入，球数与登板局数到限只提醒。六项改动已整合。同一个模拟器构建的 iPhone、iPad 和 Duo 回归共 22 项通过。 |
 | 3.1.5 送审材料 | [审核文案、截图与提交清单](releases/3.1.5/APPSTORE-填写清单.md)已备妥，App 已增加录音前同意流程，公开隐私政策和审核专用开启码待完成。 |

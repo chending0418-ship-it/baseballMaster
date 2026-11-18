@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>棒球比赛记录大师 · iOS 3.1.3</title>
+<style>
+*{box-sizing:border-box}
+:root{--pine:#092a2a;--ink:#15352f;--paper:#f5f3ea;--line:#c7cebd;--lime:#dae6af}
+body{margin:0;background:var(--pine);font-family:"PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}
+main{width:1080px;height:1800px;color:var(--ink);background:var(--paper);overflow:hidden}
+h1,h2,p,figure,dl,dd{margin:0}img{display:block}
+.cover{height:340px;position:relative;overflow:hidden;background:var(--pine);color:var(--paper);padding:0 64px}
+.identity{position:relative;z-index:1;height:119px;display:grid;place-items:center;border-bottom:1px solid #63807580}
+.identity img{height:58px}
+.edition{position:absolute;top:148px;left:66px;font:500 27px/1.2 "Helvetica Neue",sans-serif;letter-spacing:.07em;color:var(--lime)}
+h1{position:absolute;left:60px;top:190px;font:650 79px/1.3 "Songti SC","STSong",serif;letter-spacing:-.055em}
+.diamond{position:absolute;right:-52px;top:112px;width:365px;height:270px;opacity:.38}
+.paper{padding:0 64px}
+.schedule{display:grid;grid-template-columns:492px 1fr;align-items:center;gap:24px;height:265px;border-bottom:2px solid var(--ink)}
+h2{font-size:48px;font-weight:650;letter-spacing:-.055em;line-height:1.22}
+.copy{font-size:29px;line-height:1.52;font-weight:420;letter-spacing:-.018em;color:#394f46}
+.schedule .copy{margin-top:15px;font-size:28px}
+.schedule figure{border-left:1px solid var(--line);padding-left:26px}
+.schedule img{width:100%;border-radius:17px}
+.play{height:545px;display:grid;grid-template-columns:1.08fr 1fr;padding:36px 0 30px}
+.runners{padding-right:32px;border-right:1px solid var(--line)}
+.runners .copy,.stats .copy{margin-top:16px}
+.runners img{width:298px;height:auto;margin:15px auto 0;border-radius:11px}
+.stats{padding-left:39px}
+.stats dl{margin-top:22px}
+.stats dl>div{height:84px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px}
+.stats dt{font:500 51px/1 "Baskerville","Times New Roman",serif;letter-spacing:-.04em;color:#245948}
+.stats dd{font-size:31px;color:var(--ink)}
+.analysis{height:414px;position:relative;overflow:hidden;background:#173e35;color:var(--paper);padding:42px 64px}
+.analysis .label{font-size:25px;letter-spacing:.06em;color:var(--lime)}
+.analysis h2{font-family:"Songti SC","STSong",serif;font-weight:700;font-size:63px;margin:9px 0 16px}
+.analysis .copy{color:#e4eadd;font-size:30px;line-height:1.55}
+.sheet{position:absolute;top:47px;right:60px;width:368px;height:441px;padding:9px 8px 0;background:#fff;transform:rotate(3deg);box-shadow:-7px 14px 30px #06282155}
+.sheet:before{content:"";position:absolute;z-index:-1;inset:9px 10px -5px -6px;background:#d4ddcf;transform:rotate(-5deg);transform-origin:60% 80%}
+.sheet img{width:100%;height:auto;background:white}
+.finish{height:137px;padding:25px 64px 0}.finish h2{font-size:38px}.finish .copy{font-size:28px;margin-top:8px}
+footer{height:99px;margin:0 64px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:#485b50;font-size:23px}
+footer span{text-align:right;line-height:1.45}footer img{height:32px;filter:brightness(0) saturate(100%);opacity:.78}
+</style>
+<main>
+<div class="cover">
+  <header class="identity"><img src="{{product}}" alt="棒球比赛记录大师"></header>
+  <svg class="diamond" viewBox="0 0 365 270" fill="none" aria-hidden="true">
+    <g stroke="#c6dcb9" stroke-width="1.5">
+      <path d="M-6 65 Q145 -78 335 58 L175 239 Z"/>
+      <path d="M38 102 Q156 -10 291 103"/>
+      <path d="M106 169 L175 100 L244 169 L175 239 Z"/>
+      <circle cx="175" cy="168" r="13"/>
+      <path d="M158 224 A24 24 0 1 0 192 224"/>
+    </g>
+    <g fill="#e3edc9"><path d="m175 95 5 5-5 5-5-5zM101 169l5-5 5 5-5 5zM239 169l5-5 5 5-5 5zM169 233h12v6l-6 5-6-5z"/></g>
+  </svg>
+  <p class="edition">iOS 3.1.3</p>
+  <h1>从赛前安排，到赛后复盘</h1>
+</div>
+<div class="paper">
+  <section class="schedule">
+    <div><h2>球队赛程</h2><p class="copy">管理员或记分员发布对阵、时间和场地。<br>队员在「比赛 → 即将进行」查看赛程，<br>刷新即可看到改期或取消。</p></div>
+    <figure><img src="{{schedule}}" alt="球队成员看到的示例赛程"></figure>
+  </section>
+  <div class="play">
+    <section class="runners"><h2>四垒核对与赛中纠错</h2>
+      <p class="copy">核对打者与跑者去向，更正已记的换人。守备失误造成额外进垒时，可指定责任人。</p>
+      <img src="{{runners}}" alt="打者与跑者的四垒核对图">
+    </section>
+    <section class="stats"><h2>打击与捕手统计</h2>
+      <p class="copy">单场、球队汇总和相关报表，<br>都能查到这三项数据。</p>
+      <dl><div><dt>TB</dt><dd>打击总垒数</dd></div><div><dt>CCS</dt><dd>捕手阻杀</dd></div><div><dt>PB</dt><dd>捕逸</dd></div></dl>
+    </section>
+  </div>
+</div>
+<section class="analysis">
+  <p class="label">赛后复盘</p><h2>在线比赛分析</h2>
+  <p class="copy">选择单场、全年或指定场次，<br>回看关键局面、MVP 与球员表现。<br>生成的报告可分享文字或 PDF。</p>
+  <figure class="sheet"><img src="{{report}}" alt="海浪对飞鹰单场分析的 A4 报告首页"></figure>
+</section>
+<section class="finish"><h2>场边记分，切换更流畅</h2><p class="copy">切换比赛、球队与统计，翻看长打席记录时减少了重复加载。</p></section>
+<footer><img src="{{signature}}" alt="BaseballMaster"><span>Android 0.8.5 测试版支持四垒核对、纠错与统计。<br>球队赛程与在线分析待接入。</span></footer>
+</main>
