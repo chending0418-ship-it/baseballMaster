@@ -16,6 +16,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -85,11 +87,13 @@ internal fun ReportPdfPreview(
     onClose: () -> Unit,
     onSave: () -> Unit,
     onShare: () -> Unit,
+    onShareText: (() -> Unit)? = null,
 ) {
     var zoom by rememberSaveable(file.path) { mutableFloatStateOf(1f) }
     var retry by remember { mutableIntStateOf(0) }
     var pageBounds by remember(file.path, retry) { mutableStateOf<List<ReportPageBounds>?>(null) }
     var issue by remember(file.path, retry) { mutableStateOf(false) }
+    var shareChoices by remember { mutableStateOf(false) }
     val scroll = rememberLazyListState()
     var selectedPage by rememberSaveable(file.path) { mutableStateOf<Int?>(null) }
     val dragged by scroll.interactionSource.collectIsDraggedAsState()
@@ -109,6 +113,10 @@ internal fun ReportPdfPreview(
     ProductPage(title, busy = busy, onBack = onClose, backTag = "report-preview-close", scrollableContent = false) {
         val bounds = pageBounds
         if (bounds != null) {
+            if (onShareText != null) {
+                Text("A4 竖版 · ${bounds.size} 页 · 可缩放阅读、保存或打印", Modifier.testTag("game-analysis-pdf-summary"),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             val current by remember(bounds, scroll) {
                 derivedStateOf {
                     // At the bottom, multiple short landscape pages can share one scroll position.
@@ -170,7 +178,15 @@ internal fun ReportPdfPreview(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onSave, Modifier.weight(1f).testTag("report-preview-save"), enabled = !busy) { Text("保存到文件") }
                 Box(Modifier.weight(1f)) {
-                    PrimaryProductButton("系统分享", "report-preview-share", enabled = !busy, onClick = onShare)
+                    PrimaryProductButton("系统分享", "report-preview-share", enabled = !busy, onClick = {
+                        if (onShareText == null) onShare() else shareChoices = true
+                    })
+                    if (onShareText != null) DropdownMenu(shareChoices, { shareChoices = false }) {
+                        DropdownMenuItem(text = { Text("分享 PDF") }, onClick = { shareChoices = false; onShare() },
+                            modifier = Modifier.testTag("game-analysis-share-pdf"))
+                        DropdownMenuItem(text = { Text("分享文字") }, onClick = { shareChoices = false; onShareText() },
+                            modifier = Modifier.testTag("game-analysis-share-text"))
+                    }
                 }
             }
         }

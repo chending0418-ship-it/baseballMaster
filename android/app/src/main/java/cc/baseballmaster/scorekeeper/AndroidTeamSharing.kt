@@ -15,7 +15,7 @@ import kotlinx.coroutines.ensureActive
 /** App-facing suspend API. Local Room data is read only; bindings and shared
  * rosters stay in the independent encrypted directory. A confirmed schedule updates local planning fields only.
  */
-internal class AndroidTeamSharing(private val local: GameRepository, private val session: TeamDirectorySession) {
+internal class AndroidTeamSharing(internal val local: GameRepository, internal val session: TeamDirectorySession) {
     private val scheduleLock = Mutex()
     private val scheduleChangesState = MutableStateFlow(0L)
     val scheduleChanges = scheduleChangesState.asStateFlow()

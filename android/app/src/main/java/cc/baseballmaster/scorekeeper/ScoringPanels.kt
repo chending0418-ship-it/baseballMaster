@@ -287,6 +287,7 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
                 }
             }
             else -> when (panel) {
+            "team-broadcast" -> LocalMatchBroadcastScreen(game, model.fixedBroadcast, close)
             "rule-notices" -> ProductPage("比赛规则提醒", onBack = close, backLabel = "返回比赛", modal = true) {
                 game.ruleNotices(System.currentTimeMillis()).forEach { notice -> CardBlock { Text(notice, fontSize = 14.sp) } }
             }

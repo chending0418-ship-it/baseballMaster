@@ -40,7 +40,7 @@ internal fun RosterScreen(
     var adding by rememberSaveable { mutableStateOf(false) }
     var addingBatch by rememberSaveable(teamID) { mutableStateOf(false) }
     val team = model.rosters.firstOrNull { it.id == teamID }
-    if (showSharing) TeamSharingScreen(model.sharing, model.teams,
+    if (showSharing) TeamSharingScreen(model.sharing, model.teams, broadcast = model.fixedBroadcast,
         statistics = { id, close ->
             key(id) {
                 ProductPage("球队年度统计", onBack = close, backTag = "shared-stats-back") {

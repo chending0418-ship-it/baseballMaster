@@ -94,6 +94,7 @@ internal fun TeamSharingScreen(
     localTeams: List<Team>,
     incoming: IncomingTeamLink? = null,
     statistics: (@Composable (String, () -> Unit) -> Unit)? = null,
+    broadcast: TeamBroadcastCoordinator? = null,
     dismiss: () -> Unit,
 ) {
     val ui=remember(api) {SharingUi(api)}; val scope=rememberCoroutineScope(); val context=LocalContext.current
@@ -101,6 +102,7 @@ internal fun TeamSharingScreen(
     var securityPage by remember {mutableStateOf(if(incoming?.kind==IncomingTeamLinkKind.pair) "approve" else null)}
     var lifecyclePage by remember {mutableStateOf<String?>(null)}
     var showMatches by remember {mutableStateOf(false)}
+    var broadcastTeam by remember { mutableStateOf<String?>(null) }
     var statisticsID by remember { mutableStateOf<String?>(null) }
     var confirmation by remember {mutableStateOf<SharingConfirmation?>(null)}
     var invitationToShow by remember {mutableStateOf<FixedTeamInvitation?>(null)}; var shownCard by remember {mutableStateOf<SavedManagementCard?>(null)}
@@ -173,12 +175,18 @@ internal fun TeamSharingScreen(
             if(ui.enabled && ui.state.directory?.teams.isNullOrEmpty()) Text("尚未加入共享球队。")
             ui.state.directory?.teams.orEmpty().forEach {team -> CardBlock {
                 Text(team.name,fontWeight=FontWeight.Bold); Text("${team.role.title()} · 编号 ${team.id.takeLast(6)}")
-                TextButton(enabled=ui.enabled && !ui.busy,onClick={ui.selectedID=team.id;ui.call(scope){ui.refresh()}}) {Text("查看球队")}
+                TextButton(enabled=ui.enabled && !ui.busy,onClick={ui.selectedID=team.id;ui.call(scope){ui.refresh()}},
+                    modifier = Modifier.testTag("open-shared-team-${team.id}")) {Text("查看球队")}
             } }
         } else {
             val team=ui.team; val profile=ui.roster
             if(team==null) Text("球队不可用，请刷新核对。") else {
                 Text(team.name,fontWeight=FontWeight.Bold); Text(team.role.title())
+                if (broadcast != null && ui.fresh && ui.enabled && ui.canPrepare && team.role != TeamRole.member) {
+                    ProductActionRow("转播源", "比分、打者及双方阵容", tag = "open-team-broadcast-sources") {
+                        broadcastTeam = team.id
+                    }
+                }
                 if (statistics != null && ui.fresh && ui.enabled && !ui.state.credentialExpired && !ui.state.requiresRecoveryReview) {
                     ProductActionRow("年度统计", "查看已确认的共享完赛", NavigationSymbols.statistics,
                         "shared-open-statistics", enabled = !ui.busy) { statisticsID = team.id }
@@ -272,7 +280,11 @@ internal fun TeamSharingScreen(
         securityPage=null;if(incoming?.kind==IncomingTeamLinkKind.pair) dismiss() else ui.call(scope){ui.refresh()}
     } }
     lifecyclePage?.let {page -> TeamLifecycleScreen(api,page,ui.selectedID) {lifecyclePage=null;ui.call(scope){ui.refresh()}} }
-    if(showMatches) SharedMatchesScreen(api,ui.selectedID) {showMatches=false;ui.call(scope){ui.refresh()}}
+    if (showMatches) SharedMatchesScreen(api, ui.selectedID, broadcast) { showMatches = false; ui.call(scope) { ui.refresh() } }
+    val broadcastID = broadcastTeam
+    if (broadcast != null && broadcastID != null) {
+        BroadcastSourcesScreen(broadcast, broadcastID, allowReset = ui.team?.role == TeamRole.admin) { broadcastTeam = null }
+    }
 }
 
 @Composable private fun SharingEditor(api: AndroidTeamSharing, ui: SharingUi, scope: CoroutineScope, kind: String, localTeams: List<Team>, player: SharedRosterPlayer?, initialLink: String = "", dismiss: ()->Unit) {

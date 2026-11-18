@@ -2,8 +2,10 @@ package cc.baseballmaster.scorekeeper
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
@@ -21,15 +23,22 @@ internal object ReportExport {
     private const val margin = 36f
     internal const val emptyTableMessage = "暂无符合当前范围的记录。"
 
+    internal data class AnalysisBrand(val identity: Bitmap, val signoff: Bitmap)
+
     /** Coordinates and pagination follow iOS ReportPDFCanvas (UIKit uses top-left text bounds). */
     internal class Writer(
         val kind: String, val title: String, portrait: Boolean = false,
         subtitle: String = kind, generatedAt: Long = System.currentTimeMillis(),
+        private val analysisBrand: AnalysisBrand? = null,
     ) : AutoCloseable {
         private val width = if (portrait) 595 else 842
         private val height = if (portrait) 842 else 595
-        private val bottom get() = height - 42f
+        private val analysis = analysisBrand != null
+        private val margin = if (analysis) 54f else ReportExport.margin
+        private val bottom get() = height - if (analysis) 67f else 42f
         private val contentWidth get() = width - margin * 2
+        private val navy = if (analysis) Color.rgb(11, 25, 51) else ReportExport.navy
+        private val green = if (analysis) Color.rgb(9, 42, 42) else ReportExport.green
         private val document = PdfDocument()
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var page: PdfDocument.Page? = null
@@ -37,7 +46,12 @@ internal object ReportExport {
         private var y = 0f
         private val generatedText = java.time.Instant.ofEpochMilli(generatedAt).atZone(java.time.ZoneId.systemDefault())
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-        init { nextPage(); line(title, 25f, true); line(subtitle, 10f, muted = true); y += 8 }
+        init {
+            nextPage()
+            line(title, if (analysis) 29f else 25f, true)
+            line(subtitle, if (analysis) 11f else 10f, muted = true)
+            y += 8
+        }
         private fun font(size: Float, bold: Boolean) {
             paint.textSize = size
             paint.typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
@@ -56,11 +70,19 @@ internal object ReportExport {
             font(size, bold)
             return text.split('\n').flatMap { raw ->
                 if (raw.isEmpty()) listOf("") else buildList {
-                    var rest = raw
-                    while (rest.isNotEmpty()) {
-                        var n = paint.breakText(rest, true, limit.coerceAtLeast(1f), null).coerceAtLeast(1)
-                        if (n < rest.length && Character.isHighSurrogate(rest[n - 1])) n = if (n > 1) n - 1 else 2
-                        add(rest.substring(0, n)); rest = rest.substring(n)
+                    val breaks = if (analysis) android.icu.text.BreakIterator.getLineInstance(Locale.SIMPLIFIED_CHINESE)
+                        .apply { setText(raw) } else null
+                    var start = 0
+                    while (start < raw.length) {
+                        val count = paint.breakText(raw, start, raw.length, true, limit.coerceAtLeast(1f), null).coerceAtLeast(1)
+                        var end = start + count
+                        if (end < raw.length) {
+                            val boundary = breaks?.preceding(end + 1)
+                            if (boundary != null && boundary > start) end = boundary
+                            if (Character.isHighSurrogate(raw[end - 1])) end += if (end - start > 1) -1 else 1
+                        }
+                        add(raw.substring(start, end))
+                        start = end
                     }
                 }
             }
@@ -69,6 +91,10 @@ internal object ReportExport {
             page?.let(document::finishPage); pageNumber++
             page = document.startPage(PdfDocument.PageInfo.Builder(width, height, pageNumber).create())
             page!!.canvas.drawColor(Color.WHITE)
+            if (analysisBrand != null) {
+                analysisPage(analysisBrand)
+                return
+            }
             draw("BASEBALLMASTER", margin, 20f, 11f, true, limit = 250f)
             draw(kind, width / 2f, 20f, 10f, true, green, width / 2f - margin, Paint.Align.RIGHT)
             paint.color = green; page!!.canvas.drawRect(margin, 42f, width - margin, 44f, paint)
@@ -79,13 +105,68 @@ internal object ReportExport {
                 color = secondary, limit = 90f, align = Paint.Align.RIGHT)
             y = if (pageNumber == 1) 62f else 70f
         }
+
+        private fun analysisPage(brand: AnalysisBrand) {
+            val canvas = page!!.canvas
+            fun logo(bitmap: Bitmap, top: Float, height: Float) {
+                val logoWidth = height * bitmap.width / bitmap.height
+                canvas.drawBitmap(bitmap, null, RectF(margin, top, margin + logoWidth, top + height),
+                    Paint(Paint.FILTER_BITMAP_FLAG))
+            }
+            logo(brand.identity, 40f, 22f)
+            draw(kind, width / 2f, 45f, 10f, true, green, contentWidth / 2f, Paint.Align.RIGHT)
+            paint.color = green
+            canvas.drawRect(margin, 73f, width - margin, 74f, paint)
+            paint.color = Color.rgb(212, 222, 217)
+            canvas.drawRect(margin, height - 52f, width - margin, height - 51.5f, paint)
+            logo(brand.signoff, height - 44f, 10f)
+            draw("第 $pageNumber 页", width - margin - 90, height - 45f, 9f, color = secondary, limit = 90f, align = Paint.Align.RIGHT)
+            if (pageNumber > 1) draw(wrap(title, size = 9f).first(), margin, 81f, 9f, color = secondary)
+            y = if (pageNumber == 1) 91f else 105f
+        }
+
         private fun ensure(space: Float) { if (y + space > bottom) nextPage() }
         fun line(text: String, size: Float = 10f, bold: Boolean = false, muted: Boolean = false) {
-            val leading = kotlin.math.ceil(size * 1.5f)
+            val leading = kotlin.math.ceil(size * if (analysis) 1.65f else 1.5f)
             wrap(text, size = size, bold = bold).forEach {
                 ensure(leading); draw(it, margin, y, size, bold, if (muted) secondary else navy); y += leading
             }
             y += 7
+        }
+
+        fun section(title: String, paragraphs: List<String>) {
+            val first = paragraphs.firstOrNull() ?: return
+            val firstHeight = minOf(2, wrap(first, size = 12f).size) * 20f
+            ensure(firstHeight + 37f)
+            line(title, 15f, true)
+            paragraphs.forEach { line(it, 12f) }
+            y += 7f
+        }
+
+        fun highlight(title: String, detail: String) {
+            val inset = 14f
+            val innerWidth = contentWidth - 2 * inset
+            val heading = wrap(title, innerWidth, 15f, true)
+            val lines = wrap(detail, innerWidth, 12f)
+            val block = 2 * inset + heading.size * 22f + lines.size * 20f + 3f
+            if (block > bottom - 105f) {
+                section(title, listOf(detail))
+                return
+            }
+            ensure(block)
+            paint.color = Color.rgb(240, 245, 242)
+            page!!.canvas.drawRect(margin, y, width - margin, y + block, paint)
+            var position = y + inset
+            for (line in heading) {
+                draw(line, margin + inset, position, 15f, true, green, innerWidth)
+                position += 22f
+            }
+            position += 3f
+            for (line in lines) {
+                draw(line, margin + inset, position, 12f, limit = innerWidth)
+                position += 20f
+            }
+            y += block + 17f
         }
         fun textRecord(title: String, body: String) {
             val lines = wrap(body, size = 11f)
@@ -115,14 +196,18 @@ internal object ReportExport {
                 y += 68
             }
         }
-        fun table(title: String, headers: List<String>, rows: List<List<String>>, weights: List<Float>? = null, compact: Boolean = false) {
+        fun table(title: String, headers: List<String>, rows: List<List<String>>, weights: List<Float>? = null, compact: Boolean = false,
+                  leftAlignedColumns: Set<Int> = setOf(0)) {
             require(headers.isNotEmpty() && rows.all { it.size == headers.size })
             val columnWeights = weights ?: headers.indices.map { if (it == 0) 3f else 1f }
             require(columnWeights.size == headers.size && columnWeights.all { it > 0 })
             val widths = columnWeights.map { contentWidth * it / columnWeights.sum() }
             // Narrow numeric columns use less inset so three-letter headings stay readable.
             val insets = widths.map { if (it < 28f) 2f else 5f }
-            val leading = 12f; val padding = if (compact) 3f else 5f; val headerHeight = if (compact) 22f else 24f
+            val leading = if (analysis) 17f else 12f
+            val fontSize = if (analysis) 11f else 8.5f
+            val padding = if (compact) 3f else 5f
+            val headerHeight = if (compact) 22f else 24f
             fun header(continued: Boolean) {
                 val heading = title + if (continued) " (续)" else ""
                 val headingHeight = wrap(heading, size = 12f, bold = true).size * 18f + 7
@@ -131,8 +216,8 @@ internal object ReportExport {
                 paint.color = navy; page!!.canvas.drawRect(margin, y, width - margin, y + headerHeight, paint)
                 var x = margin
                 headers.forEachIndexed { i, label ->
-                    draw(label, x + insets[i], y + 6, 8f, true, Color.WHITE, widths[i] - 2 * insets[i],
-                        if (i == 0) Paint.Align.LEFT else Paint.Align.CENTER); x += widths[i]
+                    draw(label, x + insets[i], y + 6, if (analysis) 10f else 8f, true, Color.WHITE, widths[i] - 2 * insets[i],
+                        if (i in leftAlignedColumns) Paint.Align.LEFT else Paint.Align.CENTER); x += widths[i]
                 }
                 y += headerHeight
             }
@@ -140,11 +225,11 @@ internal object ReportExport {
             if (rows.isEmpty()) { y += 6; line(emptyTableMessage, 9f, muted = true); return }
             rows.forEachIndexed { rowIndex, row ->
                 val total = row.firstOrNull() == "合计"
-                val cells = row.mapIndexed { i, value -> wrap(value, widths[i] - 2 * insets[i], 8.5f, total) }
+                val cells = row.mapIndexed { i, value -> wrap(value, widths[i] - 2 * insets[i], fontSize, total) }
                 val lineCount = cells.maxOf { it.size }
                 var keep = lineCount * leading + padding * 2
                 rows.getOrNull(rowIndex + 1)?.takeIf { it.firstOrNull() == "合计" }?.let { next ->
-                    keep += next.mapIndexed { i, value -> wrap(value, widths[i] - 2 * insets[i], 8.5f, true).size }.max() * leading + padding * 2
+                    keep += next.mapIndexed { i, value -> wrap(value, widths[i] - 2 * insets[i], fontSize, true).size }.max() * leading + padding * 2
                 }
                 if (y + keep > bottom && keep < bottom - 120) { nextPage(); header(true) }
                 var offset = 0
@@ -157,8 +242,8 @@ internal object ReportExport {
                     var x = margin
                     cells.forEachIndexed { i, cell ->
                         for (n in offset until minOf(offset + count, cell.size)) draw(cell[n], x + insets[i],
-                            y + padding + (n - offset) * leading, 8.5f, total, limit = widths[i] - 2 * insets[i],
-                            align = if (i == 0) Paint.Align.LEFT else Paint.Align.CENTER)
+                            y + padding + (n - offset) * leading, fontSize, total, limit = widths[i] - 2 * insets[i],
+                            align = if (i in leftAlignedColumns) Paint.Align.LEFT else Paint.Align.CENTER)
                         x += widths[i]
                     }
                     y += rowHeight; offset += count

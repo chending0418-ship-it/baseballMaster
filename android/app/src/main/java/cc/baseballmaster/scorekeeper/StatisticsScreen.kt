@@ -485,6 +485,12 @@ internal fun StatisticsScreen(
         Text("${summary.games.size} 场比赛 · ${summary.wins}胜${summary.losses}负${summary.ties}平", Modifier.testTag("stats-team-record"), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         StatisticsMetricGrid(listOf("累计得分" to "${summary.runs}", "累计失分" to "${summary.runsAllowed}", "净胜分" to "${summary.runs - summary.runsAllowed}"))
     }
+    if (summary.games.isNotEmpty() && (!sharedTeam || matchingShared && !syncing)) {
+        val filtered = selectedValid != null || mode != null
+        AnalysisEntry(if (filtered) "分析筛选比赛" else "分析全年比赛", "stats-open-game-analysis") {
+            model.openSeasonAnalysis(team, year, summary, filtered)
+        }
+    }
     if (summary.pending > 0) Text("${summary.pending} 条记录待确认", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
     StatisticsSegmented("统计分类", StatsCategory.entries.associate { it.name to it.label }, categoryName) {
         categoryName = it

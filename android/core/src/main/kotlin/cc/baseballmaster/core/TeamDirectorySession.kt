@@ -74,7 +74,7 @@ interface TeamDirectoryStorage {
     fun save(state: TeamDirectoryState)
 }
 
-class TeamDirectorySession(internal val client: TeamDirectoryClient, internal val storage: TeamDirectoryStorage, private val deviceLabel: String,
+class TeamDirectorySession(internal val client: TeamDirectoryClient, internal val storage: TeamDirectoryStorage, internal val deviceLabel: String,
     private val reconnectDevice: ((Boolean)->String)? = null, private val hasPendingReconnect: ()->Boolean = {false},
 ) {
     private var expiredInMemory=false

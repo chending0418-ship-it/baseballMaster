@@ -72,6 +72,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cc.baseballmaster.core.*
 import kotlin.math.*
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -108,7 +110,17 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     /** Recording task snapshots contain the full journal and must never enter the Activity Bundle. */
     internal var scoringTaskSource by mutableStateOf<Game?>(null)
     private var sharedPresence: kotlinx.coroutines.Job?=null
+    internal val fixedBroadcast by lazy {
+        TeamBroadcastCoordinator(
+            application, sharing, viewModelScope,
+            canSync = { !loading && !recoveryRequired },
+            localGame = { id -> games.firstOrNull { it.id == id } },
+            activeLocalGame = { openedGame },
+        )
+    }
+
     internal fun setLiveForeground(active: Boolean) {
+        fixedBroadcast.setForeground(active)
         live.setForeground(active);sharedPresence?.cancel();sharedPresence=null
         if(active) sharedPresence=viewModelScope.launch {
             while(true) {
@@ -121,6 +133,25 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         val testSession = if (BuildConfig.DEBUG) androidTeamDirectoryTestOverride?.invoke(application) else null
         AndroidTeamSharing(repository, testSession ?: androidTeamDirectory(application, "https://baseballmaster.cc/api/v3"))
     }
+    internal var analysisPreparation by mutableStateOf<Deferred<AnalysisSource>?>(null)
+        private set
+
+    internal fun openGameAnalysis(game: Game) = prepareAnalysis { AnalysisSource.single(game) }
+
+    internal fun openSeasonAnalysis(team: Team, year: Int, statistics: SeasonStatistics, filtered: Boolean) =
+        prepareAnalysis { AnalysisSource.season(team, year, statistics, filtered) }
+
+    private fun prepareAnalysis(build: () -> AnalysisSource) {
+        if (analysisPreparation == null) {
+            analysisPreparation = viewModelScope.async(Dispatchers.Default) { build() }
+        }
+    }
+
+    internal fun closeGameAnalysis() {
+        analysisPreparation?.cancel()
+        analysisPreparation = null
+    }
+
     internal var scheduleFeed by mutableStateOf(TeamScheduleFeed())
         private set
     internal var scheduleRefreshing by mutableStateOf(false)
@@ -496,9 +527,14 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
 
     internal suspend fun restoreDeviceBackup(bytes: ByteArray) {
         live.prepareForRestore()
-        val selected = withContext(Dispatchers.IO) {
-            repository.migrateLegacyTeamArchives(getApplication())
-            repository.restoreDeviceBackup(bytes)
+        fixedBroadcast.clearBinding()
+        val selected = try {
+            withContext(Dispatchers.IO) {
+                repository.migrateLegacyTeamArchives(getApplication())
+                repository.restoreDeviceBackup(bytes)
+            }
+        } finally {
+            withContext(kotlinx.coroutines.NonCancellable) { fixedBroadcast.finishRestore() }
         }
         rememberCurrentTeam(selected)
         live.requestSync()
@@ -536,7 +572,10 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     private fun accept(game: Game) {
         if (game.practice) practiceGame = game
         else games = listOf(game) + games.filter { it.id != game.id }
-        if(!game.practice) live.requestSync()
+        if (!game.practice) {
+            live.requestSync()
+            fixedBroadcast.requestSync(game.id)
+        }
     }
 
     fun deleteGame(game: Game) = commit {
@@ -831,7 +870,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
     var rulesHelp by rememberSaveable { mutableStateOf(false) }
     if (rulesHelp) RulesScreen(showExamples = model.showRuleExamples) { rulesHelp = false }
     model.incomingTeamLink?.let {link -> key(link.id) {
-        if(model.incomingLinkVisible) TeamSharingScreen(model.sharing,model.teams,incoming=link) {model.closeTeamLink(link.id)}
+        if(model.incomingLinkVisible) TeamSharingScreen(model.sharing,model.teams,incoming=link, broadcast=model.fixedBroadcast) {model.closeTeamLink(link.id)}
         else AlertDialog(onDismissRequest={},title={Text("有链接待核对")},text={Text(if(link.kind==IncomingTeamLinkKind.join) "之前的球队邀请已保留。核对球队与角色后再加入。" else "之前的设备配对链接已保留。选择球队并核对两台设备的短语后再授权。")},
             confirmButton={TextButton(onClick=model::resumeTeamLink) {Text("继续核对")}},dismissButton={TextButton(onClick={model.closeTeamLink(link.id)}) {Text("关闭此链接")}})
     } }
@@ -914,6 +953,29 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
         }
     if (manageOpponents) FormPage("对手球队与名单", model.busy, true, "close-setup-opponents", "完成", { manageOpponents = false }, { manageOpponents = false }) {
         RosterScreen(model, initialFilter = "opponent") { opponent -> createOpponent = opponent; createTeam = true }
+    }
+    model.analysisPreparation?.let { preparation ->
+        key(preparation) {
+            val result by produceState<Result<AnalysisSource>?>(null) {
+                value = try {
+                    Result.success(preparation.await())
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (failure: Exception) {
+                    Result.failure(failure)
+                }
+            }
+            val source = result?.getOrNull()
+            if (source != null) {
+                AnalysisScreen(source, model.sharing, close = model::closeGameAnalysis)
+            } else {
+                ProductPage("比赛分析", onBack = model::closeGameAnalysis, backLabel = "关闭", modal = true) {
+                    val failure = result?.exceptionOrNull()
+                    if (failure == null) CircularProgressIndicator(Modifier.size(24.dp))
+                    else Text(failure.localizedMessage ?: "这份比赛数据暂时无法分析。")
+                }
+            }
+        }
     }
 }
 
@@ -1570,6 +1632,11 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
                                         if (!game.practice && !showBroadcast) DropdownMenuItem(
                                             text = { Text("文字直播与分享") }, modifier = Modifier.testTag("open-live-broadcast"),
                                             onClick = { menu = false; requestedPanel = "live" },
+                                        )
+                                        if (!game.practice && !game.isObservation && !game.isScheduled) DropdownMenuItem(
+                                            text = { Text("球队固定转播源") },
+                                            modifier = Modifier.testTag("open-team-broadcast"),
+                                            onClick = { menu = false; requestedPanel = "team-broadcast" },
                                         )
                                         if (!game.practice && !showPoster) DropdownMenuItem(
                                             text = { Text("比赛宣传海报") }, modifier = Modifier.testTag("open-game-poster"),

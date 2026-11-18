@@ -26,7 +26,7 @@ internal fun GameResultsScreen(game: Game, model: ScorekeeperViewModel, close: (
         val appearances = if (category == "records") remember(game) { AppearanceProjection.build(game).asReversed() } else emptyList()
         LazyColumn(Modifier.fillMaxSize().testTag("product-page-scroll"), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item("summary") {
-                ResultSummary(game, category, { category = it }, navigate)
+                ResultSummary(game, category, { category = it }, navigate) { model.openGameAnalysis(game) }
             }
             if (category == "records") {
                 item("appearance-count") {
@@ -49,7 +49,7 @@ internal fun GameResultsScreen(game: Game, model: ScorekeeperViewModel, close: (
 }
 
 @Composable
-private fun ResultSummary(game: Game, category: String, selectCategory: (String) -> Unit, navigate: (String) -> Unit) {
+private fun ResultSummary(game: Game, category: String, selectCategory: (String) -> Unit, navigate: (String) -> Unit, openAnalysis: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         CardBlock {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -83,6 +83,9 @@ private fun ResultSummary(game: Game, category: String, selectCategory: (String)
             }
         }
         ResultLineScore(game)
+        if (game.isFinal && !game.practice && !game.isScheduled) {
+            AnalysisEntry("比赛分析", "result-open-game-analysis", openAnalysis)
+        }
         ProductActionRow("纠正记录", "核对漏记、换人、守位与原始打席", tag = "result-history-correction") { navigate("history") }
         Choices("数据", mapOf("batting" to "打击", "pitching" to "投手", "fielding" to "守备", "records" to "记录"), category) { selectCategory(it) }
     }

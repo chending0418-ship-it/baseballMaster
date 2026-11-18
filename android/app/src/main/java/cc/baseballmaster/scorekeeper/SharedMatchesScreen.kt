@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -26,12 +27,15 @@ private fun SharedMatchDocument.matchTitle(): String = payload?.get("state")?.js
 } ?: raw["title"]?.jsonPrimitive?.content?.takeIf {it.isNotBlank()} ?: "比赛 ${id.takeLast(6)}"
 private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->"不开放";HistoricalWatchMode.public->"永久开放";HistoricalWatchMode.restricted->"仅指定人员"}
 
-@Composable internal fun SharedMatchesScreen(api: AndroidTeamSharing,teamID: String,dismiss: ()->Unit) {
+@Composable internal fun SharedMatchesScreen(
+    api: AndroidTeamSharing, teamID: String, broadcast: TeamBroadcastCoordinator? = null, dismiss: () -> Unit,
+) {
     val ui=remember(api,teamID) {SharingUi(api).apply {selectedID=teamID}}
     val scope=rememberCoroutineScope();val context=LocalContext.current;val owner=LocalLifecycleOwner.current
     var selected by remember {mutableStateOf<String?>(null)};var rows by remember {mutableStateOf<List<SharedMatchDocument>>(emptyList())}
     var viewers by remember {mutableStateOf<MatchViewers?>(null)};var history by remember {mutableStateOf<JsonObject?>(null)}
     var confirmation by remember {mutableStateOf<SharingConfirmation?>(null)};var shownLink by remember {mutableStateOf<String?>(null)}
+    var showBroadcast by remember { mutableStateOf(false) }
     val document=ui.state.matches[selected]?.document?.takeIf {it.teamID==teamID}
     suspend fun refresh() {
         viewers=null;ui.refresh()
@@ -61,7 +65,8 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
             rows.take(visible).forEach {row -> CardBlock {
                 Text(row.matchTitle(),fontWeight=FontWeight.Bold)
                 Text(if(row.deleted) "已删除" else when(row.raw["status"]?.jsonPrimitive?.content) {"completed"->"已结束";"scheduled"->"比赛预告";else->"进行中"})
-                TextButton(enabled=!ui.busy && !row.deleted,onClick={selected=row.id;ui.call(scope){refresh()}}) {Text("查看比赛与观看设置")}
+                TextButton(enabled=!ui.busy && !row.deleted,onClick={selected=row.id;ui.call(scope){refresh()}},
+                    modifier = Modifier.testTag("open-shared-match-${row.id}")) {Text("查看比赛与观看设置")}
             }}
             if(visible<rows.size) TextButton(onClick={visible+=50}) {Text("显示更多（已显示 $visible／${rows.size}）")}
         } else if(document==null || document.deleted || ui.state.credentialExpired) Text("当前无法访问这场比赛，请刷新核对。")
@@ -83,6 +88,12 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
                 Text("操作编号 ${pending.id.takeLast(6)}")
             }}
             if(!document.finalForWatching) {
+                if (broadcast != null && ui.team?.role != TeamRole.member) {
+                    if (document.canWrite && document.writerDeviceID.equals(ui.state.deviceID, true) && document.handoff == null) {
+                        ProductActionRow("转播源", tag = "shared-match-broadcast", enabled = canAct) { showBroadcast = true }
+                    }
+                    if (ui.fresh) SharedBroadcastHandoffControls(api, broadcast, ui, document, ::refresh)
+                }
                 Text("实时文字直播",fontWeight=FontWeight.Bold)
                 Text("这是旧共享比赛的直播入口。新比赛请从首页创建，并在本机记分页开启文字直播；这里保留旧链接及关闭功能。")
                 if(document.liveAvailable) document.sharedLiveURL?.let {url -> TextButton(enabled=ui.fresh && !ui.busy,onClick={shownLink=url}) {Text("分享实时观赛链接")}}
@@ -125,6 +136,13 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
                 if(document.liveAvailable) document.sharedLiveURL?.let {url -> TextButton(enabled=ui.fresh && !ui.busy,onClick={shownLink=url}) {Text("分享尚未到期的直播链接")}}
             }
         }
+    }
+    val sourceID = document?.payload?.get("id")?.jsonPrimitive?.contentOrNull
+    if (showBroadcast && broadcast != null && document != null && sourceID != null && document.canWrite && document.handoff == null) {
+        BroadcastSourcesScreen(
+            broadcast, teamID, currentGameID = sourceID,
+            select = { expected -> broadcast.selectShared(teamID, document.id, expected) },
+        ) { showBroadcast = false }
     }
     history?.let {stored -> ArchiveGameHistory(stored,secure=true) {history=null}}
     confirmation?.let {value -> AlertDialog(onDismissRequest={confirmation=null},properties=DialogProperties(securePolicy=SecureFlagPolicy.SecureOn),title={Text(value.title)},text={Text(value.message)},
