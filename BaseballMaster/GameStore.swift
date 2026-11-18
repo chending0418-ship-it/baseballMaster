@@ -26,6 +26,9 @@ final class GameStore: ObservableObject {
             statisticsSeasonsCache = nil
         }
     }
+    @Published var teamSchedules: [TeamScheduleNotice] = []
+    @Published var scheduleFeedError: String?
+    var scheduleFetchID: UUID?
     private var homeGameListsCache: HomeGameLists?
     var statisticsOverviewCache: StatisticsOverviewCache?
     var statisticsSeasonsCache: StatisticsSeasonsCache?
@@ -503,7 +506,8 @@ final class GameStore: ObservableObject {
         ourTeam: Team,
         opponent: Team,
         isHome: Bool,
-        scheduledAt: Date
+        scheduledAt: Date,
+        venue: String? = nil
     ) -> UUID {
         let home = isHome ? ourTeam : opponent
         let away = isHome ? opponent : ourTeam
@@ -516,7 +520,7 @@ final class GameStore: ObservableObject {
         state.playLog.append(
             PlayLogEntry(inning: 1, isTop: true, text: "比赛已安排：\(away.shortName) 对 \(home.shortName)")
         )
-        let stored = StoredGame(
+        var stored = StoredGame(
             scheduledAt: scheduledAt,
             startedAt: nil,
             seasonID: MatchYear.id(for: scheduledAt),
@@ -528,6 +532,7 @@ final class GameStore: ObservableObject {
             status: .scheduled,
             state: state
         )
+        stored.scheduleVenue = venue
         games.insert(stored, at: 0)
         persist { try persistenceStore.upsertGame(stored) }
         return stored.id
@@ -3498,6 +3503,11 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func deleteGame(id: UUID) -> Bool {
+        if let game = games.first(where: { $0.id == id }), game.status == .scheduled, scheduleTeam(for: game.ourTeamID) != nil,
+           let publication = game.schedulePublication, publication.pending != nil || !publication.cancelled {
+            actionErrorMessage = "请先打开比赛安排，取消球队赛程并确认结果，再删除本机安排。"
+            return false
+        }
         guard !sharedMatches.isShared(id) else { actionErrorMessage = "共享比赛请在球队中管理，避免误删正式档案。"; return false }
         guard !requiresDataRecovery, games.contains(where: { $0.id == id }) else { return false }
         do { try persistenceStore.deleteGame(id: id) }

@@ -2800,13 +2800,13 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.navigationBars["新比赛"].waitForExistence(timeout: 5))
         let ownChoice = app.buttons["new-game-own-team"]
         XCTAssertTrue(ownChoice.exists); ownChoice.tap()
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "本机球队")).firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["301共享队"].firstMatch.waitForExistence(timeout: 3))
         captureHistory(app, name: "3.0.1-local-and-shared-team-choices")
-        app.buttons["301共享队 · 共享球队 · 0 人"].tap()
+        app.buttons["301共享队"].firstMatch.tap()
         let future = app.switches["安排未来比赛"]; revealStatisticsControl(future, in: app)
         future.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        let destination = app.buttons["share-destination-picker"]; revealStatisticsControl(destination, in: app)
-        XCTAssertTrue(destination.label.contains("301共享队"), "Selecting a shared roster only presets its post-game upload target")
+        let publish = app.buttons["publish-team-schedule"]; revealStatisticsControl(publish, in: app)
+        XCTAssertTrue(publish.exists)
         let beforeSave = try await sharingAPI(reader, "/teams/\(teamID)/games?cursor=0", method: "GET")
         XCTAssertEqual((beforeSave["games"] as? [[String: Any]])?.count, 0, "Choosing a shared roster must not create a cloud match")
         captureHistory(app, name: "3.1.1-shared-roster-postgame-target")
@@ -4344,5 +4344,64 @@ extension BaseballMasterUITests {
         app.buttons["stats-apply-game-filter"].tap()
         XCTAssertTrue(app.staticTexts["stats-game-scope"].label.contains("2 / 3"))
         generate(from: "open-season-analysis", title: "筛选比赛分析", checkShare: true)
+    }
+}
+
+extension BaseballMasterUITests {
+    @MainActor func testTeamSchedulePublishAndReadOnMemberGameTab() async throws {
+        let admin = sharingTestSecret()
+        _ = try await sharingAPI(admin, "/devices", body: ["label": "赛程验收"])
+        let created = try await sharingAPI(admin, "/teams", body: ["operationID": UUID().uuidString, "name": "U12赛程队", "nickname": "教练"])
+        let team = try XCTUnwrap(created["teamID"] as? String)
+        func joinDevice(_ role: String) async throws -> XCUIApplication {
+            let invite = sharingTestSecret()
+            _ = try await sharingAPI(admin, "/teams/\(team)/invitations", body: ["operationID": UUID().uuidString, "role": role, "token": invite])
+            let app = launchDeviceSecurityApp()
+            app.buttons["join-shared-team"].tap()
+            app.textFields["team-invite-link"].tap()
+            app.textFields["team-invite-link"].typeText("https://baseballmaster.cc/join#\(invite)")
+            app.buttons["preview-team-invite"].tap()
+            let name = app.textFields["join-nickname"]
+            XCTAssertTrue(name.waitForExistence(timeout: 8))
+            name.tap(); name.typeText(role)
+            let join = app.buttons["confirm-join-team"]
+            revealStatisticsControl(join, in: app); join.tap()
+            let row = app.buttons["shared-team-U12赛程队"]
+            XCTAssertTrue(row.waitForExistence(timeout: 8))
+            row.tap()
+            XCTAssertTrue(app.staticTexts["U12赛程队"].firstMatch.waitForExistence(timeout: 8))
+            app.tabBars.buttons["比赛"].tap()
+            return app
+        }
+        let writer = try await joinDevice("scorer")
+        writer.buttons["start-new-game"].tap()
+        writer.buttons["new-game-own-team"].tap()
+        writer.buttons["U12赛程队"].firstMatch.tap()
+        let future = writer.switches["安排未来比赛"]
+        revealStatisticsControl(future, in: writer)
+        future.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let venue = writer.textFields["选填"]
+        revealStatisticsControl(venue, in: writer)
+        venue.tap(); venue.typeText("Field B")
+        if writer.buttons["收起键盘"].exists { writer.buttons["收起键盘"].tap() }
+        let publish = writer.buttons["publish-team-schedule"]
+        revealStatisticsControl(publish, in: writer); publish.tap()
+        let alert = writer.alerts["比赛安排已保存"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 12))
+        XCTAssertTrue(alert.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "已发布到球队赛程")).firstMatch.exists)
+        alert.buttons["返回比赛首页"].tap()
+        XCTAssertEqual(writer.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'scheduled-game-'")).count, 1)
+        let remote = try await sharingAPI(admin, "/team-schedules", method: "GET")
+        let rows = try XCTUnwrap(remote["schedules"] as? [[String:Any]])
+        XCTAssertEqual(rows.count,1)
+        let id = try XCTUnwrap(rows.first?["id"] as? String)
+        writer.terminate()
+
+        let reader = try await joinDevice("member")
+        let notice = reader.descendants(matching: .any).matching(identifier: "team-schedule-" + id.lowercased()).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        XCTAssertTrue(notice.label.contains("Field B"))
+        XCTAssertEqual(reader.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'scheduled-game-'")).count,0)
+        captureHistory(reader, name: "3.1.3-build6-member-game-home")
     }
 }

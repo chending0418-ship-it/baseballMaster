@@ -14,6 +14,7 @@
 		A10000000000000000000042 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000042 /* LaunchScreen.storyboard */; };
 		A10000000000000000000041 /* SituationRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000041 /* SituationRecording.swift */; };
 		A10000000000000000000040 /* BattedBall.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000040 /* BattedBall.swift */; };
+		A10000000000000000000A09 /* TeamSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000A09 /* TeamSchedule.swift */; };
 		A10000000000000000000A01 /* GameAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000A01 /* GameAnalysis.swift */; };
 		A10000000000000000000001 /* BaseballMasterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001 /* BaseballMasterApp.swift */; };
 		A10000000000000000000002 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* DesignSystem.swift */; };
@@ -83,6 +84,7 @@
 		F10000000000000000000042 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		F10000000000000000000041 /* SituationRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SituationRecording.swift; sourceTree = "<group>"; };
 		F10000000000000000000040 /* BattedBall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattedBall.swift; sourceTree = "<group>"; };
+		F10000000000000000000A09 /* TeamSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamSchedule.swift; sourceTree = "<group>"; };
 		F10000000000000000000A01 /* GameAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameAnalysis.swift; sourceTree = "<group>"; };
 		F10000000000000000000001 /* BaseballMasterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaseballMasterApp.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
@@ -173,6 +175,7 @@
 				F10000000000000000000043 /* ConfigurableLaunchScreen.swift */,
 				F10000000000000000000042 /* LaunchScreen.storyboard */,
 				F10000000000000000000011 /* Assets.xcassets */,
+				F10000000000000000000A09 /* TeamSchedule.swift */,
 				F10000000000000000000A01 /* GameAnalysis.swift */,
 				F10000000000000000000001 /* BaseballMasterApp.swift */,
 				F10000000000000000000002 /* DesignSystem.swift */,
@@ -381,6 +384,7 @@
 				A10000000000000000000044 /* BulkRosterImport.swift in Sources */,
 				A10000000000000000000045 /* BulkRosterImportView.swift in Sources */,
 				A10000000000000000000043 /* ConfigurableLaunchScreen.swift in Sources */,
+				A10000000000000000000A09 /* TeamSchedule.swift in Sources */,
 				A10000000000000000000A01 /* GameAnalysis.swift in Sources */,
 				A10000000000000000000001 /* BaseballMasterApp.swift in Sources */,
 				A10000000000000000000002 /* DesignSystem.swift in Sources */,
@@ -498,7 +502,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = JUTVG7XR9H;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -528,7 +532,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = JUTVG7XR9H;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BaseballMaster/AppInfo.plist;

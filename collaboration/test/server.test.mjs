@@ -375,3 +375,34 @@ test('fixed invitation persists after server restart and is shared by multiple a
   assert.equal(reopened.fixedInvite(team,admin,operation({rotate:false})).token,updated.token);
   assert.throws(()=>reopened.previewInvite(admin,{token:saved.token}),e=>e.status===410);
 });
+
+test('team schedules support member reads, retry, revision checks, cancellation and revocation without creating a game', async t => {
+  const api = await setup(t), admin = await api.device(), stranger = await api.device();
+  const team = (await api.create(admin)).data.teamID;
+  const scorer = await api.joinTeam(admin, team, 'scorer');
+  const reader = await api.joinTeam(admin, team);
+  const id = randomUUID(), path = `/teams/${team}/schedules/${id}`;
+  const read = async key => (await api.request(key, 'GET', '/team-schedules')).data.schedules;
+  const initial = operation({ expectedRevision: 0, startsAt: api.store.now() + 3600000,
+    away: '山鹰 U12', home: '海鹰 U12', venue: '二号场', cancelled: false });
+  assert.deepEqual(await read(reader.key), []);
+  assert.equal((await api.request(reader.key,'PUT',path,initial)).status,403);
+  const first = await api.request(scorer.key,'PUT',path,initial);
+  assert.equal(first.status,200);
+  assert.deepEqual((await api.request(scorer.key,'PUT',path,initial)).data, first.data);
+  assert.deepEqual(await read(stranger), []);
+  assert.equal((await read(reader.key))[0].venue, '二号场');
+  const update = operation({ ...initial, operationID: randomUUID(), expectedRevision: 1, startsAt: initial.startsAt + 3600000, venue: '三号场' });
+  assert.equal((await api.request(admin,'PUT',path,update)).data.revision,2);
+  assert.equal((await api.request(scorer.key,'PUT',path,{...update,operationID:randomUUID()})).status,409);
+  const cancel = { ...update, operationID:randomUUID(), expectedRevision:2, cancelled:true };
+  assert.equal((await api.request(scorer.key,'PUT',path,cancel)).data.revision,3);
+  const notices = await read(reader.key);
+  assert.equal(notices.length,1); assert.equal(notices[0].id,id);
+  assert.equal(notices[0].startsAt,update.startsAt); assert.equal(notices[0].cancelled,true);
+  assert.equal((await api.request(reader.key,'GET',`/teams/${team}/games?cursor=0`)).data.games.length,0);
+  await api.request(admin,'PATCH',`/teams/${team}/members/${reader.memberID}`,operation({role:'member',active:false,baseRevision:1}));
+  assert.deepEqual(await read(reader.key),[]);
+  api.advance(7200001);
+  assert.deepEqual(await read(admin),[]);
+});

@@ -20,6 +20,7 @@ export function maintain(store) {
       db.prepare("UPDATE team_profiles SET profile=? WHERE team_id=?").run(JSON.stringify({shortName:'已清除球队',city:'',players:[]}),team);
       db.prepare("UPDATE members SET nickname='已清除成员' WHERE team_id=?").run(team);
       db.prepare('UPDATE audit SET actor_nickname=NULL,actor_device_label=NULL WHERE team_id=?').run(team);
+      db.prepare('DELETE FROM team_schedules WHERE team_id=?').run(team);
       db.prepare('DELETE FROM team_restore_devices WHERE team_id=?').run(team);
     }
     // Keep small operation tombstones, so a very old client cannot repeat an expired side effect.

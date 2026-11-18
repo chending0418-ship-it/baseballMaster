@@ -407,6 +407,11 @@ actor TeamServiceClient: TeamDirectoryService {
                 }
                 throw TeamServiceError.response(status ?? 503, message)
             }
+            if path.contains("/schedules/") {
+                if code == "schedule_time" { throw TeamServiceError.response(400, "请重新选择未来的开赛时间。") }
+                if code == "schedule_changed" { throw TeamServiceError.response(409, "球队赛程已变化，请核对最新安排后再提交。") }
+                if code == "schedule_capacity" { throw TeamServiceError.response(409, "球队的未来赛程已达上限。") }
+            }
             let message: String
             switch status {
             case 400, 413:
