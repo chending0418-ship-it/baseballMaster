@@ -7,7 +7,7 @@ const sharp = require(path.join(modules, "sharp"));
 const { chromium } = require(path.join(modules, "playwright"));
 const source = path.join(__dirname, "source");
 const out = path.resolve(__dirname, "../../../../output/releases/3.1.3");
-const image = file => "data:image/" + (file.endsWith(".svg") ? "svg+xml" : "png") + ";base64," + fs.readFileSync(path.resolve(source, file)).toString("base64");
+const image = file => "data:image/" + (file.endsWith(".svg") ? "svg+xml" : path.extname(file).slice(1)) + ";base64," + fs.readFileSync(path.resolve(source, file)).toString("base64");
 const product = image("scorekeeper-horizontal-reverse.svg");
 const signature = image("baseballmaster-horizontal-reverse.svg");
 const bodyStyle = '*{box-sizing:border-box}html,body{margin:0;height:100%;width:100%;overflow:hidden}body{background:#092a2a;color:#faf9ed;font-family:"PingFang SC",-apple-system,sans-serif;-webkit-font-smoothing:antialiased}h1,h2,p{margin:0}img{display:block}';
@@ -45,7 +45,7 @@ async function wechat() {
     return "data:image/png;base64," + pixels.toString("base64");
   }
   const assets = {
-    product, signature,
+    product, signature, ballpark: image("ballpark.webp"), scoreboard: image("obs-score.png"),
     schedule: await excerpt("schedule.png", {left:47, top:1365, width:1113, height:338}),
     runners: await excerpt("runner-iphone.png", {left:52, top:817, width:1101, height:910}),
     report: await excerpt("analysis.png", {left:12, top:515, width:1182, height:1668})
