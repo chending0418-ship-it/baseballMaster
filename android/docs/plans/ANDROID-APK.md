@@ -424,7 +424,7 @@ Android 已调整首页、球队、建赛、Pro 结果目录、球队／个人�
 
 ## iOS 3.1.3 对齐 · 球队赛程与流畅度（2026-11-18）
 
-Android 官网 0.8.5 Build 29 的验收以 iOS Build 5 为基线。本节工作对应 Android 0.8.5 Build 30 本地签名候选。iOS 3.1.3 的球队赛程服务已上线。当前 Android 官网包尚不能读取这类通知。[固定版本接口契约](https://github.com/chending0418-ship-it/baseballMaster/blob/554ccbf88c6c494bd09436383bbad83f73cc54ed/collaboration/PROTOCOL.md#球队赛程team-schedulesios-313-build-6)
+Android 官网 0.8.5 Build 29 的验收以 iOS Build 5 为基线。本节工作对应 Android 0.8.5 Build 30 本地签名候选。iOS 3.1.3 的球队赛程服务已上线。当时的官网 Build 29 尚不能读取这类通知，后续官网 Build 31 已包含球队赛程。[固定版本接口契约](https://github.com/chending0418-ship-it/baseballMaster/blob/554ccbf88c6c494bd09436383bbad83f73cc54ed/collaboration/PROTOCOL.md#球队赛程team-schedulesios-313-build-6)
 
 | 待办 | 实施与验收 |
 | --- | --- |
