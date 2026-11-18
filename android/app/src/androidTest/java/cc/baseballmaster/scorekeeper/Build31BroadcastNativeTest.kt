@@ -194,7 +194,6 @@ class Build31BroadcastNativeTest {
         NativeUi.find(ui, By.text("球队比赛与观看设置")).click()
         click("open-shared-match-$document")
         click("accept-broadcast-handoff")
-        shot("android-accept-shared-confirm")
         click("confirm-broadcast-handoff")
         val accepted = waitFor("Android is current shared writer") {
             actor.session.match(team, document).takeIf { it.handoff == null && it.writerDeviceID.equals(who, true) }
@@ -206,12 +205,11 @@ class Build31BroadcastNativeTest {
         assertEquals(gameID, streamAfter.getValue("snapshot").jsonObject.value("gameID"))
         click("shared-match-broadcast")
         assertSources()
-        shot("android-shared-resumed")
-        mark(team, "android-handoff-accepted")
+        ui.takeScreenshot(File(evidence, "android-shared-resumed.png"))
+        mark(team, "android-handoff-accepted-final")
         ui.pressBack()
         click("propose-broadcast-handoff")
         click("broadcast-handoff-device-$originalWriter")
-        shot("android-propose-shared-back")
         click("confirm-broadcast-handoff")
         val returned = waitFor("handoff back to iOS") {
             actor.session.match(team, document).handoff?.takeIf { it.value("targetDeviceID").equals(originalWriter, true) }

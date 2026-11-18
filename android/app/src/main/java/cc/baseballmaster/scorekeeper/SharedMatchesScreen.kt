@@ -92,7 +92,7 @@ private fun HistoricalWatchMode.title()=when(this) {HistoricalWatchMode.closed->
                     if (document.canWrite && document.writerDeviceID.equals(ui.state.deviceID, true) && document.handoff == null) {
                         ProductActionRow("转播源", tag = "shared-match-broadcast", enabled = canAct) { showBroadcast = true }
                     }
-                    if (ui.fresh) SharedBroadcastHandoffControls(api, broadcast, ui, document, ::refresh)
+                    if (ui.fresh) SharedBroadcastHandoffControls(api, broadcast, ui, document, scope, ::refresh)
                 }
                 Text("实时文字直播",fontWeight=FontWeight.Bold)
                 Text("这是旧共享比赛的直播入口。新比赛请从首页创建，并在本机记分页开启文字直播；这里保留旧链接及关闭功能。")

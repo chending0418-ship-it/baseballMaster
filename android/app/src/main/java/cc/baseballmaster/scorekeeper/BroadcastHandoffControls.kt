@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import cc.baseballmaster.core.MatchControl
 import cc.baseballmaster.core.SharedMatchDocument
 import cc.baseballmaster.core.TeamRole
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -16,9 +17,8 @@ import kotlinx.serialization.json.jsonPrimitive
 @Composable
 internal fun SharedBroadcastHandoffControls(
     api: AndroidTeamSharing, broadcast: TeamBroadcastCoordinator, ui: SharingUi,
-    document: SharedMatchDocument, refresh: suspend () -> Unit,
+    document: SharedMatchDocument, scope: CoroutineScope, refresh: suspend () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     val own = ui.state.deviceID ?: return
     val currentDeviceWrites = document.canWrite && document.writerDeviceID.equals(own, true)
     val handoff = document.handoff
