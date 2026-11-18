@@ -5,6 +5,7 @@ import { mkdirSync, chmodSync, readFileSync, statfsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { can, ROLES } from './permissions.mjs';
+import { TeamSchedules } from './schedules.mjs';
 import { GameService } from './games.mjs';
 import { TeamBroadcasts } from './broadcasts.mjs';
 import { TeamSecurity } from './security.mjs';
@@ -19,6 +20,7 @@ import { inflateSync, gzipSync } from 'node:zlib';
 import { isIP } from 'node:net';
 import { createAdminHandler } from './admin.mjs';
 import { LaunchScreenService, LaunchScreenError } from './launch-screen.mjs';
+import { createGameAnalysis, gameAnalysisMaxBytes } from './game-analysis.mjs';
 
 export const BASE = '/api/v3';
 export const PROTOCOL = 1;
@@ -96,6 +98,7 @@ export class CollaborationStore {
     }
     const inviteColumns = this.db.prepare('PRAGMA table_info(invitations)').all().map(c=>c.name);
     if (!inviteColumns.includes('reusable_token')) this.db.exec('ALTER TABLE invitations ADD COLUMN reusable_token TEXT');
+    this.schedules = new TeamSchedules(this, requireValue);
     this.games = new GameService(this, requireValue);
     this.security = new TeamSecurity(this, requireValue);
     this.roster = new RosterService(this, requireValue);
@@ -346,6 +349,7 @@ export class CollaborationStore {
 
 export function createCollaborationServer(options = {}) {
   const store = new CollaborationStore(options);
+  const gameAnalysis = createGameAnalysis({ ...options.gameAnalysis, now: store.now }, requireValue);
   const launchScreen = new LaunchScreenService(store);
   store.launchScreen = launchScreen;
   const admin = createAdminHandler(store,options.admin);
@@ -376,7 +380,8 @@ export function createCollaborationServer(options = {}) {
         return reply(200,{status:'ok',protocol:PROTOCOL});
       }
       if(path===BASE+'/capabilities' && req.method==='GET') return reply(200,{protocol:PROTOCOL,matchFormat:2,minimumAppVersion:'3.0',
-        capabilities:['bulkRosterImport','batted-ball-observation','writer-format-guard','team-roles','match-revisions','writer-handoff','historical-access','device-pairing','management-recovery','roster-years','history-import','player-links','conflict-review','team-lifecycle','portable-archive','credential-rotation','recovery-review']});
+        capabilities:['team-schedules','bulkRosterImport','batted-ball-observation','writer-format-guard','team-roles','match-revisions','writer-handoff','historical-access','device-pairing','management-recovery','roster-years','history-import','player-links','conflict-review','team-lifecycle','portable-archive','credential-rotation','recovery-review',
+          ...(gameAnalysis.available ? ['game-analysis'] : [])]});
       requireValue(store.db.prepare("SELECT value FROM metadata WHERE key='restoreQuarantine'").get()?.value !== '1',503,'recovery_review','服务正在核对恢复资料，请稍后重试；本机记录会保留。');
       const now = store.now();
       // Only a configured local reverse proxy may supply the client address.
@@ -390,16 +395,18 @@ export function createCollaborationServer(options = {}) {
       if(launchScreen.public(req,res,path))return;
       requireValue(req.headers['x-bm-protocol'] === String(PROTOCOL), 426, 'upgrade_required', '请更新 App 后重试。');
       const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(req.headers.authorization ?? '')?.[1];
+      const analysisPath = BASE + '/game-analysis';
       let body = {};
       if (req.method !== 'GET') {
         requireValue((req.headers['content-type'] ?? '').split(';')[0] === 'application/json', 415, 'content_type', '需要 JSON 资料。');
+        const maxBytes = path === analysisPath ? gameAnalysisMaxBytes : 18 * 1024 * 1024;
         let bytes = 0; const chunks = [];
         for await (const chunk of req) {
-          bytes += chunk.length; requireValue(bytes <= 18 * 1024 * 1024, 413, 'too_large', '资料超过大小限制。'); chunks.push(chunk);
+          bytes += chunk.length; requireValue(bytes <= maxBytes, 413, 'too_large', '资料超过大小限制。'); chunks.push(chunk);
         }
         const encoding=req.headers['content-encoding'];requireValue(!encoding || encoding==='deflate',415,'content_encoding','传输编码不支持。');
         try {
-          const wire=Buffer.concat(chunks),decoded=encoding==='deflate'?inflateSync(wire,{maxOutputLength:18*1024*1024}):wire;
+          const wire=Buffer.concat(chunks),decoded=encoding==='deflate'?inflateSync(wire,{maxOutputLength:maxBytes}):wire;
           body = JSON.parse(decoded.toString('utf8'));
         } catch { throw new APIError(400, 'invalid_json', '资料格式不正确。'); }
         requireValue(body && typeof body === 'object' && !Array.isArray(body));
@@ -435,8 +442,22 @@ export function createCollaborationServer(options = {}) {
         requireValue(store.db.prepare('SELECT epoch FROM device_recovery_reviews WHERE device_id=?').get(deviceID)?.epoch===recoveryEpoch,
           409,'recovery_review','请先核对恢复后的球队资料，原操作不会自动重做。');
       }
+      if (path === analysisPath && req.method === 'POST') {
+        requireValue(uuid(body.requestID) && Object.keys(body).every(key => ['requestID', 'input'].includes(key)));
+        return reply(202, gameAnalysis.start(deviceID, body.requestID.toLowerCase(), body.input));
+      }
+      if (path.startsWith(analysisPath + '/') && req.method === 'GET') {
+        const id = path.slice(analysisPath.length + 1);
+        requireValue(uuid(id), 404, 'analysis_expired', '这份分析已过期，请重新生成。');
+        return reply(200, gameAnalysis.status(deviceID, id.toLowerCase()));
+      }
       if(path===BASE+'/devices/credential-prepare' && req.method==='POST') return reply(200,store.credentials.prepare(deviceID,body));
       if(path===BASE+'/dissolved-teams' && req.method==='GET') return reply(200,store.lifecycle.list(deviceID));
+      if (path === BASE + '/team-schedules' && req.method === 'GET') return reply(200,store.schedules.list(deviceID));
+      const schedule = /^\/api\/v3\/teams\/([a-f0-9-]+)\/schedules\/([a-f0-9-]+)$/i.exec(path);
+      if (schedule && req.method === 'PUT' && uuid(schedule[1]) && uuid(schedule[2])) {
+        return reply(200,store.schedules.save(deviceID,schedule[1].toLowerCase(),schedule[2].toLowerCase(),body));
+      }
       const broadcast = /^\/api\/v3\/teams\/([a-f0-9-]+)\/broadcast(?:\/(rotate))?$/.exec(path);
       if (broadcast && uuid(broadcast[1])) {
         const [, team, action] = broadcast;
@@ -556,6 +577,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const { server, store } = createCollaborationServer({ database: process.env.BM_TEAM_DATABASE ?? fileURLToPath(new URL('./data/collaboration.sqlite', import.meta.url)),
     admin:process.env.BM_ADMIN_CONFIG ? {...JSON.parse(readFileSync(process.env.BM_ADMIN_CONFIG,'utf8')),trustProxy:process.env.BM_TEAM_TRUST_PROXY==='1'} : undefined,
     trustProxy:process.env.BM_TEAM_TRUST_PROXY==='1', requestsPerMinute:Number(process.env.BM_TEAM_REQUESTS_PER_MINUTE ?? 600),
+    gameAnalysis: {
+      apiKey: process.env.BM_GAME_ANALYSIS_VPAI_KEY,
+      baseURL: process.env.BM_GAME_ANALYSIS_VPAI_URL,
+      model: process.env.BM_GAME_ANALYSIS_VPAI_MODEL,
+      dailyLimit: Number(process.env.BM_GAME_ANALYSIS_DAILY_LIMIT ?? 60)
+    },
     minimumFreeBytes:process.env.NODE_ENV==='production'?2*1024**3:0 });
   if(process.env.NODE_ENV==='production' || process.env.BM_TEAM_SAFETY_JOURNAL) {
     const {SafetyJournal}=await import('./safety-journal.mjs'),{readBackupKey}=await import('./backup.mjs');

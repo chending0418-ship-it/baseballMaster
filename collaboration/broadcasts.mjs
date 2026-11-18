@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { validateSnapshot } from '../live/server.mjs';
+import { publicBattingSnapshot, validateSnapshot } from '../live/server.mjs';
 
 const idle = 3_600_000;
 const finalHold = 60_000;
@@ -116,6 +116,7 @@ export class TeamBroadcasts {
     } else {
       this.check(!Object.hasOwn(body, 'writerEpoch'), 409, 'broadcast_writer_changed', '共享比赛暂时无法核对。');
     }
+    snapshot = publicBattingSnapshot(snapshot);
     snapshot = {
       ...snapshot, gameID: shared?.source_id ?? gameID, notice: '', nextBatters: [],
       entries: snapshot.entries.filter(entry => entry.kind === 'appearance' && entry.status === 'completed'

@@ -14,6 +14,7 @@ struct BoxScoreView: View {
     @State private var dateEditingGame: StoredGame?
     @State private var shareURLs: [URL] = []
     @State private var exportErrorMessage: String?
+    @State private var analysis: GameAnalysisSource?
     private let sections = ["打击", "投手", "守备", "记录"]
 
     var body: some View {
@@ -29,6 +30,13 @@ struct BoxScoreView: View {
                     BMCard { LocalMatchShareView(game: stored) }
                 }
                 LineScoreTable(game: store.game)
+                if let stored = store.activeStoredGame, stored.status == .completed, stored.state.isFinal {
+                    Button { analysis = GameAnalysisSource(single: stored) } label: {
+                        Label("比赛分析", systemImage: "text.document")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("open-game-analysis")
+                }
                 if store.canEditCurrentMatch { Button { showHistoryCorrection = true } label: { Label("纠正记录", systemImage: "clock.arrow.circlepath") }
                     .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("open-history-correction") }
                 if store.game.statisticsIncomplete == true {
@@ -100,6 +108,7 @@ struct BoxScoreView: View {
             }
         }
         .sheet(isPresented: $showHistoryCorrection) { HistoryCorrectionView().environmentObject(store) }
+        .sheet(item: $analysis) { GameAnalysisView(source: $0) }
         .sheet(item: $dateEditingGame) { stored in
             GameDateEditor(game: stored).environmentObject(store)
         }
@@ -148,12 +157,12 @@ struct BoxScoreView: View {
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(spacing: 0) {
-                        tableHeader(["球员", "PA", "AB", "R", "H", "RBI", "BB", "SO", "AVG"])
+                        tableHeader(["球员", "PA", "AB", "R", "H", "TB", "RBI", "BB", "SO", "AVG"])
                         ForEach(battingPlayers(for: team)) { player in
                             let line = store.battingLine(for: player)
                             tableRow([
                                 "#\(player.numberText) \(player.name)",
-                                "\(line.plateAppearances)", "\(line.atBats)", "\(line.runs)", "\(line.hits)",
+                                "\(line.plateAppearances)", "\(line.atBats)", "\(line.runs)", "\(line.hits)", "\(line.totalBases)",
                                 "\(line.runsBattedIn)", "\(line.walks)", "\(line.strikeouts)", statText(line.average)
                             ], emphasized: 0)
                         }
@@ -193,17 +202,19 @@ struct BoxScoreView: View {
     }
 
     private var fieldingTable: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let fielding = store.game.reportFielding
+        return VStack(alignment: .leading, spacing: 10) {
             ForEach([store.game.awayTeam, store.game.homeTeam]) { team in
-                SectionHeader(title: "\(team.shortName)守备", subtitle: "刺杀、助杀、失误与双杀")
+                SectionHeader(title: "\(team.shortName)守备", subtitle: "刺杀、助杀、失误、双杀 · CCS 捕手阻杀 · PB 捕逸")
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(spacing: 0) {
-                        tableHeader(["球员", "守位", "PO", "A", "E", "DP"])
-                        ForEach(fieldingPlayers(for: team)) { player in
-                            let line = store.fieldingLine(for: player)
+                        tableHeader(["球员", "守位", "PO", "A", "E", "DP", "CCS", "PB"])
+                        ForEach(fieldingPlayers(for: team, lines: fielding)) { player in
+                            let line = fielding[player.id, default: FieldingLine()]
                             tableRow([
                                 "#\(player.numberText) \(player.name)", player.primaryPosition.shortName,
-                                "\(line.putouts)", "\(line.assists)", "\(line.errors)", "\(line.doublePlays)"
+                                "\(line.putouts)", "\(line.assists)", "\(line.errors)", "\(line.doublePlays)",
+                                line.catcherCaughtStealingText, line.passedBallsText
                             ], emphasized: 0)
                         }
                     }
@@ -339,11 +350,8 @@ struct BoxScoreView: View {
         return recorded.isEmpty ? team.players.filter { $0.primaryPosition == .pitcher } : recorded
     }
 
-    private func fieldingPlayers(for team: Team) -> [Player] {
-        let recorded = team.players.filter {
-            let line = store.fieldingLine(for: $0)
-            return line.putouts + line.assists + line.errors + line.doublePlays > 0
-        }
+    private func fieldingPlayers(for team: Team, lines: [UUID: FieldingLine]) -> [Player] {
+        let recorded = team.players.filter { lines[$0.id, default: FieldingLine()] != FieldingLine() }
         if !recorded.isEmpty { return recorded }
         let ids = team.id == store.game.awayTeam.id
             ? (store.game.awayFieldingPlayerIDs ?? store.game.awayBattingOrderIDs)
@@ -697,10 +705,10 @@ struct GameExportService {
                 lines.append(game.lineupSummary(for: team.id))
             }
             lines.append("【\(team.shortName)打击】")
-            lines.append("球员\tPA\tAB\tR\tH\t2B\t3B\tHR\tRBI\tBB\tSO\tAVG")
+            lines.append("球员\tPA\tAB\tR\tH\t2B\t3B\tHR\tTB\tRBI\tBB\tSO\tAVG")
             for player in battingPlayers(for: team) {
                 let value = game.batting[player.id, default: BattingLine()]
-                lines.append("#\(player.numberText) \(player.name)\t\(value.plateAppearances)\t\(value.atBats)\t\(value.runs)\t\(value.hits)\t\(value.doubles)\t\(value.triples)\t\(value.homeRuns)\t\(value.runsBattedIn)\t\(value.walks)\t\(value.strikeouts)\t\(statText(value.average))")
+                lines.append("#\(player.numberText) \(player.name)\t\(value.plateAppearances)\t\(value.atBats)\t\(value.runs)\t\(value.hits)\t\(value.doubles)\t\(value.triples)\t\(value.homeRuns)\t\(value.totalBases)\t\(value.runsBattedIn)\t\(value.walks)\t\(value.strikeouts)\t\(statText(value.average))")
             }
 
             lines.append("")
@@ -714,10 +722,11 @@ struct GameExportService {
 
             lines.append("")
             lines.append("【\(team.shortName)守备】")
-            lines.append("球员\t守位\tPO\tA\tE\tDP")
-            for player in fieldingPlayers(for: team) {
-                let value = game.fielding[player.id, default: FieldingLine()]
-                lines.append("#\(player.numberText) \(player.name)\t\(player.primaryPosition.shortName)\t\(value.putouts)\t\(value.assists)\t\(value.errors)\t\(value.doublePlays)")
+            lines.append("球员\t守位\tPO\tA\tE\tDP\tCCS\tPB")
+            let fielding = game.reportFielding
+            for player in fieldingPlayers(for: team, lines: fielding) {
+                let value = fielding[player.id, default: FieldingLine()]
+                lines.append("#\(player.numberText) \(player.name)\t\(player.primaryPosition.shortName)\t\(value.putouts)\t\(value.assists)\t\(value.errors)\t\(value.doublePlays)\t\(value.catcherCaughtStealingText)\t\(value.passedBallsText)")
             }
         }
 
@@ -794,11 +803,8 @@ struct GameExportService {
         return recorded.isEmpty ? team.players.filter { $0.primaryPosition == .pitcher } : recorded
     }
 
-    private func fieldingPlayers(for team: Team) -> [Player] {
-        let recorded = team.players.filter {
-            let line = game.fielding[$0.id, default: FieldingLine()]
-            return line.putouts + line.assists + line.errors + line.doublePlays > 0
-        }
+    private func fieldingPlayers(for team: Team, lines: [UUID: FieldingLine]) -> [Player] {
+        let recorded = team.players.filter { lines[$0.id, default: FieldingLine()] != FieldingLine() }
         if !recorded.isEmpty { return recorded }
         let ids = team.id == game.awayTeam.id
             ? (game.awayFieldingPlayerIDs ?? game.awayBattingOrderIDs)
@@ -843,27 +849,27 @@ struct PlayerDetailView: View {
         _category = State(initialValue: initialCategory)
     }
 
-    private var seasonGames: [PlayerGameRecord] {
+    private var seasonGames: [PlayerGameRecord] { seasonGames(using: officialGamesByID) }
+
+    private var officialGamesByID: [UUID: StoredGame] {
+        Dictionary(store.officialStatisticsGames.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private func seasonGames(using official: [UUID: StoredGame]) -> [PlayerGameRecord] {
         store.gameRecords(for: player, seasonID: selectedSeasonID, teamID: statisticsTeamID).filter { record in
-            (inheritedGameIDs == nil || inheritedGameIDs!.contains(record.id)) &&
-                (modeFilter == nil || (store.officialStatisticsGames.first { $0.id == record.id }?.rules.gameMode ?? .standard) == modeFilter)
+            (inheritedGameIDs?.contains(record.id) ?? true) &&
+                (modeFilter == nil || (official[record.id]?.rules.gameMode ?? .standard) == modeFilter)
         }
     }
 
-    private var selectedStatistics: PlayerSeasonStatistics {
-        store.playerStatistics(for: player, seasonID: selectedSeasonID,
-                               teamID: statisticsTeamID, gameIDs: Set(selectedGames.map(\.id)))
-    }
-
-    private var selectedGames: [PlayerGameRecord] {
-        seasonGames.filter { selectedGameIDs.contains($0.id) }
-    }
-
-    private var selectedLine: BattingLine {
-        store.battingLine(for: selectedGames)
-    }
-
     var body: some View {
+        let official = officialGamesByID
+        let seasonGames = seasonGames(using: official)
+        let selectedGames = seasonGames.filter { selectedGameIDs.contains($0.id) }
+        let selectedLine = store.battingLine(for: selectedGames)
+        let selectedStatistics = store.playerStatistics(for: player, seasonID: selectedSeasonID,
+            teamID: statisticsTeamID, gameIDs: Set(selectedGames.map(\.id)))
+
         ScrollView {
             VStack(spacing: 18) {
                 VStack(spacing: 10) {
@@ -933,7 +939,7 @@ struct PlayerDetailView: View {
                 }
 
                 GameModeFilter(selection: $modeFilter)
-                    .onChange(of: modeFilter) { _ in selectedGameIDs = Set(seasonGames.map(\.id)) }
+                    .onChange(of: modeFilter) { _ in selectedGameIDs = Set(self.seasonGames.map(\.id)) }
                 if let statisticsTeamID, store.teamSharing.teams.contains(where: { $0.id == statisticsTeamID }) {
                     SharedStatisticsSyncNotice(coordinator: store.sharedMatches, teamID: statisticsTeamID)
                 }
@@ -966,12 +972,12 @@ struct PlayerDetailView: View {
                                 detailStat("BB", selectedLine.walks)
                                 detailStat("SO", selectedLine.strikeouts)
                                 detailStat("SB", selectedLine.stolenBases)
-                                detailStat("TB", selectedLine.totalBases)
+                                detailStat("打击总垒数 TB", selectedLine.totalBases)
                             }
                         }
                     }
 
-                    playerContactChart
+                    playerContactChart(games: selectedGames)
 
                     VStack(alignment: .leading, spacing: 10) {
                         SectionHeader(title: "表现总结", subtitle: selectedSeasonName)
@@ -999,8 +1005,10 @@ struct PlayerDetailView: View {
                                 .frame(maxWidth: .infinity, minHeight: 72)
                         }
                     } else {
-                        ForEach(seasonGames) { record in
-                            gameRecordRow(record)
+                        LazyVStack(spacing: 10) {
+                            ForEach(seasonGames) { record in
+                                gameRecordRow(record, stored: official[record.id])
+                            }
                         }
                     }
                 }
@@ -1024,7 +1032,7 @@ struct PlayerDetailView: View {
         .onAppear(perform: prepareInitialSelection)
         .onChange(of: selectedSeasonID) { _ in
             inheritedGameIDs = nil
-            selectedGameIDs = Set(seasonGames.map(\.id))
+            selectedGameIDs = Set(self.seasonGames.map(\.id))
         }
         .sheet(isPresented: $showGameFilter) {
             GameFilterSheet(games: seasonGames, initialSelection: selectedGameIDs,
@@ -1034,7 +1042,7 @@ struct PlayerDetailView: View {
         }
     }
 
-    private var playerContactChart: some View {
+    private func playerContactChart(games selectedGames: [PlayerGameRecord]) -> some View {
         let performance = store.statisticsBatterContacts(for: player, seasonID: selectedSeasonID,
             teamID: statisticsTeamID, gameIDs: Set(selectedGames.map(\.id)))
         return BMCard {
@@ -1129,8 +1137,7 @@ struct PlayerDetailView: View {
         .frame(width: 47)
     }
 
-    private func gameRecordSummary(_ record: PlayerGameRecord) -> String {
-        let stored = store.officialStatisticsGames.first { $0.id == record.id }
+    private func gameRecordSummary(_ record: PlayerGameRecord, stored: StoredGame?) -> String {
         switch category {
         case .batting: return "\(record.batting.hits)-\(record.batting.atBats)"
         case .pitching:
@@ -1143,19 +1150,19 @@ struct PlayerDetailView: View {
         }
     }
 
-    private func gameRecordRow(_ record: PlayerGameRecord) -> some View {
+    private func gameRecordRow(_ record: PlayerGameRecord, stored: StoredGame?) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text("对 \(record.opponent)")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(BMTheme.navy)
-                Text("\(gameDateText(record.date, timeZone: store.officialStatisticsGames.first(where: { $0.id == record.id })?.playedTimeZone ?? .current)) · \(record.result)")
+                Text("\(gameDateText(record.date, timeZone: stored?.playedTimeZone ?? .current)) · \(record.result)")
                     .font(.system(size: 12))
                     .foregroundStyle(BMTheme.secondaryText)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
-                Text(gameRecordSummary(record))
+                Text(gameRecordSummary(record, stored: stored))
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(BMTheme.navy)
                 Text(category == .batting ? "AVG \(record.batting.atBats > 0 ? statText(record.batting.average) : "—")" : category.rawValue)
@@ -1260,6 +1267,7 @@ struct GameFilterSheet: View {
                                         .font(.system(size: 14, weight: .black, design: .rounded))
                                         .foregroundStyle(BMTheme.navy)
                                 }
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("stats-select-game-\(game.id)")
@@ -1288,11 +1296,12 @@ struct GameFilterSheet: View {
 }
 
 private func gameDateText(_ date: Date, timeZone: TimeZone = .current) -> String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_CN")
-    formatter.timeZone = timeZone
-    formatter.dateFormat = "M月d日"
-    return formatter.string(from: date)
+    Date.VerbatimFormatStyle(
+        format: "\(month: .defaultDigits)月\(day: .defaultDigits)日",
+        locale: Locale(identifier: "zh_CN"),
+        timeZone: timeZone,
+        calendar: Calendar(identifier: .gregorian)
+    ).format(date)
 }
 
 #Preview("比赛结果") {

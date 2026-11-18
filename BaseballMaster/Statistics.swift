@@ -9,27 +9,31 @@ enum StatisticsCategory: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var metrics: [StatisticsMetric] {
         switch self {
-        case .batting: [.average, .ops, .hits, .homeRuns, .rbi, .stolenBases, .plateAppearances]
+        case .batting: [.average, .ops, .hits, .totalBases, .homeRuns, .rbi, .stolenBases, .plateAppearances]
         case .pitching: [.era, .whip, .strikeouts, .innings, .pitches]
-        case .fielding: [.fieldingPercentage, .putouts, .assists, .errors, .doublePlays]
+        case .fielding: [.fieldingPercentage, .putouts, .assists, .errors, .doublePlays, .catcherCaughtStealing, .passedBalls]
         }
     }
 }
 
 enum StatisticsMetric: String, Identifiable {
     case average = "打率 AVG", ops = "攻击指数 OPS", hits = "安打 H"
+    case totalBases = "打击总垒数 TB"
     case homeRuns = "本垒打 HR", rbi = "打点 RBI", stolenBases = "盗垒 SB", plateAppearances = "打席 PA"
     case era = "防御率 ERA", whip = "每局被上垒率 WHIP", strikeouts = "三振 SO", innings = "投球局数 IP", pitches = "用球数 P"
     case fieldingPercentage = "守备率 FPCT", putouts = "刺杀 PO", assists = "助杀 A", errors = "失误 E", doublePlays = "参与双杀 DP"
 
+    case catcherCaughtStealing = "捕手阻杀 CCS", passedBalls = "捕逸 PB"
+
     var id: String { rawValue }
-    var ascendingByDefault: Bool { self == .era || self == .whip || self == .errors }
+    var ascendingByDefault: Bool { self == .era || self == .whip || self == .errors || self == .passedBalls }
 
     func value(for row: PlayerSeasonStatistics) -> Double? {
         switch self {
         case .average: row.batting.atBats > 0 ? row.batting.average : nil
         case .ops: row.batting.atBats > 0 ? row.batting.ops : nil
         case .hits: Double(row.batting.hits)
+        case .totalBases: Double(row.batting.totalBases)
         case .homeRuns: Double(row.batting.homeRuns)
         case .rbi: Double(row.batting.runsBattedIn)
         case .stolenBases: Double(row.batting.stolenBases)
@@ -44,6 +48,8 @@ enum StatisticsMetric: String, Identifiable {
         case .assists: Double(row.fielding.assists)
         case .errors: Double(row.fielding.errors)
         case .doublePlays: Double(row.fielding.doublePlays)
+        case .catcherCaughtStealing: row.fielding.catcherCaughtStealing.map(Double.init)
+        case .passedBalls: row.fielding.passedBalls.map(Double.init)
         }
     }
 
@@ -82,17 +88,42 @@ struct TeamSeasonStatistics {
     let games: [StoredGame]
     let players: [PlayerSeasonStatistics]
 
-    var wins: Int { games.filter { $0.ourScore > $0.opponentScore }.count }
-    var losses: Int { games.filter { $0.ourScore < $0.opponentScore }.count }
+    let wins: Int
+    let losses: Int
     var ties: Int { games.count - wins - losses }
-    var runs: Int { games.reduce(0) { $0 + $1.ourScore } }
-    var runsAllowed: Int { games.reduce(0) { $0 + $1.opponentScore } }
-    var pendingCount: Int {
-        games.reduce(0) { $0 + ($1.state.scoringEvents ?? []).filter(\.needsReview).count }
+    let runs: Int
+    let runsAllowed: Int
+    let pendingCount: Int
+    let hasIncompleteGames: Bool
+    let batting: BattingLine
+    let pitching: PitchingLine
+    let fielding: FieldingLine
+
+    init(games: [StoredGame], players: [PlayerSeasonStatistics]) {
+        self.games = games
+        self.players = players
+        var wins = 0, losses = 0, runs = 0, runsAllowed = 0, pending = 0
+        var incomplete = false
+        for game in games {
+            let scored = game.ourScore
+            let allowed = game.opponentScore
+            if scored > allowed { wins += 1 }
+            if scored < allowed { losses += 1 }
+            runs += scored
+            runsAllowed += allowed
+            incomplete = incomplete || game.state.statisticsIncomplete == true
+            for event in game.state.scoringEvents ?? [] where event.needsReview { pending += 1 }
+        }
+        self.wins = wins
+        self.losses = losses
+        self.runs = runs
+        self.runsAllowed = runsAllowed
+        pendingCount = pending
+        hasIncompleteGames = incomplete
+        batting = BattingLine.aggregate(players.lazy.map(\.batting))
+        pitching = PitchingLine.aggregate(players.lazy.map(\.pitching))
+        fielding = FieldingLine.aggregate(players.lazy.map(\.fielding))
     }
-    var batting: BattingLine { BattingLine.aggregate(players.map(\.batting)) }
-    var pitching: PitchingLine { PitchingLine.aggregate(players.map(\.pitching)) }
-    var fielding: FieldingLine { FieldingLine.aggregate(players.map(\.fielding)) }
 
     func filteredPlayers(
         category: StatisticsCategory,
@@ -141,6 +172,8 @@ extension PitchingLine {
 
 extension FieldingLine {
     var chances: Int { putouts + assists + errors }
+    var catcherCaughtStealingText: String { catcherCaughtStealing.map(String.init) ?? "-" }
+    var passedBallsText: String { passedBalls.map(String.init) ?? "-" }
     var percentage: Double? { chances > 0 ? Double(putouts + assists) / Double(chances) : nil }
 
     static func aggregate<S: Sequence>(_ lines: S) -> FieldingLine where S.Element == FieldingLine {
@@ -149,7 +182,36 @@ extension FieldingLine {
             result.assists += line.assists
             result.errors += line.errors
             result.doublePlays += line.doublePlays
+            if let count = line.catcherCaughtStealing { result.catcherCaughtStealing = (result.catcherCaughtStealing ?? 0) + count }
+            if let count = line.passedBalls { result.passedBalls = (result.passedBalls ?? 0) + count }
         }
+    }
+}
+
+extension GameState {
+    /// Catcher totals are derived from confirmed events. The original shared fielding
+    /// payload keeps its existing keys, and historical unassigned events stay unassigned.
+    var reportFielding: [UUID: FieldingLine] {
+        var lines = fielding
+        for event in scoringEvents ?? [] {
+            if event.notation == RunnerEventKind.caughtStealing.notation {
+                for move in event.runnerMovements {
+                    guard case .caughtStealing(let catcherID, _, _) = move.defense else { continue }
+                    let prior = lines[catcherID]?.catcherCaughtStealing ?? 0
+                    lines[catcherID, default: FieldingLine()].catcherCaughtStealing = prior + 1
+                }
+            } else if event.notation == RunnerEventKind.passedBall.notation {
+                let catcherID = event.runnerMovements.lazy.compactMap { move -> UUID? in
+                    if case .passedBall(let id) = move.defense { return id }
+                    return nil
+                }.first
+                if let catcherID {
+                    let prior = lines[catcherID]?.passedBalls ?? 0
+                    lines[catcherID, default: FieldingLine()].passedBalls = prior + 1
+                }
+            }
+        }
+        return lines
     }
 }
 
@@ -158,23 +220,29 @@ extension StoredGame {
         guard sharedTeamID != nil else { return sourceID }
         return sharedPlayerLinks?.first(where: { $0.sourceID == sourceID })?.targetID ?? sourceID
     }
-    func statisticsSources(for playerID: UUID) -> Set<UUID> {
-        Set(statisticsParticipantIDs.filter { statisticsIdentity(for: $0) == playerID })
+    func statisticsSources(for playerID: UUID, catcherFielding: [UUID: FieldingLine]? = nil) -> Set<UUID> {
+        Set(statisticsParticipants(catcherFielding: catcherFielding).filter { statisticsIdentity(for: $0) == playerID })
     }
     func statisticsBatting(for playerID: UUID) -> BattingLine { .aggregate(statisticsSources(for: playerID).compactMap { state.batting[$0] }) }
     func statisticsPitching(for playerID: UUID) -> PitchingLine { .aggregate(statisticsSources(for: playerID).compactMap { state.pitching[$0] }) }
-    func statisticsFielding(for playerID: UUID) -> FieldingLine { .aggregate(statisticsSources(for: playerID).compactMap { state.fielding[$0] }) }
+    func statisticsFielding(for playerID: UUID) -> FieldingLine {
+        let lines = state.reportFielding
+        return .aggregate(statisticsSources(for: playerID, catcherFielding: lines).compactMap { lines[$0] })
+    }
     func recordedPitching(for playerID: UUID) -> PitchingLine? {
         let lines = statisticsSources(for: playerID).compactMap { state.pitching[$0] }
         return lines.isEmpty ? nil : .aggregate(lines)
     }
     func recordedFielding(for playerID: UUID) -> FieldingLine? {
-        let lines = statisticsSources(for: playerID).compactMap { state.fielding[$0] }
+        let fielding = state.reportFielding
+        let lines = statisticsSources(for: playerID, catcherFielding: fielding).compactMap { fielding[$0] }
         return lines.isEmpty ? nil : .aggregate(lines)
     }
 
     /// Snapshot membership preserves contributions from substituted or deleted players.
-    var statisticsParticipantIDs: Set<UUID> {
+    var statisticsParticipantIDs: Set<UUID> { statisticsParticipants() }
+
+    func statisticsParticipants(catcherFielding: [UUID: FieldingLine]? = nil) -> Set<UUID> {
         let rosterIDs = Set(ourTeam.players.map(\.id))
         let order = isHome ? state.homeBattingOrderIDs : state.awayBattingOrderIDs
         let exited = isHome ? state.homeExitedPlayerIDs : state.awayExitedPlayerIDs
@@ -185,13 +253,67 @@ extension StoredGame {
         participants.formUnion(defense ?? [])
         participants.formUnion(state.batting.keys)
         participants.formUnion(state.pitching.keys)
-        participants.formUnion(state.fielding.keys)
+        participants.formUnion((catcherFielding ?? state.fielding).keys)
         return participants.intersection(rosterIDs)
     }
 }
 
+struct StatisticsSharedSource: Equatable {
+    let directory: ObjectIdentifier
+    let directoryRevision: UInt
+    let matches: ObjectIdentifier
+    let matchesRevision: UInt
+}
+
+struct StatisticsSeasonsCache {
+    let source: StatisticsSharedSource
+    let currentYear: String
+    let timeZone: TimeZone
+    let seasons: [Season]
+}
+
+/// Holds only the last overview so switching tabs and changing display controls reuse its aggregates.
+struct StatisticsOverviewCache {
+    struct Scope: Equatable {
+        let team: Team
+        let seasonID: String
+        let mode: GameMode?
+        let sharedSource: StatisticsSharedSource
+    }
+
+    let scope: Scope
+    let eligibleGames: [StoredGame]
+    let eligibleIDs: Set<UUID>
+    let selectedIDs: Set<UUID>?
+    let summary: TeamSeasonStatistics
+}
+
 @MainActor
 extension GameStore {
+    private var statisticsSharedSource: StatisticsSharedSource {
+        StatisticsSharedSource(
+            directory: ObjectIdentifier(teamSharing), directoryRevision: teamSharing.stateRevision,
+            matches: ObjectIdentifier(sharedMatches), matchesRevision: sharedMatches.stateRevision
+        )
+    }
+
+    func statisticsOverview(for team: Team, seasonID: String, mode: GameMode?, selectedIDs: Set<UUID>?) -> StatisticsOverviewCache {
+        let scope = StatisticsOverviewCache.Scope(team: team, seasonID: seasonID, mode: mode, sharedSource: statisticsSharedSource)
+        let cached = statisticsOverviewCache.flatMap { $0.scope == scope ? $0 : nil }
+        let eligible = cached?.eligibleGames ?? completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: mode)
+        let eligibleIDs = cached?.eligibleIDs ?? Set(eligible.map(\.id))
+        let selected = selectedIDs.map { $0.intersection(eligibleIDs) }
+        if let cached, cached.selectedIDs == selected { return cached }
+
+        let completed = selected.map { ids in eligible.filter { ids.contains($0.id) } } ?? eligible
+        let overview = StatisticsOverviewCache(
+            scope: scope, eligibleGames: eligible, eligibleIDs: eligibleIDs, selectedIDs: selected,
+            summary: seasonStatistics(for: team, completed: completed)
+        )
+        statisticsOverviewCache = overview
+        return overview
+    }
+
     /// Shared summaries always use the last acknowledged document, never an editable local draft.
     var officialStatisticsGames: [StoredGame] {
         let sharedIDs = Set(sharedMatches.state.matches.compactMap { $0.payload?.id })
@@ -208,8 +330,17 @@ extension GameStore {
     }
 
     var statisticsSeasons: [Season] {
-        let years = Set(officialStatisticsGames.map(\.yearID) + playerGameRecords.map(\.yearID) + [MatchYear.current])
-        return years.sorted(by: >).map { Season(id: $0, name: "\($0) 年") }
+        let source = statisticsSharedSource
+        let year = MatchYear.current
+        let timeZone = TimeZone.current
+        if let cached = statisticsSeasonsCache, cached.source == source,
+           cached.currentYear == year, cached.timeZone == timeZone { return cached.seasons }
+        var years: Set<String> = [year]
+        years.formUnion(officialStatisticsGames.lazy.map(\.yearID))
+        years.formUnion(playerGameRecords.lazy.map(\.yearID))
+        let seasons = years.sorted(by: >).map { Season(id: $0, name: "\($0) 年") }
+        statisticsSeasonsCache = StatisticsSeasonsCache(source: source, currentYear: year, timeZone: timeZone, seasons: seasons)
+        return seasons
     }
 
     /// Separate stable scope for local originals made from a shared roster.
@@ -247,13 +378,18 @@ extension GameStore {
 
     func seasonStatistics(for team: Team, seasonID: String, mode: GameMode? = nil, gameIDs: Set<UUID>? = nil) -> TeamSeasonStatistics {
         let completed = completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: mode, gameIDs: gameIDs)
+        return seasonStatistics(for: team, completed: completed)
+    }
+
+    private func seasonStatistics(for team: Team, completed: [StoredGame]) -> TeamSeasonStatistics {
         var players = Dictionary(uniqueKeysWithValues: team.players.map {
             ($0.id, PlayerSeasonStatistics(player: $0))
         })
         let sharedProfile = teamSharing.state.profiles?.first { $0.id == team.id }
         let knownPlayers = sharedProfile?.players.map(\.localPlayer) ?? team.players
         for stored in completed {
-            let participantIDs = stored.statisticsParticipantIDs
+            let fielding = stored.state.reportFielding
+            let participantIDs = stored.statisticsParticipants(catcherFielding: fielding)
             var countedIdentities = Set<UUID>()
             for player in stored.ourTeam.players where participantIDs.contains(player.id) {
                 let identity = stored.statisticsIdentity(for: player.id)
@@ -265,7 +401,7 @@ extension GameStore {
                 if countedIdentities.insert(identity).inserted { row.gamesPlayed += 1 }
                 row.batting.add(stored.state.batting[player.id] ?? BattingLine())
                 if stored.rules.gameMode != .coachPitch { row.pitching = .aggregate([row.pitching, stored.state.pitching[player.id] ?? PitchingLine()]) }
-                row.fielding = .aggregate([row.fielding, stored.state.fielding[player.id] ?? FieldingLine()])
+                row.fielding = .aggregate([row.fielding, fielding[player.id] ?? FieldingLine()])
                 players[identity] = row
             }
         }

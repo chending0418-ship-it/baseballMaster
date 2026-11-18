@@ -113,7 +113,10 @@ struct TeamDirectoryFile: TeamDirectoryStorage {
 
 @MainActor
 final class TeamSharingStore: ObservableObject {
-    @Published private(set) var state = TeamDirectoryState()
+    @Published private(set) var state = TeamDirectoryState() {
+        didSet { stateRevision &+= 1 }
+    }
+    private(set) var stateRevision: UInt = 0
     @Published private(set) var isBusy = false
     @Published var errorMessage: String?
     @Published private(set) var credentialExpired = false
@@ -131,6 +134,12 @@ final class TeamSharingStore: ObservableObject {
     }
     func needsRefresh(_ page: String) -> Bool { visitedPages.insert(page).inserted }
     func connectOnce() async { if needsRefresh("directory") { await connect() } }
+    func refreshPageOnce(_ page: String, perform: () async -> Bool) async {
+        let generation = foregroundGeneration
+        guard needsRefresh(page) else { return }
+        if await perform() { return }
+        if foregroundGeneration == generation { visitedPages.remove(page) }
+    }
     private var loaded = false
     var onChange: (() -> Void)?
     var sharedRosterTeams: [Team] {

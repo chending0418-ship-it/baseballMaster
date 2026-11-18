@@ -499,6 +499,7 @@ final class BaseballMasterUITests: XCTestCase {
 
         let confirm = app.buttons["confirm-runners"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["runner-base-本垒"].exists, "打者从本垒确认结果")
         confirm.tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 3))
     }
@@ -1693,9 +1694,9 @@ extension BaseballMasterUITests {
 extension BaseballMasterUITests {
     func testHistoryCorrectionDraftPreviewAndFourScreenshots() throws {
         let app = XCUIApplication(); app.launchArguments = ["--correction-preview"]; app.launch()
-        XCTAssertTrue(app.buttons["history-kind-漏记换人"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["history-kind-换人纠错"].waitForExistence(timeout: 10))
         captureHistory(app, name: "2.1-01-四类纠错入口")
-        app.buttons["history-kind-漏记换人"].tap()
+        app.buttons["history-kind-换人纠错"].tap()
         XCTAssertTrue(app.buttons["此前补录"].firstMatch.waitForExistence(timeout: 5))
         captureHistory(app, name: "2.1-02-历史事件与局面")
         revealStatisticsControl(app.buttons["此前补录"].firstMatch, in: app)
@@ -2799,13 +2800,13 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.navigationBars["新比赛"].waitForExistence(timeout: 5))
         let ownChoice = app.buttons["new-game-own-team"]
         XCTAssertTrue(ownChoice.exists); ownChoice.tap()
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "本机球队")).firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["301共享队"].firstMatch.waitForExistence(timeout: 3))
         captureHistory(app, name: "3.0.1-local-and-shared-team-choices")
-        app.buttons["301共享队 · 共享球队 · 0 人"].tap()
+        app.buttons["301共享队"].firstMatch.tap()
         let future = app.switches["安排未来比赛"]; revealStatisticsControl(future, in: app)
         future.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        let destination = app.buttons["share-destination-picker"]; revealStatisticsControl(destination, in: app)
-        XCTAssertTrue(destination.label.contains("301共享队"), "Selecting a shared roster only presets its post-game upload target")
+        let publish = app.buttons["publish-team-schedule"]; revealStatisticsControl(publish, in: app)
+        XCTAssertTrue(publish.exists)
         let beforeSave = try await sharingAPI(reader, "/teams/\(teamID)/games?cursor=0", method: "GET")
         XCTAssertEqual((beforeSave["games"] as? [[String: Any]])?.count, 0, "Choosing a shared roster must not create a cloud match")
         captureHistory(app, name: "3.1.1-shared-roster-postgame-target")
@@ -2984,9 +2985,12 @@ extension BaseballMasterUITests {
         XCTAssertTrue(app.buttons["quick-outcome-DP"].isEnabled); app.buttons["quick-outcome-DP"].tap(); app.buttons["contact-type-ground"].tap()
         app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.32, dy: 0.45)).tap()
         app.buttons["situation-route-6-4-3"].tap(); app.buttons["finish-situation-field"].tap()
-        XCTAssertTrue(app.buttons["situation-runner-0"].waitForExistence(timeout: 5)); XCTAssertTrue(app.buttons["situation-runner-1"].exists)
+        XCTAssertTrue(app.buttons["runner-base-本垒"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["runner-base-一垒"].exists)
+        let editField = app.buttons["edit-situation-field"]
+        revealStatisticsControl(editField, in: app)
         XCTAssertTrue(app.staticTexts["situation-defense-description"].label.contains("防守路线 6-4-3"))
-        app.buttons["edit-situation-field"].tap()
+        editField.tap()
         XCTAssertTrue(app.staticTexts["situation-route"].label.contains("6 → 4 → 3"))
         app.buttons["finish-situation-field"].tap()
         let runners = XCTAttachment(screenshot: app.screenshot()); runners.name = "V4-统一核对双杀跑者"; runners.lifetime = .keepAlways; add(runners)
@@ -3002,14 +3006,31 @@ extension BaseballMasterUITests {
         app.buttons["contact-type-line"].tap()
         app.otherElements["contact-field"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
         app.buttons["situation-fielder-8"].tap(); app.buttons["situation-fielder-4"].tap(); app.buttons["finish-situation-field"].tap()
-        XCTAssertTrue(app.buttons["situation-destination-1-得分"].waitForExistence(timeout: 5))
-        app.buttons["situation-destination-1-得分"].tap(); app.buttons["situation-runner-0"].tap()
-        app.buttons["situation-destination-0-出局"].tap()
+        let second = app.buttons["runner-base-二垒"]
+        let home = app.buttons["runner-base-本垒"]
+        let board = app.segmentedControls["runner-board-view"]
+        let confirm = app.buttons["confirm-situation-play"]
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        captureHistory(app, name: "Build5-Pro-击球后四垒图")
+        let batterSecond = app.buttons["situation-destination-0-到二垒"]
+        revealStatisticsControl(batterSecond, in: app); batterSecond.tap()
+        revealStatisticsControl(second, in: app); second.tap()
+        let hold = app.buttons["situation-destination-1-停留"]
+        revealStatisticsControl(hold, in: app); hold.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-conflict"].firstMatch.exists)
+        XCTAssertFalse(confirm.isEnabled)
+        let score = app.buttons["situation-destination-1-得分"]
+        revealStatisticsControl(score, in: app); score.tap()
+        revealStatisticsControl(home, in: app); home.tap()
+        let out = app.buttons["situation-destination-0-出局"]
+        revealStatisticsControl(out, in: app); out.tap()
         let extra = app.buttons["situation-extra-route-0"]; revealStatisticsControl(extra, in: app); extra.tap()
         XCTAssertTrue(app.buttons["situation-reuse-route"].waitForExistence(timeout: 5)); app.buttons["situation-reuse-route"].tap()
-        XCTAssertTrue(app.buttons["confirm-situation-play"].waitForExistence(timeout: 5))
-        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "V4-安打后进垒被触杀-独立原因和路线"; capture.lifetime = .keepAlways; add(capture)
-        app.buttons["confirm-situation-play"].tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        revealStatisticsControl(board, in: app); board.buttons["去向预览"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-preview-outs"].firstMatch.exists)
+        captureHistory(app, name: "Build5-Pro-击球后去向预览")
+        confirm.tap()
         XCTAssertTrue(app.buttons["ball-in-play"].waitForExistence(timeout: 5))
         let pitcher = app.descendants(matching: .any)["current-pitcher"].firstMatch
         XCTAssertTrue(pitcher.label.contains("本场已投 2 球"))
@@ -4111,5 +4132,276 @@ extension BaseballMasterUITests {
         let active = app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@",
                                                           "team-broadcast-current-match", "青岛海浪")).firstMatch
         XCTAssertTrue(active.waitForExistence(timeout: 15))
+    }
+}
+
+extension BaseballMasterUITests {
+    func testV313NewGameUsesDefaultAndSupportsPerGameOverride() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--profile-preview"]
+        app.launch()
+        let settings = app.buttons["open-app-settings"]
+        revealStatisticsControl(settings, in: app)
+        settings.tap()
+        let preference = app.buttons["default-recording-method"]
+        XCTAssertTrue(preference.waitForExistence(timeout: 5))
+        preference.tap()
+        app.buttons["Pro 版"].tap()
+        XCTAssertTrue(preference.label.contains("Pro 版") || (preference.value as? String)?.contains("Pro 版") == true)
+        captureHistory(app, name: "3.1.3-默认记录方式")
+
+        app.terminate()
+        app.launchArguments = ["--v23-new-game-preview"]
+        app.launch()
+        let picker = app.segmentedControls["recording-method-picker"]
+        revealStatisticsControl(picker, in: app)
+        XCTAssertTrue(picker.buttons["Pro 版"].isSelected)
+        picker.buttons["基础版"].tap()
+        XCTAssertTrue(picker.buttons["基础版"].isSelected)
+    }
+
+    func testV313ModeAndRunnerErrorControlsOnScorekeeping() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v111-bases-preview"]
+        app.launch()
+        let controls = app.buttons["local-match-controls"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 8))
+        func chooseMethod(_ title: String) {
+            controls.tap()
+            let submenu = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "记录方式")).firstMatch
+            if submenu.exists && !app.buttons[title].exists { submenu.tap() }
+            XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 4))
+            app.buttons[title].tap()
+        }
+        chooseMethod("Pro 版")
+        chooseMethod("基础版")
+        let runners = app.buttons["open-runner-events"]
+        revealStatisticsControl(runners, in: app)
+        runners.tap()
+        let error = app.buttons["runner-event-失误进垒"]
+        revealStatisticsControl(error, in: app)
+        error.tap()
+        let picker = app.buttons["runner-error-responsibility"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["confirm-runners"].isEnabled)
+        picker.tap()
+        app.buttons["责任人待确认"].tap()
+        XCTAssertTrue(picker.label.contains("责任人待确认") || (picker.value as? String)?.contains("责任人待确认") == true)
+        captureHistory(app, name: "3.1.3-跑垒失误责任")
+    }
+
+    func testBuild3RunnerMenuRecordsCatcherCaughtStealingAndPassedBall() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v111-bases-preview"]
+        app.launch()
+        let runners = app.buttons["open-runner-events"]
+        func open(_ id: String) {
+            revealStatisticsControl(runners, in: app)
+            XCTAssertTrue(runners.isHittable)
+            runners.tap()
+            let event = app.buttons[id]
+            revealStatisticsControl(event, in: app)
+            XCTAssertTrue(event.isHittable)
+            if id == "runner-event-盗垒出局" { captureHistory(app, name: "build3-跑者菜单") }
+            event.tap()
+        }
+        open("runner-event-盗垒出局")
+        let diagram = app.segmentedControls["runner-board-view"]
+        let first = app.buttons["runner-base-一垒"]
+        let second = app.buttons["runner-base-二垒"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["runner-base-三垒"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-本垒"].firstMatch.exists)
+
+        second.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-focused-player"].firstMatch.label.contains("二垒跑者"))
+        let thirdDestination = app.buttons["runner-destination-到三垒"]
+        revealStatisticsControl(thirdDestination, in: app)
+        thirdDestination.tap()
+        XCTAssertFalse(app.buttons["confirm-runners"].isEnabled)
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-conflict"].firstMatch.exists)
+        app.buttons["runner-destination-停留"].tap()
+
+        revealStatisticsControl(first, in: app)
+        first.tap()
+        let receiver = app.buttons["runner-steal-receiver"].firstMatch
+        revealStatisticsControl(receiver, in: app)
+        if receiver.frame.midY > app.buttons["confirm-runners"].frame.minY - 12 {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(receiver.isHittable)
+        receiver.tap()
+        let shortstop = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "游击手")).firstMatch
+        XCTAssertTrue(shortstop.waitForExistence(timeout: 5))
+        shortstop.tap()
+        let target = app.buttons["runner-steal-target"].firstMatch
+        revealStatisticsControl(target, in: app)
+        XCTAssertTrue(target.isHittable)
+        captureHistory(app, name: "runner-diamond-盗垒出局")
+        let after = diagram.buttons["去向预览"]
+        revealStatisticsControl(after, in: app)
+        after.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-preview-outs"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-一垒"].firstMatch.label.contains("空垒"))
+        captureHistory(app, name: "runner-diamond-阻杀预览")
+        app.buttons["confirm-runners"].tap()
+        XCTAssertTrue(runners.waitForExistence(timeout: 5))
+
+        open("runner-event-捕逸 PB")
+        let catcher = app.buttons["runner-passed-ball-catcher"].firstMatch
+        revealStatisticsControl(catcher, in: app)
+        XCTAssertTrue(catcher.waitForExistence(timeout: 5))
+        XCTAssertTrue((catcher.value as? String)?.contains("#") == true)
+        captureHistory(app, name: "runner-diamond-捕逸")
+        revealStatisticsControl(after, in: app)
+        after.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["runner-base-本垒"].firstMatch.label.contains("回本垒"))
+        captureHistory(app, name: "runner-diamond-捕逸预览")
+        app.buttons["confirm-runners"].tap()
+        XCTAssertTrue(app.staticTexts["已达到半局得分上限"].waitForExistence(timeout: 5))
+    }
+
+    func testV313DoubleSwitchEditorKeepsOnlyTheCorrectGroup() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--correction-preview", "--v313-double-switch"]
+        app.launch()
+        let category = app.buttons["history-kind-换人纠错"]
+        XCTAssertTrue(category.waitForExistence(timeout: 8))
+        category.tap()
+        let edit = app.buttons["更正换人"].firstMatch
+        revealStatisticsControl(edit, in: app)
+        XCTAssertTrue(edit.isHittable)
+        edit.tap()
+        let first = app.switches["history-keep-switch-1"]
+        let second = app.switches["history-keep-switch-2"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertEqual(first.value as? String, "1")
+        first.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(first.value as? String, "0")
+        if !second.exists { app.collectionViews.firstMatch.swipeUp() }
+        XCTAssertTrue(second.waitForExistence(timeout: 3))
+        XCTAssertEqual(second.value as? String, "1")
+        captureHistory(app, name: "3.1.3-双重换人保留第二组")
+        app.buttons["history-add-draft"].tap()
+        app.buttons["history-preview"].tap()
+        XCTAssertTrue(app.buttons["history-save"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["history-save"].isEnabled)
+        app.buttons["history-save"].tap()
+    }
+
+    func testV313SeasonTotalBasesShownInTeamStatistics() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v22-statistics-preview"]
+        app.launch()
+        let total = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "打击总垒数 TB")).firstMatch
+        revealStatisticsControl(total, in: app)
+        XCTAssertTrue(total.isHittable)
+        XCTAssertEqual(total.label, "打击总垒数 TB：7")
+        captureHistory(app, name: "3.1.3-球队总垒数")
+    }
+
+    func testGameAnalysisGeneratesFromSingleYearAndFilteredResults() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["BM_GAME_ANALYSIS_LOCAL_TEST"] = UUID().uuidString
+
+        func generate(from entry: String, title: String, checkShare: Bool = false) {
+            let open = app.buttons[entry]
+            revealStatisticsControl(open, in: app)
+            XCTAssertTrue(open.isHittable)
+            open.tap()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
+            app.buttons["generate-game-analysis"].tap()
+            let pageCount = app.staticTexts["report-pdf-page-count"]
+            XCTAssertTrue(pageCount.waitForExistence(timeout: 20))
+            XCTAssertTrue(pageCount.label.contains("A4 竖版"))
+            XCTAssertTrue(app.descendants(matching: .any)["report-pdf-document"].firstMatch.exists)
+            captureHistory(app, name: "比赛分析PDF-\(title)")
+            if checkShare {
+                app.buttons["share-report-pdf"].tap()
+                XCTAssertTrue(app.buttons["分享文字"].waitForExistence(timeout: 5))
+                app.buttons["分享 PDF"].tap()
+                XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
+            } else {
+                app.buttons["close-report-pdf"].tap()
+            }
+        }
+
+        app.launchArguments = ["--v30-date-preview"]
+        app.launch()
+        generate(from: "open-game-analysis", title: "比赛分析")
+        app.terminate()
+
+        app.launchArguments = ["--v22-statistics-preview"]
+        app.launch()
+        generate(from: "open-season-analysis", title: "全年比赛分析")
+        let filter = app.buttons["stats-open-game-filter"]
+        revealStatisticsControl(filter, in: app)
+        filter.tap()
+        let choices = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "stats-select-game-"))
+        XCTAssertEqual(choices.count, 3)
+        choices.firstMatch.tap()
+        XCTAssertEqual(choices.firstMatch.value as? String, "未选择")
+        app.buttons["stats-apply-game-filter"].tap()
+        XCTAssertTrue(app.staticTexts["stats-game-scope"].label.contains("2 / 3"))
+        generate(from: "open-season-analysis", title: "筛选比赛分析", checkShare: true)
+    }
+}
+
+extension BaseballMasterUITests {
+    @MainActor func testTeamSchedulePublishAndReadOnMemberGameTab() async throws {
+        let admin = sharingTestSecret()
+        _ = try await sharingAPI(admin, "/devices", body: ["label": "赛程验收"])
+        let created = try await sharingAPI(admin, "/teams", body: ["operationID": UUID().uuidString, "name": "U12赛程队", "nickname": "教练"])
+        let team = try XCTUnwrap(created["teamID"] as? String)
+        func joinDevice(_ role: String) async throws -> XCUIApplication {
+            let invite = sharingTestSecret()
+            _ = try await sharingAPI(admin, "/teams/\(team)/invitations", body: ["operationID": UUID().uuidString, "role": role, "token": invite])
+            let app = launchDeviceSecurityApp()
+            app.buttons["join-shared-team"].tap()
+            app.textFields["team-invite-link"].tap()
+            app.textFields["team-invite-link"].typeText("https://baseballmaster.cc/join#\(invite)")
+            app.buttons["preview-team-invite"].tap()
+            let name = app.textFields["join-nickname"]
+            XCTAssertTrue(name.waitForExistence(timeout: 8))
+            name.tap(); name.typeText(role)
+            let join = app.buttons["confirm-join-team"]
+            revealStatisticsControl(join, in: app); join.tap()
+            let row = app.buttons["shared-team-U12赛程队"]
+            XCTAssertTrue(row.waitForExistence(timeout: 8))
+            row.tap()
+            XCTAssertTrue(app.staticTexts["U12赛程队"].firstMatch.waitForExistence(timeout: 8))
+            app.tabBars.buttons["比赛"].tap()
+            return app
+        }
+        let writer = try await joinDevice("scorer")
+        writer.buttons["start-new-game"].tap()
+        writer.buttons["new-game-own-team"].tap()
+        writer.buttons["U12赛程队"].firstMatch.tap()
+        let future = writer.switches["安排未来比赛"]
+        revealStatisticsControl(future, in: writer)
+        future.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let venue = writer.textFields["选填"]
+        revealStatisticsControl(venue, in: writer)
+        venue.tap(); venue.typeText("Field B")
+        if writer.buttons["收起键盘"].exists { writer.buttons["收起键盘"].tap() }
+        let publish = writer.buttons["publish-team-schedule"]
+        revealStatisticsControl(publish, in: writer); publish.tap()
+        let alert = writer.alerts["比赛安排已保存"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 12))
+        XCTAssertTrue(alert.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "已发布到球队赛程")).firstMatch.exists)
+        alert.buttons["返回比赛首页"].tap()
+        XCTAssertEqual(writer.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'scheduled-game-'")).count, 1)
+        let remote = try await sharingAPI(admin, "/team-schedules", method: "GET")
+        let rows = try XCTUnwrap(remote["schedules"] as? [[String:Any]])
+        XCTAssertEqual(rows.count,1)
+        let id = try XCTUnwrap(rows.first?["id"] as? String)
+        writer.terminate()
+
+        let reader = try await joinDevice("member")
+        let notice = reader.descendants(matching: .any).matching(identifier: "team-schedule-" + id.lowercased()).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        XCTAssertTrue(notice.label.contains("Field B"))
+        XCTAssertEqual(reader.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'scheduled-game-'")).count,0)
+        captureHistory(reader, name: "3.1.3-build6-member-game-home")
     }
 }

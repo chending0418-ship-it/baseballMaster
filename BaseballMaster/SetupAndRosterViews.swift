@@ -579,7 +579,8 @@ struct NewGameSetupView: View {
     @State private var spectatorHomeTeamID: UUID?
     @State private var isHome = false
     @State private var versionRules = GameRules()
-    @State private var recordingMethod = RecordingMethod.traditional
+    @AppStorage(RecordingMethod.preferenceKey) private var defaultRecordingMethod = RecordingMethod.traditional
+    @State private var recordingMethod: RecordingMethod?
     @State private var innings = 6
     @State private var fieldersCount = 9
     @State private var hasTimeLimit = false
@@ -601,6 +602,10 @@ struct NewGameSetupView: View {
     @State private var showScheduleConfirmation = false
     @State private var showScheduledCreated = false
     @State private var createdGameID: UUID?
+    @State private var venue = ""
+    @State private var publishing = false
+    @State private var publicationResult: String?
+    @State private var publishAfterLineup = false
     @State private var shareTeamID: UUID?
     @State private var posterGame: StoredGame?
 
@@ -641,7 +646,7 @@ struct NewGameSetupView: View {
             usesDesignatedHitter: usesDesignatedHitter,
             allowsTwoWayPlayer: usesDesignatedHitter && allowsTwoWayPlayer
         )
-        value.recordingMethod = recordingMethod
+        value.recordingMethod = recordingMethod ?? defaultRecordingMethod
         value.mode = versionRules.mode
         value.halfInningRunLimit = versionRules.halfInningRunLimit
         value.coachPitchLimit = versionRules.coachPitchLimit
@@ -705,7 +710,10 @@ struct NewGameSetupView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                RecordingMethodPicker(method: $recordingMethod)
+                RecordingMethodPicker(method: Binding(
+                    get: { recordingMethod ?? defaultRecordingMethod },
+                    set: { recordingMethod = $0 }
+                ))
                 SectionHeader(
                     title: "参赛球队",
                     subtitle: scheduleForLater ? "安排时只需基本信息" : "第 1 步，共 2 步"
@@ -721,8 +729,8 @@ struct NewGameSetupView: View {
                         if mode == .team {
                             settingPickerRow(title: "本队", icon: "person.3.fill") {
                                 Picker("本队", selection: $selectedTeamID) {
-                                    ForEach(store.recordableTeams) { team in
-                                        Text("\(team.shortName) · \(store.teams.contains { $0.id == team.id } ? "本机球队" : "共享球队") · \(team.players.count) 人").tag(Optional(team.id))
+                                    ForEach(store.scheduleTeamChoices) { team in
+                                        Text(team.shortName).tag(Optional(team.id))
                                     }
                                 }
                                 .pickerStyle(.menu).accessibilityIdentifier("new-game-own-team")
@@ -808,6 +816,13 @@ struct NewGameSetupView: View {
                             .font(.system(size: 15, weight: .semibold))
                             .frame(minHeight: 58)
                             .accessibilityIdentifier("scheduled-game-date")
+                            if mode == .team {
+                                Divider()
+                                settingPickerRow(title: "场地", icon: "mappin.and.ellipse") {
+                                    TextField("选填", text: $venue).multilineTextAlignment(.trailing)
+                                }
+                            }
+
                         } else {
                             Divider()
                             Toggle("补填过去的比赛", isOn: $backfill)
@@ -979,7 +994,38 @@ struct NewGameSetupView: View {
                     }
                 }
 
-                BMCard { ShareDestinationPicker(teamID: $shareTeamID) }
+                if scheduleForLater && mode == .team {
+                    if let target = store.scheduleTeam(for: selectedTeamID) {
+                        if configureScheduleNow {
+                            Toggle("确认阵容后发布到球队赛程", isOn: $publishAfterLineup)
+                                .tint(BMTheme.green)
+                        } else {
+                            Text("发布后，" + target.name + " 全体成员可在「比赛」中查看。")
+                                .font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                            Button {
+                                publishing = true
+                                saveSchedule(showResult: false)
+                                guard let id = createdGameID else { publishing = false; return }
+                                Task { @MainActor in
+                                    do {
+                                        try await store.publishSchedule(id, date: scheduledAt, venue: venue)
+                                        publicationResult = "已发布到球队赛程，队员可在「比赛 → 即将进行」查看。"
+                                    } catch {
+                                        publicationResult = "球队发布尚未确认。打开这场比赛安排可核对或重试。" + error.localizedDescription
+                                    }
+                                    publishing = false; showScheduledCreated = true
+                                }
+                            } label: {
+                                Label(publishing ? "正在发布…" : "发布到球队赛程", systemImage: "calendar.badge.plus")
+                            }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .disabled(publishing || !validationMessages.isEmpty || venue.utf16.count > 120)
+                            .accessibilityIdentifier("publish-team-schedule")
+                        }
+                    }
+                } else {
+                    BMCard { ShareDestinationPicker(teamID: $shareTeamID) }
+                }
 
                 Button {
                     if scheduleForLater && !configureScheduleNow {
@@ -993,13 +1039,13 @@ struct NewGameSetupView: View {
                     }
                 } label: {
                     HStack {
-                        Text(scheduleForLater && !configureScheduleNow ? "保存比赛安排" : "下一步：设置阵容")
+                        Text(scheduleForLater && !configureScheduleNow ? (mode == .team && store.scheduleTeam(for: selectedTeamID) != nil ? "仅保存比赛安排" : "保存比赛安排") : "下一步：设置阵容")
                         Spacer()
                         Image(systemName: scheduleForLater && !configureScheduleNow ? "calendar.badge.plus" : "arrow.right")
                     }
                 }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(!validationMessages.isEmpty)
+                .buttonStyle(ScheduleSaveStyle(secondary: scheduleForLater && mode == .team && !configureScheduleNow && store.scheduleTeam(for: selectedTeamID) != nil))
+                .disabled(publishing || !validationMessages.isEmpty || (scheduleForLater && venue.utf16.count > 120))
                 .opacity(validationMessages.isEmpty ? 1 : 0.45)
                 .accessibilityIdentifier("continue-to-lineup")
             }
@@ -1010,12 +1056,14 @@ struct NewGameSetupView: View {
         .scrollDismissesKeyboard(.interactively)
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: selectedTeamID) { id in
-            if store.teamSharing.teams.contains(where: { $0.id == id }) { shareTeamID = id }
-            else { shareTeamID = nil }
+            shareTeamID = store.scheduleTeam(for: id)?.id
         }
         .onAppear {
             if selectedTeamID == nil || !store.recordableTeams.contains(where: { $0.id == selectedTeamID }) {
-                selectedTeamID = store.currentTeam?.id
+                let currentID = store.currentTeam?.id
+                selectedTeamID = store.scheduleTeamChoices.first(where: { $0.id == currentID })?.id
+                    ?? store.scheduleTeamChoices.first(where: { store.scheduleTeam(for: $0.id)?.id == currentID })?.id
+                    ?? store.scheduleTeamChoices.first?.id
             }
             if selectedOpponentID == nil || !store.opponentTeams.contains(where: { $0.id == selectedOpponentID }) {
                 selectedOpponentID = store.opponentTeams.first?.id
@@ -1047,7 +1095,8 @@ struct NewGameSetupView: View {
                     playedAt: !scheduleForLater && backfill ? playedAt : nil,
                     startImmediately: !scheduleForLater,
                     ourTeamID: own.id,
-                    shareTeamID: shareTeamID
+                    shareTeamID: shareTeamID,
+                    scheduleVenue: venue, publishTeamSchedule: scheduleForLater && publishAfterLineup && store.scheduleTeam(for: own.id) != nil
                 )
             }
         }
@@ -1072,7 +1121,7 @@ struct NewGameSetupView: View {
             Button("返回比赛首页") { store.returnToGameHome() }
             Button("制作宣传海报") { posterGame = store.games.first { $0.id == createdGameID } }
         } message: {
-            Text("可从比赛首页的“即将进行”打开，并在开赛前补充名单和完成设置。" + scheduledSharingResult)
+            Text(publicationResult ?? ("可从比赛首页的“即将进行”打开，并在开赛前补充名单和完成设置。" + scheduledSharingResult))
         }
     }
 
@@ -1080,7 +1129,8 @@ struct NewGameSetupView: View {
         shareTeamID == nil ? "" : "\n已预设赛后上传目标；比赛结束后仍需确认是否上传。现在只保存在本机。"
     }
 
-    private func saveSchedule() {
+    private func saveSchedule(showResult: Bool = true) {
+        publicationResult = nil
         if mode == .spectator {
             guard let away = spectatorAwayTeam, let home = spectatorHomeTeam else { return }
             createdGameID = store.scheduleObservedGame(awayTeam: away, homeTeam: home, scheduledAt: scheduledAt)
@@ -1090,11 +1140,11 @@ struct NewGameSetupView: View {
                 ourTeam: ourTeam,
                 opponent: opponent,
                 isHome: isHome,
-                scheduledAt: scheduledAt
+                scheduledAt: scheduledAt, venue: venue
             )
         }
         if let createdGameID { _ = store.setPostgameUploadTarget(gameID: createdGameID, teamID: shareTeamID) }
-        showScheduledCreated = createdGameID != nil
+        showScheduledCreated = showResult && createdGameID != nil
     }
 
     private func settingPickerRow<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
@@ -2220,6 +2270,9 @@ struct ObservedGameLineupView: View {
     let scheduledGameID: UUID?
     let ourTeamID: UUID?
     let shareTeamID: UUID?
+    let scheduleVenue: String
+    let publishTeamSchedule: Bool
+    @State private var publicationMessage: String?
     @State private var savedMessage: String?
 
     @State private var draggingPlayerID: UUID?
@@ -2241,6 +2294,7 @@ struct ObservedGameLineupView: View {
         scheduledGameID: UUID? = nil,
         ourTeamID: UUID? = nil,
         shareTeamID: UUID? = nil,
+        scheduleVenue: String = "", publishTeamSchedule: Bool = false,
         initialAwayLineup: [LineupAssignment] = [],
         initialHomeLineup: [LineupAssignment] = []
     ) {
@@ -2252,6 +2306,8 @@ struct ObservedGameLineupView: View {
         self.startImmediately = startImmediately
         self.scheduledGameID = scheduledGameID
         self.shareTeamID = shareTeamID
+        self.scheduleVenue = scheduleVenue
+        self.publishTeamSchedule = publishTeamSchedule
         self.ourTeamID = ourTeamID
         func preparedLineup(_ initial: [LineupAssignment], for team: Team) -> [LineupAssignment] {
             let playerIDs = Set(team.players.map(\.id))
@@ -2330,7 +2386,7 @@ struct ObservedGameLineupView: View {
                 showConfirmation = true
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!validationMessages.isEmpty)
+            .disabled(!validationMessages.isEmpty || createdGameID != nil)
             .opacity(validationMessages.isEmpty ? 1 : 0.45)
             .accessibilityIdentifier(ourTeamID == nil ? "confirm-observed-lineup" : "confirm-lineup")
             .padding(.horizontal, BMTheme.horizontalPadding)
@@ -2355,7 +2411,18 @@ struct ObservedGameLineupView: View {
                         store.setCurrentTeam(id: ourTeamID)
                         createdGameID = store.startNewGame(opponent: opponent, isHome: isHome, rules: rules, lineup: ownLineup,
                                                           opponentLineup: opponentLineup, scheduledAt: scheduledAt, playedAt: playedAt, startImmediately: startImmediately)
-                        if startImmediately { showGame = createdGameID != nil } else { showScheduledCreated = createdGameID != nil }
+                        if startImmediately { showGame = createdGameID != nil }
+                        else if let id = createdGameID {
+                            if !scheduleVenue.isEmpty { store.saveScheduleVenue(id, venue: scheduleVenue) }
+                            if publishTeamSchedule {
+                                Task { @MainActor in
+                                    do { try await store.publishSchedule(id, date: scheduledAt, venue: scheduleVenue)
+                                        publicationMessage = "球队赛程已发布。"
+                                    } catch { publicationMessage = "球队发布尚未确认，可从比赛安排重试。" + error.localizedDescription }
+                                    showScheduledCreated = true
+                                }
+                            } else { showScheduledCreated = true }
+                        }
                     }
                 } else if let scheduledGameID {
                     showGame = store.startScheduledObservedGame(
@@ -2401,7 +2468,7 @@ struct ObservedGameLineupView: View {
             Button("返回比赛首页") { store.returnToGameHome() }
             Button("制作宣传海报") { posterGame = store.games.first { $0.id == createdGameID } }
         } message: {
-            Text("双方阵容已保存，可从比赛首页的“即将进行”中继续调整并开赛。")
+            Text(publicationMessage ?? "双方阵容已保存，可从比赛首页的“即将进行”中继续调整并开赛。")
         }
         .navigationDestination(isPresented: $showGame) {
             ScorekeepingView(showsGameHomeButton: true)

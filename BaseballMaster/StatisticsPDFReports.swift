@@ -2,14 +2,14 @@ import Foundation
 
 @MainActor
 enum ReportStatisticsTables {
-    static let battingHeaders = ["球员", "G", "PA", "AB", "R", "H", "2B", "3B", "HR", "RBI", "BB", "HBP", "SO", "SB", "AVG", "OBP", "SLG", "OPS"]
+    static let battingHeaders = ["球员", "G", "PA", "AB", "R", "H", "2B", "3B", "HR", "TB", "RBI", "BB", "HBP", "SO", "SB", "AVG", "OBP", "SLG", "OPS"]
     static let pitchingHeaders = ["投手", "IP", "BF", "H", "R", "ER", "BB", "HBP", "SO", "WP", "P", "S", "ERA", "WHIP"]
-    static let fieldingHeaders = ["球员", "PO", "A", "E", "DP", "TC", "FPCT"]
+    static let fieldingHeaders = ["球员", "PO", "A", "E", "DP", "CCS", "PB", "TC", "FPCT"]
 
     static func battingRow(_ name: String, games: Int, line b: BattingLine) -> [String] {
         let obpDenominator = b.atBats + b.walks + b.hitByPitch + b.sacrifices
         return [name, "\(games)", "\(b.plateAppearances)", "\(b.atBats)", "\(b.runs)", "\(b.hits)",
-                "\(b.doubles)", "\(b.triples)", "\(b.homeRuns)", "\(b.runsBattedIn)", "\(b.walks)",
+                "\(b.doubles)", "\(b.triples)", "\(b.homeRuns)", "\(b.totalBases)", "\(b.runsBattedIn)", "\(b.walks)",
                 "\(b.hitByPitch)", "\(b.strikeouts)", "\(b.stolenBases)",
                 rate(b.average, available: b.atBats > 0), rate(b.onBasePercentage, available: obpDenominator > 0),
                 rate(b.slugging, available: b.atBats > 0), rate(b.ops, available: b.atBats > 0)]
@@ -23,7 +23,7 @@ enum ReportStatisticsTables {
     }
 
     static func fieldingRow(_ name: String, line f: FieldingLine) -> [String] {
-        [name, "\(f.putouts)", "\(f.assists)", "\(f.errors)", "\(f.doublePlays)", "\(f.chances)", f.percentage.map(statText) ?? "-"]
+        [name, "\(f.putouts)", "\(f.assists)", "\(f.errors)", "\(f.doublePlays)", f.catcherCaughtStealingText, f.passedBallsText, "\(f.chances)", f.percentage.map(statText) ?? "-"]
     }
 
     static func rate(_ value: Double, available: Bool) -> String { available ? statText(value) : "-" }
@@ -59,13 +59,14 @@ enum ReportStatisticsTables {
         var rows = fielders.map { fieldingRow(playerName($0), line: $0.fielding) }
         if includeTotal && !fielders.isEmpty { rows.append(fieldingRow("合计", line: .aggregate(fielders.map(\.fielding)))) }
         canvas.table(title: title + " · FIELDING", headers: fieldingHeaders, rows: rows,
-                     weights: [4, 1, 1, 1, 1, 1, 1.5], compact: compact)
+                     weights: [4, 1, 1, 1, 1, 1, 1, 1, 1.5], compact: compact)
     }
 
     static func legend(_ canvas: ReportPDFCanvas) {
         canvas.paragraph("统计口径与缩写", size: 11, bold: true)
         canvas.paragraph("比率按累计原始数据计算；ERA 按 7 局计算。IP 小数位为出局数，0.1 表示 1 人出局。\"-\" 表示未进行、无记录或无可用分母。DP 为球员参与双杀次数，合计不等同于球队双杀次数。", size: 8, muted: true)
-        canvas.paragraph("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · TC 守备机会 · FPCT 守备率", size: 8, muted: true)
+        canvas.paragraph("G 场次 · PA 打席 · AB 打数 · R 得分/失分 · H 安打 · 2B/3B/HR 二垒/三垒/本垒打 · TB 打击总垒数 · RBI 打点 · BB 保送 · HBP 触身球 · SO 三振 · SB/CS 盗垒/盗垒失败 · SAC 牺牲打 · AVG/OBP/SLG/OPS 打率/上垒率/长打率/攻击指数 · BF 面对打者 · ER 自责分 · WP 暴投 · P/S 用球/好球 · PO/A/E 刺杀/助杀/失误 · CCS 捕手阻杀 · PB 捕逸 · TC 守备机会 · FPCT 守备率", size: 8, muted: true)
+        canvas.paragraph("CCS 与 PB 只汇总已确认捕手归属的事件。", size: 8, muted: true)
     }
 }
 
@@ -177,13 +178,14 @@ struct PlayerStatisticsPDFReport {
                 return [recordLabel(record), p.inningsText, "\(p.hits)", "\(p.runs)", "\(p.earnedRuns)", "\(p.walks)", "\(p.strikeouts)",
                         "\(p.pitches)", p.outsRecorded > 0 ? String(format: "%.2f", p.era) : "-"]
             }, weights: [5] + Array(repeating: 1, count: 8))
-            canvas.table(title: "逐场守备 · FIELDING GAME LOG", headers: ["日期 / 对手 / 结果", "PO", "A", "E", "DP", "FPCT"],
+            canvas.table(title: "逐场守备 · FIELDING GAME LOG", headers: ["日期 / 对手 / 结果", "PO", "A", "E", "DP", "CCS", "PB", "FPCT"],
                          rows: records.map { record in
                 guard let f = games.first(where: { $0.id == record.id })?.recordedFielding(for: player.id) else {
-                    return [recordLabel(record)] + Array(repeating: "-", count: 5)
+                    return [recordLabel(record)] + Array(repeating: "-", count: 7)
                 }
-                return [recordLabel(record), "\(f.putouts)", "\(f.assists)", "\(f.errors)", "\(f.doublePlays)", f.percentage.map(statText) ?? "-"]
-            }, weights: [5] + Array(repeating: 1, count: 5))
+                return [recordLabel(record), "\(f.putouts)", "\(f.assists)", "\(f.errors)", "\(f.doublePlays)",
+                        f.catcherCaughtStealingText, f.passedBallsText, f.percentage.map(statText) ?? "-"]
+            }, weights: [5] + Array(repeating: 1, count: 7))
             ReportStatisticsTables.legend(canvas)
         }
     }
@@ -263,13 +265,14 @@ struct GameBoxScorePDFReport {
         let exited = home ? game.homeExitedPlayerIDs : game.awayExitedPlayerIDs
         let defense = home ? game.homeFieldingPlayerIDs : game.awayFieldingPlayerIDs
         var ids = order
-        let recorded = Set(game.batting.keys).union(game.pitching.keys).union(game.fielding.keys)
+        let fielding = game.reportFielding
+        let recorded = Set(game.batting.keys).union(game.pitching.keys).union(fielding.keys)
             .union(exited ?? []).union(defense ?? [])
         ids += team.players.filter { !ids.contains($0.id) && recorded.contains($0.id) }.map(\.id)
         return ids.compactMap { id in
             guard let player = team.players.first(where: { $0.id == id }) else { return nil }
             return PlayerSeasonStatistics(player: player, gamesPlayed: 1, batting: game.batting[id] ?? BattingLine(),
-                                          pitching: game.pitching[id] ?? PitchingLine(), fielding: game.fielding[id] ?? FieldingLine())
+                                          pitching: game.pitching[id] ?? PitchingLine(), fielding: fielding[id] ?? FieldingLine())
         }
     }
 }

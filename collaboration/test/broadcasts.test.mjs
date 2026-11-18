@@ -68,6 +68,12 @@ test('stable team sources start empty, follow one match, switch explicitly and s
   assert.equal((await upload({ ...a, revision: 4 })).data.selected, false);
   const c = { ...a, gameID: randomUUID() };
   assert.equal((await upload(c)).data.selected, true);
+  const wrongSide = { ...c, revision: 2, batter: c.home.lineup[0].player, batterOrder: 1 };
+  assert.equal((await upload(wrongSide)).data.selected, true);
+  const corrected = (await read()).data.snapshot;
+  assert.deepEqual(corrected.batter, c.away.lineup[3].player);
+  assert.equal(corrected.batterOrder, 4);
+  assert.equal(corrected.batterStats, null);
 
   const { data: rotated } = await request('POST', route + '/rotate', { expectedCode: code }, admin);
   assert.notEqual(rotated.code, code);

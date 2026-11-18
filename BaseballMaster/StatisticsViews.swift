@@ -14,36 +14,51 @@ struct StatsOverviewView: View {
     @State private var modeFilter: GameMode?
     @State private var selectedGameIDs: Set<UUID>?
     @State private var showGameFilter = false
+    @State private var analysis: GameAnalysisSource?
     @ScaledMetric(relativeTo: .body) private var metricWidth = 92
 
     init(initialTeamID: UUID? = nil) { _selectedTeamID = State(initialValue: initialTeamID) }
 
-    private var team: Team? {
+    private func team(in teams: [Team]) -> Team? {
         let currentID = store.currentTeam?.id
         let localID = currentID.map(store.localStatisticsScope)
-        let preferredID = selectedTeamID ?? (store.statisticsTeams.contains { $0.id == localID } ? localID : currentID)
-        return store.statisticsTeams.first { $0.id == preferredID } ?? store.statisticsTeams.first
+        let preferredID = selectedTeamID ?? (teams.contains { $0.id == localID } ? localID : currentID)
+        return teams.first { $0.id == preferredID } ?? teams.first
     }
-    private var seasonID: String {
-        store.statisticsSeasons.contains(where: { $0.id == selectedSeasonID })
-            ? selectedSeasonID : MatchYear.current
+    private func seasonID(in seasons: [Season]) -> String {
+        seasons.contains(where: { $0.id == selectedSeasonID }) ? selectedSeasonID : MatchYear.current
     }
-
-    private var eligibleGames: [StoredGame] {
-        guard let team else { return [] }
-        return store.completedStatisticsGames(teamID: team.id, seasonID: seasonID, mode: modeFilter)
-    }
-    private var eligibleIDs: Set<UUID> { Set(eligibleGames.map(\.id)) }
-    private var effectiveGameIDs: Set<UUID>? { selectedGameIDs.map { $0.intersection(eligibleIDs) } }
 
     var body: some View {
+        let teams = store.statisticsTeams
+        let seasons = store.statisticsSeasons
+        let team = team(in: teams)
+        let seasonID = seasonID(in: seasons)
+        let overview = team.map {
+            store.statisticsOverview(for: $0, seasonID: seasonID, mode: modeFilter, selectedIDs: selectedGameIDs)
+        }
+        let eligibleGames = overview?.eligibleGames ?? []
+        let eligibleIDs = overview?.eligibleIDs ?? []
+        let effectiveGameIDs = overview?.selectedIDs
+        let playerGameIDs = effectiveGameIDs ?? eligibleIDs
+
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if let team {
-                    let summary = store.seasonStatistics(for: team, seasonID: seasonID, mode: modeFilter, gameIDs: effectiveGameIDs)
-                    scopeSelection(team: team)
+                if let team, let summary = overview?.summary {
+                    scopeSelection(team: team, teams: teams, seasonID: seasonID, seasons: seasons,
+                                   selectedCount: playerGameIDs.count, eligibleCount: eligibleGames.count)
                     GameModeFilter(selection: $modeFilter)
                     teamSummary(summary)
+                    if !summary.games.isEmpty {
+                        let filtered = effectiveGameIDs != nil || modeFilter != nil
+                        Button {
+                            analysis = GameAnalysisSource(summary: summary, teamName: team.name, year: seasonID, filtered: filtered)
+                        } label: {
+                            Label(filtered ? "分析筛选比赛" : "分析全年比赛", systemImage: "text.document")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .accessibilityIdentifier("open-season-analysis")
+                    }
                     Text("仅统计已结束的本队比赛；观赛、练习和进行中比赛不计入。")
                         .font(.footnote)
                         .foregroundStyle(BMTheme.secondaryText)
@@ -97,7 +112,7 @@ struct StatsOverviewView: View {
                             ForEach(rows) { row in
                                 NavigationLink(destination: PlayerDetailView(
                                     player: row.player, initialSeasonID: seasonID,
-                                    statisticsTeamID: team.id, initialCategory: category, initialGameIDs: effectiveGameIDs ?? eligibleIDs, initialMode: modeFilter
+                                    statisticsTeamID: team.id, initialCategory: category, initialGameIDs: playerGameIDs, initialMode: modeFilter
                                 )) {
                                     playerRow(row)
                                 }
@@ -121,10 +136,19 @@ struct StatsOverviewView: View {
         }
         .scrollDismissesKeyboard(.immediately)
         .bmScreenBackground()
-        .task(id: team?.id) {
-            if let team, store.teamSharing.teams.contains(where: { $0.id == team.id }) {
-                await store.teamSharing.connect()
-                await store.sharedMatches.synchronize(teamID: team.id)
+        .task(id: sharedRefreshScope(for: team)) {
+            guard let scope = sharedRefreshScope(for: team) else { return }
+            let directory = store.teamSharing
+            let coordinator = store.sharedMatches
+            // Changing tabs should not cancel an in-flight shared data refresh.
+            _ = Task { @MainActor in
+                guard directory.foregroundGeneration == scope.foregroundGeneration else { return }
+                await directory.refreshPageOnce("statistics-\(scope.teamID)") {
+                    await directory.connectOnce()
+                    guard !coordinator.busy else { return false }
+                    await coordinator.synchronize(teamID: scope.teamID)
+                    return coordinator.message == nil
+                }
             }
         }
         .navigationTitle("统计")
@@ -139,11 +163,17 @@ struct StatsOverviewView: View {
             }
         }
         .sheet(isPresented: $showGameFilter) {
-            GameFilterSheet(games: eligibleGames, initialSelection: effectiveGameIDs ?? eligibleIDs) { selection in
-                let valid = selection.intersection(eligibleIDs)
-                selectedGameIDs = valid.isEmpty ? [] : (valid == eligibleIDs ? nil : valid)
+            GameFilterSheet(games: eligibleGames, initialSelection: playerGameIDs) { selection in
+                guard let currentTeam = self.team(in: store.statisticsTeams) else { return }
+                let currentSeason = self.seasonID(in: store.statisticsSeasons)
+                let availableIDs = store.statisticsOverview(
+                    for: currentTeam, seasonID: currentSeason, mode: modeFilter, selectedIDs: selectedGameIDs
+                ).eligibleIDs
+                let valid = selection.intersection(availableIDs)
+                selectedGameIDs = valid.isEmpty ? [] : (valid == availableIDs ? nil : valid)
             }
         }
+        .sheet(item: $analysis) { GameAnalysisView(source: $0) }
         .onChange(of: selectedTeamID) { _ in selectedGameIDs = nil }
         .onChange(of: selectedSeasonID) { _ in selectedGameIDs = nil }
         .onChange(of: modeFilter) { _ in selectedGameIDs = nil }
@@ -157,16 +187,27 @@ struct StatsOverviewView: View {
         .onChange(of: metric) { ascending = $0.ascendingByDefault }
     }
 
-    private func scopeSelection(team: Team) -> some View {
+    private struct SharedRefreshScope: Equatable {
+        let teamID: UUID
+        let foregroundGeneration: Int
+    }
+
+    private func sharedRefreshScope(for team: Team?) -> SharedRefreshScope? {
+        guard let team, store.teamSharing.teams.contains(where: { $0.id == team.id }) else { return nil }
+        return SharedRefreshScope(teamID: team.id, foregroundGeneration: store.teamSharing.foregroundGeneration)
+    }
+
+    private func scopeSelection(team: Team, teams: [Team], seasonID: String, seasons: [Season],
+                                selectedCount: Int, eligibleCount: Int) -> some View {
         BMCard {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("球队", selection: Binding(get: { team.id }, set: { selectedTeamID = $0 })) {
-                    ForEach(store.statisticsTeams) { team in Text(team.name + (store.teamSharing.teams.contains { $0.id == team.id } ? " · 共享" : " · 本机")).tag(team.id) }
+                    ForEach(teams) { team in Text(team.name + (store.teamSharing.teams.contains { $0.id == team.id } ? " · 共享" : " · 本机")).tag(team.id) }
                 }
                 .accessibilityIdentifier("stats-team-picker")
                 Divider()
                 Picker("年度", selection: Binding(get: { seasonID }, set: { selectedSeasonID = $0 })) {
-                    ForEach(store.statisticsSeasons) { Text($0.name).tag($0.id) }
+                    ForEach(seasons) { Text($0.name).tag($0.id) }
                 }
                 .accessibilityIdentifier("stats-season-picker")
                 Text("按比赛日期自动归入年度，无需创建或划分赛季。").font(.caption).foregroundStyle(BMTheme.secondaryText)
@@ -176,7 +217,7 @@ struct StatsOverviewView: View {
                         Label("筛选比赛", systemImage: "line.3.horizontal.decrease.circle")
                     }.accessibilityIdentifier("stats-open-game-filter")
                     Spacer()
-                    Text("已选 \(effectiveGameIDs?.count ?? eligibleGames.count) / \(eligibleGames.count) 场")
+                    Text("已选 \(selectedCount) / \(eligibleCount) 场")
                         .font(.caption).accessibilityIdentifier("stats-game-scope")
                 }
                 if selectedGameIDs != nil {
@@ -192,7 +233,7 @@ struct StatsOverviewView: View {
     private func teamSummary(_ summary: TeamSeasonStatistics) -> some View {
         BMCard {
             VStack(alignment: .leading, spacing: 14) {
-                if summary.games.contains(where: { $0.state.statisticsIncomplete == true }) {
+                if summary.hasIncompleteGames {
                     Text("含过程或责任待确认的比赛 · 统计可能不完整").font(.caption.bold()).foregroundStyle(BMTheme.orange)
                 }
                 Text("\(summary.games.count) 场比赛 · \(summary.wins)胜\(summary.losses)负\(summary.ties)平")
@@ -363,7 +404,7 @@ struct StatisticsMetricsGrid: View {
                     ("长打率 SLG", b.atBats > 0 ? statText(b.slugging) : "—"),
                     ("攻击指数 OPS", b.atBats > 0 ? statText(b.ops) : "—"),
                     ("打席 PA", "\(b.plateAppearances)"), ("打数 AB", "\(b.atBats)"),
-                    ("安打 H", "\(b.hits)"), ("本垒打 HR", "\(b.homeRuns)"),
+                    ("安打 H", "\(b.hits)"), ("打击总垒数 TB", "\(b.totalBases)"), ("本垒打 HR", "\(b.homeRuns)"),
                     ("打点 RBI", "\(b.runsBattedIn)"), ("保送 BB", "\(b.walks)"),
                     ("三振 SO", "\(b.strikeouts)"), ("盗垒 SB", "\(b.stolenBases)")]
         case .pitching:
@@ -375,7 +416,8 @@ struct StatisticsMetricsGrid: View {
         case .fielding:
             return [("守备率 FPCT", f.percentage.map(statText) ?? "—"),
                     ("守备机会 TC", "\(f.chances)"), ("刺杀 PO", "\(f.putouts)"),
-                    ("助杀 A", "\(f.assists)"), ("失误 E", "\(f.errors)"), ("参与双杀 DP", "\(f.doublePlays)")]
+                    ("助杀 A", "\(f.assists)"), ("失误 E", "\(f.errors)"), ("参与双杀 DP", "\(f.doublePlays)"),
+                    ("捕手阻杀 CCS", f.catcherCaughtStealingText), ("捕逸 PB", f.passedBallsText)]
         }
     }
 
@@ -391,7 +433,7 @@ struct StatisticsMetricsGrid: View {
                     Text("ERA 按 7 局计算；局数小数位表示出局数，0.1 为 1 人出局。")
                         .font(.caption).foregroundStyle(BMTheme.secondaryText)
                 } else if category == .fielding {
-                    Text("守备率 =（刺杀 + 助杀）÷ 守备机会；DP 为球员参与次数。")
+                    Text("守备率 =（刺杀 + 助杀）÷ 守备机会。CCS 与 PB 只汇总已确认捕手归属的事件。")
                         .font(.caption).foregroundStyle(BMTheme.secondaryText)
                 }
                 Text("“—”表示没有计算该比率所需的记录。")

@@ -271,6 +271,7 @@ struct RunnerEventFlowSheet: View {
     @EnvironmentObject private var store: GameStore
     @State private var selectedKind: RunnerEventKind?
     @State private var pendingTimingDecisions: [RunnerDecision]?
+    @State private var errorResponsibility: RunnerErrorResponsibility?
 
     var body: some View {
         Group {
@@ -279,12 +280,13 @@ struct RunnerEventFlowSheet: View {
                     if store.recordRunnerEvent(
                         selectedKind,
                         decisions: pendingTimingDecisions,
-                        timingRunCounts: runCounts
+                        timingRunCounts: runCounts,
+                        errorResponsibility: errorResponsibility
                     ) {
                         dismiss()
                     }
                 }
-            } else if let selectedKind, selectedKind.group == .out, store.game.outs == 2 {
+            } else if let selectedKind, selectedKind.group == .out, selectedKind != .caughtStealing, store.game.outs == 2 {
                 HalfEndingRunnerSheet(runners: store.suggestedRunnerEventDecisions(for: selectedKind), allowsScoring: selectedKind != .forceOut) { outID, scorers in
                     guard let decisions = store.halfEndingRunnerDecisions(for: selectedKind, outID: outID, scorerIDs: scorers) else { return }
                     if store.runnerEventNeedsTimingDecision(selectedKind, decisions: decisions) {
@@ -297,14 +299,16 @@ struct RunnerEventFlowSheet: View {
                 RunnerResolutionSheet(
                     decisions: store.suggestedRunnerEventDecisions(for: selectedKind),
                     availableDestinations: store.availableDestinations,
-                    title: "跑者现在在哪？",
-                    message: "系统给出了常见去向；按现场实际位置点一下即可修改。",
-                    confirmTitle: "确认跑者变化"
+                    title: selectedKind == .caughtStealing ? "盗垒出局" : (selectedKind == .passedBall ? "捕逸 PB" : "跑者现在在哪？"),
+                    confirmTitle: "确认跑者变化",
+                    fielders: store.activeFielders,
+                    errorResponsibility: selectedKind == .defensiveErrorAdvance ? $errorResponsibility : nil,
+                    defenseKind: selectedKind
                 ) { decisions in
                     if store.runnerEventNeedsTimingDecision(selectedKind, decisions: decisions) {
                         pendingTimingDecisions = decisions
                     } else {
-                        if store.recordRunnerEvent(selectedKind, decisions: decisions) {
+                        if store.recordRunnerEvent(selectedKind, decisions: decisions, errorResponsibility: errorResponsibility) {
                             dismiss()
                         }
                     }
@@ -345,7 +349,7 @@ struct RunnerEventFlowSheet: View {
                                 selectedKind = kind
                             } label: {
                                 HStack {
-                                    Text(kind.rawValue)
+                                    Text(kind.title)
                                         .font(.system(size: 16, weight: .bold))
                                         .foregroundStyle(BMTheme.navy)
                                     Spacer()
@@ -377,6 +381,206 @@ struct RunnerEventFlowSheet: View {
                     Button("取消") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+struct RunnerPassedBallPicker: View {
+    let fielders: [Player]
+    @Binding var catcherID: UUID?
+
+    private var catchers: [Player] { fielders.filter { $0.primaryPosition == .catcher } }
+
+    var body: some View {
+        RunnerAssignmentPicker(
+            title: "捕逸捕手",
+            value: catchers.first { $0.id == catcherID }?.compactName ?? "待确认",
+            identifier: "runner-passed-ball-catcher",
+            selection: $catcherID
+        ) {
+            Text("待确认").tag(nil as UUID?)
+            ForEach(catchers) { Text($0.compactName).tag(Optional($0.id)) }
+        }
+    }
+}
+
+struct RunnerCaughtStealingPicker: View {
+    private enum Receiver: Hashable {
+        case pending, noCatcherAssist, fielder(UUID)
+    }
+
+    @Binding var decision: RunnerDecision
+    let fielders: [Player]
+    @State private var chosenCatcherID: UUID?
+
+    private var catchers: [Player] { fielders.filter { $0.primaryPosition == .catcher } }
+    private var eligibleTargets: [StealTarget] {
+        switch decision.destination {
+        case .out, .score: return decision.stealTargets
+        case .base(let base): return decision.stealTargets.filter { $0.rawValue <= base.rawValue }
+        case .hold: return []
+        }
+    }
+    private var credit: (catcher: UUID, receiver: UUID, target: StealTarget)? {
+        guard case .caughtStealing(let catcher, let receiver, let target) = decision.defense else { return nil }
+        return (catcher, receiver, target)
+    }
+    private var catcherID: UUID? { credit?.catcher ?? chosenCatcherID ?? (catchers.count == 1 ? catchers.first?.id : nil) }
+    private var receiverTitle: String { decision.destination == .out ? "接球触杀者" : "接球失误者" }
+    private var receiverPlaceholder: String { decision.destination == .out ? "待确认" : "未记接球失误" }
+    private var receiverValue: String {
+        switch receiver.wrappedValue {
+        case .pending: return receiverPlaceholder
+        case .noCatcherAssist: return "无捕手助杀"
+        case .fielder(let id):
+            return fielders.first { $0.id == id }.map { "\($0.primaryPosition.fullName) · \($0.compactName)" } ?? receiverPlaceholder
+        }
+    }
+    private var catcherSelection: Binding<UUID?> {
+        Binding(get: { catcherID }, set: { id in
+            chosenCatcherID = id
+            if let id, let credit, id != credit.receiver {
+                decision.defense = .caughtStealing(catcherID: id, receiverID: credit.receiver, target: credit.target)
+            } else if decision.defense != .noCatcherAssist {
+                decision.defense = nil
+            }
+        })
+    }
+    private var receiver: Binding<Receiver> {
+        Binding {
+            if decision.defense == .noCatcherAssist { return .noCatcherAssist }
+            if let credit { return .fielder(credit.receiver) }
+            return .pending
+        } set: { selection in
+            switch selection {
+            case .pending: decision.defense = nil
+            case .noCatcherAssist: decision.defense = .noCatcherAssist
+            case .fielder(let id):
+                guard let catcherID, let target = credit?.target ?? eligibleTargets.first else { return }
+                decision.defense = .caughtStealing(catcherID: catcherID, receiverID: id, target: target)
+            }
+        }
+    }
+
+    var body: some View {
+        if !eligibleTargets.isEmpty {
+            if catchers.isEmpty {
+                Text("当时阵容缺少捕手，守备归属可以稍后补记。")
+                    .font(.footnote)
+                    .foregroundStyle(BMTheme.secondaryText)
+            } else if catchers.count > 1 {
+                RunnerAssignmentPicker(
+                    title: "传球捕手",
+                    value: catchers.first { $0.id == catcherID }?.compactName ?? "待确认",
+                    identifier: "runner-steal-catcher",
+                    selection: catcherSelection
+                ) {
+                    Text("待确认").tag(nil as UUID?)
+                    ForEach(catchers) { Text($0.compactName).tag(Optional($0.id)) }
+                }
+            } else if let catcher = catchers.first {
+                LabeledContent("传球捕手", value: catcher.compactName)
+                    .font(.subheadline)
+            }
+            if decision.destination == .out || catcherID != nil {
+                if decision.destination != .out {
+                    Text("原可阻杀，因接球失误上垒时才选。")
+                        .font(.caption)
+                        .foregroundStyle(BMTheme.secondaryText)
+                }
+                RunnerAssignmentPicker(
+                    title: receiverTitle, value: receiverValue,
+                    identifier: "runner-steal-receiver", selection: receiver
+                ) {
+                    Text(receiverPlaceholder).tag(Receiver.pending)
+                    if decision.destination == .out {
+                        Text("无捕手助杀").tag(Receiver.noCatcherAssist)
+                    }
+                    if let catcherID {
+                        ForEach(fielders.filter { $0.id != catcherID }) {
+                            Text("\($0.primaryPosition.fullName) · \($0.compactName)").tag(Receiver.fielder($0.id))
+                        }
+                    }
+                }
+            }
+            if let credit {
+                RunnerAssignmentPicker(
+                    title: "盗垒目标", value: credit.target.title, identifier: "runner-steal-target",
+                    selection: Binding(
+                        get: { credit.target },
+                        set: { decision.defense = .caughtStealing(catcherID: credit.catcher, receiverID: credit.receiver, target: $0) }
+                    )
+                ) {
+                    ForEach(eligibleTargets, id: \.self) { Text($0.title).tag($0) }
+                }
+            }
+        }
+    }
+}
+
+struct RunnerErrorPicker: View {
+    let fielders: [Player]
+    @Binding var selection: RunnerErrorResponsibility?
+
+    private var selectedTitle: String {
+        switch selection {
+        case .pending: return "责任人待确认"
+        case .fielder(let id):
+            return fielders.first { $0.id == id }.map { "\($0.primaryPosition.fullName) · \($0.compactName)" } ?? "请选择"
+        case nil: return "请选择"
+        }
+    }
+
+    var body: some View {
+        RunnerAssignmentPicker(
+            title: "失误责任人", value: selectedTitle, identifier: "runner-error-responsibility", selection: $selection
+        ) {
+            Text("请选择").tag(nil as RunnerErrorResponsibility?)
+            Text("责任人待确认").tag(Optional(RunnerErrorResponsibility.pending))
+            ForEach(fielders.sorted { $0.primaryPosition.rawValue < $1.primaryPosition.rawValue }) { player in
+                Text("\(player.primaryPosition.fullName) · \(player.compactName)")
+                    .tag(Optional(RunnerErrorResponsibility.fielder(player.id)))
+            }
+        }
+    }
+}
+
+private struct RunnerAssignmentPicker<Option: Hashable, Choices: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicType
+    let title: String
+    let value: String
+    let identifier: String
+    @Binding var selection: Option
+    @ViewBuilder let choices: () -> Choices
+
+    var body: some View {
+        let layout = dynamicType.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 12))
+        layout {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(BMTheme.navy)
+                .fixedSize(horizontal: !dynamicType.isAccessibilitySize, vertical: true)
+                .accessibilityHidden(true)
+            Menu {
+                Picker(title, selection: $selection, content: choices)
+            } label: {
+                HStack(spacing: 6) {
+                    Text(value)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(dynamicType.isAccessibilitySize ? nil : 1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(BMTheme.green)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: dynamicType.isAccessibilitySize ? .leading : .trailing)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel(title)
+            .accessibilityValue(value)
+            .accessibilityIdentifier(identifier)
         }
     }
 }
@@ -442,7 +646,6 @@ struct SpecialEventSheet: View {
                     decisions: store.suggestedViolationDecisions(for: resolvingViolation),
                     availableDestinations: store.availableDestinations,
                     title: resolvingViolation.rawValue,
-                    message: "按裁判最终宣判，点选每名跑者最后的位置。",
                     confirmTitle: "确认判罚结果"
                 ) { decisions in
                     if store.recordViolation(resolvingViolation, decisions: decisions) {
@@ -455,7 +658,6 @@ struct SpecialEventSheet: View {
                     decisions: store.droppedThirdStrikeDecisions(),
                     availableDestinations: store.availableDestinations,
                     title: "三振后球没接住",
-                    message: "请确认打者和原有跑者最后到达的位置。",
                     confirmTitle: "确认这次三振"
                 ) { decisions in
                     if store.recordDroppedThirdStrike(decisions: decisions) {

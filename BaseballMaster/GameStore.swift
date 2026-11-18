@@ -2,6 +2,11 @@ import Combine
 import Foundation
 
 @MainActor
+final class MainTabSelection: ObservableObject {
+    @Published var index = 0
+}
+
+@MainActor
 final class GameStore: ObservableObject {
     @Published var teams: [Team]
     @Published var opponentTeams: [Team]
@@ -10,14 +15,32 @@ final class GameStore: ObservableObject {
         didSet { persistCurrentGameIfNeeded() }
     }
     @Published var seasons: [Season]
-    @Published var playerGameRecords: [PlayerGameRecord]
+    @Published var playerGameRecords: [PlayerGameRecord] {
+        didSet { statisticsSeasonsCache = nil }
+    }
     @Published var archivedTeams: [Team] = []
-    @Published var games: [StoredGame]
+    @Published var games: [StoredGame] {
+        didSet {
+            homeGameListsCache = nil
+            statisticsOverviewCache = nil
+            statisticsSeasonsCache = nil
+        }
+    }
+    @Published var teamSchedules: [TeamScheduleNotice] = []
+    @Published var scheduleFeedError: String?
+    var scheduleFetchID: UUID?
+    private var homeGameListsCache: HomeGameLists?
+    var statisticsOverviewCache: StatisticsOverviewCache?
+    var statisticsSeasonsCache: StatisticsSeasonsCache?
     @Published var storageErrorMessage: String?
     @Published var actionErrorMessage: String?
     @Published private(set) var pendingPitcherChange: PendingPitcherChange?
     @Published private(set) var requiresDataRecovery = false
-    @Published var selectedTab = 0
+    let mainTabSelection = MainTabSelection()
+    var selectedTab: Int {
+        get { mainTabSelection.index }
+        set { mainTabSelection.index = newValue }
+    }
     @Published var gameNavigationID = UUID()
 
     lazy var teamSharing: TeamSharingStore = {
@@ -246,6 +269,19 @@ final class GameStore: ObservableObject {
     var hasRunners: Bool { !game.baseRunners.isEmpty }
     var currentBatter: Player { game.currentBatter }
     var currentPitcher: Player { game.currentPitcher }
+    var homeGameLists: HomeGameLists {
+        if let homeGameListsCache { return homeGameListsCache }
+        let lists = HomeGameLists(scheduled: scheduledGames, ongoing: ongoingGames, recent: recentGames)
+        homeGameListsCache = lists
+        return lists
+    }
+
+    struct HomeGameLists {
+        let scheduled: [StoredGame]
+        let ongoing: [StoredGame]
+        let recent: [StoredGame]
+    }
+
     var ongoingGames: [StoredGame] {
         games.filter { $0.status == .ongoing && $0.sharedGameID == nil }.sorted { $0.updatedAt > $1.updatedAt }
     }
@@ -266,6 +302,21 @@ final class GameStore: ObservableObject {
     var supportsTransientCorrection: Bool { activeGameID == nil && sourceDatabaseURL == nil && game.rulesSnapshot?.effectiveRecordingMethod == .situation }
     var activeRules: GameRules? {
         activeGameID.flatMap { id in games.first(where: { $0.id == id })?.rules }
+    }
+    var currentRecordingMethod: RecordingMethod { (game.rulesSnapshot ?? activeRules)?.effectiveRecordingMethod ?? .traditional }
+
+    @discardableResult
+    func changeRecordingMethod(to method: RecordingMethod) -> Bool {
+        guard canRecordAction, let index = games.firstIndex(where: { $0.id == activeGameID }) else { return false }
+        guard currentRecordingMethod != method else { return true }
+        beginAtomicAction()
+        historySuppressCapture = true
+        var rules = game.rulesSnapshot ?? games[index].rules
+        rules.recordingMethod = method
+        game.rulesSnapshot = rules
+        games[index].rules.recordingMethod = method
+        commitAtomicAction()
+        return actionErrorMessage == nil && currentRecordingMethod == method
     }
     private var activeRulesOrDefault: GameRules {
         activeRules ?? game.rulesSnapshot ?? GameRules(scheduledInnings: game.scheduledInnings)
@@ -455,7 +506,8 @@ final class GameStore: ObservableObject {
         ourTeam: Team,
         opponent: Team,
         isHome: Bool,
-        scheduledAt: Date
+        scheduledAt: Date,
+        venue: String? = nil
     ) -> UUID {
         let home = isHome ? ourTeam : opponent
         let away = isHome ? opponent : ourTeam
@@ -468,7 +520,7 @@ final class GameStore: ObservableObject {
         state.playLog.append(
             PlayLogEntry(inning: 1, isTop: true, text: "比赛已安排：\(away.shortName) 对 \(home.shortName)")
         )
-        let stored = StoredGame(
+        var stored = StoredGame(
             scheduledAt: scheduledAt,
             startedAt: nil,
             seasonID: MatchYear.id(for: scheduledAt),
@@ -480,6 +532,7 @@ final class GameStore: ObservableObject {
             status: .scheduled,
             state: state
         )
+        stored.scheduleVenue = venue
         games.insert(stored, at: 0)
         persist { try persistenceStore.upsertGame(stored) }
         return stored.id
@@ -825,12 +878,19 @@ final class GameStore: ObservableObject {
         var result = teams + teamSharing.sharedRosterTeams + archivedTeams.filter { archived in !teams.contains { $0.id == archived.id } }
         var seen = Set<UUID>()
         result = result.filter { seen.insert($0.id).inserted }
+        let sharedIDs = Set(teamSharing.teams.map(\.id))
+        var localScopeIDs: [UUID: UUID] = [:]
         for stored in games where !stored.isObservation && stored.ourTeamID != nil && stored.sharedTeamID == nil {
-            var team = stored.ourTeam
-            if teamSharing.teams.contains(where: { $0.id == team.id }) {
-                team = Team(id: localStatisticsScope(team.id), name: team.name + " · 本机记录", shortName: team.shortName + " · 本机", city: team.city, players: team.players)
+            let team = stored.ourTeam
+            if sharedIDs.contains(team.id) {
+                let scopeID = localScopeIDs[team.id] ?? localStatisticsScope(team.id)
+                localScopeIDs[team.id] = scopeID
+                guard seen.insert(scopeID).inserted else { continue }
+                result.append(Team(id: scopeID, name: team.name + " · 本机记录",
+                                   shortName: team.shortName + " · 本机", city: team.city, players: team.players))
+            } else if seen.insert(team.id).inserted {
+                result.append(team)
             }
-            if !result.contains(where: { $0.id == team.id }) { result.append(team) }
         }
         return result
     }
@@ -1713,9 +1773,13 @@ final class GameStore: ObservableObject {
     }
 
     @discardableResult
-    func recordRunnerEvent(_ kind: RunnerEventKind, decisions: [RunnerDecision], timingRunCounts: Bool? = nil) -> Bool {
+    func recordRunnerEvent(
+        _ kind: RunnerEventKind, decisions: [RunnerDecision], timingRunCounts: Bool? = nil,
+        errorResponsibility: RunnerErrorResponsibility? = nil
+    ) -> Bool {
         beginAtomicAction()
-        let result = recordRunnerEventOperation(kind, decisions: decisions, timingRunCounts: timingRunCounts)
+        let result = recordRunnerEventOperation(kind, decisions: decisions, timingRunCounts: timingRunCounts,
+                                                errorResponsibility: errorResponsibility)
         commitAtomicAction()
         return result && actionErrorMessage == nil
     }
@@ -1723,10 +1787,12 @@ final class GameStore: ObservableObject {
     private func recordRunnerEventOperation(
         _ kind: RunnerEventKind,
         decisions: [RunnerDecision],
-        timingRunCounts: Bool? = nil
+        timingRunCounts: Bool?,
+        errorResponsibility: RunnerErrorResponsibility?
     ) -> Bool {
         beginAtomicAction()
-        recordHistoryCommand(.runner(kind, decisions, timingRunCounts))
+        let responsibility = kind == .defensiveErrorAdvance ? errorResponsibility : nil
+        recordHistoryCommand(.runner(kind, decisions, timingRunCounts, responsibility: responsibility))
 
         defer { commitAtomicAction() }
         guard canRecordAction, allowedRunnerEvents.contains(kind) else { actionErrorMessage = "教练投手模式不适用此跑垒事件。"; return false }
@@ -1743,6 +1809,59 @@ final class GameStore: ObservableObject {
             actionErrorMessage = "第三出局同时发生得分，请确认得分与出局的先后。"
             return false
         }
+        let errorFielder: Player?
+        if case .fielder(let id)? = responsibility {
+            guard let player = activeFielders.first(where: { $0.id == id }) else {
+                actionErrorMessage = "请选择当时在场的失误责任人。"
+                return false
+            }
+            errorFielder = player
+        } else { errorFielder = nil }
+        let fielders = Dictionary(uniqueKeysWithValues: activeFielders.map { ($0.id, $0) })
+        var stealErrors = Set<UUID>()
+        var defenseDescriptions: [String] = []
+        var passedBallCatcher: UUID?
+        for decision in decisions {
+            switch decision.defense {
+            case .noCatcherAssist:
+                guard kind == .caughtStealing && decision.destination == .out else {
+                    actionErrorMessage = "请核对盗垒出局的跑者。"
+                    return false
+                }
+            case .caughtStealing(let catcherID, let receiverID, let target):
+                let safeTarget: Int? = switch decision.destination {
+                case .base(let base): base.rawValue
+                case .score: StealTarget.home.rawValue
+                case .hold, .out: nil
+                }
+                guard kind == .caughtStealing, decision.stealTargets.contains(target),
+                      let catcher = fielders[catcherID], catcher.primaryPosition == .catcher,
+                      let receiver = fielders[receiverID], catcherID != receiverID,
+                      decision.destination == .out || (safeTarget ?? 0) >= target.rawValue else {
+                    actionErrorMessage = "请核对盗垒目标、传球捕手和接球野手。"
+                    return false
+                }
+                if decision.destination != .out { stealErrors.insert(receiverID) }
+                let result = decision.destination == .out ? "出局" : "接球失误"
+                let route = "\(catcher.primaryPosition.rawValue)–\(receiver.primaryPosition.rawValue)"
+                defenseDescriptions.append("\(decision.player.compactName) 盗\(target.title)\(result) · 捕手 \(catcher.compactName) 传\(receiver.primaryPosition.fullName) \(receiver.compactName)（\(route)）")
+            case .passedBall(let catcherID):
+                guard kind == .passedBall, decision.advances, passedBallCatcher == nil,
+                      let catcher = fielders[catcherID], catcher.primaryPosition == .catcher else {
+                    actionErrorMessage = "请确认捕逸导致的进垒和当时接球的捕手。"
+                    return false
+                }
+                passedBallCatcher = catcherID
+                defenseDescriptions.append("捕手 \(catcher.compactName)")
+            case nil: break
+            }
+        }
+        if kind == .caughtStealing && historyReplayDate == nil
+            && !decisions.contains(where: { $0.destination == .out || $0.defense != nil }) {
+            actionErrorMessage = "请选择盗垒出局的跑者，或记录使跑者安全进垒的接球失误。"
+            return false
+        }
+
         pushUndo(startsClock: true)
         let pitcher = game.currentPitcher
         let automaticRunnerRuns = automaticRunnerRunCount(in: decisions)
@@ -1759,19 +1878,37 @@ final class GameStore: ObservableObject {
                 updateBatter(decision.player.id) { $0.stolenBases += 1 }
             }
         case .caughtStealing:
-            for decision in decisions where decision.destination == .out {
+            for decision in decisions where decision.destination == .out || decision.defense != nil {
                 updateBatter(decision.player.id) { $0.caughtStealing += 1 }
+                if case .caughtStealing(let catcherID, let receiverID, _)? = decision.defense {
+                    updateFielder(catcherID) { $0.assists += 1 }
+                    if decision.destination == .out { updateFielder(receiverID) { $0.putouts += 1 } }
+                }
             }
+            for receiverID in stealErrors {
+                updateFielder(receiverID) { $0.errors += 1 }
+                if game.isTop { game.homeErrors += 1 } else { game.awayErrors += 1 }
+            }
+            var unearned = Set(game.unearnedRunnerIDs ?? [])
+            for decision in decisions where decision.defense != nil && decision.advances {
+                unearned.insert(decision.player.id)
+            }
+            game.unearnedRunnerIDs = unearned.sorted { $0.uuidString < $1.uuidString }
         case .wildPitch:
             updatePitcher(pitcher.id) { $0.wildPitches += 1 }
-        case .relayAdvance, .defensiveErrorAdvance,
+        case .defensiveErrorAdvance:
+            if responsibility != nil {
+                if game.isTop { game.homeErrors += 1 } else { game.awayErrors += 1 }
+                if let errorFielder { updateFielder(errorFielder.id) { $0.errors += 1 } }
+            }
+        case .relayAdvance,
              .passedBall, .uncertainLooseBall, .pickoff, .balk,
              .tagOut, .forceOut, .appealOut, .leftEarly, .missedBase,
              .outOfBasePath, .passedRunner, .runnerInterference, .runnerHitByBall, .coachAssistance:
             break
         }
 
-        let isEarned = kind != .passedBall && kind != .uncertainLooseBall
+        let isEarned = kind != .passedBall && kind != .uncertainLooseBall && responsibility == nil
         addRunsAndPitcherResponsibility(
             resolution,
             pitcherID: pitcher.id,
@@ -1779,12 +1916,19 @@ final class GameStore: ObservableObject {
             automaticRunnerRuns: automaticRunnerRuns
         )
         let summary = runnerSummary(decisions)
+        let errorCredit = errorFielder.map { " · \($0.primaryPosition.fullName) \($0.compactName)" }
+            ?? (responsibility == .pending ? " · 责任人待确认" : "")
+        let defenseText = defenseDescriptions.isEmpty ? "" : " · " + defenseDescriptions.joined(separator: "；")
+        let needsCatcherReview = (kind == .passedBall && passedBallCatcher == nil)
+            || (kind == .caughtStealing && decisions.contains { $0.destination == .out && $0.defense == nil })
+        let unresolved = needsCatcherReview ? " · 守备归属待确认" : ""
         addLog(
-            "\(kind.rawValue)\(summary.isEmpty ? "" : "；\(summary)")",
-            incomplete: kind == .uncertainLooseBall || kind == .defensiveErrorAdvance,
+            "\(kind.title)\(defenseText)\(errorCredit)\(unresolved)\(summary.isEmpty ? "" : "；\(summary)")",
+            incomplete: needsCatcherReview || kind == .uncertainLooseBall || (kind == .defensiveErrorAdvance && errorFielder == nil),
             category: kind.group == .out ? .out : .runner,
             notation: kind.notation,
             primaryPlayerID: isCoachPitch ? nil : pitcher.id,
+            secondaryPlayerID: errorFielder?.id ?? passedBallCatcher,
             runnerDecisions: decisions,
             ballStatus: kind.ballStatus
         )
@@ -3088,6 +3232,11 @@ final class GameStore: ObservableObject {
         redoStack.append(game)
         if redoStack.count > 30 { redoStack.removeFirst() }
         game = previous
+        if let method = activeRules?.recordingMethod, game.rulesSnapshot?.recordingMethod != method {
+            var rules = game.rulesSnapshot ?? activeRulesOrDefault
+            rules.recordingMethod = method
+            game.rulesSnapshot = rules
+        }
         nextEventBeforeSituation = game.situationSnapshot
     }
 
@@ -3100,6 +3249,11 @@ final class GameStore: ObservableObject {
         undoStack.append(game)
         if undoStack.count > 30 { undoStack.removeFirst() }
         game = restored
+        if let method = activeRules?.recordingMethod, game.rulesSnapshot?.recordingMethod != method {
+            var rules = game.rulesSnapshot ?? activeRulesOrDefault
+            rules.recordingMethod = method
+            game.rulesSnapshot = rules
+        }
         nextEventBeforeSituation = game.situationSnapshot
     }
 
@@ -3349,6 +3503,11 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func deleteGame(id: UUID) -> Bool {
+        if let game = games.first(where: { $0.id == id }), game.status == .scheduled, scheduleTeam(for: game.ourTeamID) != nil,
+           let publication = game.schedulePublication, publication.pending != nil || !publication.cancelled {
+            actionErrorMessage = "请先打开比赛安排，取消球队赛程并确认结果，再删除本机安排。"
+            return false
+        }
         guard !sharedMatches.isShared(id) else { actionErrorMessage = "共享比赛请在球队中管理，避免误删正式档案。"; return false }
         guard !requiresDataRecovery, games.contains(where: { $0.id == id }) else { return false }
         do { try persistenceStore.deleteGame(id: id) }
@@ -3472,15 +3631,17 @@ final class GameStore: ObservableObject {
     }
 
     func plateAppearanceRecords() -> [PlateAppearanceRecord] {
+        guard let appearances = game.plateAppearances, !appearances.isEmpty else { return [] }
+        let eventsByAppearance = Dictionary(grouping: game.scoringEvents ?? [], by: \.plateAppearanceID)
         var teamSequences: [Bool: Int] = [:]
-        return (game.plateAppearances ?? []).compactMap { identity in
+        return appearances.compactMap { identity in
             let sequence = teamSequences[identity.isTop, default: 0] + 1
             teamSequences[identity.isTop] = sequence
             let team = identity.isTop ? game.awayTeam : game.homeTeam
             guard let batter = team.players.first(where: { $0.id == identity.batterIDs.last }) else { return nil }
             return PlateAppearanceRecord(id: identity.id, sequence: sequence, inning: identity.inning,
                 isTop: identity.isTop, batter: batter,
-                events: (game.scoringEvents ?? []).filter { $0.plateAppearanceID == identity.id },
+                events: eventsByAppearance[identity.id] ?? [],
                 isComplete: identity.completed)
         }
     }
@@ -4246,7 +4407,8 @@ final class GameStore: ObservableObject {
             RecordedRunnerMovement(
                 playerID: $0.player.id,
                 origin: $0.origin.title,
-                destination: $0.destination == .score && !(actionEffectiveScorers ?? []).contains($0.player.id) ? "回本垒（不计分）" : $0.destination.title
+                destination: $0.destination == .score && !(actionEffectiveScorers ?? []).contains($0.player.id) ? "回本垒（不计分）" : $0.destination.title,
+                defense: $0.defense
             )
         }
         let undoSituation = undoStack.last?.situationSnapshot
@@ -4891,12 +5053,17 @@ final class GameStore: ObservableObject {
     }
 
     func installSharedCopy(_ stored: StoredGame) throws {
-        if let existing = games.first(where: { $0.id == stored.id }), existing.sharedGameID == nil || existing.sharedGameID != stored.sharedGameID {
-            throw TeamServiceError.message("比赛来源不一致，已保留本机记录，请核对。")
+        let index = games.firstIndex { $0.id == stored.id }
+        if let index {
+            let existing = games[index]
+            guard existing.sharedGameID != nil, existing.sharedGameID == stored.sharedGameID else {
+                throw TeamServiceError.message("比赛来源不一致，已保留本机记录，请核对。")
+            }
+            if existing == stored { return }
         }
         try persistenceStore.upsertGame(stored)
         withSuspendedCurrentPersistence {
-            if let index = games.firstIndex(where: { $0.id == stored.id }) { games[index] = stored } else { games.append(stored) }
+            if let index { games[index] = stored } else { games.append(stored) }
             if activeGameID == stored.id { game = stored.state }
         }
     }

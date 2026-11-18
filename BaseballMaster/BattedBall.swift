@@ -3,6 +3,7 @@ import SwiftUI
 /// Missing on old games: keep their original scoring flow.
 enum RecordingMethod: String, Codable, CaseIterable, Identifiable {
     case traditional, situation
+    static let preferenceKey = "defaultRecordingMethod"
     var id: String { rawValue }
     var title: String { self == .traditional ? "基础版" : "Pro 版" }
     var detail: String {

@@ -103,22 +103,34 @@ struct LiveSnapshot: Codable, Equatable {
         }
         home = side(g.homeTeam, isHome: true, runs: g.homeScore, hits: g.homeHits, errors: g.homeErrors, innings: g.homeRunsByInning)
         away = side(g.awayTeam, isHome: false, runs: g.awayScore, hits: g.awayHits, errors: g.awayErrors, innings: g.awayRunsByInning)
-        batter = g.battingOrderPlayers.isEmpty ? nil : Person(g.currentBatter)
-        batterOrder = g.isFinal || batter == nil ? nil : g.currentBattingOrder
+        let battingLineup = g.isTop ? away.lineup ?? [] : home.lineup ?? []
+        let order = g.battingOrderIDs
+        let batterIndex = g.isTop ? g.awayBatterIndex : g.homeBatterIndex
+        let slotIndex = order.isEmpty || batterIndex < 0 ? nil : batterIndex % order.count
+        let battingSlot = slotIndex.map { $0 + 1 }
+        let current = battingLineup.first { $0.order != nil && $0.order == battingSlot }
+        batter = g.isFinal || g.halfEndedAwaitingDecision == true ? nil : current?.player
+        batterOrder = batter == nil ? nil : battingSlot
         pitcher = g.fieldingTeam.players.isEmpty ? nil : Person(g.currentPitcher)
         pitchCount = coach || g.fieldingTeam.players.isEmpty ? nil : (g.pitching[g.currentPitcher.id]?.pitches ?? 0)
         let line = batter.flatMap { p in g.batting.first { $0.key.uuidString == p.id }?.value } ?? BattingLine()
         batterStats = g.isFinal || batter == nil ? nil : BatterStats(atBats: line.atBats, hits: line.hits, isComplete: g.statisticsIncomplete != true)
-        let battingLineup = g.battingOrderPlayers
-        let batterIndex = g.isTop ? g.awayBatterIndex : g.homeBatterIndex
-        nextBatters = g.isFinal || battingLineup.isEmpty ? [] : (1...2).map { offset in
-            let index = (batterIndex + offset) % battingLineup.count
-            return Upcoming(player: Person(battingLineup[index]), order: index + 1)
+        if let slotIndex, batter != nil {
+            nextBatters = (1...2).compactMap { offset in
+                let slot = (slotIndex + offset) % order.count + 1
+                return battingLineup.first { $0.order == slot }.map { Upcoming(player: $0.player, order: slot) }
+            }
+        } else {
+            nextBatters = []
         }
         appearancePitchCount = g.plateAppearancePitchCount ?? 0
         pitchLimit = coach ? (stored.rules.coachPitchLimit ?? 6) : nil
         bases = g.baseRunners.map { Runner(base: $0.key.rawValue, player: Person($0.value)) }.sorted { $0.base < $1.base }
-        currentAppearanceID = g.currentPlateAppearanceID?.uuidString
+        let currentBatterID = batter?.id
+        currentAppearanceID = g.plateAppearances?.first {
+            $0.id == g.currentPlateAppearanceID && $0.inning == g.inning && $0.isTop == g.isTop
+                && $0.batterIDs.last?.uuidString == currentBatterID && currentBatterID != nil
+        }?.id.uuidString
         notice = g.isFinal ? (g.endReason?.rawValue ?? "比赛结束") : (g.pendingDecision?.title ?? "")
         if g.statisticsIncomplete == true { notice += (notice.isEmpty ? "" : " · ") + "过程或责任待确认，统计可能不完整" }
         let players = g.homeTeam.players + g.awayTeam.players
@@ -163,7 +175,7 @@ struct LiveSnapshot: Codable, Equatable {
                 let ids = appearance.isTop ? situation.awayBattingOrderIDs : situation.homeBattingOrderIDs
                 return appearance.batterIDs.last.flatMap { ids?.firstIndex(of: $0).map { $0 + 1 } }
             }
-            let isCurrent = appearance.id == g.currentPlateAppearanceID && !g.isFinal
+            let isCurrent = appearance.id.uuidString == currentAppearanceID
             let closure = appearance.interrupted ? events.enumerated().first { index, event in
                 index > (indexed.last?.offset ?? -1) && event.inning == appearance.inning && event.isTop == appearance.isTop
                     && ["HALF-END", "END"].contains(event.notation ?? "")
@@ -173,7 +185,7 @@ struct LiveSnapshot: Codable, Equatable {
             let entry = Entry(id: appearance.id.uuidString, appearanceID: appearance.id.uuidString, inning: appearance.inning, isTop: appearance.isTop,
                               kind: "appearance", label: String((last?.notation ?? (appearance.completed ? "打席结束" : "打席")).prefix(100)),
                               summary: String(summary.prefix(1000)), player: p, status: state, details: owned.map(detail),
-                              order: isCurrent ? g.currentBattingOrder : historicalOrder,
+                              order: isCurrent ? battingSlot : historicalOrder,
                               situation: situation)
             // Keep independent game/clock/substitution events in their original timeline positions.
             sequence.append((Double(indexed.first?.offset ?? (events.count + offset)), entry))

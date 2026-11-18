@@ -8,7 +8,7 @@ enum HistoryCommand: Equatable, Codable {
     case pitch(PitchAction)
     case illegalPitch(PitchAction?, Bool, PlayOutcome?, DefensivePlay?, [RunnerDecision]?, Bool?, Bool? = nil)
     case play(PlayOutcome, DefensivePlay?, [RunnerDecision], Bool?)
-    case runner(RunnerEventKind, [RunnerDecision], Bool?)
+    case runner(RunnerEventKind, [RunnerDecision], Bool?, responsibility: RunnerErrorResponsibility? = nil)
     case hitByPitch, intentionalWalk, foulBunt
     case droppedThirdStrike([RunnerDecision])
     case pitcher(UUID)
@@ -41,7 +41,7 @@ enum HistoryCommand: Equatable, Codable {
         case .pitch(let p): p.title
         case .illegalPitch: "Illegal／非法投球"
         case .play(let p, _, _, _): p.rawValue
-        case .runner(let p, _, _): p.rawValue
+        case .runner(let p, _, _, _): p.title
         case .hitByPitch: "触身球"
         case .intentionalWalk: "故意保送"
         case .foulBunt: "触击界外三振"
@@ -73,7 +73,7 @@ enum HistoryCommand: Equatable, Codable {
         switch self {
         case .illegalPitch(_, let thrown, _, _, _, _, _): return thrown
         case .pitch, .play, .hitByPitch, .foulBunt, .droppedThirdStrike: return true
-        case .runner(let kind, _, _): return [.wildPitch, .passedBall, .uncertainLooseBall].contains(kind)
+        case .runner(let kind, _, _, _): return [.wildPitch, .passedBall, .uncertainLooseBall].contains(kind)
         case .violation(let kind, _), .adjudication(let kind, _):
             return [.quickPitch, .illegalPitch, .batterOutOfBox, .batterInterference, .illegalBat, .catcherInterference].contains(kind)
         default: return false
@@ -370,6 +370,11 @@ extension GameStore {
                 }
             }
             output.game = worker.game
+            if let method = stored.rules.recordingMethod, output.game.rulesSnapshot?.recordingMethod != method {
+                var rules = output.game.rulesSnapshot ?? stored.rules
+                rules.recordingMethod = method
+                output.game.rulesSnapshot = rules
+            }
             output.game.pitchingOutsAccountingVersion = game.pitchingOutsAccountingVersion
             output.game.pitchingOutsReviewRequired = game.pitchingOutsReviewRequired
             output.game.pitchingOutsBeforeRepair = game.pitchingOutsBeforeRepair
@@ -473,14 +478,15 @@ extension GameStore {
 
     private func historyStatisticsChanges(from old: GameState, to new: GameState) -> [String] {
         var result: [String] = []
+        let oldFielding = old.reportFielding, newFielding = new.reportFielding
         for player in new.homeTeam.players + new.awayTeam.players {
             let a = old.batting[player.id, default: BattingLine()], b = new.batting[player.id, default: BattingLine()]
             let p = old.pitching[player.id, default: PitchingLine()], q = new.pitching[player.id, default: PitchingLine()]
-            let f = old.fielding[player.id, default: FieldingLine()], g = new.fielding[player.id, default: FieldingLine()]
+            let f = oldFielding[player.id, default: FieldingLine()], g = newFielding[player.id, default: FieldingLine()]
             var parts: [String] = []
             if a != b { parts.append("打击 PA \(a.plateAppearances)→\(b.plateAppearances)，H \(a.hits)→\(b.hits)，R \(a.runs)→\(b.runs)，RBI \(a.runsBattedIn)→\(b.runsBattedIn)") }
             if p != q { parts.append("投球 \(p.pitches)→\(q.pitches)，失分 \(p.runs)→\(q.runs)，自责分 \(p.earnedRuns)→\(q.earnedRuns)") }
-            if f != g { parts.append("守备 PO \(f.putouts)→\(g.putouts)，A \(f.assists)→\(g.assists)，E \(f.errors)→\(g.errors)") }
+            if f != g { parts.append("守备 PO \(f.putouts)→\(g.putouts)，A \(f.assists)→\(g.assists)，E \(f.errors)→\(g.errors)，CCS \(f.catcherCaughtStealing ?? 0)→\(g.catcherCaughtStealing ?? 0)，PB \(f.passedBalls ?? 0)→\(g.passedBalls ?? 0)") }
             if !parts.isEmpty { result.append("\(player.compactName)：" + parts.joined(separator: "；")) }
         }
         return result
@@ -515,7 +521,15 @@ extension GameStore {
                     guard let runner = actual.baseRunners[base], runner.id == resolve(input.player.id) else {
                         throw HistoryCorrectionError.invalid("\(input.player.compactName) 原在\(base.title)，与补录后的跑者不一致，请修改该条跑垒决定。")
                     }
-                    return RunnerDecision(player: runner, origin: .base(base), destination: input.destination)
+                    let defense: RunnerDefenseCredit? = switch input.defense {
+                    case .caughtStealing(let catcher, let receiver, let target):
+                        .caughtStealing(catcherID: originalParticipant(catcher), receiverID: originalParticipant(receiver), target: target)
+                    case .passedBall(let catcher):
+                        .passedBall(catcherID: originalParticipant(catcher))
+                    case .noCatcherAssist: .noCatcherAssist
+                    case nil: nil
+                    }
+                    return RunnerDecision(player: runner, origin: .base(base), destination: input.destination, defense: defense)
                 }
             }
         }
@@ -541,8 +555,8 @@ extension GameStore {
                                        decisions: try moves.map { try decisions($0) }, timingRunCounts: timing, penaltyApplied: penalty, observation: mappedObservation)
         case .play(let outcome, let defense, let moves, let timing):
             result = applyPlay(outcome, defensivePlay: defense, decisions: try decisions(moves), timingRunCounts: timing, observation: mappedObservation)
-        case .runner(let kind, let moves, let timing):
-            result = recordRunnerEvent(kind, decisions: try decisions(moves), timingRunCounts: timing)
+        case .runner(let kind, let moves, let timing, let responsibility):
+            result = recordRunnerEvent(kind, decisions: try decisions(moves), timingRunCounts: timing, errorResponsibility: responsibility)
         case .hitByPitch: recordHitByPitch()
         case .intentionalWalk: recordIntentionalWalk()
         case .foulBunt: recordFoulBuntStrikeout()
@@ -684,6 +698,8 @@ extension GameStore {
             guard Set(ruling.unearnedRunnerIDs).isSubset(of: allowedIDs) else { throw HistoryCorrectionError.invalid("非自责跑者不属于当时进攻方。") }
             game.unearnedRunnerIDs = Array(Set(game.unearnedRunnerIDs ?? []).union(ruling.unearnedRunnerIDs)).sorted { $0.uuidString < $1.uuidString }
             for i in offset..<(game.scoringEvents?.count ?? 0) {
+                if case .runner(.defensiveErrorAdvance, _, _, .pending?) = op.command,
+                   game.scoringEvents?[i].notation == RunnerEventKind.defensiveErrorAdvance.notation { continue }
                 game.scoringEvents?[i].needsReview = false
                 game.scoringEvents?[i].reviewNote = "历史纠错；打点与投手责任已人工复核"
                 if let logID = game.scoringEvents?[i].logEntryID, let j = game.playLog.firstIndex(where: { $0.id == logID }) { game.playLog[j].isIncomplete = false }
@@ -815,7 +831,7 @@ extension GameStore {
             else if movement.destination == "出局" { destination = .out }
             else if let base = Base.allCases.first(where: { "到\($0.title)" == movement.destination }) { destination = .base(base) }
             else { throw HistoryCorrectionError.invalid("旧记录的跑者去向无法确认。") }
-            return RunnerDecision(player: player, origin: origin, destination: destination)
+            return RunnerDecision(player: player, origin: origin, destination: destination, defense: movement.defense)
         }
     }
 }

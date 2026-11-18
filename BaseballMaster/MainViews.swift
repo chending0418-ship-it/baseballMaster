@@ -4,9 +4,18 @@ struct RootTabView: View {
     @EnvironmentObject private var store: GameStore
 
     var body: some View {
-        TabView(selection: $store.selectedTab) {
+        MainTabContent(selection: store.mainTabSelection, gameNavigationID: store.gameNavigationID)
+    }
+}
+
+private struct MainTabContent: View {
+    @ObservedObject var selection: MainTabSelection
+    let gameNavigationID: UUID
+
+    var body: some View {
+        TabView(selection: $selection.index) {
             NavigationStack { GameHomeView() }
-                .id(store.gameNavigationID)
+                .id(gameNavigationID)
                 .tabItem { Label("比赛", systemImage: "baseball.diamond.bases") }
                 .tag(0)
 
@@ -28,13 +37,22 @@ struct RootTabView: View {
 
 struct GameHomeView: View {
     @EnvironmentObject private var store: GameStore
+    @Environment(\.scenePhase) private var scenePhase
     @State private var gamePendingDeletion: StoredGame?
     @AppStorage("demoIntroductionSeen") private var demoIntroductionSeen = false
 
     var body: some View {
+        let games = store.homeGameLists
+        let notices = store.visibleTeamSchedules
+        let local = games.scheduled.map(UpcomingSchedule.local)
+        let scheduledGames = notices.isEmpty ? local : (local + notices.map(UpcomingSchedule.team)).sorted {
+            $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date
+        }
+        let ongoingGames = games.ongoing
+        let recentGames = games.recent.prefix(10)
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                teamHeader
+                teamHeader(recentGames: games.recent)
                 if store.currentTeam == nil {
                     Button("创建球队") { store.selectedTab = 1 }
                         .buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("empty-create-team")
@@ -49,44 +67,53 @@ struct GameHomeView: View {
                 }
 
                 NavigationLink(destination: NewGameSetupView()) {
-                    Label(store.ongoingGames.isEmpty ? "开始新比赛" : "再开始一场比赛", systemImage: "plus.circle.fill")
+                    Label(ongoingGames.isEmpty ? "开始新比赛" : "再开始一场比赛", systemImage: "plus.circle.fill")
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .accessibilityIdentifier("start-new-game")
 
-                if !store.scheduledGames.isEmpty {
-                    SectionHeader(title: "即将进行", subtitle: "\(store.scheduledGames.count) 场")
+                if !scheduledGames.isEmpty {
+                    SectionHeader(title: "即将进行", subtitle: "\(scheduledGames.count) 场")
                     LazyVStack(spacing: 12) {
-                        ForEach(store.scheduledGames) { stored in
-                            HStack(spacing: 0) {
-                                NavigationLink(destination: ScheduledGameDetailView(gameID: stored.id)) {
-                                    scheduledGameContent(stored)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("scheduled-game-\(stored.id.uuidString)")
-                                Menu {
-                                    Button("删除安排", systemImage: "trash", role: .destructive) {
-                                        gamePendingDeletion = stored
+                        ForEach(scheduledGames) { entry in
+                            switch entry {
+                            case .team(let notice):
+                                MemberScheduleRow(notice: notice)
+                            case .local(let stored):
+                                HStack(spacing: 0) {
+                                    NavigationLink(destination: ScheduledGameDetailView(gameID: stored.id)) {
+                                        scheduledGameContent(stored)
                                     }
-                                } label: {
-                                    Image(systemName: "ellipsis.circle")
-                                        .font(.system(size: 20))
-                                        .foregroundStyle(BMTheme.secondaryText)
-                                        .frame(width: 48, height: 68)
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("scheduled-game-\(stored.id.uuidString)")
+                                    Menu {
+                                        Button("删除安排", systemImage: "trash", role: .destructive) {
+                                            gamePendingDeletion = stored
+                                        }
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                            .font(.system(size: 20))
+                                            .foregroundStyle(BMTheme.secondaryText)
+                                            .frame(width: 48, height: 68)
+                                    }
                                 }
-                            }
-                            .background(BMTheme.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(BMTheme.line.opacity(0.7), lineWidth: 1)
+                                .background(BMTheme.surface)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .stroke(BMTheme.line.opacity(0.7), lineWidth: 1)
+                                }
                             }
                         }
                     }
                 }
 
-                SectionHeader(title: "正在进行", subtitle: store.ongoingGames.isEmpty ? nil : "\(store.ongoingGames.count) 场")
-                if store.ongoingGames.isEmpty {
+                if let error = store.scheduleFeedError {
+                    Text(error).font(.footnote).foregroundStyle(BMTheme.secondaryText)
+                }
+
+                SectionHeader(title: "正在进行", subtitle: ongoingGames.isEmpty ? nil : "\(ongoingGames.count) 场")
+                if ongoingGames.isEmpty {
                     emptyGameCard(
                         icon: "play.slash",
                         title: "没有进行中的比赛",
@@ -94,7 +121,7 @@ struct GameHomeView: View {
                     )
                 } else {
                     LazyVStack(spacing: 12) {
-                        ForEach(store.ongoingGames) { stored in
+                        ForEach(ongoingGames) { stored in
                             HStack(spacing: 0) {
                                 NavigationLink(destination: StoredGameRouteView(gameID: stored.id, showsBoxScore: false)) {
                                     gameCardContent(stored)
@@ -124,7 +151,7 @@ struct GameHomeView: View {
                 }
 
                 SectionHeader(title: "最近比赛", subtitle: "按比赛日期排序")
-                if store.recentGames.isEmpty {
+                if recentGames.isEmpty {
                     emptyGameCard(
                         icon: "clock",
                         title: "还没有已完成的比赛",
@@ -132,7 +159,7 @@ struct GameHomeView: View {
                     )
                 } else {
                     LazyVStack(spacing: 10) {
-                        ForEach(store.recentGames.prefix(10)) { stored in
+                        ForEach(recentGames) { stored in
                             HStack(spacing: 0) {
                                 NavigationLink(destination: StoredGameRouteView(gameID: stored.id, showsBoxScore: true)) {
                                     recentGameContent(stored)
@@ -163,6 +190,15 @@ struct GameHomeView: View {
             .frame(maxWidth: .infinity)
         }
         .bmScreenBackground()
+        .task(id: scheduleRefreshKey) {
+            guard scenePhase == .active else { return }
+            repeat {
+                await store.refreshTeamSchedules()
+                guard !store.teamSharing.teams.isEmpty, !Task.isCancelled else { return }
+                do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { return }
+            } while !Task.isCancelled
+        }
+        .refreshable { await store.refreshTeamSchedules() }
         .navigationTitle("比赛")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -203,7 +239,12 @@ struct GameHomeView: View {
         }
     }
 
-    private var teamHeader: some View {
+    private var scheduleRefreshKey: String {
+        let memberships = store.teamSharing.teams.map { $0.id.uuidString + String($0.accessEpoch ?? 0) }.sorted()
+        return ([String(describing: scenePhase), String(store.teamSharing.state.requiresRecoveryReview)] + memberships).joined(separator: "/")
+    }
+
+    private func teamHeader(recentGames: [StoredGame]) -> some View {
         HStack(spacing: 13) {
             if let team = store.currentTeam { TeamMark(team: team, size: 56) }
             VStack(alignment: .leading, spacing: 4) {
@@ -215,7 +256,7 @@ struct GameHomeView: View {
                     .foregroundStyle(BMTheme.secondaryText)
             }
             Spacer()
-            Text(recordText)
+            Text(recordText(recentGames: recentGames))
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(BMTheme.green)
                 .padding(.horizontal, 11)
@@ -225,9 +266,11 @@ struct GameHomeView: View {
         }
     }
 
-    private var recordText: String {
-        let completed = store.recentGames.filter {
-            store.belongsToStatisticsTeam($0, teamID: store.currentTeam?.id) && $0.yearID == MatchYear.current
+    private func recordText(recentGames: [StoredGame]) -> String {
+        let year = MatchYear.current
+        let teamID = store.currentTeam?.id
+        let completed = recentGames.filter {
+            store.belongsToStatisticsTeam($0, teamID: teamID) && $0.yearID == year
         }
         guard !completed.isEmpty else { return "暂无战绩" }
         let wins = completed.filter { $0.ourScore > $0.opponentScore }.count
@@ -307,12 +350,15 @@ struct GameHomeView: View {
                 Text("\(stored.state.awayTeam.shortName) 对 \(stored.state.homeTeam.shortName)")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(BMTheme.navy)
+                if let venue = stored.scheduleVenue, !venue.isEmpty {
+                    Label(venue, systemImage: "mappin.and.ellipse").font(.footnote)
+                }
                 Text(stored.effectiveScheduledAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(BMTheme.secondaryText)
             }
             Spacer()
-            Text(stored.isObservation ? "观赛" : "本队")
+            Text(stored.schedulePublication.map { $0.pending != nil ? "待确认" : ($0.cancelled ? "已取消" : "球队赛程") } ?? (stored.isObservation ? "观赛" : "本队"))
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(BMTheme.green)
                 .padding(.horizontal, 8)
@@ -399,6 +445,13 @@ private struct ScheduledGameDetailView: View {
                                 .foregroundStyle(BMTheme.navy)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
+                        }
+
+                        if let venue = stored.scheduleVenue, !venue.isEmpty {
+                            Label(venue, systemImage: "mappin.and.ellipse")
+                        }
+                        if store.scheduleTeam(for: stored.ourTeamID) != nil && !stored.isObservation {
+                            SchedulePublicationControls(game: stored)
                         }
 
                         SectionHeader(title: "赛前准备")

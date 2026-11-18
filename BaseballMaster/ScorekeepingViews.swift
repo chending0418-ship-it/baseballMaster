@@ -206,6 +206,7 @@ struct ScorekeepingView: View {
                         Button { showHistoryCorrection = true } label: { Label("纠正记录", systemImage: "clock.arrow.circlepath") }
                             .accessibilityIdentifier("open-history-correction")
                     .disabled(isDockedRecording)
+                        recordingMethodMenu
                         NavigationLink(destination: GamePosterView(game: stored)) {
                             Label("比赛宣传海报", systemImage: "photo.badge.plus")
                         }.accessibilityIdentifier("open-game-poster")
@@ -233,11 +234,17 @@ struct ScorekeepingView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if let stored = store.activeStoredGame {
-                    NavigationLink(destination: GamePosterView(game: stored)) {
-                        Image(systemName: "photo.badge.plus")
+                    Menu {
+                        recordingMethodMenu
+                        NavigationLink(destination: GamePosterView(game: stored)) {
+                            Label("比赛宣传海报", systemImage: "photo.badge.plus")
+                        }
+                        .accessibilityIdentifier("open-game-poster")
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .accessibilityLabel("比赛宣传海报")
-                    .accessibilityIdentifier("open-game-poster")
+                    .accessibilityLabel("更多比赛操作")
+                    .accessibilityIdentifier("local-match-controls")
                     .disabled(isDockedRecording)
                 }
             }
@@ -254,7 +261,7 @@ struct ScorekeepingView: View {
         .sheet(isPresented: Binding(get: { showPlayFlowSheet && !dockedPlayFlow },
                                     set: { showPlayFlowSheet = $0 }), onDismiss: recordingSheetDidDismiss) {
             Group {
-                if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation {
+                if store.currentRecordingMethod == .situation {
                     SituationPlayFlowSheet(illegalPitch: illegalPlay)
                 } else {
                     ScorePlayFlowSheet(illegalPitch: illegalPlay) {
@@ -354,7 +361,7 @@ struct ScorekeepingView: View {
 
     private func openPlayFlow() {
         dockedPlayFlow = workbenchAvailable
-            && (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation
+            && store.currentRecordingMethod == .situation
         showPlayFlowSheet = true
     }
 
@@ -627,7 +634,7 @@ struct ScorekeepingView: View {
                     .buttonStyle(ScoreActionButtonStyle(color: BMTheme.green, compact: true))
                     .accessibilityIdentifier("open-substitutions")
                 }
-                if (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation,
+                if store.currentRecordingMethod == .situation,
                    let latest = store.game.scoringEvents?.last(where: { $0.category == .battedBall }) {
                     HStack(spacing: 8) {
                         Text(latest.title).font(.system(size: 10)).lineLimit(2).foregroundStyle(BMTheme.secondaryText)
@@ -1037,7 +1044,7 @@ struct ScorekeepingView: View {
             store.actionErrorMessage = "当前局面无法使用语音，请继续手动记分。"
             return
         }
-        let pro = (store.game.rulesSnapshot ?? store.activeRules)?.effectiveRecordingMethod == .situation
+        let pro = store.currentRecordingMethod == .situation
         voiceContext = VoiceSheetContext(context: context, pro: pro)
     }
 
@@ -1045,6 +1052,17 @@ struct ScorekeepingView: View {
         let id = UUID()
         let context: VoicePlayContext
         let pro: Bool
+    }
+
+    private var recordingMethodMenu: some View {
+        Picker("记录方式 · \(store.currentRecordingMethod.title)", selection: Binding(
+            get: { store.currentRecordingMethod },
+            set: { store.changeRecordingMethod(to: $0) }
+        )) {
+            ForEach(RecordingMethod.allCases) { method in Text(method.title).tag(method) }
+        }
+        .accessibilityIdentifier("game-recording-method")
+        .disabled(!store.canRecordAction || hasRecordingPresentation)
     }
 
     private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
@@ -1520,25 +1538,41 @@ struct CustomDefensiveRouteSheet: View {
 struct RunnerResolutionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var decisions: [RunnerDecision]
+    @State private var passedBallCatcherID: UUID?
+    @State private var selectedRunnerID: UUID?
+    @State private var showsPreview = false
     let availableDestinations: (RunnerDecision) -> [RunnerDestination]
     let title: String
-    let message: String
     let confirmTitle: String
+    let fielders: [Player]
+    let errorResponsibility: Binding<RunnerErrorResponsibility?>?
+    let defenseKind: RunnerEventKind?
     let onConfirm: ([RunnerDecision]) -> Void
 
     init(
         decisions: [RunnerDecision],
         availableDestinations: @escaping (RunnerDecision) -> [RunnerDestination],
         title: String = "确认跑者",
-        message: String = "系统已根据结果给出建议，请确认每名跑者。",
         confirmTitle: String = "确认跑者结果",
+        fielders: [Player] = [],
+        errorResponsibility: Binding<RunnerErrorResponsibility?>? = nil,
+        defenseKind: RunnerEventKind? = nil,
         onConfirm: @escaping ([RunnerDecision]) -> Void
     ) {
         _decisions = State(initialValue: decisions)
+        let initialRunner = decisions.first { $0.destination == .out && defenseKind == .caughtStealing }
+            ?? decisions.first { $0.origin == .batter }
+            ?? decisions.first { $0.destination != .hold }
+            ?? decisions.first
+        _selectedRunnerID = State(initialValue: initialRunner?.id)
         self.availableDestinations = availableDestinations
         self.title = title
-        self.message = message
         self.confirmTitle = confirmTitle
+        self.fielders = fielders
+        self.errorResponsibility = errorResponsibility
+        self.defenseKind = defenseKind
+        let catchers = fielders.filter { $0.primaryPosition == .catcher }
+        _passedBallCatcherID = State(initialValue: catchers.count == 1 ? catchers.first?.id : nil)
         self.onConfirm = onConfirm
     }
 
@@ -1546,25 +1580,20 @@ struct RunnerResolutionSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 9) {
-                        Image(systemName: "sparkles")
-                            .foregroundStyle(BMTheme.green)
-                        Text(message)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(BMTheme.secondaryText)
-                    }
-                    .padding(12)
-                    .background(BMTheme.greenSoft)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    RunnerBoardOverview(decisions: decisions, selectedRunnerID: $selectedRunnerID,
+                                        showsPreview: showsPreview)
 
-                    if hasBaseConflict {
-                        Label("同一个垒位不能站两名跑者，请修改其中一人。", systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(BMTheme.orange)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(BMTheme.orangeSoft)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    if let errorResponsibility {
+                        BMCard { RunnerErrorPicker(fielders: fielders, selection: errorResponsibility) }
+                    }
+                    if defenseKind == .passedBall {
+                        BMCard { RunnerPassedBallPicker(fielders: fielders, catcherID: $passedBallCatcherID) }
+                    }
+
+                    if !showsPreview, let selectedRunnerID,
+                       let index = decisions.firstIndex(where: { $0.id == selectedRunnerID }) {
+                        runnerEditor($decisions[index])
+                            .id(selectedRunnerID)
                     }
 
                     if decisions.filter({ $0.destination == .score }).count > 1 {
@@ -1585,59 +1614,30 @@ struct RunnerResolutionSheet: View {
                             }
                         }
                     }
-                    ForEach($decisions) { $decision in
-                        BMCard {
-                            VStack(alignment: .leading, spacing: 13) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(decision.origin.title)
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundStyle(BMTheme.secondaryText)
-                                        Text("#\(decision.player.numberText) \(decision.player.name)")
-                                            .font(.system(size: 17, weight: .bold))
-                                            .foregroundStyle(BMTheme.navy)
-                                    }
-                                    Spacer()
-                                    Text(decision.destination.title)
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(destinationColor(decision.destination))
-                                }
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        ForEach(availableDestinations(decision), id: \.self) { destination in
-                                            Button {
-                                                decision.destination = destination
-                                            } label: {
-                                                Text(destination.title)
-                                                    .font(.system(size: 13, weight: .bold))
-                                                    .foregroundStyle(decision.destination == destination ? .white : BMTheme.navy)
-                                                    .padding(.horizontal, 13)
-                                                    .frame(minHeight: 40)
-                                                    .background(decision.destination == destination ? destinationColor(destination) : BMTheme.background)
-                                                    .clipShape(Capsule())
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
-                .padding(18)
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 18)
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                RunnerBoardModePicker(showsPreview: $showsPreview)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(BMTheme.background)
             }
             .safeAreaInset(edge: .bottom) {
                 Button(confirmTitle) {
-                    onConfirm(decisions)
+                    onConfirm(defenseKind == .passedBall
+                              ? RunnerDecision.assigningPassedBall(to: decisions, catcherID: passedBallCatcherID)
+                              : decisions)
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
                 .background(BMTheme.background)
                 .accessibilityIdentifier("confirm-runners")
-                .disabled(hasBaseConflict)
-                .opacity(hasBaseConflict ? 0.45 : 1)
+                .disabled(confirmDisabled)
+                .opacity(confirmDisabled ? 0.45 : 1)
             }
             .bmScreenBackground()
             .navigationTitle(title)
@@ -1650,22 +1650,280 @@ struct RunnerResolutionSheet: View {
         }
     }
 
-    private func destinationColor(_ destination: RunnerDestination) -> Color {
+    private var confirmDisabled: Bool {
+        !RunnerBaseLayout(decisions: decisions).conflictingBases.isEmpty || (errorResponsibility.map { $0.wrappedValue == nil } ?? false)
+            || (defenseKind == .caughtStealing && !decisions.contains { $0.destination == .out || $0.defense != nil })
+            || (defenseKind == .passedBall && !decisions.contains(where: \.advances))
+    }
+
+    private func runnerEditor(_ selection: Binding<RunnerDecision>) -> some View {
+        let decision = selection.wrappedValue
+        return BMCard {
+            VStack(alignment: .leading, spacing: 12) {
+                RunnerEditorHeading(decision: decision)
+                    .accessibilityIdentifier("runner-focused-player")
+                RunnerDestinationGrid(decision: decision, destinations: availableDestinations(decision)) { destination in
+                    guard selection.wrappedValue.destination != destination else { return }
+                    selection.wrappedValue.destination = destination
+                    selection.wrappedValue.defense = nil
+                }
+
+                if defenseKind == .caughtStealing {
+                    RunnerCaughtStealingPicker(decision: selection, fielders: fielders)
+                }
+            }
+        }
+    }
+
+}
+
+struct RunnerBaseLayout {
+    let arrivals: [Base: [RunnerDecision]]
+
+    init(decisions: [RunnerDecision]) {
+        var bases: [Base: [RunnerDecision]] = [:]
+        for decision in decisions {
+            switch (decision.origin, decision.destination) {
+            case (_, .base(let base)), (.base(let base), .hold):
+                bases[base, default: []].append(decision)
+            default: break
+            }
+        }
+        arrivals = bases
+    }
+
+    var conflictingBases: [Base] { Base.allCases.filter { (arrivals[$0]?.count ?? 0) > 1 } }
+}
+
+struct RunnerBoardModePicker: View {
+    @Binding var showsPreview: Bool
+
+    var body: some View {
+        Picker("垒况", selection: $showsPreview) {
+            Text("本球前").tag(false)
+            Text("去向预览").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("runner-board-view")
+    }
+}
+
+struct RunnerBoardOverview: View {
+    let decisions: [RunnerDecision]
+    @Binding var selectedRunnerID: UUID?
+    let showsPreview: Bool
+
+    var body: some View {
+        let layout = RunnerBaseLayout(decisions: decisions)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(showsPreview
+                 ? "预览各垒落点。回本垒是否计分，按比赛规则判定。"
+                 : "点有球员的垒包，核对打者和跑者的去向。")
+                .font(.footnote)
+                .foregroundStyle(BMTheme.secondaryText)
+
+            RunnerBaseDiamond(decisions: decisions, arrivals: layout.arrivals, selectedRunnerID: $selectedRunnerID,
+                              showsPreview: showsPreview)
+                .frame(maxWidth: 468)
+                .frame(maxWidth: .infinity)
+
+            if !layout.conflictingBases.isEmpty {
+                Label("\(layout.conflictingBases.map(\.title).joined(separator: "、"))有多名跑者，请调整去向。",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(BMTheme.orange)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(BMTheme.orangeSoft, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("runner-base-conflict")
+            }
+
+            if showsPreview {
+                let retired = decisions.filter { $0.destination == .out }.map { $0.player.compactName }
+                if !retired.isEmpty {
+                    Label("出局：\(retired.joined(separator: "、"))", systemImage: "xmark.circle")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(BMTheme.red)
+                        .accessibilityIdentifier("runner-preview-outs")
+                }
+            }
+        }
+    }
+}
+
+struct RunnerEditorHeading: View {
+    let decision: RunnerDecision
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text("\(decision.origin.title) · \(decision.player.compactName)")
+                .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(decision.origin.title).font(.caption).foregroundStyle(BMTheme.secondaryText)
+                Text(decision.player.compactName)
+            }
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(BMTheme.navy)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(decision.origin.title) · \(decision.player.compactName)")
+    }
+}
+
+struct RunnerDestinationGrid: View {
+    let decision: RunnerDecision
+    let destinations: [RunnerDestination]
+    var identifierPrefix = "runner-destination-"
+    let onSelect: (RunnerDestination) -> Void
+    @ScaledMetric(relativeTo: .subheadline) private var destinationWidth: CGFloat = 60
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: destinationWidth), spacing: 6)], spacing: 6) {
+            ForEach(destinations, id: \.self) { destination in
+                let selected = decision.destination == destination
+                Button { onSelect(destination) } label: {
+                    Text(destination.title)
+                        .font(.subheadline.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(selected ? .white : BMTheme.navy)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(selected ? color(for: destination) : BMTheme.background,
+                                    in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier(identifierPrefix + destination.title)
+            }
+        }
+    }
+
+    private func color(for destination: RunnerDestination) -> Color {
         switch destination {
         case .score, .base: BMTheme.green
         case .out: BMTheme.red
         case .hold: BMTheme.secondaryText
         }
     }
+}
 
-    private var hasBaseConflict: Bool {
-        var occupied = Set<Base>()
-        for decision in decisions {
-            guard case .base(let base) = decision.destination else { continue }
-            if occupied.contains(base) { return true }
-            occupied.insert(base)
+private struct RunnerBaseDiamond: View {
+    let decisions: [RunnerDecision]
+    let arrivals: [Base: [RunnerDecision]]
+    @Binding var selectedRunnerID: UUID?
+    let showsPreview: Bool
+    @ScaledMetric(relativeTo: .footnote) private var markerHeight: CGFloat = 74
+
+    private let locations: [RunnerOrigin] = [.base(.second), .base(.third), .base(.first), .batter]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let markerWidth = min(144, (width - 44) / 2.65)
+            let offset = min(106, max(0, (width - markerWidth) / 2 - 10))
+            let vertical = max(offset, scaledVerticalSpacing)
+            let center = CGPoint(x: width / 2, y: proxy.size.height / 2)
+            let anchors = [
+                CGPoint(x: center.x, y: center.y - vertical),
+                CGPoint(x: center.x - offset, y: center.y),
+                CGPoint(x: center.x + offset, y: center.y),
+                CGPoint(x: center.x, y: center.y + vertical)
+            ]
+
+            ZStack {
+                let lines = Path { path in
+                    path.move(to: anchors[0])
+                    path.addLine(to: anchors[2])
+                    path.addLine(to: anchors[3])
+                    path.addLine(to: anchors[1])
+                    path.closeSubpath()
+                }
+                lines.fill(BMTheme.green.opacity(0.08))
+                lines.stroke(BMTheme.green.opacity(0.36), lineWidth: 2)
+                ForEach(locations.indices, id: \.self) { index in
+                    marker(at: locations[index])
+                        .frame(width: markerWidth, height: markerHeight)
+                        .position(anchors[index])
+                }
+            }
         }
-        return false
+        .frame(height: markerHeight + 2 * max(106, scaledVerticalSpacing) + 20)
+        .background(BMTheme.greenSoft, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(showsPreview ? "跑者去向预览" : "本球前四垒站位")
+        .accessibilityIdentifier("runner-base-diamond")
+    }
+
+    private var scaledVerticalSpacing: CGFloat { min(155, markerHeight * 0.82) }
+
+    @ViewBuilder
+    private func marker(at origin: RunnerOrigin) -> some View {
+        let title: String = switch origin { case .batter: "本垒"; case .base(let base): base.title }
+        let source = decisions.first { $0.origin == origin }
+        let id = "runner-base-" + title
+        if showsPreview {
+            let players: [RunnerDecision] = switch origin {
+            case .batter: decisions.filter { $0.destination == .score }
+            case .base(let base): arrivals[base] ?? []
+            }
+            let atHome = origin == .batter
+            let conflict = !atHome && players.count > 1
+            let detail = players.count > 1
+                ? "\(players.count) 人"
+                : players.first?.player.compactName ?? (atHome ? "无人回垒" : "空垒")
+            let status = conflict ? "同垒冲突" : (atHome && !players.isEmpty ? "回本垒" : nil)
+            markerFace(title: title, detail: detail, status: status, tone: conflict ? BMTheme.red : BMTheme.green)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(([title] + players.map { $0.player.compactName } + [status ?? detail]).joined(separator: "，"))
+                .accessibilityIdentifier(id)
+        } else if let source {
+            let selected = selectedRunnerID == source.id
+            let outcome: String = if source.destination == .out, case .caughtStealing(_, _, let target) = source.defense {
+                "盗\(target.title)出局"
+            } else { source.destination.title }
+            Button { selectedRunnerID = source.id } label: {
+                markerFace(title: title, detail: source.player.compactName, status: outcome,
+                           tone: source.destination == .out ? BMTheme.red : BMTheme.green, selected: selected)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(title)，\(source.player.compactName)")
+            .accessibilityValue(outcome)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier(id)
+        } else {
+            let detail = origin == .batter ? "无打者变化" : "空垒"
+            markerFace(title: title, detail: detail, status: nil, tone: BMTheme.secondaryText)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(title)，\(detail)")
+                .accessibilityIdentifier(id)
+        }
+    }
+
+    private func markerFace(title: String, detail: String, status: String?, tone: Color, selected: Bool = false) -> some View {
+        VStack(spacing: 3) {
+            Label(title, systemImage: "diamond.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BMTheme.secondaryText)
+            Text(detail)
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(BMTheme.navy)
+            if let status {
+                Text(status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tone)
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.78)
+        .padding(.horizontal, 5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BMTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(selected ? BMTheme.green : BMTheme.line, lineWidth: selected ? 2 : 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 

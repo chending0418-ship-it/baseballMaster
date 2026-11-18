@@ -92,6 +92,32 @@ export function validateSnapshot(s) {
   return s;
 }
 
+// Older publishers may send the previous side's hitter during a half change.
+// Resolve only from the current half's active appearance and batting lineup.
+export function publicBattingSnapshot(snapshot) {
+  if (snapshot.isFinal || !snapshot.batter) return snapshot;
+  const batting = snapshot[snapshot.isTop ? 'away' : 'home'].lineup;
+  const fielding = snapshot[snapshot.isTop ? 'home' : 'away'].lineup;
+  const supplied = snapshot.batter.id;
+  if (!batting || batting.some(row => row.order != null && row.player.id === supplied)
+      || !fielding?.some(row => row.order != null && row.player.id === supplied)) return snapshot;
+
+  const appearance = snapshot.entries.find(entry => entry.kind === 'appearance' && entry.appearanceID != null
+    && entry.appearanceID === snapshot.currentAppearanceID && entry.inning === snapshot.inning
+    && entry.isTop === snapshot.isTop && ['current', 'review'].includes(entry.status));
+  const lineup = batting.filter(row => row.order != null).sort((a, b) => a.order - b.order);
+  const index = lineup.findIndex(row => row.player.id === appearance?.player?.id && row.order === appearance?.order);
+  const current = lineup[index];
+  const nextBatters = current && snapshot.nextBatters?.length && lineup.length > 1
+    ? [1, 2].slice(0, lineup.length - 1).map(offset => {
+      const { player, order } = lineup[(index + offset) % lineup.length];
+      return { player, order };
+    })
+    : [];
+  return { ...snapshot, batter: current?.player ?? null, batterOrder: current?.order ?? null,
+    batterStats: null, nextBatters, currentAppearanceID: current ? snapshot.currentAppearanceID : null };
+}
+
 export function createLiveServer({ dbPath = ':memory:', now = Date.now, trustProxy = false, maxSessions = 500, createLimit = 30, adminToken } = {}) {
   if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(dbPath);
@@ -130,7 +156,7 @@ export function createLiveServer({ dbPath = ':memory:', now = Date.now, trustPro
   }
   function envelope(row, unchanged = false) {
     return { code: row.code, revision: row.revision, serverTime: now(), lastSeen: row.last_seen, expiresAt: row.expires_at,
-      ...(unchanged ? { unchanged: true } : { snapshot: JSON.parse(row.payload) }) };
+      ...(unchanged ? { unchanged: true } : { snapshot: publicBattingSnapshot(JSON.parse(row.payload)) }) };
   }
   function deadline(s, row) {
     if (!s.isFinal) return now() + HOUR;

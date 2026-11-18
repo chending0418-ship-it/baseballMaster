@@ -1,13 +1,13 @@
 import SwiftUI
 
 enum HistoryCorrectionKind: String, CaseIterable, Identifiable {
-    case substitution = "漏记换人", position = "漏记换守位", situation = "漏记局面", error = "漏记失误"
+    case substitution = "换人纠错", position = "漏记换守位", situation = "漏记局面", error = "漏记失误"
     var id: String { rawValue }
     var symbol: String {
         switch self { case .substitution: "person.2.badge.gearshape"; case .position: "arrow.triangle.swap"; case .situation: "baseball.diamond.bases"; case .error: "exclamationmark.triangle" }
     }
     var detail: String {
-        switch self { case .substitution: "换投 · 代打 · 代跑 · 守备替补"; case .position: "恢复当时守位，核对后续守备责任"; case .situation: "补漏球、跑垒或打席，修正原有结果"; case .error: "安打改失误，或保留安打补记失误" }
+        switch self { case .substitution: "补记或更正换投、代打、代跑和守备换人"; case .position: "恢复当时守位，核对后续守备责任"; case .situation: "补漏球、跑垒或打席，修正原有结果"; case .error: "补记失误或确认跑垒失误责任人" }
     }
 }
 
@@ -95,16 +95,16 @@ struct HistoryCorrectionView: View {
                     Button("继续编辑", role: .cancel) {}
                 }
                 .sheet(item: $target) { selected in
-                    if let stored = store.activeStoredGame, let kind {
-                        HistoryOperationEditor(state: selected.state, stored: stored, kind: kind, original: selected.original) { command, errors, addedPlayer, ruling, observation in
+                    if let stored = store.activeStoredGame, let editorKind = selected.original?.command.preferredEditor ?? kind {
+                        HistoryOperationEditor(state: selected.state, stored: stored, kind: editorKind, original: selected.original) { command, errors, addedPlayer, ruling, observation in
                             guard var value = draft else { return }
-                            if let addedPlayer { value.addedPlayers.append(addedPlayer); value.addedPlayersHome[addedPlayer.id] = selected.state.isTop == (kind != .substitution || command.isDefensiveSubstitution) }
+                            if let addedPlayer { value.addedPlayers.append(addedPlayer); value.addedPlayersHome[addedPlayer.id] = selected.state.isTop == (editorKind != .substitution || command.isDefensiveSubstitution) }
                             var op = selected.original ?? HistoryOperation(command: command, before: selected.state, timestamp: selected.original?.timestamp ?? anchorDate(selected.index), inserted: true)
                             op.command = command; op.title = command.title; op.errors = errors; op.statisticsRuling = ruling; op.battedBall = observation
                             op.context = HistoryContext(selected.state); op.acceptsNewContext = true; op.correctedAt = Date()
                             if selected.replacing { op.edited = true; value.journal.operations[selected.index] = op }
                             else { value.journal.operations.insert(op, at: selected.index) }
-                            value.reason = kind.rawValue
+                            value.reason = editorKind.rawValue
                             draft = value; dirty = true; recalculate()
                         }
                     }
@@ -117,7 +117,7 @@ struct HistoryCorrectionView: View {
     private var intro: some View {
         BMCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text("把遗漏补回发生的位置").font(.title3.bold())
+                Text("核对和更正比赛记录").font(.title3.bold())
                 Text("先选择类型，再定位具体事件。更正保留在草稿中，核对后续局面与统计后一起保存。")
                     .font(.subheadline).foregroundStyle(BMTheme.secondaryText)
                 Label(store.game.isFinal ? "赛后更正 · 保持比赛结束状态" : "历史草稿 · 现场记分保持原样", systemImage: "lock.shield")
@@ -159,7 +159,8 @@ struct HistoryCorrectionView: View {
                             HStack {
                                 Button("此前补录") { target = HistoryEditTarget(index: index, replacing: false, state: state) }
                                 Spacer()
-                                Button("修改此条") { target = HistoryEditTarget(index: index, replacing: true, state: state, original: op) }
+                                Button(op.command.editActionTitle) { target = HistoryEditTarget(index: index, replacing: true, state: state, original: op) }
+                                    .accessibilityIdentifier("history-edit-\(index)")
                                 Spacer()
                                 Menu {
                                     Button("此后补录") { if let after = afterState(index) { target = HistoryEditTarget(index: index + 1, replacing: false, state: after) } }
@@ -167,7 +168,7 @@ struct HistoryCorrectionView: View {
                                     Button("确认属于预览中的局面") { mutate(index) { $0.acceptsNewContext = true; $0.edited = true } }
                                     if index > 0 { Button("向前移动一条") { move(index, to: index - 1) } }
                                     if index + 1 < draft.journal.operations.count { Button("向后移动一条") { move(index, to: index + 1) } }
-                                    Button("删除误录／重复记录", role: .destructive) {
+                                    Button(op.command.preferredEditor == .substitution ? "撤掉整条误记换人" : "删除误录／重复记录", role: .destructive) {
                                         self.draft?.journal.operations.remove(at: index); dirty = true; recalculate()
                                     }
                                 } label: { Image(systemName: "ellipsis.circle").frame(minWidth: 32, minHeight: 32) }
@@ -264,7 +265,30 @@ struct HistoryCorrectionView: View {
 }
 
 private extension HistoryCommand {
-    var isDefensiveSubstitution: Bool { switch self { case .pitcher, .fielder, .position, .lineup: true; default: false } }
+    var isDefensiveSubstitution: Bool { switch self { case .pitcher, .fielder, .position, .lineup, .doubleSwitch: true; default: false } }
+
+    var preferredEditor: HistoryCorrectionKind? {
+        switch self {
+        case .pitcher, .batter, .pinchRunner, .fielder, .doubleSwitch: .substitution
+        case .runner(.defensiveErrorAdvance, _, _, _): .error
+        default: nil
+        }
+    }
+
+    var editActionTitle: String {
+        switch preferredEditor {
+        case .substitution: "更正换人"
+        case .error: "核对失误责任"
+        default: "修改此条"
+        }
+    }
+}
+
+private struct HistorySwitchGroup {
+    let outgoing: UUID
+    var incoming: UUID?
+    var position: FieldPosition
+    var keep = true
 }
 
 private struct HistoryOperationEditor: View {
@@ -287,6 +311,8 @@ private struct HistoryOperationEditor: View {
     @State private var illegalResult = "好坏球／界外"
     @State private var illegalPenaltyApplied = true
     @State private var runnerKind = RunnerEventKind.stolenBase
+    @State private var runnerErrorResponsibility: RunnerErrorResponsibility?
+    @State private var passedBallCatcherID: UUID?
     @State private var moves: [RunnerDecision] = []
     @State private var defense: DefensivePlay?
     @State private var errorPosition = FieldPosition.shortstop
@@ -302,6 +328,7 @@ private struct HistoryOperationEditor: View {
     @State private var newNumber = ""
     @State private var newPlayer: Player?
     @State private var issue: String?
+    @State private var switchGroups: [HistorySwitchGroup] = []
     private var worker: GameStore { let value = GameStore(persistenceURL: nil); return value.historyWorker(stored, state: state) }
     private var fielders: [Player] { state.fieldingTeam.players.filter { state.fieldingPlayerIDs.contains($0.id) } }
     private var incomingPlayers: [Player] {
@@ -326,27 +353,52 @@ private struct HistoryOperationEditor: View {
                     ToolbarItem(placement: .confirmationAction) { Button("加入草稿") { submit() }.accessibilityIdentifier("history-add-draft") }
                 }.onAppear { initialize() }
         }
+        .interactiveDismissDisabled(!switchGroups.isEmpty)
     }
 
     private var substitutionForm: some View {
         Group {
-            Section("换人方式") {
-                Picker("类型", selection: $mode) { ForEach(["换投", "代打", "代跑", "守备替补"], id: \.self) { Text($0) } }
-                    .onChange(of: mode) { _ in incoming = nil }
-                if mode == "代跑" { Picker("替换垒上跑者", selection: $base) { ForEach(Base.allCases, id: \.self) { Text("\($0.title) · \(state.baseRunners[$0]?.compactName ?? "空")").tag($0) } } }
-                if mode == "守备替补" { playerPicker("换下球员", selection: $outgoing, players: fielders) }
-                if mode == "换投" { Text("换下：\(state.currentPitcher.compactName)") }
-                if mode == "代打" { Text("换下：\(state.currentBatter.compactName)；继承当时球数与棒次") }
-                playerPicker("换上球员", selection: $incoming, players: incomingPlayers)
+            if !switchGroups.isEmpty {
+                ForEach(switchGroups.indices, id: \.self) { index in
+                    switchGroupEditor($switchGroups[index], number: index + 1)
+                }
+            } else {
+                Section("换人方式") {
+                    Picker("类型", selection: Binding(get: { mode }, set: { mode = $0; incoming = nil })) {
+                        ForEach(["换投", "代打", "代跑", "守备替补"], id: \.self) { Text($0) }
+                    }
+                    if mode == "代跑" { Picker("替换垒上跑者", selection: $base) { ForEach(Base.allCases, id: \.self) { Text("\($0.title) · \(state.baseRunners[$0]?.compactName ?? "空")").tag($0) } } }
+                    if mode == "守备替补" { playerPicker("换下球员", selection: $outgoing, players: fielders) }
+                    if mode == "换投" { Text("换下：\(state.currentPitcher.compactName)") }
+                    if mode == "代打" { Text("换下：\(state.currentBatter.compactName)；继承当时球数与棒次") }
+                    playerPicker("换上球员", selection: $incoming, players: incomingPlayers)
+                }
+                Section("找不到球员？补全本场身份") {
+                    TextField("姓名", text: $newName)
+                    TextField("背号", text: $newNumber).keyboardType(.numberPad)
+                    Button("加入本场可选名单") {
+                        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !name.isEmpty, let number = Int(newNumber), (0...99).contains(number) else { issue = "填写姓名与 0–99 的背号。"; return }
+                        let p = Player(name: name, number: number, primaryPosition: .leftField)
+                        newPlayer = p; incoming = p.id; issue = nil
+                    }
+                }
             }
-            Section("找不到球员？补全本场身份") {
-                TextField("姓名", text: $newName)
-                TextField("背号", text: $newNumber).keyboardType(.numberPad)
-                Button("加入本场可选名单") {
-                    let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !name.isEmpty, let number = Int(newNumber), (0...99).contains(number) else { issue = "填写姓名与 0–99 的背号。"; return }
-                    let p = Player(name: name, number: number, primaryPosition: .leftField)
-                    newPlayer = p; incoming = p.id; issue = nil
+        }
+    }
+
+    private func switchGroupEditor(_ group: Binding<HistorySwitchGroup>, number: Int) -> some View {
+        Section("第 \(number) 组换人") {
+            let out = fielders.first { $0.id == group.wrappedValue.outgoing }
+            let defensiveOrder = state.isTop ? state.homeBattingOrderIDs : state.awayBattingOrderIDs
+            let slot = defensiveOrder.firstIndex(of: group.wrappedValue.outgoing).map { " · 第 \($0 + 1) 棒" } ?? ""
+            Text("换下 \(out?.compactName ?? "球员待确认")\(slot)")
+            Toggle("保留这组换人", isOn: group.keep)
+                .accessibilityIdentifier("history-keep-switch-\(number)")
+            if group.wrappedValue.keep {
+                playerPicker("换上球员", selection: group.incoming, players: worker.fieldingBenchPlayers)
+                Picker("守位", selection: group.position) {
+                    ForEach(stored.rules.positions) { Text($0.fullName).tag($0) }
                 }
             }
         }
@@ -366,9 +418,9 @@ private struct HistoryOperationEditor: View {
     private var playForm: some View {
         Group {
             Section(kind == .error ? "失误如何影响原结果" : "补录内容") {
-                Picker("记录类型", selection: $mode) {
-                    ForEach(kind == .error ? ["击球结果", "附加失误"] : (["一球", "击球结果", "跑者事件", "仅修正局面", "补充说明"] + (stored.rules.isSlowPitch ? ["Illegal"] : [])), id: \.self) { Text($0) }
-                }.onChange(of: mode) { _ in resetMoves() }
+                Picker("记录类型", selection: Binding(get: { mode }, set: { mode = $0; resetMoves() })) {
+                    ForEach(kind == .error ? ["击球结果", "附加失误", "跑者事件"] : (["一球", "击球结果", "跑者事件", "仅修正局面", "补充说明"] + (stored.rules.isSlowPitch ? ["Illegal"] : [])), id: \.self) { Text($0) }
+                }
                 if mode == "补充说明" { TextField("补充已知信息，不改比分与统计", text: $supplementalNote, axis: .vertical) }
                 if mode == "Illegal" {
                     Toggle("实际投出", isOn: $illegalWasThrown)
@@ -393,7 +445,21 @@ private struct HistoryOperationEditor: View {
                     }
                     Text("修改已有击球时保留一次打席与一球；附加失误保留有效安打。请逐一核对实际进垒。").font(.caption)
                 }
-                if mode == "跑者事件" { Picker("原因", selection: $runnerKind) { ForEach(RunnerEventKind.allCases) { Text($0.rawValue).tag($0) } } }
+                if mode == "跑者事件" {
+                    Picker("原因", selection: Binding(
+                        get: { runnerKind },
+                        set: { kind in
+                            guard kind != runnerKind else { return }
+                            runnerKind = kind
+                            for index in moves.indices { moves[index].defense = nil }
+                            passedBallCatcherID = nil
+                        }
+                    )) { ForEach(RunnerEventKind.allCases) { Text($0.title).tag($0) } }
+                    if runnerKind == .passedBall { RunnerPassedBallPicker(fielders: fielders, catcherID: $passedBallCatcherID) }
+                }
+                if mode == "跑者事件", runnerKind == .defensiveErrorAdvance {
+                    RunnerErrorPicker(fielders: fielders, selection: $runnerErrorResponsibility)
+                }
             }
             if isBattedResult {
                 Section("球型与去向") {
@@ -405,8 +471,14 @@ private struct HistoryOperationEditor: View {
                 Section("实际跑者去向") {
                     Button("按预览局面重新关联跑者") { resetMoves() }
                     ForEach($moves) { $move in
-                        Picker("\(move.origin.title) · \(move.player.compactName)", selection: $move.destination) {
+                        Picker("\(move.origin.title) · \(move.player.compactName)", selection: Binding(
+                            get: { move.destination },
+                            set: { move.destination = $0; move.defense = nil }
+                        )) {
                             ForEach([RunnerDestination.hold, .base(.first), .base(.second), .base(.third), .score, .out], id: \.self) { Text($0.title).tag($0) }
+                        }
+                        if mode == "跑者事件", runnerKind == .caughtStealing {
+                            RunnerCaughtStealingPicker(decision: $move, fielders: fielders)
                         }
                     }
                     if needsTiming {
@@ -418,7 +490,7 @@ private struct HistoryOperationEditor: View {
                     }
                 }
             }
-            if kind == .error {
+            if kind == .error && !(mode == "跑者事件" && runnerKind == .defensiveErrorAdvance) {
                 Section("附加失误 · 多人／多次") {
                     ForEach($errors) { $credit in
                         VStack(alignment: .leading) {
@@ -488,11 +560,19 @@ private struct HistoryOperationEditor: View {
                 else if let action { illegalResult = "好坏球／界外"; pitch = action }
                 else { illegalResult = "No Pitch" }
             case .play(let o, let d, let m, let t): mode = "击球结果"; outcome = o; defense = d; moves = m; timing = t
-            case .runner(let k, let m, let t): mode = "跑者事件"; runnerKind = k; moves = m; timing = t
+            case .runner(let k, let m, let t, let responsibility):
+                mode = "跑者事件"; runnerKind = k; moves = m; timing = t; runnerErrorResponsibility = responsibility
+                passedBallCatcherID = m.compactMap { move -> UUID? in
+                    if case .passedBall(let id) = move.defense { return id }
+                    return nil
+                }.first
             case .pitcher(let p): mode = "换投"; incoming = p
             case .batter(let p): mode = "代打"; incoming = p
             case .pinchRunner(let b, let p): mode = "代跑"; base = b; incoming = p
             case .fielder(let o, let p): mode = "守备替补"; outgoing = o; incoming = p
+            case .doubleSwitch(let firstOut, let firstIn, let firstPosition, let secondOut, let secondIn, let secondPosition):
+                switchGroups = [HistorySwitchGroup(outgoing: firstOut, incoming: firstIn, position: firstPosition),
+                                HistorySwitchGroup(outgoing: secondOut, incoming: secondIn, position: secondPosition)]
             case .situation(let s): mode = "仅修正局面"; situation = s
             case .additionalErrors(let credits): mode = "附加失误"; errors = credits
             case .note(let text): mode = "补充说明"; supplementalNote = text
@@ -526,12 +606,28 @@ private struct HistoryOperationEditor: View {
         let effectiveTiming = needsTiming ? timing : nil
         let command: HistoryCommand
         if kind == .substitution {
-            guard let incoming else { issue = "请选择换上球员。"; return }
-            switch mode {
-            case "代打": command = .batter(incoming)
-            case "代跑": command = .pinchRunner(base, incoming)
-            case "守备替补": guard let outgoing else { issue = "请选择换下球员。"; return }; command = .fielder(outgoing, incoming)
-            default: command = .pitcher(incoming)
+            if !switchGroups.isEmpty {
+                let retained = switchGroups.filter(\.keep)
+                guard let first = retained.first else { issue = "在这条记录的菜单中可撤掉两组换人。"; return }
+                guard let firstIn = first.incoming else { issue = "请选择换上球员。"; return }
+                if retained.count == 1 {
+                    guard fielders.first(where: { $0.id == first.outgoing })?.primaryPosition == first.position else {
+                        issue = "只保留一组时，请让替补接替本组退场球员的守位。"; return
+                    }
+                    command = .fielder(first.outgoing, firstIn)
+                } else {
+                    let second = retained[1]
+                    guard let secondIn = second.incoming else { issue = "请选择第二组换上球员。"; return }
+                    command = .doubleSwitch(first.outgoing, firstIn, first.position, second.outgoing, secondIn, second.position)
+                }
+            } else {
+                guard let incoming else { issue = "请选择换上球员。"; return }
+                switch mode {
+                case "代打": command = .batter(incoming)
+                case "代跑": command = .pinchRunner(base, incoming)
+                case "守备替补": guard let outgoing else { issue = "请选择换下球员。"; return }; command = .fielder(outgoing, incoming)
+                default: command = .pitcher(incoming)
+                }
             }
         } else if kind == .position {
             var lineup = worker.lineupDraft(forHomeTeam: state.isTop)
@@ -547,7 +643,12 @@ private struct HistoryOperationEditor: View {
                                         illegalResult == "击球结果" ? outcome : nil,
                                         illegalResult == "击球结果" ? defense : nil,
                                         illegalResult == "击球结果" ? moves : nil, effectiveTiming, illegalPenaltyApplied)
-            case "跑者事件": command = .runner(runnerKind, moves, effectiveTiming)
+            case "跑者事件":
+                if runnerKind == .defensiveErrorAdvance && runnerErrorResponsibility == nil { issue = "请选择失误责任人或标记待确认。"; return }
+                let decisions = runnerKind == .passedBall
+                    ? RunnerDecision.assigningPassedBall(to: moves, catcherID: passedBallCatcherID)
+                    : moves
+                command = .runner(runnerKind, decisions, effectiveTiming, responsibility: runnerKind == .defensiveErrorAdvance ? runnerErrorResponsibility : nil)
             case "仅修正局面": command = .situation(situation!)
             case "补充说明":
                 guard !supplementalNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { issue = "请填写补充说明。"; return }
@@ -584,9 +685,24 @@ struct HistoryCorrectionFixture: View {
         }.onAppear {
             guard !ready, let team = store.currentTeam else { return }
             store.opponentTeams[0].players.append(Player(name: "周亦辰", number: 44, primaryPosition: .pitcher))
+            let doubleSwitch = ProcessInfo.processInfo.arguments.contains("--v313-double-switch")
+            if doubleSwitch {
+                store.opponentTeams[0].players.append(Player(name: "林成", number: 48, primaryPosition: .leftField))
+            }
             let lineup = team.players.prefix(9).enumerated().map { LineupAssignment(playerID: $0.element.id, battingOrder: $0.offset + 1, position: FieldPosition.allCases[$0.offset]) }
             store.startNewGame(opponent: store.opponentTeams[0], isHome: false, rules: GameRules(), lineup: lineup)
             store.recordPitch(.ball)
+            if doubleSwitch,
+               let first = store.activeFielders.first(where: { $0.primaryPosition == .thirdBase }),
+               let second = store.activeFielders.first(where: { $0.primaryPosition == .leftField }),
+               let firstIn = store.fieldingBenchPlayers.first(where: { $0.numberText == "44" }),
+               let secondIn = store.fieldingBenchPlayers.first(where: { $0.numberText == "48" }) {
+                _ = store.performDoubleSwitch(firstOut: first, firstIn: firstIn, firstPosition: first.primaryPosition,
+                                              secondOut: second, secondIn: secondIn, secondPosition: second.primaryPosition)
+                store.recordPitch(.calledStrike)
+                ready = true
+                return
+            }
             store.recordPitch(.calledStrike)
             _ = store.applyPlay(.single)
             store.recordPitch(.ball)
