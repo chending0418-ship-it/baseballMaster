@@ -1,15 +1,50 @@
-*{box-sizing:border-box}body{margin:0;font-family:"PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}main{width:1080px;height:1440px;position:relative;overflow:hidden;background:#f6f3e8;color:#102f2a}
-.dark{background:#0a302e;color:#fff9e9}.sage{background:#e0e9d8}
-header{height:148px;display:grid;place-items:center;background:#092a2a}header img{height:80px}
-section{position:absolute;top:201px;left:68px;right:64px}
-p,h1,figure{margin:0}.label{font-size:30px;font-weight:540;color:#3c6656;letter-spacing:.035em}.dark .label{color:#d6e5af}
-h1{font:700 92px/1.14 "Songti SC",serif;letter-spacing:-.045em;margin:18px 0 20px}.cover h1{font-size:101px}
-.copy{font-size:32px;line-height:1.48;font-weight:440;letter-spacing:-.025em}
-figure{position:absolute;left:68px;right:68px;top:640px;bottom:150px;display:flex;flex-direction:column;align-items:center;justify-content:center}
-figure img{display:block;width:100%;height:auto}.field{max-width:766px;border:5px solid #eff0da;border-radius:26px}
-.screen{width:100%;padding:13px;background:#121b22;border-radius:28px}.screen img{border-radius:16px}.report{width:87%;padding:20px;transform:rotate(-1.8deg);box-shadow:6px 16px 34px #21432e24;background:white}.runner{width:78%;padding:12px;border:1px solid #ccd9ca;border-radius:16px;background:#e4f1e8}
-.math{width:100%;display:flex;justify-content:space-evenly;align-items:center;border-top:2px solid #738c77;border-bottom:2px solid #738c77;padding:52px 0}.math div{text-align:center}.math strong{display:block;font:145px/1 Baskerville,Georgia,serif;color:#245747}.math em{font:55px/1 Georgia,serif}.math small{display:block;font-size:31px;margin-top:18px}
-.broadcast{width:100%;padding:73px 35px;background:#637e69;background:linear-gradient(135deg,#5a7767,#b6c7a5);border-radius:13px}
-aside{font-size:29px;line-height:1.5;align-self:flex-start;margin-top:27px;color:#365a4b}.dark aside{color:#cddccf}
-footer{position:absolute;bottom:50px;left:68px;right:68px;border-top:1px solid #92a599;display:flex;align-items:center;padding-top:24px;gap:25px;font-size:24px;color:#50675a}
-footer img{height:32px;filter:brightness(0);opacity:.76}footer b{margin-left:auto;font:500 24px "Helvetica Neue",sans-serif}.dark footer{color:#d3dfd1}.dark footer img{filter:none;opacity:1}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main {
+  width: 720px; height: 960px; position: relative; overflow: hidden;
+  background: #f6f3e8; color: #102f2a;
+}
+.dark { background: #0a302e; color: #fff9e9; }
+.sage { background: #e0e9d8; }
+header { height: 94px; display: grid; place-items: center; background: #092a2a; }
+header img { height: 47px; }
+section { position: absolute; top: 132px; left: 48px; right: 46px; }
+p, h1, figure { margin: 0; }
+.label { font-size: 20px; font-weight: 550; color: #3c6656; }
+.dark .label { color: #d6e5af; }
+h1 { font-size: 50px; line-height: 1.17; font-weight: 600; margin: 13px 0 17px; }
+.cover h1 { font-size: 54px; }
+.copy { font-size: 22px; line-height: 1.52; font-weight: 400; }
+figure {
+  position: absolute; left: 48px; right: 48px; top: 392px; bottom: 96px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+figure img { display: block; width: 100%; height: auto; }
+.field { max-width: 430px; border: 3px solid #eff0da; border-radius: 15px; }
+.screen { width: 85%; padding: 8px; background: #121b22; border-radius: 16px; }
+.screen img { border-radius: 11px; }
+.report { width: 79%; padding: 13px; background: white; box-shadow: 0 7px 18px #21432e1f; }
+.runner { width: 70%; padding: 8px; border: 1px solid #ccd9ca; border-radius: 12px; background: #e4f1e8; }
+.math {
+  width: 87%; display: flex; justify-content: space-evenly; align-items: center;
+  border-block: 1px solid #738c77; padding: 28px 0;
+}
+.math div { text-align: center; }
+.math strong { display: block; font-size: 73px; line-height: 1; font-weight: 550; color: #245747; }
+.math em { font-size: 33px; font-style: normal; font-weight: 400; }
+.math small { display: block; font-size: 21px; margin-top: 13px; }
+.broadcast { width: 87%; padding: 33px 18px; background: #77907e; border-radius: 9px; }
+aside { margin-top: 21px; font-size: 20px; line-height: 1.5; color: #365a4b; }
+.dark aside { color: #cddccf; }
+footer {
+  position: absolute; bottom: 33px; left: 48px; right: 48px; border-top: 1px solid #92a599;
+  display: flex; align-items: center; padding-top: 15px; gap: 16px; font-size: 17px; color: #50675a;
+}
+footer img { height: 21px; filter: brightness(0); opacity: .76; }
+footer b { margin-left: auto; font-weight: 500; }
+.dark footer { color: #d3dfd1; }
+.dark footer img { filter: none; opacity: 1; }

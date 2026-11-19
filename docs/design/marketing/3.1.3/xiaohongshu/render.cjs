@@ -33,17 +33,17 @@ async function render() {
   const browser=await chromium.launch({executablePath:process.env.CHROME_BIN||"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",headless:true});
   fs.mkdirSync(out,{recursive:true});
   try {
-    const page=await browser.newPage({viewport:{width:1080,height:1440},deviceScaleFactor:1});
+    const page=await browser.newPage({viewport:{width:720,height:960},deviceScaleFactor:1});
     for (const [i,s] of slides.entries()) {
       await page.setContent(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>${css}</style><main class="${s.theme}"><header><img src="${logo}"></header><section><p class="label">${s.label}</p><h1>${s.title}</h1><p class="copy">${s.copy}</p></section><figure>${s.art}</figure><footer><img src="${mark}"><span>${s.caption}</span><b>${i+1} / 6</b></footer></main></html>`);
       await page.evaluate(async()=>{await document.fonts.ready;await Promise.all([...document.images].map(x=>x.decode()));});
-      const valid=await page.evaluate(()=>{const rect = s => document.querySelector(s).getBoundingClientRect();return rect("section").bottom<=rect("figure").top && rect("figure").bottom<=rect("footer").top && document.documentElement.scrollWidth===1080 && document.documentElement.scrollHeight===1440;});
+      const valid=await page.evaluate(()=>{const rect = s => document.querySelector(s).getBoundingClientRect();return rect("section").bottom<=rect("figure").top && rect("figure").bottom<=rect("footer").top && document.documentElement.scrollWidth===720 && document.documentElement.scrollHeight===960;});
       if(!valid)throw Error("Content overflows "+s.file);
       const pixels=await page.screenshot();
-      await sharp(pixels).removeAlpha().jpeg({quality:93,mozjpeg:true,chromaSubsampling:"4:4:4"}).toFile(path.join(out,s.file+".jpg"));
+      await sharp(pixels).removeAlpha().jpeg({quality:86,mozjpeg:true,chromaSubsampling:"4:4:4"}).toFile(path.join(out,s.file+".jpg"));
     }
-    const thumbnails=await Promise.all(slides.map(async(s,i)=>({input:await sharp(path.join(out,s.file+".jpg")).resize(216,288).png().toBuffer(),left:8+(i%3)*224,top:8+Math.floor(i/3)*296})));
-    await sharp({create:{width:680,height:600,channels:3,background:"#e9e7db"}}).composite(thumbnails).jpeg({quality:92}).toFile(path.join(out,"六图预览.jpg"));
+    const thumbnails=await Promise.all(slides.map(async(s,i)=>({input:await sharp(path.join(out,s.file+".jpg")).resize(168,224).png().toBuffer(),left:6+(i%3)*174,top:6+Math.floor(i/3)*230})));
+    await sharp({create:{width:528,height:466,channels:3,background:"#e9e7db"}}).composite(thumbnails).jpeg({quality:92}).toFile(path.join(out,"六图预览.jpg"));
     fs.copyFileSync(path.join(__dirname,"笔记.txt"),path.join(out,"笔记.txt"));
   } finally {await browser.close();}
 }
