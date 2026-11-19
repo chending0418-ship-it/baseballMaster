@@ -14,10 +14,11 @@ async function crop(file, left, top, width, height) {
   return "data:image/png;base64," + data.toString("base64");
 }
 async function render() {
+  const originals = path.join(out, "高清原图");
   const field = await crop(path.resolve(__dirname,"../../3.1.2/appstore/source/iphone-01.png"),40,545,1124,761);
   const schedule = await crop(path.join(assets,"schedule.png"),32,1204,1142,511);
   const runners = await crop(path.join(__dirname,"android-runners.png"),55,704,966,665);
-  const report = await crop(path.join(assets,"analysis.png"),112,575,986,675);
+  const report = await crop(path.join(assets,"analysis.png"),112,680,986,530);
   const score = image(path.join(assets,"obs-score.png"));
   const logo = image(path.join(assets,"scorekeeper-horizontal-reverse.svg"));
   const mark = image(path.join(assets,"baseballmaster-horizontal-reverse.svg"));
@@ -31,19 +32,19 @@ async function render() {
   ];
   const css = fs.readFileSync(path.join(__dirname,"style.css"),"utf8");
   const browser=await chromium.launch({executablePath:process.env.CHROME_BIN||"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",headless:true});
-  fs.mkdirSync(out,{recursive:true});
+  fs.mkdirSync(originals,{recursive:true});
   try {
-    const page=await browser.newPage({viewport:{width:720,height:960},deviceScaleFactor:1});
+    const page=await browser.newPage({viewport:{width:720,height:960},deviceScaleFactor:2});
     for (const [i,s] of slides.entries()) {
       await page.setContent(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>${css}</style><main class="${s.theme}"><header><img src="${logo}"></header><section><p class="label">${s.label}</p><h1>${s.title}</h1><p class="copy">${s.copy}</p></section><figure>${s.art}</figure><footer><img src="${mark}"><span>${s.caption}</span><b>${i+1} / 6</b></footer></main></html>`);
       await page.evaluate(async()=>{await document.fonts.ready;await Promise.all([...document.images].map(x=>x.decode()));});
       const valid=await page.evaluate(()=>{const rect = s => document.querySelector(s).getBoundingClientRect();return rect("section").bottom<=rect("figure").top && rect("figure").bottom<=rect("footer").top && document.documentElement.scrollWidth===720 && document.documentElement.scrollHeight===960;});
       if(!valid)throw Error("Content overflows "+s.file);
       const pixels=await page.screenshot();
-      await sharp(pixels).removeAlpha().jpeg({quality:86,mozjpeg:true,chromaSubsampling:"4:4:4"}).toFile(path.join(out,s.file+".jpg"));
+      await sharp(pixels).removeAlpha().png({compressionLevel:9}).toFile(path.join(originals,s.file+".png"));
     }
-    const thumbnails=await Promise.all(slides.map(async(s,i)=>({input:await sharp(path.join(out,s.file+".jpg")).resize(168,224).png().toBuffer(),left:6+(i%3)*174,top:6+Math.floor(i/3)*230})));
-    await sharp({create:{width:528,height:466,channels:3,background:"#e9e7db"}}).composite(thumbnails).jpeg({quality:92}).toFile(path.join(out,"六图预览.jpg"));
+    const thumbnails=await Promise.all(slides.map(async(s,i)=>({input:await sharp(path.join(originals,s.file+".png")).resize(252,336).png().toBuffer(),left:8+(i%3)*260,top:8+Math.floor(i/3)*344})));
+    await sharp({create:{width:788,height:696,channels:3,background:"#e9e7db"}}).composite(thumbnails).jpeg({quality:92}).toFile(path.join(out,"六图预览.jpg"));
     fs.copyFileSync(path.join(__dirname,"笔记.txt"),path.join(out,"笔记.txt"));
   } finally {await browser.close();}
 }
