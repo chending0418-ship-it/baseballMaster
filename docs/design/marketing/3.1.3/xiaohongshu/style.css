@@ -1,0 +1,50 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main {
+  width: 720px; height: 960px; position: relative; overflow: hidden;
+  background: #f6f3e8; color: #102f2a;
+}
+.dark { background: #0a302e; color: #fff9e9; }
+.sage { background: #e0e9d8; }
+header { height: 94px; display: grid; place-items: center; background: #092a2a; }
+header img { height: 47px; }
+section { position: absolute; top: 132px; left: 48px; right: 46px; }
+p, h1, figure { margin: 0; }
+.label { font-size: 20px; font-weight: 550; color: #3c6656; }
+.dark .label { color: #d6e5af; }
+h1 { font-size: 50px; line-height: 1.17; font-weight: 600; margin: 13px 0 17px; }
+.cover h1 { font-size: 54px; }
+.copy { font-size: 22px; line-height: 1.52; font-weight: 400; }
+figure {
+  position: absolute; left: 48px; right: 48px; top: 392px; bottom: 96px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+figure img { display: block; width: 100%; height: auto; }
+.field { max-width: 430px; border: 3px solid #eff0da; border-radius: 15px; }
+.screen { width: 85%; padding: 8px; background: #121b22; border-radius: 16px; }
+.screen img { border-radius: 11px; }
+.report { width: 79%; padding: 13px; background: white; box-shadow: 0 7px 18px #21432e1f; }
+.runner { width: 70%; padding: 8px; border: 1px solid #ccd9ca; border-radius: 12px; background: #e4f1e8; }
+.math {
+  width: 87%; display: flex; justify-content: space-evenly; align-items: center;
+  border-block: 1px solid #738c77; padding: 28px 0;
+}
+.math div { text-align: center; }
+.math strong { display: block; font-size: 73px; line-height: 1; font-weight: 550; color: #245747; }
+.math em { font-size: 33px; font-style: normal; font-weight: 400; }
+.math small { display: block; font-size: 21px; margin-top: 13px; }
+.broadcast { width: 87%; padding: 33px 18px; background: #77907e; border-radius: 9px; }
+aside { margin-top: 21px; font-size: 20px; line-height: 1.5; color: #365a4b; }
+.dark aside { color: #cddccf; }
+footer {
+  position: absolute; bottom: 33px; left: 48px; right: 48px; border-top: 1px solid #92a599;
+  display: flex; align-items: center; padding-top: 15px; gap: 16px; font-size: 17px; color: #50675a;
+}
+footer img { height: 21px; filter: brightness(0); opacity: .76; }
+footer b { margin-left: auto; font-weight: 500; }
+.dark footer { color: #d3dfd1; }
+.dark footer img { filter: none; opacity: 1; }

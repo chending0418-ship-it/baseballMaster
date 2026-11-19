@@ -1,0 +1,12 @@
+BaseballMaster / 棒球比赛记录大师, iOS 3.1.3. Bundle ID com.jasonchen.baseballmaster. The UI is Simplified Chinese. No sign-in is required. Basic and Pro are included manual scoring workflows. Team membership uses a device identity and an invitation.
+
+1. Team schedule. On device A, create a shared team under 球队 using a fictional team name and member nickname. As its administrator or scorer, open 比赛 > 开始新比赛, choose that team, turn on 安排未来比赛, select a future date/time, enter an opponent and venue, and tap 发布到球队赛程. Leave 现在完成赛前设置 off for this quick path. On an independent installation of iOS 3.1.3 on device B, join the same team as a member with an invitation from A. Open 比赛 > 即将进行 and refresh to see the match, time and venue. Reschedule or cancel on A and refresh B. 仅保存比赛安排 keeps a separate arrangement local. Schedule notices are independent of completed game archives.
+
+2. Scoring. 我的 > 练习一局 opens local practice. Select Pro, record a ball in play and review the batter and runners on the base diagram before confirming. Regular games support substitution corrections and fielding error attribution. Practice is excluded from official stats.
+
+3. Analysis. Open a completed official game result, or open 统计 for a team with completed games and select an annual or filtered range. Open 比赛分析, read the disclosure and tap 生成比赛分析. This optional online action sends statistics, key situations and player aliases via our team service to V-API. Player names stay on device for this analysis. View the report and use Share for text or PDF.
+
+4. Optional voice scoring. Review activation code: [INSERT UNUSED PRIVATE REVIEW CODE]. Redeem under 我的 > App 设置 > 语音记分. In a regular game's scoring screen tap the microphone beside 击球进入场内, select 开始录音, read the disclosure, tap 同意并开始录音 and grant microphone access. Say “坏球”, stop, check the transcript, tap 解析局面 and confirm the suggested play. Audio streams to Tencent Cloud Speech Recognition. For analysis the transcript and necessary game context go via our voice service to Tencent Cloud TokenHub/Hunyuan. Manual scoring works offline.
+
+Support: https://baseballmaster.cc/scorekeeper/support-en.html
+Privacy: https://baseballmaster.cc/scorekeeper/privacy-en.html
