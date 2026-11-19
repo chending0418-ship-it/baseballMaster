@@ -4,6 +4,8 @@
 
 - 本分支采用阶段一目录约定：iOS 唯一入口为 `ios/docs/CURRENT.md`，Android 为 `android/docs/CURRENT.md`。根 `docs/README.md` 只导航。本分支中这些平台路径替代上层规则的旧 `docs/CURRENT.md` 和根 `docs/plans/` 约定；尚未同步本 PR 的旧分支仍使用自己的旧入口。
 - iOS 的每个开发、维护和发布版本在 `ios/docs/plans/<版本> 发布功能计划.md` 维护单份计划；Android 使用 `android/docs/plans/`。3.1.0 同样归入 iOS 的计划目录，按用户 2026-11-05 更正取消根目录例外。开发日志不替代计划。
+- 记录大师每项 iOS 新功能纳入 iOS 版本计划时，须同步编写 Android 对应功能计划。已确定 Android 目标版本时，写入该版本的发布功能计划；目标版本未定时，在 [Android 总计划](android/docs/plans/ANDROID-APK.md) 登记为待排期，确定版本后迁入对应版本计划。
+- Android 计划逐项记录 iOS 来源、Android 功能范围和平台适配、依赖、验收标准及排期状态。只适用于 Apple 平台的能力也要记录 Android 替代方案或不适用的具体原因。iOS 版本计划和功能 PR 都引用对应的 Android 条目，功能范围变化时同步更新。两端独立排期与发布。
 - iOS／服务入口保持 `apps/baseball-scorekeeper/`，Android 保持 `apps/baseball-scorekeeper-android/`；分别在所属工作树修改。隔离的迁移评审 worktree 只承担本次跨目录整理。
 - 新任务从最新 `main` 建立分支；平台、服务及契约改动通过 PR 合回共同 `main`。可使用 `codex/ios/`、`codex/android/`、`codex/services/`、`codex/contracts/`、`codex/repo/` 前缀。只有用户明确授权才合并，不直接推 main、不强推、不改写历史。
 - 本阶段 iOS 工程、Swift／Kotlin 业务源码、包名、版本与签名保持原状；服务仍由 iOS／服务入口维护 `live/` 和 `collaboration/`，不移动、不部署。
