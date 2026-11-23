@@ -30,6 +30,7 @@ final class GameStore: ObservableObject {
     @Published var scheduleFeedError: String?
     @Published var schedulePermissions: [ScheduleMatchKey: (member: UUID, recovery: UUID?, role: ScheduleRole)] = [:]
     @Published var scheduleScoreRoute: UUID?
+    var lastScheduleRead: (key: ScheduleMatchKey, member: UUID, recovery: UUID?, accessEpoch: Int?, status: ScheduleScoringStatus)?
     var scheduleSyncInFlight = Set<ScheduleMatchKey>()
     var applyingScheduleProposal: UUID?
     var scheduleFetchID: UUID?

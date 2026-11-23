@@ -4510,3 +4510,40 @@ extension BaseballMasterUITests {
         captureHistory(app, name: "3.1.4-三垒传一垒")
     }
 }
+
+extension BaseballMasterUITests {
+    func testV314LocalScheduleExplainsSharingBeforeAssignment() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--root-preview"]
+        app.launch()
+        app.buttons["start-new-game"].tap()
+        let future = app.switches["安排未来比赛"]
+        revealStatisticsControl(future, in: app)
+        future.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let message = app.staticTexts["指派记录员和双人实录需要先共享球队，并把本场比赛发布到球队赛程。"]
+        revealStatisticsControl(message, in: app)
+        XCTAssertTrue(message.isHittable)
+        let link = app.buttons["schedule-open-sharing"]
+        XCTAssertTrue(link.exists)
+    }
+}
+
+extension BaseballMasterUITests {
+    @available(iOS 26.0, *)
+    @MainActor func testV314ScoringInteractionHitches() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--scorekeeping-preview"]
+        app.launch()
+        let pitch = app.buttons["pitch-坏球"]
+        let undo = app.buttons["undo-last-play"]
+        XCTAssertTrue(pitch.waitForExistence(timeout: 8))
+        pitch.tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        measure(metrics: [XCTHitchMetric(application: app)], options: options) {
+            pitch.tap()
+            undo.tap()
+        }
+    }
+}

@@ -37,10 +37,15 @@ private struct ScheduleFeed: Decodable { let schedules: [TeamScheduleNotice] }
 private struct ScheduleReceipt: Decodable { let id: UUID; let teamID: UUID; let revision: Int }
 
 extension GameStore {
-    func scheduleTeam(for ownID: UUID?) -> SharedTeamSummary? {
+    func scheduleMembership(for ownID: UUID?) -> SharedTeamSummary? {
         guard let ownID else { return nil }
         let cloudID = teamSharing.state.bindings.first { $0.localTeamID == ownID }?.cloudTeamID ?? ownID
-        return teamSharing.teams.first { $0.id == cloudID && $0.role != .member }
+        return teamSharing.teams.first { $0.id == cloudID }
+    }
+
+    func scheduleTeam(for ownID: UUID?) -> SharedTeamSummary? {
+        guard let member = scheduleMembership(for: ownID), member.role != .member else { return nil }
+        return member
     }
 
     var scheduleTeamChoices: [Team] {
@@ -142,6 +147,27 @@ extension GameStore {
         latest.scheduledAt = Date(timeIntervalSince1970: Double(request.startsAt) / 1000)
         latest.scheduleVenue = request.venue
         try saveScheduleFields(latest)
+    }
+}
+
+struct ScheduleSharingHint: View {
+    @EnvironmentObject private var store: GameStore
+    let teamID: UUID?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let team = store.scheduleMembership(for: teamID) {
+                Text(team.role == .member
+                     ? "请联系球队管理员发布赛程并指派记录员。"
+                     : "发布到共享球队赛程后，管理员可指派一名记录员，或安排两人分工实录。")
+            } else {
+                Text("指派记录员和双人实录需要先共享球队，并把本场比赛发布到球队赛程。")
+                NavigationLink("前往球队共享") { SharedTeamsView(directory: store.teamSharing) }
+                    .accessibilityIdentifier("schedule-open-sharing")
+            }
+        }
+        .font(.footnote)
+        .accessibilityIdentifier("schedule-sharing-hint")
     }
 }
 

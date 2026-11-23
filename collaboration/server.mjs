@@ -460,7 +460,7 @@ export function createCollaborationServer(options = {}) {
       if (scoring && uuid(scoring[1]) && uuid(scoring[2])) {
         const [,team,source,action] = scoring;
         if (action === 'checkpoint' && req.method === 'GET') return reply(200,store.scheduleScoring.checkpoint(team.toLowerCase(),source.toLowerCase(),deviceID));
-        if (!action && req.method === 'GET') return reply(200,store.scheduleScoring.read(team.toLowerCase(),source.toLowerCase(),deviceID));
+        if (!action && req.method === 'GET') return reply(200,store.scheduleScoring.read(team.toLowerCase(),source.toLowerCase(),deviceID,url.searchParams));
         if (action && req.method === 'POST') return reply(200,store.scheduleScoring.write(team.toLowerCase(),source.toLowerCase(),deviceID,action,body));
       }
       const schedule = /^\/api\/v3\/teams\/([a-f0-9-]+)\/schedules\/([a-f0-9-]+)$/i.exec(path);

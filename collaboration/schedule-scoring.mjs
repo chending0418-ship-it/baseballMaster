@@ -53,15 +53,22 @@ export class ScheduleScoring {
     this.db.exec(`CREATE TABLE IF NOT EXISTS schedule_scoring(
       team TEXT NOT NULL, source TEXT NOT NULL, epoch INTEGER NOT NULL DEFAULT 0,
       scorer TEXT, lineup TEXT, writer TEXT, editor TEXT, frame TEXT,
-      version INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0,
+      full_version INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0,
       proposal TEXT, receipt TEXT, transfer TEXT, checkpoint TEXT, reserved TEXT, last_frame TEXT, opening_ready INTEGER DEFAULT 0, opening_confirmed INTEGER DEFAULT 0, PRIMARY KEY(team,source),
       FOREIGN KEY(team,source) REFERENCES team_schedules(team_id,source_id) ON DELETE CASCADE)`);
+    if (!this.db.prepare('PRAGMA table_info(schedule_scoring)').all().some(column => column.name === 'full_version')) {
+      this.db.exec('ALTER TABLE schedule_scoring ADD COLUMN full_version INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
-  row(team, source) {
-    const row = this.db.prepare(`SELECT s.owner_id,s.cancelled,s.away,s.home,c.*
+  row(team, source, knownVersion) {
+    // Polling never loads the complete handoff document or an unchanged field snapshot.
+    const columns = knownVersion === undefined ? 'c.*' : `c.team,c.source,c.epoch,c.version,c.full_version,c.closed,c.editor,c.writer,c.scorer,c.lineup,
+      c.opening_ready,c.opening_confirmed,c.transfer,c.checkpoint IS NOT NULL AS checkpoint,c.last_frame,c.reserved,c.receipt,c.proposal,
+      CASE WHEN c.version = ? AND c.epoch = ? THEN NULL ELSE c.frame END AS frame`;
+    const row = this.db.prepare(`SELECT s.owner_id,s.cancelled,s.away,s.home,${columns}
       FROM team_schedules s LEFT JOIN schedule_scoring c ON c.team=s.team_id AND c.source=s.source_id
-      WHERE s.team_id=? AND s.source_id=?`).get(team,source);
+      WHERE s.team_id=? AND s.source_id=?`).get(...(knownVersion === undefined ? [team,source] : [...knownVersion,team,source]));
     this.check(row,404,'schedule_missing','球队赛程不存在。');
     return row;
   }
@@ -93,12 +100,23 @@ export class ScheduleScoring {
     }
   }
 
-  read(team,source,device) {
-    const member = this.store.membership(team,device), row = this.row(team,source);
+  read(team,source,device,query = new URLSearchParams()) {
+    const param = name => /^\d{1,12}$/.test(query.get(name) ?? '') ? Number(query.get(name)) : -1;
+    const known = param('version'), epoch = param('epoch');
+    const member = this.store.membership(team,device), row = this.row(team,source,[known || -1,epoch]);
     this.clearRevokedProposal(row);
     const summary = this.summary(row,member,device);
     const privateView = summary.role !== 'viewer' && !row.closed;
-    return { ...summary, version:row.version ?? 0, frame:privateView ? JSON.parse(row.frame) : null,
+    const sameEpoch = epoch === summary.epoch;
+    const hasBase = privateView && sameEpoch && Number.isSafeInteger(known) && known > 0 && known <= row.version;
+    const reuseFrame = hasBase && known === row.version;
+    const reusePlayers = hasBase && !reuseFrame && row.full_version > 0 && known >= row.full_version;
+    const frame = privateView && !reuseFrame ? JSON.parse(row.frame) : null;
+    if (reusePlayers && frame) {
+      frame.state.homeTeam.players = [];
+      frame.state.awayTeam.players = [];
+    }
+    return { ...summary, version:row.version ?? 0, compactSupported:true, reuseFrame, reusePlayers, frame,
       lastFrameID:summary.role === 'scorer' ? row.last_frame : null, reserved:privateView ? row.reserved : null, proposal:privateView ? JSON.parse(row.proposal) : null, receipt:privateView ? JSON.parse(row.receipt) : null };
   }
 
@@ -179,7 +197,7 @@ export class ScheduleScoring {
         this.check(!row.writer && !row.frame && !row.closed && !row.transfer && row.owner_id === member.id,
           409,'already_started','本场已有记录位置，请核对原设备。');
         this.validateFrame(body.frame,row);
-        this.db.prepare('UPDATE schedule_scoring SET frame=?,version=1,opening_confirmed=1,writer=? WHERE team=? AND source=?')
+        this.db.prepare('UPDATE schedule_scoring SET frame=?,version=1,full_version=1,opening_confirmed=1,writer=? WHERE team=? AND source=?')
           .run(JSON.stringify(body.frame),device,team,source);
         this.store.audit(team,device,'scheduleScoringResumed',source);
       } else if (action === 'release') {
@@ -195,7 +213,7 @@ export class ScheduleScoring {
         this.validateFrame(body.frame,row);
         this.check(body.frame.state.homeTeam.id === body.document.payload.state.homeTeam.id &&
           body.frame.state.awayTeam.id === body.document.payload.state.awayTeam.id);
-        this.db.prepare(`UPDATE schedule_scoring SET epoch=epoch+1,version=version+1,writer=NULL,editor=NULL,
+        this.db.prepare(`UPDATE schedule_scoring SET epoch=epoch+1,version=version+1,full_version=version+1,writer=NULL,editor=NULL,
           scorer=?,lineup=?,transfer=NULL,frame=?,checkpoint=?,receipt=NULL WHERE team=? AND source=?`)
           .run(target.scorer,target.lineup,JSON.stringify(body.frame),validated.payload,team,source);
         this.store.audit(team,device,'scheduleHandoffReleased',source);
@@ -206,6 +224,16 @@ export class ScheduleScoring {
         this.db.prepare('UPDATE schedule_scoring SET checkpoint=NULL WHERE team=? AND source=?').run(team,source);
       } else if (seed || action === 'frame') {
         this.check(body.version === (row.version ?? 0),409,'frame_changed','请先核对最新局面。');
+        const compact = body.reusePlayers === true;
+        if (compact) {
+          this.check(!seed && row.frame && fits(body.frame) && ['homeTeam','awayTeam'].every(side =>
+            Array.isArray(body.frame.state?.[side]?.players) && body.frame.state[side].players.length === 0));
+          const previous = JSON.parse(row.frame);
+          // Reconstruct locally: the idempotency record must retain the original request.
+          const state = {...body.frame.state};
+          for (const side of ['homeTeam','awayTeam']) state[side] = {...state[side],players:previous.state[side].players};
+          body = {...body,frame:{...body.frame,state}};
+        }
         if (seed) this.check(!row.checkpoint && !row.writer && !row.editor && !row.proposal,409,'already_started','记录已开始。');
         this.validateFrame(body.frame,row);
         if (seed) this.check(body.frame.pregame === true && !body.frame.state.isFinal);
@@ -214,10 +242,10 @@ export class ScheduleScoring {
         const receipt = body.appliedID ?? null;
         if (!seed) this.validateAssignedLineups(row,body.frame,receipt,body.rejected === true);
         if (receipt) this.check((body.rejected === true || row.reserved === receipt) && JSON.parse(row.proposal)?.id === receipt,409,'proposal_changed','阵容操作已变化。');
-        this.db.prepare(`UPDATE schedule_scoring SET frame=?,last_frame=?,version=version+1,closed=?,
+        this.db.prepare(`UPDATE schedule_scoring SET frame=?,last_frame=?,full_version=CASE WHEN ? THEN full_version ELSE version+1 END,version=version+1,closed=?,
           opening_confirmed=CASE WHEN lineup IS NULL AND writer IS NOT NULL THEN 1 ELSE opening_confirmed END,
           reserved=CASE WHEN ? THEN NULL ELSE reserved END,proposal=CASE WHEN ? THEN NULL ELSE proposal END,receipt=CASE WHEN ? THEN ? ELSE receipt END WHERE team=? AND source=?`)
-          .run(JSON.stringify(body.frame),body.operationID,Number(!seed && body.finished === true),Number(!!receipt),Number(!!receipt),Number(!!receipt),
+          .run(JSON.stringify(body.frame),body.operationID,Number(compact),Number(!seed && body.finished === true),Number(!!receipt),Number(!!receipt),Number(!!receipt),
             JSON.stringify({ id:receipt, applied:body.rejected !== true }),team,source);
       } else if (action === 'start' || action === 'joinLineup') {
         this.check(row.frame,409,'no_lineup','请发布人先确认双方名单与比赛规则。');

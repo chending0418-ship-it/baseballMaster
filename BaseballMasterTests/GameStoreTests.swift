@@ -10340,7 +10340,8 @@ extension GameStoreTests {
               let team = env["BM314_TEAM"].flatMap(UUID.init(uuidString:)) else {
             throw XCTSkip("需要双模拟器隔离服务夹具")
         }
-        let client = try TeamServiceClient(baseURL:URL(string:"http://127.0.0.1:" + port + "/api/v3")!,
+        let baseURL = env["BM314_PUBLIC"] == "1" ? TeamServiceClient.productionURL : URL(string:"http://127.0.0.1:" + port + "/api/v3")!
+        let client = try TeamServiceClient(baseURL:baseURL,
             vault:V30MemoryTeamCredential(value:credential))
         let store = GameStore(persistenceURL:nil)
         store.teamSharing = TeamSharingStore(service:client,storage:V30DirectoryMemoryStorage())

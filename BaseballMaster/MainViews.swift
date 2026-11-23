@@ -196,7 +196,7 @@ struct GameHomeView: View {
             if let id = store.scheduleScoreRoute { StoredGameRouteView(gameID: id, showsBoxScore: false) }
         }
         .task(id: scheduleRefreshKey) {
-            guard scenePhase == .active else { return }
+            guard scenePhase == .active, store.selectedTab == 0 else { return }
             repeat {
                 await store.refreshTeamSchedules()
                 guard !store.teamSharing.teams.isEmpty, !Task.isCancelled else { return }
@@ -246,7 +246,7 @@ struct GameHomeView: View {
 
     private var scheduleRefreshKey: String {
         let memberships = store.teamSharing.teams.map { $0.id.uuidString + String($0.accessEpoch ?? 0) }.sorted()
-        return ([String(describing: scenePhase), String(store.teamSharing.state.requiresRecoveryReview)] + memberships).joined(separator: "/")
+        return ([String(describing: scenePhase), String(store.selectedTab), String(store.teamSharing.state.requiresRecoveryReview)] + memberships).joined(separator: "/")
     }
 
     private func teamHeader(recentGames: [StoredGame]) -> some View {
@@ -454,6 +454,9 @@ private struct ScheduledGameDetailView: View {
 
                         if let venue = stored.scheduleVenue, !venue.isEmpty {
                             Label(venue, systemImage: "mappin.and.ellipse")
+                        }
+                        if !stored.isObservation && stored.schedulePublication == nil {
+                            ScheduleSharingHint(teamID: stored.ourTeamID)
                         }
                         if store.scheduleTeam(for: stored.ourTeamID) != nil && !stored.isObservation {
                             SchedulePublicationControls(game: stored)

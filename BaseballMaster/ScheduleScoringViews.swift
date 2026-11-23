@@ -10,6 +10,7 @@ private struct RemoteLineupEdit: Identifiable {
 }
 
 struct ScheduleScoringDesk: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: GameStore
     let key: ScheduleMatchKey
     @State private var status: ScheduleScoringStatus?
@@ -72,7 +73,8 @@ struct ScheduleScoringDesk: View {
         }
         .navigationTitle("本场记录岗位")
         .disabled(busy)
-        .task(id:key) {
+        .task(id:scenePhase) {
+            guard scenePhase == .active else { return }
             repeat {
                 if !busy && edit == nil && !editingAssignment { await refresh() }
                 do { try await Task.sleep(nanoseconds:4_000_000_000) } catch { return }
@@ -133,7 +135,7 @@ struct ScheduleScoringDesk: View {
     @ViewBuilder private func lineupControls(_ s: ScheduleScoringStatus) -> some View {
         Section("阵容记录") {
             if let pending = s.proposal {
-                Text("待局面端处理：" + pending.lineup.changes.joined(separator:"、"))
+                Text("已提交，等待记分设备同步：" + pending.lineup.changes.joined(separator:"、"))
             } else if let receipt = s.receipt {
                 Text(receipt.applied ? "上次阵容调整已生效" : "上次调整已退回，请按最新局面重新选择")
             }
@@ -183,6 +185,7 @@ struct ScheduleScoringDesk: View {
 
 // The device that owns the score applies a proposal in the same local transaction as its receipt ID.
 struct ScheduleScoreSync: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: GameStore
     let key: ScheduleMatchKey
     @State private var conflict: ScheduleProposal?
@@ -221,7 +224,8 @@ struct ScheduleScoreSync: View {
         } message: { _ in
             Text("首棒：" + store.game.currentBatter.compactName + "　先发投手：" + store.game.currentPitcher.compactName)
         }
-        .task(id:key) {
+        .task(id:scenePhase) {
+            guard scenePhase == .active else { return }
             repeat {
                 await sync()
                 do { try await Task.sleep(nanoseconds:2_000_000_000) } catch { return }

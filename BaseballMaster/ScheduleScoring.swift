@@ -136,15 +136,21 @@ struct ScheduleScoringStatus: Decodable {
     struct Receipt: Decodable { let id: UUID; let applied: Bool }
     let access: ScheduleRole
     let version: Int
-    let frame: ScheduleField?
+    var frame: ScheduleField?
+    let compactSupported: Bool
+    let reuseFrame: Bool
+    let reusePlayers: Bool
     let proposal: ScheduleProposal?
     let lastFrameID: UUID?
     let reserved: UUID?
     let receipt: Receipt?
-    private enum CodingKeys: CodingKey { case version, frame, proposal, receipt, reserved, lastFrameID }
+    private enum CodingKeys: CodingKey { case version, frame, proposal, receipt, reserved, lastFrameID, compactSupported, reuseFrame, reusePlayers }
     init(from decoder: Decoder) throws {
         access = try ScheduleRole(from: decoder)
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        compactSupported = try c.decodeIfPresent(Bool.self, forKey: .compactSupported) == true
+        reuseFrame = try c.decodeIfPresent(Bool.self, forKey: .reuseFrame) == true
+        reusePlayers = try c.decodeIfPresent(Bool.self, forKey: .reusePlayers) == true
         version = try c.decode(Int.self, forKey: .version)
         frame = try c.decodeIfPresent(ScheduleField.self, forKey: .frame)
         proposal = try c.decodeIfPresent(ScheduleProposal.self, forKey: .proposal)
@@ -159,6 +165,7 @@ struct ScheduleFrameSubmission: Codable, Equatable {
     let epoch: Int
     let version: Int
     let frame: ScheduleField
+    var reusePlayers: Bool? = nil
     let appliedID: UUID?
     let rejected: Bool
 }
@@ -170,6 +177,7 @@ struct ScheduleWrite: Encodable {
     var scorer: UUID?
     var lineup: UUID?
     var frame: ScheduleField?
+    var reusePlayers: Bool?
     var proposal: ScheduleProposal?
     var appliedID: UUID?
     var rejected: Bool?
@@ -218,7 +226,21 @@ extension GameStore {
         }
         let recovery = teamSharing.state.recoveryEpoch
         do {
-            let status: ScheduleScoringStatus = try await client.request("GET",path:key.path,body:Optional<String>.none)
+            let accessEpoch = teamSharing.teams.first { $0.id == key.team }?.accessEpoch
+            let cached = lastScheduleRead.flatMap {
+                $0.key == key && $0.member == member && $0.recovery == recovery && $0.accessEpoch == accessEpoch ? $0.status : nil
+            }
+            var path = key.path
+            if let cached, cached.compactSupported, cached.frame != nil {
+                path += "?version=\(cached.version)&epoch=\(cached.access.epoch)"
+            }
+            var status: ScheduleScoringStatus = try await client.request("GET",path:path,body:Optional<String>.none)
+            if status.reuseFrame { status.frame = cached?.frame }
+            if status.reusePlayers, var frame = status.frame, let previous = cached?.frame {
+                frame.state.homeTeam.players = previous.state.homeTeam.players
+                frame.state.awayTeam.players = previous.state.awayTeam.players
+                status.frame = frame
+            }
             guard teamSharing.teams.contains(where: { $0.id == key.team && $0.memberID == member }),
                   !teamSharing.state.requiresRecoveryReview, recovery == teamSharing.state.recoveryEpoch else {
                 throw TeamServiceError.message("球队权限已变化，请重新进入。")
@@ -227,10 +249,12 @@ extension GameStore {
                 schedulePermissions[key]?.recovery != recovery {
                 schedulePermissions[key] = (member,recovery,status.access)
             }
+            lastScheduleRead = (key,member,recovery,accessEpoch,status)
             try cacheScheduleWriter(key,member:member,role:status.access)
             return status
         } catch TeamServiceError.response(let code, let message) {
             if [401,403,404,426].contains(code) {
+                lastScheduleRead = nil
                 schedulePermissions.removeValue(forKey:key)
                 try cacheScheduleWriter(key,member:member,role:nil)
             }
@@ -401,8 +425,14 @@ struct ScheduleSyncResult {
 
 extension GameStore {
     private func sendScheduleFrame(_ key: ScheduleMatchKey, _ pending: ScheduleFrameSubmission) async throws {
+        var frame = pending.frame
+        // Outbox retries always send the same representation for a given operation ID.
+        if pending.reusePlayers == true {
+            frame.state.homeTeam.players = []
+            frame.state.awayTeam.players = []
+        }
         try await scoringWrite(key,"frame",ScheduleWrite(operationID:pending.id,epoch:pending.epoch,version:pending.version,
-            frame:pending.frame,appliedID:pending.appliedID,rejected:pending.rejected,finished:pending.frame.state.isFinal))
+            frame:frame,reusePlayers:pending.reusePlayers,appliedID:pending.appliedID,rejected:pending.rejected,finished:frame.state.isFinal))
         guard var game = games.first(where:{ $0.id == key.game && $0.schedulePublication?.teamID == key.team }),
               game.schedulePublication?.pendingFrame?.id == pending.id else { return }
         game.schedulePublication?.pendingFrame = nil
@@ -433,6 +463,7 @@ extension GameStore {
         }
         let waitingForOpening = s.access.lineup != nil && s.access.openingConfirmed != true
         result.opening = waitingForOpening ? s : nil
+        if waitingForOpening && s.proposal == nil && stored.schedulePublication?.pendingFrame == nil { return result }
         guard var local = stored.schedulePublication else { return result }
         if let pending = local.pendingFrame {
             if s.lastFrameID == pending.id {
@@ -473,7 +504,10 @@ extension GameStore {
         guard let current = activeStoredGame, current.id == key.game else { return result }
         let latest = ScheduleField(current,pregame:isPregame)
         if latest != s.frame || handled != nil || latest.state.isFinal {
-            let pending = ScheduleFrameSubmission(id:UUID(),epoch:s.access.epoch,version:s.version,frame:latest,appliedID:handled,rejected:rejected)
+            let reusePlayers = s.compactSupported && s.frame?.state.homeTeam.players == latest.state.homeTeam.players &&
+                s.frame?.state.awayTeam.players == latest.state.awayTeam.players
+            let pending = ScheduleFrameSubmission(id:UUID(),epoch:s.access.epoch,version:s.version,frame:latest,
+                reusePlayers:reusePlayers ? true : nil,appliedID:handled,rejected:rejected)
             var staged = current
             staged.schedulePublication?.pendingFrame = pending
             try saveScheduleFields(staged)
