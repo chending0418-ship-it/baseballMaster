@@ -4514,8 +4514,9 @@ extension BaseballMasterUITests {
 extension BaseballMasterUITests {
     func testV314LocalScheduleExplainsSharingBeforeAssignment() {
         let app = XCUIApplication()
-        app.launchArguments = ["--root-preview"]
+        app.launchArguments = ["--v30-sharing-preview", "--team-test-id=\(UUID().uuidString)"]
         app.launch()
+        app.tabBars.buttons["比赛"].tap()
         app.buttons["start-new-game"].tap()
         let future = app.switches["安排未来比赛"]
         revealStatisticsControl(future, in: app)
@@ -4523,8 +4524,11 @@ extension BaseballMasterUITests {
         let message = app.staticTexts["指派记录员和双人实录需要先共享球队，并把本场比赛发布到球队赛程。"]
         revealStatisticsControl(message, in: app)
         XCTAssertTrue(message.isHittable)
-        let link = app.buttons["schedule-open-sharing"]
-        XCTAssertTrue(link.exists)
+        let link = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "前往球队共享")).firstMatch
+        revealStatisticsControl(link, in: app)
+        XCTAssertTrue(link.isHittable)
+        link.tap()
+        XCTAssertTrue(app.navigationBars["球队共享"].waitForExistence(timeout: 8))
     }
 }
 

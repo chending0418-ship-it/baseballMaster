@@ -4,8 +4,8 @@
 
 | 项目 | 当前依据 |
 | --- | --- |
-| 3.1.4 功能计划 | [3.1.4 发布功能计划](<plans/3.1.4 发布功能计划.md>) 已实现指派、双人记录、赛中补员及中途交接，见[开发 PR #76](https://github.com/chending0418-ship-it/baseballMaster/pull/76)。守备传球布局已按评审图调整。[双机试测指南](releases/3.1.4/双机试测指南.md)。iPhone／iPad 双模拟器代跑得分联调通过；线上双人实录已启用并通过公网接口验证，Android 联调及 TestFlight 分发另行跟踪。 |
-| 当前发布 | **用户于 2026-11-05 确认：iOS 3.1.2 已通过审核并上架**。本轮未读取 App Store Connect，不推定实际审核通过时间或线上二进制的源码提交／Build |
+| 3.1.4 功能计划 | [3.1.4 发布功能计划](<plans/3.1.4 发布功能计划.md>) 已实现指派、双人记录、赛中补员及中途交接，见[开发 PR #76](https://github.com/chending0418-ship-it/baseballMaster/pull/76)。守备传球布局已按评审图调整。[双机试测指南](releases/3.1.4/双机试测指南.md)。iPhone／iPad 双模拟器代跑得分联调通过；线上双人实录已启用并通过 iPhone／iPad 双模拟器公网验证。3.1.4（1）已上传 TestFlight，13:41 收到 Apple 回执。[测试重点](releases/3.1.4/TestFlight-测试重点.txt)。Android 联调及测试组安装另行跟踪。 |
+| 当前发布 | **用户于 2026-11-05 确认：iOS 3.1.2 已通过审核并上架**。2026-11-23 查看 App Store Connect 时已显示 iOS 3.1.3 可分发。未核对该正式版的上架时间和二进制 Build |
 | 源码配置 | 本开发分支配置为 3.1.4（Build 1）；3.1.3 Build 6 的上传回执另见下方。3.1.5 另见 [草稿 PR #57](https://github.com/chending0418-ship-it/baseballMaster/pull/57) |
 | 本版计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；[上版计划](<plans/3.1.1 发布功能计划.md>) |
 | 3.1.3 TestFlight 候选 | [3.1.3 发布功能计划](<plans/3.1.3 发布功能计划.md>)。候选分支整合 [PR #67](https://github.com/chending0418-ship-it/baseballMaster/pull/67) 的记分、直播、纠错、统计和滚动改动，以及 [PR #68](https://github.com/chending0418-ship-it/baseballMaster/pull/68) 的[比赛分析与品牌 PDF](plans/比赛分析.md)。整合验收完成。Build 4 加入四垒跑者确认图和守备栏排版调整。用户于 2026-11-17 确认 Build 4 已从 TestFlight 安装，四个主 Tab 仍有卡顿。Build 5 已修正主 Tab 重复刷新与共享比赛的无变化写入，Pro 击球后复用四垒确认图，签名归档已交付，待用户上传及真机复核。线上球队服务已启用比赛分析。 |
