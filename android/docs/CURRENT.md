@@ -4,7 +4,7 @@
 
 | 项目 | 当前依据 |
 | --- | --- |
-| 0.8.6 功能计划 | [0.8.6 发布功能计划](<plans/0.8.6 发布功能计划.md>) 对齐 iOS 3.1.4，已确认指派权限和双人实录方案，同步规划赛中添加本场队员，待开发与跨端联调。候选 versionCode 暂定 32。 |
+| 0.8.6 功能计划 | [0.8.6 发布功能计划](<plans/0.8.6 发布功能计划.md>) 对齐 iOS 3.1.4，开发计划已完成，涵盖指派、双人实录和赛中补员的五步实现及验收，客户端待启动。候选 versionCode 暂定 32。 |
 | 官网分发 | **0.8.5（Build 31）**，北京时间 2026-11-18 22:12 发布。首屏与下载区均已切换，公网整包校验通过。官网 Build 29 联网打开首页已实测提示升级并保留球队数据。[官网下载](https://baseballmaster.cc/scorekeeper#download) · [签名 APK](https://baseballmaster.cc/assets/android/0.8.5-build31/BaseballMaster-Android-0.8.5-build31.apk) · [SHA-256](https://baseballmaster.cc/assets/android/0.8.5-build31/SHA256SUMS.txt) |
 | 0.8.5 验收 | 239 项已逐条登记证据、适用构建及分期。Build 30 完成球队赛程双向联调，Build 31 完成在线比赛分析及四路球队固定 OBS 转播源联调。347 项 JVM 测试通过。按用户要求使用模拟器。[版本计划与实拍](<plans/0.8.5 发布功能计划.md>) · [PR #69](https://github.com/chending0418-ship-it/baseballMaster/pull/69) |
 | 0.8.3 维护版 | 共享球队统计、官网更新提醒、可读的 PDF 文件名、共享历史打席标签和紧凑分类切换已交付。覆盖升级和发布证据见 [0.8.3 发布功能计划](<plans/0.8.3 发布功能计划.md>) |
