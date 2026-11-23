@@ -4,7 +4,7 @@
 
 | 项目 | 当前依据 |
 | --- | --- |
-| 3.1.4 功能计划 | [3.1.4 发布功能计划](<plans/3.1.4 发布功能计划.md>) 已实现指派、双人记录、赛中补员及中途交接。iPhone／iPad 双模拟器代跑得分联调通过；Android 联调、线上服务和分发待执行。 |
+| 3.1.4 功能计划 | [3.1.4 发布功能计划](<plans/3.1.4 发布功能计划.md>) 已实现指派、双人记录、赛中补员及中途交接，见[开发 PR #76](https://github.com/chending0418-ship-it/baseballMaster/pull/76)。iPhone／iPad 双模拟器代跑得分联调通过；Android 联调、线上服务和分发待执行。 |
 | 当前发布 | **用户于 2026-11-05 确认：iOS 3.1.2 已通过审核并上架**。本轮未读取 App Store Connect，不推定实际审核通过时间或线上二进制的源码提交／Build |
 | 源码配置 | 本开发分支配置为 3.1.4（Build 1）；3.1.3 Build 6 的上传回执另见下方。3.1.5 另见 [草稿 PR #57](https://github.com/chending0418-ship-it/baseballMaster/pull/57) |
 | 本版计划 | [3.1.2 发布功能计划](<plans/3.1.2 发布功能计划.md>)；[上版计划](<plans/3.1.1 发布功能计划.md>) |
