@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>棒球比赛记录大师 · iOS 3.1.3 与 Android 0.8.5 功能一览</title>
+<style>
+*{box-sizing:border-box}
+:root{--paper:#f6f4eb;--ink:#12372e;--rule:#bfcbc0}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}
+main{width:1080px;height:1800px}
+h1,h2,p,figure,dl,dd{margin:0}img{display:block}
+header{height:330px;position:relative;isolation:isolate;overflow:hidden;background:#092a2a;color:#fffdf2}
+.field{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;object-position:50% 47%}
+header:after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#092a2af5 0%,#092a2ad9 38%,#092a2a18 88%),linear-gradient(0deg,#092a2a88,transparent)}
+.brand{height:110px;display:grid;place-items:center}.brand img{height:52px}
+.intro{position:absolute;left:68px;bottom:26px}.intro p{font-size:29px;font-weight:500;letter-spacing:.12em;color:#e2efca}
+h1{margin:5px 0 0 -4px;font:550 70px/1.13 "Helvetica Neue",Arial,sans-serif;letter-spacing:-.055em}
+.intro .speed{margin-top:12px;font-size:27px;letter-spacing:0;color:#f1f3e8}
+.features{padding:0 68px}
+.feature{height:246px;display:grid;grid-template-columns:1fr 348px;column-gap:34px;align-items:center;border-bottom:1px solid var(--rule)}
+.feature:last-child{border:0}.index{font:600 25px/1.3 "Helvetica Neue",Arial,sans-serif;letter-spacing:.045em;color:#55715f}
+h2{margin:9px 0 11px;font-size:49px;font-weight:640;line-height:1.18;letter-spacing:-.05em}
+.copy{color:#40594d;font-size:30px;line-height:1.43;letter-spacing:-.018em}
+.visual{height:178px;width:100%;display:grid;place-items:center;overflow:hidden}
+.schedule img{width:100%;border-radius:10px}.runners img{height:100%;max-height:178px}
+.report{background:#dce7db;position:relative;border-radius:5px}.report img{width:268px;position:absolute;top:17px;left:40px;transform:rotate(-3deg);box-shadow:3px 6px 14px #264a3833}
+.metrics{width:100%;display:flex;align-items:center;justify-content:space-between}
+.metrics div{text-align:center}.metrics dt{font:500 43px/1.2 Baskerville,Georgia,serif}.metrics dd{font-size:23px;color:#476052;margin-top:7px}
+.broadcast img{width:100%;border-radius:7px}
+footer{height:240px;background:#092a2a;color:#f3f4e7;padding:25px 68px;display:flex;align-items:center;justify-content:space-between}
+.download h2{font-size:33px;line-height:1.45;letter-spacing:-.025em;margin:0}
+.download p{font-size:29px;line-height:1.65;margin:5px 0 23px;color:#e0e9db}
+.download .sign{height:26px}.qr{width:177px;height:177px;image-rendering:pixelated}
+</style>
+<main>
+<header><img class="field" src="{{ballpark}}" alt=""><div class="brand"><img src="{{product}}" alt="棒球比赛记录大师"></div>
+<div class="intro"><p>五项功能一览</p><h1>iOS 3.1.3  /  Android 0.8.5</h1><p class="speed">切换页面、翻看比赛记录更流畅。</p></div></header>
+<div class="features">
+<section class="feature"><div><p class="index">Feature 1</p><h2>球队赛程</h2><p class="copy">发布后，队员在「比赛 → 即将进行」<br>查看对手、时间和场地。</p></div>
+<figure class="visual schedule"><img src="{{schedule}}" alt="成员首页的球队赛程卡"></figure></section>
+<section class="feature"><div><p class="index">Feature 2</p><h2>在线比赛分析</h2><p class="copy">按单场、全年或选定场次复盘，<br>分享文字或 PDF 报告。</p></div>
+<figure class="visual report"><img src="{{report}}" alt="海浪对飞鹰的单场 A4 分析报告"></figure></section>
+<section class="feature"><div><p class="index">Feature 3</p><h2>四垒核对与赛中纠错</h2><p class="copy">核对打者与跑者去向，<br>回到原记录更正换人。</p></div>
+<figure class="visual runners"><img src="{{runners}}" alt="四垒图上的打者与跑者去向"></figure></section>
+<section class="feature"><div><p class="index">Feature 4</p><h2>打击与捕手统计</h2><p class="copy">单场、球队汇总与相关报表，<br>都能查看这三项统计。</p></div>
+<div class="visual"><dl class="metrics"><div><dt>TB</dt><dd>打击总垒数</dd></div><div><dt>CCS</dt><dd>捕手阻杀</dd></div><div><dt>PB</dt><dd>捕逸</dd></div></dl></div></section>
+<section class="feature"><div><p class="index">Feature 5</p><h2>球队固定 OBS 转播源</h2><p class="copy">用浏览器源叠加比分、投手、<br>当前打者和双方阵容。</p></div>
+<figure class="visual broadcast"><img src="{{scoreboard}}" alt="OBS 比分与投手浏览器源示例"></figure></section>
+</div>
+<footer><div class="download"><h2>App Store 搜索「棒球比赛记录大师」</h2><p>安卓官网下载：baseballmaster.cc/scorekeeper</p><img class="sign" src="{{signature}}" alt="BaseballMaster"></div><img class="qr" src="{{downloadQR}}" alt="长按识别，打开官网下载页"></footer>
+</main>
