@@ -109,6 +109,7 @@ export class TeamBroadcasts {
     this.check(snapshot.hasStarted === true && /^[A-Fa-f0-9]{8}(?:-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12}$/.test(snapshot.gameID), 409, 'broadcast_not_started', '请先开始比赛。');
     const gameID = snapshot.gameID.toLowerCase();
     const shared = this.store.games.broadcastMatch(team, gameID);
+    if (!shared) this.store.scheduleScoring.requireGameWriter(team,gameID,device);
     if (shared) {
       this.store.games.writer(shared, device);
       this.check(!shared.handoff_pending && body.writerEpoch === shared.epoch,

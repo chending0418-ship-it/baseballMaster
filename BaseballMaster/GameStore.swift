@@ -28,6 +28,11 @@ final class GameStore: ObservableObject {
     }
     @Published var teamSchedules: [TeamScheduleNotice] = []
     @Published var scheduleFeedError: String?
+    @Published var schedulePermissions: [ScheduleMatchKey: (member: UUID, recovery: UUID?, role: ScheduleRole)] = [:]
+    @Published var scheduleScoreRoute: UUID?
+    var lastScheduleRead: (key: ScheduleMatchKey, member: UUID, recovery: UUID?, accessEpoch: Int?, status: ScheduleScoringStatus)?
+    var scheduleSyncInFlight = Set<ScheduleMatchKey>()
+    var applyingScheduleProposal: UUID?
     var scheduleFetchID: UUID?
     private var homeGameListsCache: HomeGameLists?
     var statisticsOverviewCache: StatisticsOverviewCache?
@@ -61,7 +66,10 @@ final class GameStore: ObservableObject {
     lazy var sharedMatches = SharedMatchCoordinator.deviceStore(store: self)
     lazy var teamBroadcasts = TeamBroadcastCoordinator(store: self)
     var readOnlyPresentation = false
-    var canEditCurrentMatch: Bool { isHistoryReplay || (!readOnlyPresentation && (activeGameID.map { sharedMatches.canEdit($0) } ?? true)) }
+    var canEditCurrentMatch: Bool {
+        isHistoryReplay || (!readOnlyPresentation && (activeGameID.map { sharedMatches.canEdit($0) } ?? true)
+            && (activeStoredGame.map(permitsScheduledScore) ?? true))
+    }
 
     lazy var liveBroadcasts: LiveBroadcastManager = {
         #if DEBUG
@@ -2681,6 +2689,10 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func requestLineupChange(_ change: LineupChange) -> Bool {
+        if let stored = activeStoredGame, scheduleAccess(stored)?.lineup != nil {
+            actionErrorMessage = "本场阵容由阵容记录员维护。"
+            return false
+        }
         guard canRecordAction else { return false }
         actionErrorMessage = nil
         var isHomeTeam = game.isTop
@@ -3039,6 +3051,19 @@ final class GameStore: ObservableObject {
         LiveLineupDraft(game: game, isHomeTeam: isHomeTeam, allowsTwoWayPlayer: activeRulesOrDefault.twoWayPlayerEnabled, isPregame: isPregame)
     }
 
+    func applyScheduleLineup(_ proposal: ScheduleProposal, draft: LiveLineupDraft) -> Bool {
+        let previousUndo = undoStack, previousRedo = redoStack
+        applyingScheduleProposal = proposal.id
+        defer { applyingScheduleProposal = nil }
+        guard saveLineup(draft) else { return false }
+        if !proposal.changesParticipation {
+            // An off-field registration or spelling correction survives undoing the scorer's previous pitch.
+            undoStack = previousUndo.map { proposal.carryRosterEdits(into: $0) }
+            redoStack = previousRedo.map { proposal.carryRosterEdits(into: $0) }
+        }
+        return true
+    }
+
     @discardableResult
     func saveLineup(_ draft: LiveLineupDraft) -> Bool {
         guard canRecordAction else { actionErrorMessage = "请先完成当前比赛决定，再调整阵容。"; return false }
@@ -3345,6 +3370,7 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func startScheduledGame(id: UUID) -> Bool {
+        guard games.first(where: { $0.id == id })?.schedulePublication == nil else { actionErrorMessage = "请从本场记录岗位进入。"; return false }
         guard let index = games.firstIndex(where: { $0.id == id && $0.status == .scheduled }) else {
             return false
         }
@@ -3375,6 +3401,7 @@ final class GameStore: ObservableObject {
         lineup: [LineupAssignment],
         opponentLineup requestedOpponentLineup: [LineupAssignment]? = nil
     ) -> Bool {
+        guard games.first(where: { $0.id == id })?.schedulePublication == nil else { actionErrorMessage = "请从本场记录岗位进入。"; return false }
         guard let index = games.firstIndex(where: {
             $0.id == id && $0.status == .scheduled && !$0.isObservation
         }),
@@ -3841,6 +3868,28 @@ final class GameStore: ObservableObject {
     private func normalizedNumbers(_ numbers: [Int]) -> [Int] {
         var seen = Set<Int>()
         return numbers.filter { (0...99).contains($0) && seen.insert($0).inserted }
+    }
+
+    func preparedScheduleField(_ source: StoredGame) throws -> ScheduleField {
+        var stored = source
+        if stored.state.homeBattingOrderIDs.isEmpty || stored.state.awayBattingOrderIDs.isEmpty {
+            let rules = stored.rules
+            let away = stored.state.awayTeam, home = stored.state.homeTeam
+            let a = defaultAssignments(for: away, count: rules.fieldersCount)
+            let h = defaultAssignments(for: home, count: rules.fieldersCount)
+            if let problem = lineupValidationMessage(a, team: away, rules: rules) ?? lineupValidationMessage(h, team: home, rules: rules) {
+                throw TeamServiceError.message(problem)
+            }
+            let at = applying(a, to: away), ht = applying(h, to: home)
+            let ap = configuredParticipation(for: at, assignments: a, rules: rules)
+            let hp = configuredParticipation(for: ht, assignments: h, rules: rules)
+            var opening = GameState(homeTeam: ht, awayTeam: at, scheduledInnings: rules.scheduledInnings,
+                homeBattingOrderIDs: hp.battingOrder, awayBattingOrderIDs: ap.battingOrder, rules: rules)
+            applyParticipation(hp, forHomeTeam: true, to: &opening)
+            applyParticipation(ap, forHomeTeam: false, to: &opening)
+            stored.state = opening
+        }
+        return ScheduleField(stored, pregame: true)
     }
 
     private func defaultAssignments(for team: Team, count: Int) -> [LineupAssignment] {
@@ -4521,6 +4570,12 @@ final class GameStore: ObservableObject {
             actionErrorMessage = "当前设备没有记分权，请先完成交接。"
             return
         }
+        if !isHistoryReplay, applyingScheduleProposal == nil, activeGameID == actionOriginalActiveID,
+           let stored = activeStoredGame, scheduleAccess(stored)?.lineup != nil, !game.hasSameFieldAssignments(as:original) {
+            game = original; games = actionOriginalGames; undoStack = actionUndo; redoStack = actionRedo
+            actionErrorMessage = "本场由阵容记录员提交阵容调整。"
+            return
+        }
         if pendingPitcherChange != nil {
             game = original; games = actionOriginalGames; undoStack = actionUndo; redoStack = actionRedo
             nextEventBeforeSituation = original.situationSnapshot
@@ -4594,7 +4649,8 @@ final class GameStore: ObservableObject {
         }
         let originalTeams = teams, originalOpponents = opponentTeams, originalArchived = archivedTeams
         let originalCurrentTeam = currentTeam
-        let profilesChanged = activeGameID == actionOriginalActiveID && synchronizeChangedProfiles(from: original)
+        if let applyingScheduleProposal { games[index].lastScheduleProposal = applyingScheduleProposal }
+        let profilesChanged = games[index].schedulePublication == nil && activeGameID == actionOriginalActiveID && synchronizeChangedProfiles(from: original)
         do {
             try LocalBackup.validate(makeRosterSnapshot())
             if profilesChanged { try persistenceStore.replaceAll(with: makeRosterSnapshot()) }

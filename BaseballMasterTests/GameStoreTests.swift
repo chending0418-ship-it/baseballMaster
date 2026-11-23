@@ -10205,3 +10205,205 @@ extension GameStoreTests {
         XCTAssertTrue(reopened.visibleTeamSchedules.isEmpty)
     }
 }
+
+extension GameStoreTests {
+    func testV314AddBenchPlayerPreservesGameAndSupportsPinchRunner() throws {
+        let store = freshStore()
+        store.recordIntentionalWalk()
+        let runner = try XCTUnwrap(store.game.baseRunners[.first])
+        let hitter = store.currentBatter, count = store.game.balls, order = store.game.awayBattingOrderIDs
+        let roster = store.teams
+        var addition = store.lineupDraft(forHomeTeam:false)
+        var substitute = Player(chineseName:"临场队员",englishName:"",numbers:[0])
+        substitute.jerseyNumbers = ["00"]
+        XCTAssertTrue(addition.addBenchPlayer(substitute))
+        XCTAssertFalse(addition.addBenchPlayer(substitute))
+        XCTAssertFalse(addition.addBenchPlayer(store.game.homeTeam.players[0]))
+        XCTAssertTrue(store.saveLineup(addition),store.actionErrorMessage ?? "")
+        XCTAssertEqual(store.game.awayBattingOrderIDs,order)
+        XCTAssertEqual(store.game.baseRunners[.first],runner)
+        XCTAssertEqual(store.currentBatter,hitter)
+        XCTAssertEqual(store.game.balls,count)
+        XCTAssertEqual(store.teams,roster)
+        var change = store.lineupDraft(forHomeTeam:false)
+        XCTAssertTrue(change.replace(runner.id,with:substitute.id,pitchingOnly:false))
+        XCTAssertTrue(store.saveLineup(change),store.actionErrorMessage ?? "")
+        XCTAssertEqual(store.game.baseRunners[.first]?.id,substitute.id)
+        XCTAssertEqual(store.game.baseRunners[.first]?.numberText,"00")
+    }
+
+    @MainActor func testV314ScheduleScoringAcrossIndependentClients() async throws {
+        let publisher = try matchClient(), creator = GameStore(persistenceURL:nil)
+        let directory = TeamSharingStore(service:publisher,storage:V30DirectoryMemoryStorage())
+        creator.teamSharing = directory
+        await directory.connect()
+        let own = try XCTUnwrap(creator.currentTeam)
+        let created = await directory.submit(.create(name:own.name,nickname:"管理员",localTeamID:own.id,profile:nil))
+        XCTAssertTrue(created)
+        let team = try XCTUnwrap(directory.teams.first)
+        let client = try await matchPartner(publisher,team:team.id)
+        let writer = GameStore(persistenceURL:nil)
+        writer.teamSharing = TeamSharingStore(service:client,storage:V30DirectoryMemoryStorage())
+        await writer.teamSharing.connect()
+        let scorer = try XCTUnwrap(writer.teamSharing.teams.first)
+        let date = Date().addingTimeInterval(3600)
+        let id = creator.scheduleGame(ourTeam:own,opponent:try XCTUnwrap(creator.opponentTeams.first),isHome:false,scheduledAt:date)
+        try await creator.publishSchedule(id,date:date,venue:"")
+        let key = ScheduleMatchKey(team:team.id,game:id)
+        let initial = try await creator.scoringStatus(key)
+        XCTAssertEqual(initial.access.role,"scorer")
+        XCTAssertFalse(creator.startScheduledGame(id:id))
+        try await creator.prepareScoring(key,status:initial)
+        try await creator.scoringWrite(key,"assign",ScheduleWrite(epoch:0,scorer:scorer.memberID,lineup:team.memberID))
+        await writer.refreshTeamSchedules()
+        try await writer.enterScheduledScore(key)
+        XCTAssertFalse(writer.canRecordAction)
+        try await creator.scoringWrite(key,"joinLineup",ScheduleWrite(epoch:1))
+        let opening = try await creator.scoringStatus(key)
+        try await creator.scoringWrite(key,"confirmLineup",ScheduleWrite(epoch:1,version:opening.version))
+        try await writer.scoringWrite(key,"confirmOpening",ScheduleWrite(epoch:1,version:opening.version))
+        _ = try await writer.scoringStatus(key)
+        XCTAssertTrue(writer.canRecordAction)
+        var s = try await creator.scoringStatus(key)
+        XCTAssertEqual(s.access.role,"lineup")
+        let frame = try XCTUnwrap(s.frame)
+        let baseline = LiveLineupDraft(game:frame.state,isHomeTeam:false,allowsTwoWayPlayer:false,isPregame:true)
+        var draft = baseline
+        let player = Player(chineseName:"临时",englishName:"",numbers:[99])
+        XCTAssertTrue(draft.addBenchPlayer(player))
+        let p = ScheduleProposal(version:s.version,baseline:HistoryLineup(baseline),lastPlay:frame.lastPlay,lineup:HistoryLineup(draft))
+        try creator.stageScheduleDraft(key,epoch:s.access.epoch,proposal:p)
+        try await creator.submitScheduleDraft(key,status:s)
+        s = try await writer.scoringStatus(key)
+        XCTAssertEqual(s.proposal?.id,p.id)
+        writer.recordPitch(.ball)
+        let applied = try await writer.synchronizeScheduledScore(key)
+        XCTAssertNil(applied.conflict)
+        writer.undo()
+        XCTAssertEqual(writer.game.balls,0)
+        XCTAssertTrue(writer.game.awayTeam.players.contains { $0.id == player.id })
+        writer.redo()
+        let saved = try XCTUnwrap(writer.activeStoredGame)
+        XCTAssertEqual(saved.lastScheduleProposal,p.id)
+        XCTAssertEqual(saved.state.balls,1)
+        XCTAssertEqual(saved.state.awayTeam.players.filter { $0.id == player.id }.count,1)
+        _ = try await writer.synchronizeScheduledScore(key)
+        let received = try await creator.scoringStatus(key)
+        XCTAssertEqual(received.receipt?.applied,true)
+        XCTAssertEqual(received.frame?.state.awayTeam.players.last?.id,player.id)
+        XCTAssertTrue(creator.teamSharing.state.scheduleDrafts?.isEmpty == true)
+
+        // A simultaneous pitch does not silently change which pitcher threw it.
+        let nextField = try XCTUnwrap(received.frame)
+        let home = LiveLineupDraft(game:nextField.state,isHomeTeam:true,allowsTwoWayPlayer:false)
+        var pitching = home
+        let incoming = Player(chineseName:"替补投手",englishName:"",numbers:[98])
+        XCTAssertTrue(pitching.addBenchPlayer(incoming))
+        XCTAssertTrue(pitching.replace(try XCTUnwrap(pitching.pitcherID),with:incoming.id,pitchingOnly:false))
+        let sub = ScheduleProposal(version:received.version,baseline:HistoryLineup(home),lastPlay:nextField.lastPlay,lineup:HistoryLineup(pitching))
+        try creator.stageScheduleDraft(key,epoch:1,proposal:sub)
+        try await creator.submitScheduleDraft(key,status:received)
+        let oldPitcher = writer.currentPitcher
+        writer.recordPitch(.calledStrike)
+        XCTAssertNotEqual(sub.lastPlay,writer.game.playLog.last?.id)
+        XCTAssertEqual(writer.currentPitcher.id,oldPitcher.id)
+        let review = try await writer.synchronizeScheduledScore(key)
+        XCTAssertEqual(review.conflict?.id,sub.id)
+        XCTAssertEqual(writer.currentPitcher.id,oldPitcher.id)
+        _ = try await writer.synchronizeScheduledScore(key,accept:sub.id)
+        XCTAssertEqual(writer.currentPitcher.id,incoming.id)
+        XCTAssertEqual(writer.activeStoredGame?.lastScheduleProposal,sub.id)
+
+        // The original creator now takes over the complete match, including the previous pitch and newcomer.
+        try await creator.scoringWrite(key,"assign",ScheduleWrite(epoch:1,scorer:team.memberID))
+        let transfer = try await writer.scoringStatus(key)
+        XCTAssertNotNil(transfer.access.transfer)
+        XCTAssertFalse(writer.canRecordAction)
+        try await writer.releaseScheduledScore(key,status:transfer)
+        try await creator.enterScheduledScore(key)
+        XCTAssertEqual(creator.currentPitcher.id,incoming.id)
+        XCTAssertEqual(creator.game.strikes,writer.game.strikes)
+        XCTAssertEqual(creator.game.scoringEvents,writer.game.scoringEvents)
+        XCTAssertTrue(creator.game.awayTeam.players.contains { $0.id == player.id })
+        let oldAccess = try await writer.scoringStatus(key)
+        XCTAssertEqual(oldAccess.access.role,"viewer")
+        XCTAssertFalse(writer.canRecordAction)
+    }
+}
+
+extension GameStoreTests {
+    /// Run simultaneously on two simulators with verify-scheduled-scoring.py.
+    @MainActor func testV314LiveScoringOnTwoSimulators() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let credential = env["BM314_DEVICE"], let port = env["BM314_PORT"],
+              let partner = env["BM314_PARTNER"].flatMap(UUID.init(uuidString:)),
+              let team = env["BM314_TEAM"].flatMap(UUID.init(uuidString:)) else {
+            throw XCTSkip("需要双模拟器隔离服务夹具")
+        }
+        let baseURL = env["BM314_PUBLIC"] == "1" ? TeamServiceClient.productionURL : URL(string:"http://127.0.0.1:" + port + "/api/v3")!
+        let client = try TeamServiceClient(baseURL:baseURL,
+            vault:V30MemoryTeamCredential(value:credential))
+        let store = GameStore(persistenceURL:nil)
+        store.teamSharing = TeamSharingStore(service:client,storage:V30DirectoryMemoryStorage())
+        await store.teamSharing.connect()
+        let membership = try XCTUnwrap(store.teamSharing.teams.first { $0.id == team })
+        func until(_ predicate: () async throws -> Bool) async throws {
+            for _ in 0..<240 {
+                if try await predicate() { return }
+                try await Task.sleep(nanoseconds:250_000_000)
+            }
+            throw TeamServiceError.message("双机验证等待另一岗位超时")
+        }
+        if membership.role == .admin {
+            let own = try XCTUnwrap(store.currentTeam)
+            var state = store.teamSharing.state
+            state.bindings.append(SharedTeamBinding(localTeamID:own.id,cloudTeamID:team))
+            try store.teamSharing.persist(state)
+            let date = Date().addingTimeInterval(3600)
+            let id = store.scheduleGame(ourTeam:own,opponent:try XCTUnwrap(store.opponentTeams.first),isHome:false,scheduledAt:date)
+            let key = ScheduleMatchKey(team:team,game:id)
+            try await store.publishSchedule(id,date:date,venue:"双机验证")
+            let initial = try await store.scoringStatus(key)
+            try await store.prepareScoring(key,status:initial)
+            try await store.scoringWrite(key,"assign",ScheduleWrite(epoch:0,scorer:partner,lineup:membership.memberID))
+            try await store.scoringWrite(key,"joinLineup",ScheduleWrite(epoch:1))
+            let opening = try await store.scoringStatus(key)
+            try await store.scoringWrite(key,"confirmLineup",ScheduleWrite(epoch:1,version:opening.version))
+            try await until { try await store.scoringStatus(key).frame?.state.baseRunners[.first] != nil }
+            let s = try await store.scoringStatus(key), field = try XCTUnwrap(s.frame)
+            let base = LiveLineupDraft(game:field.state,isHomeTeam:false,allowsTwoWayPlayer:false)
+            var draft = base
+            let late = Player(chineseName:"临场代跑",englishName:"",numbers:[99])
+            XCTAssertTrue(draft.addBenchPlayer(late))
+            XCTAssertTrue(draft.replace(try XCTUnwrap(base.runners[.first]).id,with:late.id,pitchingOnly:false))
+            let p = ScheduleProposal(version:s.version,baseline:HistoryLineup(base),lastPlay:field.lastPlay,lineup:HistoryLineup(draft))
+            try store.stageScheduleDraft(key,epoch:1,proposal:p)
+            try await store.submitScheduleDraft(key,status:s)
+            try await until { try await store.scoringStatus(key).receipt?.id == p.id }
+            try await until { try await store.scoringStatus(key).frame?.state.awayScore == 1 }
+        } else {
+            try await until {
+                await store.refreshTeamSchedules()
+                return store.visibleTeamSchedules.first?.scoring?.openingReady == true
+            }
+            let notice = try XCTUnwrap(store.visibleTeamSchedules.first)
+            let key = ScheduleMatchKey(team:team,game:notice.id)
+            try await store.enterScheduledScore(key)
+            let opening = try await store.scoringStatus(key)
+            try await store.scoringWrite(key,"confirmOpening",ScheduleWrite(epoch:1,version:opening.version))
+            _ = try await store.scoringStatus(key)
+            store.recordIntentionalWalk()
+            _ = try await store.synchronizeScheduledScore(key)
+            try await until {
+                _ = try await store.synchronizeScheduledScore(key)
+                return store.game.baseRunners[.first]?.chineseName == "临场代跑"
+            }
+            let late = try XCTUnwrap(store.game.baseRunners[.first])
+            let move = RunnerDecision(player:late,origin:.base(.first),destination:.score)
+            XCTAssertTrue(store.recordRunnerEvent(.wildPitch,decisions:[move]),store.actionErrorMessage ?? "")
+            XCTAssertEqual(store.battingLine(for:late).runs,1)
+            _ = try await store.synchronizeScheduledScore(key)
+            XCTAssertEqual(store.game.awayScore,1)
+        }
+    }
+}

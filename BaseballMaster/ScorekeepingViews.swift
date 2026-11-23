@@ -135,6 +135,9 @@ struct ScorekeepingView: View {
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showRuleNotices = false } } }
             }.onAppear { recordingPresentationActive = true }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let stored = store.activeStoredGame, let key = store.scheduleKey(stored) { ScheduleScoreSync(key: key) }
+        }
         .onAppear { scorekeepingVisible = true; schedulePostgameUploadIfReady() }
         .onDisappear {
             if !hasRecordingPresentation && !showPostgameUpload { scorekeepingVisible = false }
@@ -184,6 +187,13 @@ struct ScorekeepingView: View {
                     }
                     .accessibilityIdentifier("return-game-home")
                     .disabled(isDockedRecording)
+                }
+            }
+            if let game = store.activeStoredGame, let key = store.scheduleKey(game) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(destination: ScheduleScoringDesk(key:key)) {
+                        Label("本场记录岗位",systemImage:"person.2")
+                    }
                 }
             }
             if let match = store.activeStoredGame, let team = store.teamBroadcasts.teamID(for: match) {

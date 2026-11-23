@@ -5,6 +5,7 @@ import { mkdirSync, chmodSync, readFileSync, statfsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { can, ROLES } from './permissions.mjs';
+import { ScheduleScoring } from './schedule-scoring.mjs';
 import { TeamSchedules } from './schedules.mjs';
 import { GameService } from './games.mjs';
 import { TeamBroadcasts } from './broadcasts.mjs';
@@ -99,6 +100,7 @@ export class CollaborationStore {
     const inviteColumns = this.db.prepare('PRAGMA table_info(invitations)').all().map(c=>c.name);
     if (!inviteColumns.includes('reusable_token')) this.db.exec('ALTER TABLE invitations ADD COLUMN reusable_token TEXT');
     this.schedules = new TeamSchedules(this, requireValue);
+    this.scheduleScoring = new ScheduleScoring(this, requireValue);
     this.games = new GameService(this, requireValue);
     this.security = new TeamSecurity(this, requireValue);
     this.roster = new RosterService(this, requireValue);
@@ -380,7 +382,7 @@ export function createCollaborationServer(options = {}) {
         return reply(200,{status:'ok',protocol:PROTOCOL});
       }
       if(path===BASE+'/capabilities' && req.method==='GET') return reply(200,{protocol:PROTOCOL,matchFormat:2,minimumAppVersion:'3.0',
-        capabilities:['team-schedules','bulkRosterImport','batted-ball-observation','writer-format-guard','team-roles','match-revisions','writer-handoff','historical-access','device-pairing','management-recovery','roster-years','history-import','player-links','conflict-review','team-lifecycle','portable-archive','credential-rotation','recovery-review',
+        capabilities:['schedule-scoring','team-schedules','bulkRosterImport','batted-ball-observation','writer-format-guard','team-roles','match-revisions','writer-handoff','historical-access','device-pairing','management-recovery','roster-years','history-import','player-links','conflict-review','team-lifecycle','portable-archive','credential-rotation','recovery-review',
           ...(gameAnalysis.available ? ['game-analysis'] : [])]});
       requireValue(store.db.prepare("SELECT value FROM metadata WHERE key='restoreQuarantine'").get()?.value !== '1',503,'recovery_review','服务正在核对恢复资料，请稍后重试；本机记录会保留。');
       const now = store.now();
@@ -454,6 +456,13 @@ export function createCollaborationServer(options = {}) {
       if(path===BASE+'/devices/credential-prepare' && req.method==='POST') return reply(200,store.credentials.prepare(deviceID,body));
       if(path===BASE+'/dissolved-teams' && req.method==='GET') return reply(200,store.lifecycle.list(deviceID));
       if (path === BASE + '/team-schedules' && req.method === 'GET') return reply(200,store.schedules.list(deviceID));
+      const scoring = /^\/api\/v3\/teams\/([a-f0-9-]+)\/schedules\/([a-f0-9-]+)\/scoring(?:\/(assign|prepare|start|joinLineup|resumeLegacy|confirmLineup|confirmOpening|propose|reserve|frame|release|received|checkpoint))?$/i.exec(path);
+      if (scoring && uuid(scoring[1]) && uuid(scoring[2])) {
+        const [,team,source,action] = scoring;
+        if (action === 'checkpoint' && req.method === 'GET') return reply(200,store.scheduleScoring.checkpoint(team.toLowerCase(),source.toLowerCase(),deviceID));
+        if (!action && req.method === 'GET') return reply(200,store.scheduleScoring.read(team.toLowerCase(),source.toLowerCase(),deviceID,url.searchParams));
+        if (action && req.method === 'POST') return reply(200,store.scheduleScoring.write(team.toLowerCase(),source.toLowerCase(),deviceID,action,body));
+      }
       const schedule = /^\/api\/v3\/teams\/([a-f0-9-]+)\/schedules\/([a-f0-9-]+)$/i.exec(path);
       if (schedule && req.method === 'PUT' && uuid(schedule[1]) && uuid(schedule[2])) {
         return reply(200,store.schedules.save(deviceID,schedule[1].toLowerCase(),schedule[2].toLowerCase(),body));

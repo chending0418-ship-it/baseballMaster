@@ -591,6 +591,10 @@ extension GameStore {
                 if let slot = sourceOrder.firstIndex(of: id), actualOrder.indices.contains(slot) { return actualOrder[slot] }
                 return id // An explicit incoming/re-entering player must retain their own identity.
             }
+            // Newly registered substitutes must exist before replay resolves a replacement or runner.
+            for added in value.players where context.positions[added.id] == nil && draft.player(added.id) == nil {
+                _ = draft.addBenchPlayer(added)
+            }
             for old in value.players {
                 let actualID = map(old.id)
                 if let index = draft.players.firstIndex(where: { $0.id == actualID }) {

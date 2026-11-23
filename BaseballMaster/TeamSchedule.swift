@@ -8,6 +8,7 @@ struct TeamScheduleNotice: Codable, Equatable, Identifiable {
     let home: String
     let venue: String
     let cancelled: Bool
+    var scoring: ScheduleRole? = nil
     let revision: Int
     var date: Date { Date(timeIntervalSince1970: Double(startsAt) / 1000) }
     var key: String { teamID.uuidString + "/" + id.uuidString }
@@ -28,16 +29,23 @@ struct LocalSchedulePublication: Codable, Equatable {
     var revision = 0
     var cancelled = false
     var pending: TeamScheduleRequest?
+    var scoringVersion: Int?
+    var pendingFrame: ScheduleFrameSubmission?
 }
 
 private struct ScheduleFeed: Decodable { let schedules: [TeamScheduleNotice] }
 private struct ScheduleReceipt: Decodable { let id: UUID; let teamID: UUID; let revision: Int }
 
 extension GameStore {
-    func scheduleTeam(for ownID: UUID?) -> SharedTeamSummary? {
+    func scheduleMembership(for ownID: UUID?) -> SharedTeamSummary? {
         guard let ownID else { return nil }
         let cloudID = teamSharing.state.bindings.first { $0.localTeamID == ownID }?.cloudTeamID ?? ownID
-        return teamSharing.teams.first { $0.id == cloudID && $0.role != .member }
+        return teamSharing.teams.first { $0.id == cloudID }
+    }
+
+    func scheduleTeam(for ownID: UUID?) -> SharedTeamSummary? {
+        guard let member = scheduleMembership(for: ownID), member.role != .member else { return nil }
+        return member
     }
 
     var scheduleTeamChoices: [Team] {
@@ -50,7 +58,7 @@ extension GameStore {
         guard !teamSchedules.isEmpty, !teamSharing.state.requiresRecoveryReview else { return [] }
         let memberships = Set(teamSharing.teams.map(\.id))
         let local = Set(games.compactMap { game in game.schedulePublication.map { $0.teamID.uuidString + "/" + game.id.uuidString } })
-        return teamSchedules.filter { memberships.contains($0.teamID) && !local.contains($0.key) && $0.date >= Date() }
+        return teamSchedules.filter { memberships.contains($0.teamID) && !local.contains($0.key) && ($0.date >= Date() || $0.scoring?.active == true || $0.scoring?.scorer != nil && $0.scoring?.closed == false) }
             .sorted { $0.startsAt == $1.startsAt ? $0.key < $1.key : $0.startsAt < $1.startsAt }
     }
 
@@ -76,7 +84,7 @@ extension GameStore {
         }
     }
 
-    private func saveScheduleFields(_ value: StoredGame) throws {
+    func saveScheduleFields(_ value: StoredGame) throws {
         guard !requiresDataRecovery, let index = games.firstIndex(where: { $0.id == value.id }) else {
             throw TeamServiceError.message("本机比赛暂时无法保存。")
         }
@@ -139,6 +147,27 @@ extension GameStore {
         latest.scheduledAt = Date(timeIntervalSince1970: Double(request.startsAt) / 1000)
         latest.scheduleVenue = request.venue
         try saveScheduleFields(latest)
+    }
+}
+
+struct ScheduleSharingHint: View {
+    @EnvironmentObject private var store: GameStore
+    let teamID: UUID?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let team = store.scheduleMembership(for: teamID) {
+                Text(team.role == .member
+                     ? "请联系球队管理员发布赛程并指派记录员。"
+                     : "发布到共享球队赛程后，管理员可指派一名记录员，或安排两人分工实录。")
+            } else {
+                Text("指派记录员和双人实录需要先共享球队，并把本场比赛发布到球队赛程。")
+                NavigationLink("前往球队共享") { SharedTeamsView(directory: store.teamSharing) }
+                    .accessibilityIdentifier("schedule-open-sharing")
+            }
+        }
+        .font(.footnote)
+        .accessibilityIdentifier("schedule-sharing-hint")
     }
 }
 
@@ -240,6 +269,7 @@ struct MemberScheduleRow: View {
                 Image(systemName: "calendar.badge.clock").foregroundStyle(BMTheme.green)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(notice.away + " 对 " + notice.home).font(.headline).foregroundStyle(BMTheme.navy)
+                    if let scoring = notice.scoring { Text(scoring.description).font(.footnote) }
                     Text(notice.date.formatted(date: .abbreviated, time: .shortened)).font(.subheadline)
                     if !notice.venue.isEmpty { Label(notice.venue, systemImage: "mappin.and.ellipse").font(.footnote) }
                 }.foregroundStyle(BMTheme.secondaryText)

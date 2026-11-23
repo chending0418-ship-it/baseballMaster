@@ -219,7 +219,10 @@ export class GameService {
   }
   create(team, device, body) {
     const valid = this.validate(body);
-    return this.store.operation(device, body, `createGame:${team}`, () => this.store.membership(team, device, 'createGame'), () => {
+    return this.store.operation(device, body, `createGame:${team}`, () => {
+      this.store.membership(team,device,'createGame');
+      this.store.scheduleScoring.requireGameWriter(team,id(body.payload.id),device);
+    }, () => {
       const member = this.store.membership(team, device);
       this.check(!this.db.prepare('SELECT id FROM shared_games WHERE team_id=? AND source_id=?').get(team, id(body.payload.id)), 409, 'duplicate_source', '这场比赛已经共享，请从已有比赛继续。');
       this.store.checkGameCapacity(team,valid);

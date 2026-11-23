@@ -995,6 +995,7 @@ struct NewGameSetupView: View {
                 }
 
                 if scheduleForLater && mode == .team {
+                    ScheduleSharingHint(teamID: selectedTeamID)
                     if let target = store.scheduleTeam(for: selectedTeamID) {
                         if configureScheduleNow {
                             Toggle("确认阵容后发布到球队赛程", isOn: $publishAfterLineup)
