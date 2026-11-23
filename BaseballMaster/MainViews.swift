@@ -78,7 +78,9 @@ struct GameHomeView: View {
                         ForEach(scheduledGames) { entry in
                             switch entry {
                             case .team(let notice):
-                                MemberScheduleRow(notice: notice)
+                                NavigationLink {
+                                    ScheduleScoringDesk(key: .init(team: notice.teamID, game: notice.id))
+                                } label: { MemberScheduleRow(notice: notice) }.buttonStyle(.plain)
                             case .local(let stored):
                                 HStack(spacing: 0) {
                                     NavigationLink(destination: ScheduledGameDetailView(gameID: stored.id)) {
@@ -190,6 +192,9 @@ struct GameHomeView: View {
             .frame(maxWidth: .infinity)
         }
         .bmScreenBackground()
+        .navigationDestination(isPresented: Binding(get: { store.scheduleScoreRoute != nil }, set: { if !$0 { store.scheduleScoreRoute = nil } })) {
+            if let id = store.scheduleScoreRoute { StoredGameRouteView(gameID: id, showsBoxScore: false) }
+        }
         .task(id: scheduleRefreshKey) {
             guard scenePhase == .active else { return }
             repeat {
@@ -454,6 +459,10 @@ private struct ScheduledGameDetailView: View {
                             SchedulePublicationControls(game: stored)
                         }
 
+                        if let key = store.scheduleKey(stored) {
+                            NavigationLink("本场记录岗位", destination: ScheduleScoringDesk(key: key))
+                                .buttonStyle(PrimaryButtonStyle())
+                        }
                         SectionHeader(title: "赛前准备")
                         BMCard {
                             VStack(alignment: .leading, spacing: 10) {

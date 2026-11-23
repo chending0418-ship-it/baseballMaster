@@ -235,7 +235,7 @@ private final class TeamRedirectPolicy: NSObject, URLSessionTaskDelegate {
 }
 
 private struct TeamServiceProblem: Decodable {
-    struct Detail: Decodable { let code: String }
+    struct Detail: Decodable { let code: String; let message: String? }
     let error: Detail
 }
 
@@ -406,6 +406,10 @@ actor TeamServiceClient: TeamDirectoryService {
                 default: message = "暂时无法生成比赛分析，请稍后重试。"
                 }
                 throw TeamServiceError.response(status ?? 503, message)
+            }
+            if path.contains("/schedules/") && path.contains("/scoring"),
+               let detail = try? JSONDecoder().decode(TeamServiceProblem.self, from: data).error {
+                throw TeamServiceError.response(status ?? 503, detail.message ?? "请刷新本场岗位后重试。")
             }
             if path.contains("/schedules/") {
                 if code == "schedule_time" { throw TeamServiceError.response(400, "请重新选择未来的开赛时间。") }

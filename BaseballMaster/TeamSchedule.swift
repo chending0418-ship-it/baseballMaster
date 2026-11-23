@@ -8,6 +8,7 @@ struct TeamScheduleNotice: Codable, Equatable, Identifiable {
     let home: String
     let venue: String
     let cancelled: Bool
+    var scoring: ScheduleRole? = nil
     let revision: Int
     var date: Date { Date(timeIntervalSince1970: Double(startsAt) / 1000) }
     var key: String { teamID.uuidString + "/" + id.uuidString }
@@ -28,6 +29,8 @@ struct LocalSchedulePublication: Codable, Equatable {
     var revision = 0
     var cancelled = false
     var pending: TeamScheduleRequest?
+    var scoringVersion: Int?
+    var pendingFrame: ScheduleFrameSubmission?
 }
 
 private struct ScheduleFeed: Decodable { let schedules: [TeamScheduleNotice] }
@@ -50,7 +53,7 @@ extension GameStore {
         guard !teamSchedules.isEmpty, !teamSharing.state.requiresRecoveryReview else { return [] }
         let memberships = Set(teamSharing.teams.map(\.id))
         let local = Set(games.compactMap { game in game.schedulePublication.map { $0.teamID.uuidString + "/" + game.id.uuidString } })
-        return teamSchedules.filter { memberships.contains($0.teamID) && !local.contains($0.key) && $0.date >= Date() }
+        return teamSchedules.filter { memberships.contains($0.teamID) && !local.contains($0.key) && ($0.date >= Date() || $0.scoring?.active == true || $0.scoring?.scorer != nil && $0.scoring?.closed == false) }
             .sorted { $0.startsAt == $1.startsAt ? $0.key < $1.key : $0.startsAt < $1.startsAt }
     }
 
@@ -76,7 +79,7 @@ extension GameStore {
         }
     }
 
-    private func saveScheduleFields(_ value: StoredGame) throws {
+    func saveScheduleFields(_ value: StoredGame) throws {
         guard !requiresDataRecovery, let index = games.firstIndex(where: { $0.id == value.id }) else {
             throw TeamServiceError.message("本机比赛暂时无法保存。")
         }
@@ -240,6 +243,7 @@ struct MemberScheduleRow: View {
                 Image(systemName: "calendar.badge.clock").foregroundStyle(BMTheme.green)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(notice.away + " 对 " + notice.home).font(.headline).foregroundStyle(BMTheme.navy)
+                    if let scoring = notice.scoring { Text(scoring.description).font(.footnote) }
                     Text(notice.date.formatted(date: .abbreviated, time: .shortened)).font(.subheadline)
                     if !notice.venue.isEmpty { Label(notice.venue, systemImage: "mappin.and.ellipse").font(.footnote) }
                 }.foregroundStyle(BMTheme.secondaryText)

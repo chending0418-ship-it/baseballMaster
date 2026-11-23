@@ -11,11 +11,20 @@ export class TeamSchedules {
   }
   list(deviceID) {
     const result = [];
-    const rows = this.store.db.prepare(`SELECT team_id AS teamID,source_id AS id,revision,starts_at AS startsAt,
-        away,home,venue,cancelled FROM team_schedules WHERE team_id=? AND starts_at>=? ORDER BY starts_at,source_id`);
+    const rows = this.store.db.prepare(`SELECT s.team_id AS teamID,s.source_id AS id,s.revision,s.starts_at AS startsAt,
+      s.away,s.home,s.venue,s.cancelled,s.owner_id,c.epoch,c.scorer,c.lineup,c.writer,c.editor,c.closed,c.transfer,c.opening_ready,c.opening_confirmed,
+      cm.nickname AS scorerName,lm.nickname AS lineupName FROM team_schedules s
+      LEFT JOIN schedule_scoring c ON c.team=s.team_id AND c.source=s.source_id
+      LEFT JOIN members cm ON cm.id=c.scorer LEFT JOIN members lm ON lm.id=c.lineup
+      WHERE s.team_id=? AND (s.starts_at>=? OR s.cancelled=0 AND c.closed=0 AND
+        (c.writer IS NOT NULL OR c.scorer IS NOT NULL OR c.checkpoint IS NOT NULL)) ORDER BY s.starts_at,s.source_id`);
     for (const team of this.store.listTeams(deviceID).teams) {
       if (this.store.lifecycle.deleted(team.id)) continue;
-      for (const row of rows.all(team.id, this.store.now())) result.push({ ...row, cancelled: Boolean(row.cancelled) });
+      for (const row of rows.all(team.id,this.store.now())) {
+        const {teamID,id,revision,startsAt,away,home,venue,cancelled} = row;
+        const scoring = this.store.scheduleScoring.summary(row,{id:team.memberID,role:team.role},deviceID);
+        result.push({teamID,id,revision,startsAt,away,home,venue,cancelled:Boolean(cancelled),scoring});
+      }
     }
     return { schedules: result };
   }
@@ -44,6 +53,12 @@ export class TeamSchedules {
         ON CONFLICT(team_id,source_id) DO UPDATE SET revision=excluded.revision,starts_at=excluded.starts_at,
         away=excluded.away,home=excluded.home,venue=excluded.venue,cancelled=excluded.cancelled`)
         .run(team,source,member.id,revision,body.startsAt,body.away,body.home,body.venue,Number(body.cancelled));
+      if (body.cancelled) {
+        this.store.db.prepare(`UPDATE schedule_scoring SET epoch=epoch+1,
+          closed=CASE WHEN writer IS NOT NULL OR checkpoint IS NOT NULL THEN 1 ELSE closed END,
+          writer=NULL,editor=NULL,proposal=NULL,reserved=NULL,transfer=NULL,checkpoint=NULL,opening_ready=0
+          WHERE team=? AND source=?`).run(team,source);
+      }
       return { id: source, teamID: team, revision };
     });
   }

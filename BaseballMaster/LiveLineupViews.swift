@@ -6,6 +6,9 @@ struct LiveLineupEditor: View {
     @State var draft: LiveLineupDraft
     let onCancel: () -> Void
     let onSaved: () -> Void
+    var sharedRosterID: UUID? = nil
+    var submitRemote: ((LiveLineupDraft) -> Bool)? = nil
+    @State private var addingPlayer = false
     @State private var editingPlayer: Player?
     @State private var replacement: LineupReplacement?
     @State private var saved = false
@@ -16,7 +19,7 @@ struct LiveLineupEditor: View {
         NavigationStack {
             List {
                 Section {
-                    Text(store.isPregame ? "开赛前可修改先发、棒次和守位，确认后按新阵容开赛。" : "姓名与号码更正同步球队名单。赛中排序保留当前打者及球数，换人接替原棒次和守位。")
+                    Text(submitRemote != nil || store.activeStoredGame?.schedulePublication != nil ? "确认双方阵容后提交；生效位置由局面记录端核对。" : store.isPregame ? "开赛前可修改先发、棒次和守位，确认后按新阵容开赛。" : "姓名与号码更正同步球队名单。赛中排序保留当前打者及球数，换人接替原棒次和守位。")
                         .font(.footnote).foregroundStyle(BMTheme.secondaryText)
                 }
                 if saved && !draft.hasChanges {
@@ -64,6 +67,8 @@ struct LiveLineupEditor: View {
                     }
                 }
                 Section("替补 · 包括已换下球员") {
+                    Button("添加本场队员", systemImage: "person.badge.plus") { addingPlayer = true }
+                        .accessibilityIdentifier("lineup-add-player").disabled(draft.players.count >= 200)
                     if draft.bench.isEmpty { Text("暂无可替换球员").foregroundStyle(.secondary) }
                     ForEach(draft.bench) { player in
                         Button { editingPlayer = player } label: { playerLabel(player, active: false) }
@@ -96,8 +101,13 @@ struct LiveLineupEditor: View {
                         .accessibilityIdentifier("lineup-save")
                 }
             }
+            .sheet(isPresented: $addingPlayer) {
+                let own = store.activeStoredGame
+                let cloud = own?.isHome == draft.isHomeTeam ? own?.schedulePublication?.teamID : nil
+                MatchBenchAddition(draft: $draft, sharedRosterID: submitRemote == nil ? cloud : sharedRosterID)
+            }
             .sheet(item: $editingPlayer) { player in
-                MatchPlayerProfileEditor(player: player) { chinese, english, numbers in
+                MatchPlayerProfileEditor(player: player, matchOnly: submitRemote != nil || store.activeStoredGame?.schedulePublication != nil) { chinese, english, numbers in
                     draft.updateProfile(playerID: player.id, chineseName: chinese, englishName: english, numberTexts: numbers)
                 }
             }
@@ -145,6 +155,7 @@ struct LiveLineupEditor: View {
 
     @discardableResult
     private func saveDraft() -> Bool {
+        if let submitRemote { return submitRemote(draft) }
         guard store.requestLineupChange(.lineup(draft)) else { return false }
         didSaveDraft()
         return true
@@ -188,7 +199,7 @@ struct LiveLineupEditor: View {
             if draft.allowsTwoWayPlayer, player.id == draft.pitcherID, player.id == draft.designatedHitterID {
                 Button("只换投手（原投手继续 DH）") { replacement = LineupReplacement(player: player, pitchingOnly: true) }
             }
-            if store.isSlowPitch && !draft.fieldingIDs.contains(player.id) {
+            if draft.source.rulesSnapshot?.isSlowPitch == true && !draft.fieldingIDs.contains(player.id) {
                 Menu("进入守备（棒次不变）") {
                     ForEach(draft.fieldingIDs, id: \.self) { outgoingID in
                         if let outgoing = draft.player(outgoingID) {
@@ -199,13 +210,75 @@ struct LiveLineupEditor: View {
             }
             if draft.fieldingIDs.contains(player.id) {
                 Menu("调整守位") {
-                    ForEach(store.availableFieldPositions) { position in
+                    ForEach(draft.source.rulesSnapshot?.positions ?? store.availableFieldPositions) { position in
                         Button(position.fullName) { draft.changePosition(playerID: player.id, to: position) }
                     }
                 }
             }
         } label: { playerLabel(player, active: true) }
             .accessibilityIdentifier("lineup-player-\(player.id)")
+    }
+}
+
+private struct MatchBenchAddition: View {
+    @EnvironmentObject private var store: GameStore
+    @Environment(\.dismiss) private var dismiss
+    @Binding var draft: LiveLineupDraft
+    let sharedRosterID: UUID?
+    @State private var name = ""
+    @State private var number = ""
+    @State private var duplicate: Player?
+
+    private var available: [Player] {
+        let local = (store.teams + store.opponentTeams).filter { $0.id == draft.team.id }
+        let mapped = store.teamSharing.state.bindings.first { $0.localTeamID == draft.team.id }?.cloudTeamID
+        let sources = local + store.teamSharing.sharedRosterTeams.filter {
+            $0.id == draft.team.id || $0.id == (sharedRosterID ?? mapped)
+        }
+        let occupied = Set((draft.players + (draft.isHomeTeam ? draft.source.awayTeam : draft.source.homeTeam).players).map(\.id))
+        var seen = occupied
+        return sources.flatMap(\.players)
+            .filter { seen.insert($0.id).inserted }.sorted(by: Player.rosterOrder)
+    }
+
+    private func add(_ player: Player) {
+        if draft.addBenchPlayer(player) { dismiss() }
+    }
+
+    private func check(_ player: Player) {
+        let names = [player.chineseName, player.englishName].filter { !$0.isEmpty }
+        if draft.players.contains(where: {
+            !Set($0.numberTexts).isDisjoint(with: player.numberTexts) ||
+            names.contains($0.chineseName) || names.contains($0.englishName)
+        }) { duplicate = player } else { add(player) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if !available.isEmpty {
+                    Section("从球队名册补选") {
+                        ForEach(available) { player in Button(player.compactName) { check(player) } }
+                    }
+                }
+                Section("登记本场临时队员") {
+                    TextField("姓名（选填）", text: $name).accessibilityIdentifier("bench-player-name")
+                    TextField("背号（0、00 或 1–99）", text: $number).keyboardType(.numberPad).accessibilityIdentifier("bench-player-number")
+                    Button("加入替补") {
+                        var player = Player(chineseName: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                            englishName: "", numbers: [Int(number) ?? 0])
+                        player.jerseyNumbers = [number]
+                        check(player)
+                    }.disabled(!Player.validNumberTexts([number]) || name.count > 80).accessibilityIdentifier("bench-player-add")
+                }
+            }
+            .navigationTitle("添加本场队员")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+            .alert("本场已有同名或同背号队员", isPresented: Binding(get: { duplicate != nil }, set: { if !$0 { duplicate = nil } }), presenting: duplicate) { player in
+                Button("确认是另一名队员") { add(player) }
+                Button("返回核对", role: .cancel) {}
+            }
+        }
     }
 }
 
@@ -218,13 +291,15 @@ private struct LineupReplacement: Identifiable {
 private struct MatchPlayerProfileEditor: View {
     @Environment(\.dismiss) private var dismiss
     let player: Player
+    let matchOnly: Bool
     let onSave: (String, String, [String]) -> Bool
     @State private var chineseName: String
     @State private var englishName: String
     @State private var numbers: String
 
-    init(player: Player, onSave: @escaping (String, String, [String]) -> Bool) {
+    init(player: Player, matchOnly: Bool, onSave: @escaping (String, String, [String]) -> Bool) {
         self.player = player
+        self.matchOnly = matchOnly
         self.onSave = onSave
         _chineseName = State(initialValue: player.chineseName)
         _englishName = State(initialValue: player.englishName)
@@ -237,7 +312,7 @@ private struct MatchPlayerProfileEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("球员资料 · 同步球队名单") {
+                Section(matchOnly ? "本场球员资料" : "球员资料 · 同步球队名单") {
                     TextField("中文名", text: $chineseName).accessibilityIdentifier("lineup-chinese-name")
                     TextField("英文名", text: $englishName).accessibilityIdentifier("lineup-english-name")
                     TextField("背号", text: $numbers).accessibilityIdentifier("lineup-numbers")
@@ -245,7 +320,7 @@ private struct MatchPlayerProfileEditor: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
-                    Text("保留同一球员的全部本场统计。已有逐球文字保留原文，保存阵容时同时更新球队名单，以后新建比赛使用更正后的资料。")
+                    Text(matchOnly ? "订正本场姓名和背号，保留球员身份和已有逐球记录。" : "保留同一球员的全部本场统计。已有逐球文字保留原文，保存阵容时同时更新球队名单，以后新建比赛使用更正后的资料。")
                         .font(.footnote)
                 }
             }

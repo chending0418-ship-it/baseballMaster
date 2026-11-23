@@ -64,6 +64,8 @@ struct TeamDirectoryState: Codable {
     var pairing: SavedDevicePairing? = nil
     var outgoingPairing: DevicePairing? = nil
     var teamAccessEpochs: [String: Int]? = nil
+    var scheduleDrafts: [ScheduleDraftEnvelope]? = nil
+    var scheduleWriters: [SavedScheduleWriter]? = nil
     var lastCreatedTeamID: UUID? = nil
     var lastSecurityReceipt: TeamSecurityReceipt? = nil
     var profiles: [SharedTeamProfile]? = nil

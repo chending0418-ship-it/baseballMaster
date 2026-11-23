@@ -433,6 +433,8 @@ struct StoredGame: Identifiable, Equatable, Codable {
     /// A suggestion only; uploading always requires a separate post-game confirmation.
     var postgameUploadTeamID: UUID? = nil
     var postgameTargetConfigured: Bool? = nil
+    var lastScheduleProposal: UUID? = nil
+    var scheduleReceivedEpoch: Int? = nil
     var scheduleVenue: String? = nil
     var schedulePublication: LocalSchedulePublication? = nil
 
@@ -1641,7 +1643,7 @@ struct LiveLineupDraft {
         let rosterIDs = Set(players.map(\.id))
         let originalOrder = isHomeTeam ? source.homeBattingOrderIDs : source.awayBattingOrderIDs
         let originalDefense = (isHomeTeam ? source.homeFieldingPlayerIDs : source.awayFieldingPlayerIDs) ?? originalOrder
-        guard rosterIDs.count == players.count, rosterIDs == Set(team.players.map(\.id)),
+        guard rosterIDs.count == players.count, Set(team.players.map(\.id)).isSubset(of: rosterIDs),
               (allowsPregameOrderChanges ? battingOrderIDs.count >= 10 : battingOrderIDs.count == originalOrder.count), !battingOrderIDs.isEmpty,
               Set(battingOrderIDs).count == battingOrderIDs.count,
               Set(battingOrderIDs).isSubset(of: rosterIDs),
@@ -1667,6 +1669,14 @@ struct LiveLineupDraft {
                   !runners.values.contains(where: { $0.id == batterAnchorID }) else { return "打者与垒上跑者发生重复，请检查换人。" }
         }
         return nil
+    }
+
+    mutating func addBenchPlayer(_ player: Player) -> Bool {
+        guard players.count < 200, !players.contains(where: { $0.id == player.id }),
+              !(isHomeTeam ? source.awayTeam : source.homeTeam).players.contains(where: { $0.id == player.id }) else { return false }
+        players.append(player)
+        changes.append("加入本场替补：" + player.compactName)
+        return true
     }
 
     mutating func addExtraHitter(_ id: UUID) {

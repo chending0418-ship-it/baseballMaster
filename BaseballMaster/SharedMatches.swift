@@ -293,7 +293,7 @@ struct SharedMatchFile: SharedMatchStorage {
         // Ordinary local saves (including finish and later corrections) are not consent
         // to submit a team archive. Only publish queues a confirmed final snapshot.
     }
-    private func documentFields(_ game: StoredGame) throws -> [String: MatchJSON] {
+    func documentFields(_ game: StoredGame) throws -> [String: MatchJSON] {
         var clean = game
         if let wireID = match(localID: game.id)?.wireLocalID { clean.id = wireID }
         clean.sharedTeamID = nil; clean.sharedGameID = nil
@@ -301,7 +301,7 @@ struct SharedMatchFile: SharedMatchStorage {
         clean.publicationState = nil; clean.pendingPublicationRevisions = nil
         clean.postgameUploadTeamID = nil
         clean.postgameTargetConfigured = nil
-        clean.schedulePublication = nil
+        clean.schedulePublication = nil; clean.lastScheduleProposal = nil; clean.scheduleReceivedEpoch = nil
         clean.minimumWriterFormat = 2
         return ["formatVersion": .number(2), "payload": try .encode(clean), "projection": try JSONDecoder().decode(MatchJSON.self, from: LiveSnapshot(clean).data())]
     }

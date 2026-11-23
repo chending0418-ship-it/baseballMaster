@@ -406,3 +406,62 @@ test('team schedules support member reads, retry, revision checks, cancellation 
   api.advance(7200001);
   assert.deepEqual(await read(admin),[]);
 });
+
+test('scheduled scoring separates assignments, writes, roster proposals and device receipts', async t => {
+  const api = await setup(t), admin = await api.device(), {teamID:team} = (await api.create(admin)).data;
+  const scorer = await api.joinTeam(admin,team,'scorer'), editor = await api.joinTeam(admin,team,'scorer');
+  const viewer = await api.joinTeam(admin,team), source = randomUUID(), path = `/teams/${team}/schedules/${source}`;
+  const read = async key => (await api.request(key,'GET',path+'/scoring')).data;
+  const post = (key,action,body) => api.request(key,'POST',path+'/scoring/'+action,body);
+  const notice = operation({expectedRevision:0,startsAt:api.store.now()+3000,home:'主',away:'客',venue:'',cancelled:false});
+  assert.equal((await api.request(admin,'PUT',path,notice)).status,200);
+  assert.equal((await read(admin)).role,'scorer');
+  assert.equal((await read(scorer.key)).role,'viewer');
+  assert.equal((await post(scorer.key,'start',operation({epoch:0}))).status,403);
+  const assign = operation({epoch:0,scorer:scorer.memberID,lineup:editor.memberID});
+  assert.equal((await post(scorer.key,'assign',assign)).status,403);
+  assert.equal((await post(admin,'assign',{...assign,lineup:scorer.memberID})).status,400);
+  assert.equal((await post(admin,'assign',assign)).status,200);
+  assert.equal((await post(admin,'assign',assign)).status,200);
+  assert.equal((await read(admin)).role,'viewer');
+  const state = {scheduledInnings:6,inning:1,isTop:true,outs:0,balls:0,strikes:0,baseRunners:[],isFinal:false,
+    batting:[],pitching:[],fielding:[],playLog:[]};
+  for (const [side,name] of [['home','主'],['away','客']]) {
+    const player = {id:randomUUID(),chineseName:'测试',englishName:'',numbers:[1],primaryPosition:1};
+    state[side+'Team'] = {id:randomUUID(),name,shortName:name,city:'',players:[player]};
+    state[side+'Hits'] = 0; state[side+'Errors'] = 0; state[side+'RunsByInning'] = [0];
+    state[side+'BattingOrderIDs'] = [player.id];
+    state[side+'FieldingPlayerIDs'] = [player.id];
+    state[side+'BatterIndex'] = 0;
+  }
+  const frame = {isHome:true,pregame:true,rules:{scheduledInnings:6,fieldersCount:1},state};
+  assert.equal((await post(admin,'prepare',operation({version:0,frame}))).status,200);
+  assert.equal((await read(viewer.key)).frame,null);
+  assert.equal((await post(scorer.key,'start',operation({epoch:1}))).status,200);
+  assert.equal((await post(editor.key,'joinLineup',operation({epoch:1}))).status,200);
+  assert.equal((await post(editor.key,'frame',operation({epoch:1,version:1,frame}))).status,403);
+  const baseline = {isHome:true,players:state.homeTeam.players,battingIDs:state.homeBattingOrderIDs,
+    fieldingIDs:state.homeBattingOrderIDs,runners:[],changes:[]};
+  const proposal = {id:randomUUID(),version:1,baseline,lineup:{...baseline,changes:['换投']}};
+  const submit = operation({epoch:1,proposal});
+  assert.equal((await post(editor.key,'propose',submit)).status,200);
+  assert.deepEqual((await read(scorer.key)).proposal,proposal);
+  assert.equal((await post(editor.key,'propose',submit)).status,200);
+  const unapproved = structuredClone(frame);
+  unapproved.state.homeTeam.players[0].chineseName = '越权改名';
+  assert.equal((await post(scorer.key,'frame',operation({epoch:1,version:1,frame:unapproved}))).status,409);
+  const receipt = operation({epoch:1,version:1,frame,appliedID:proposal.id});
+  assert.equal((await post(scorer.key,'frame',receipt)).status,409);
+  assert.equal((await post(scorer.key,'reserve',operation({epoch:1,appliedID:proposal.id}))).status,200);
+  assert.equal((await post(scorer.key,'frame',receipt)).status,200);
+  assert.equal((await post(scorer.key,'frame',receipt)).status,200);
+  assert.equal((await read(editor.key)).proposal,null);
+  assert.deepEqual((await read(editor.key)).receipt,{id:proposal.id,applied:true});
+  api.advance(4000);
+  assert.equal((await api.request(editor.key,'GET','/team-schedules')).data.schedules[0].id,source);
+  assert.equal((await post(admin,'assign',operation({epoch:1,scorer:scorer.memberID}))).status,200);
+  assert.equal((await post(editor.key,'propose',submit)).status,403);
+  assert.equal((await post(scorer.key,'frame',receipt)).status,409);
+  assert.equal((await post(scorer.key,'frame',operation({epoch:2,version:2,frame,finished:true}))).status,200);
+  assert.equal((await read(scorer.key)).closed,true);
+});

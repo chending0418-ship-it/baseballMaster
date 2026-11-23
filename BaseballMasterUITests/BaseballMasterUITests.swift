@@ -4348,32 +4348,33 @@ extension BaseballMasterUITests {
 }
 
 extension BaseballMasterUITests {
+    @MainActor private func joinScheduleTeam(_ role: String, admin: String, team: String) async throws -> XCUIApplication {
+        let invite = sharingTestSecret()
+        _ = try await sharingAPI(admin, "/teams/\(team)/invitations", body: ["operationID": UUID().uuidString, "role": role, "token": invite])
+        let app = launchDeviceSecurityApp()
+        app.buttons["join-shared-team"].tap()
+        app.textFields["team-invite-link"].tap()
+        app.textFields["team-invite-link"].typeText("https://baseballmaster.cc/join#\(invite)")
+        app.buttons["preview-team-invite"].tap()
+        let name = app.textFields["join-nickname"]
+        XCTAssertTrue(name.waitForExistence(timeout: 8))
+        name.tap(); name.typeText(role)
+        let join = app.buttons["confirm-join-team"]
+        revealStatisticsControl(join, in: app); join.tap()
+        let row = app.buttons["shared-team-U12赛程队"]
+        XCTAssertTrue(row.waitForExistence(timeout: 8))
+        row.tap()
+        XCTAssertTrue(app.staticTexts["U12赛程队"].firstMatch.waitForExistence(timeout: 8))
+        app.tabBars.buttons["比赛"].tap()
+        return app
+    }
+
     @MainActor func testTeamSchedulePublishAndReadOnMemberGameTab() async throws {
         let admin = sharingTestSecret()
         _ = try await sharingAPI(admin, "/devices", body: ["label": "赛程验收"])
         let created = try await sharingAPI(admin, "/teams", body: ["operationID": UUID().uuidString, "name": "U12赛程队", "nickname": "教练"])
         let team = try XCTUnwrap(created["teamID"] as? String)
-        func joinDevice(_ role: String) async throws -> XCUIApplication {
-            let invite = sharingTestSecret()
-            _ = try await sharingAPI(admin, "/teams/\(team)/invitations", body: ["operationID": UUID().uuidString, "role": role, "token": invite])
-            let app = launchDeviceSecurityApp()
-            app.buttons["join-shared-team"].tap()
-            app.textFields["team-invite-link"].tap()
-            app.textFields["team-invite-link"].typeText("https://baseballmaster.cc/join#\(invite)")
-            app.buttons["preview-team-invite"].tap()
-            let name = app.textFields["join-nickname"]
-            XCTAssertTrue(name.waitForExistence(timeout: 8))
-            name.tap(); name.typeText(role)
-            let join = app.buttons["confirm-join-team"]
-            revealStatisticsControl(join, in: app); join.tap()
-            let row = app.buttons["shared-team-U12赛程队"]
-            XCTAssertTrue(row.waitForExistence(timeout: 8))
-            row.tap()
-            XCTAssertTrue(app.staticTexts["U12赛程队"].firstMatch.waitForExistence(timeout: 8))
-            app.tabBars.buttons["比赛"].tap()
-            return app
-        }
-        let writer = try await joinDevice("scorer")
+        let writer = try await joinScheduleTeam("scorer",admin:admin,team:team)
         writer.buttons["start-new-game"].tap()
         writer.buttons["new-game-own-team"].tap()
         writer.buttons["U12赛程队"].firstMatch.tap()
@@ -4397,11 +4398,84 @@ extension BaseballMasterUITests {
         let id = try XCTUnwrap(rows.first?["id"] as? String)
         writer.terminate()
 
-        let reader = try await joinDevice("member")
+        let reader = try await joinScheduleTeam("member",admin:admin,team:team)
         let notice = reader.descendants(matching: .any).matching(identifier: "team-schedule-" + id.lowercased()).firstMatch
         XCTAssertTrue(notice.waitForExistence(timeout: 10))
         XCTAssertTrue(notice.label.contains("Field B"))
         XCTAssertEqual(reader.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'scheduled-game-'")).count,0)
         captureHistory(reader, name: "3.1.3-build6-member-game-home")
+    }
+}
+
+extension BaseballMasterUITests {
+    func testV314RegisterLatePlayerFromLiveBench() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--v11-navigation-preview"]
+        app.launch()
+        let game = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","continue-game-")).firstMatch
+        XCTAssertTrue(game.waitForExistence(timeout:8)); game.tap()
+        app.buttons["pitch-坏球"].tap()
+        app.buttons["open-substitutions"].tap()
+        app.buttons["edit-away-lineup"].tap()
+        let add = app.buttons["lineup-add-player"]
+        for _ in 0..<8 where !add.isHittable { app.swipeUp() }
+        XCTAssertTrue(add.isHittable); add.tap()
+        let name = app.textFields["bench-player-name"]
+        XCTAssertTrue(name.waitForExistence(timeout:5)); name.tap(); name.typeText("Late Arrival")
+        let number = app.textFields["bench-player-number"]
+        number.tap(); number.typeText("00")
+        app.buttons["bench-player-add"].tap()
+        app.buttons["lineup-save"].tap()
+        let player = app.buttons.containing(NSPredicate(format:"label CONTAINS %@","Late Arrival")).firstMatch
+        XCTAssertTrue(player.waitForExistence(timeout:5))
+    }
+}
+
+extension BaseballMasterUITests {
+    @MainActor func testV314AssignedMemberOpensScoreFromRemoteSchedule() async throws {
+        let admin = sharingTestSecret()
+        _ = try await sharingAPI(admin,"/devices",body:["label":"3.1.4 UI"])
+        let created = try await sharingAPI(admin,"/teams",body:["operationID":UUID().uuidString,"name":"U12赛程队","nickname":"教练"])
+        let team = try XCTUnwrap(created["teamID"] as? String), source = UUID().uuidString.lowercased()
+        let path = "/teams/" + team + "/schedules/" + source
+        _ = try await sharingAPI(admin,path,method:"PUT",body:["operationID":UUID().uuidString,"expectedRevision":0,
+            "startsAt":Int64(Date().addingTimeInterval(3600).timeIntervalSince1970*1000),"away":"客队","home":"主队","venue":"一号场","cancelled":false])
+        let rules = ["scheduledInnings":6,"fieldersCount":9]
+        var state: [String:Any] = ["scheduledInnings":6,"rulesSnapshot":rules,"inning":1,"balls":0,"strikes":0,
+            "outs":0,"isTop":true,"isFinal":false,"batting":[],"pitching":[],"fielding":[],"playLog":[],"baseRunners":[]]
+        for (side,name) in [("away","客队"),("home","主队")] {
+            let ids = (1...9).map { _ in UUID().uuidString }
+            let players: [[String:Any]] = ids.enumerated().map { i,id in
+                ["id":id,"chineseName":name+String(i+1),"englishName":"","numbers":[i+1],"primaryPosition":i+1]
+            }
+            state[side+"Team"] = ["id":UUID().uuidString,"name":name,"shortName":name,"city":"","players":players] as [String:Any]
+            state[side+"BattingOrderIDs"] = ids; state[side+"FieldingPlayerIDs"] = ids
+            state[side+"BatterIndex"] = 0; state[side+"RunsByInning"] = [0,0,0,0,0,0]
+            state[side+"Hits"] = 0; state[side+"Errors"] = 0
+            state[side == "home" ? "activeHomePitcherID" : "activeAwayPitcherID"] = ids[0]
+        }
+        _ = try await sharingAPI(admin,path+"/scoring/prepare",body:["operationID":UUID().uuidString,"epoch":0,"version":0,
+            "frame":["state":state,"pregame":true,"rules":rules,"isHome":false] as [String:Any]])
+        let app = try await joinScheduleTeam("scorer",admin:admin,team:team)
+        let members = try await sharingAPI(admin,"/teams/"+team+"/members",method:"GET")
+        let id = try XCTUnwrap((members["members"] as? [[String:Any]])?.first { ($0["role"] as? String) == "scorer" }?["id"] as? String)
+        _ = try await sharingAPI(admin,path+"/scoring/assign",body:["operationID":UUID().uuidString,"epoch":0,"scorer":id])
+        let row = app.descendants(matching:.any)["team-schedule-"+source].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout:8)); row.tap()
+        let enter = app.buttons["核对阵容并进入记分"]
+        XCTAssertTrue(enter.waitForExistence(timeout:8)); enter.tap()
+        let pitch = app.buttons["pitch-坏球"]
+        XCTAssertTrue(pitch.waitForExistence(timeout:10)); pitch.tap()
+        if app.alerts.firstMatch.exists {
+            let confirm = app.alerts.firstMatch.buttons.matching(NSPredicate(format:"label CONTAINS '确认'")).firstMatch
+            if confirm.exists { confirm.tap() }
+        }
+        for _ in 0..<12 {
+            let receipt = try await sharingAPI(admin,path+"/scoring",method:"GET")
+            if let v = receipt["version"] as? Int, v >= 2,
+               let summary = receipt["active"] as? Bool, summary { return }
+            try await Task.sleep(nanoseconds:500_000_000)
+        }
+        XCTFail("已领取的本场比赛必须从记分页提交局面")
     }
 }
