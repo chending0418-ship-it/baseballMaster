@@ -4479,3 +4479,34 @@ extension BaseballMasterUITests {
         XCTFail("已领取的本场比赛必须从记分页提交局面")
     }
 }
+
+extension BaseballMasterUITests {
+    func testV314GroundOutFromThirdToFirst() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--practice-preview", "-showPracticeGuidance", "NO"]
+        app.launch()
+        app.segmentedControls["recording-method-picker"].buttons["Pro 版"].tap()
+        let start = app.buttons["start-practice-inning"]
+        revealStatisticsControl(start, in: app)
+        start.tap()
+        app.buttons["ball-in-play"].tap()
+        if app.buttons["确认开赛"].waitForExistence(timeout: 1) { app.buttons["确认开赛"].tap() }
+        app.buttons["quick-outcome-GO"].tap()
+        app.buttons["contact-type-ground"].tap()
+        let field = app.otherElements["contact-field"]
+        let bounds = field.frame
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.29, dy: 0.61)).tap()
+        let third = app.buttons["situation-fielder-5"]
+        let first = app.buttons["situation-fielder-3"]
+        XCTAssertTrue(third.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(third.frame.minX - bounds.minX, 24)
+        XCTAssertGreaterThanOrEqual(bounds.maxX - first.frame.maxX, 24)
+        XCTAssertGreaterThanOrEqual(first.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(third.frame.height, 44)
+        XCTAssertLessThanOrEqual(app.buttons["situation-fielder-2"].frame.maxY, bounds.maxY)
+        third.tap()
+        first.tap()
+        XCTAssertTrue(app.staticTexts["situation-route"].label.hasPrefix("5 → 3"))
+        captureHistory(app, name: "3.1.4-三垒传一垒")
+    }
+}

@@ -72,15 +72,25 @@ struct SituationFieldView: View {
     @Binding var fielding: BattedBallFielding
     var mode: SituationFieldMode
     var onPoint: ((CGPoint) -> Void)?
+    private let fieldZoom: CGFloat = 1.12
+    private let extraSideMargin: CGFloat = 10
     private var positions: [FieldPosition] { game.rulesSnapshot?.positions ?? FieldPosition.allCases.filter { $0 != .free } }
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 BaseballFieldBackground()
+                    .scaleEffect(fieldZoom)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .padding(.horizontal, extraSideMargin)
+                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                    .padding(.horizontal, -extraSideMargin)
                 if mode == .landing, let onPoint {
-                    Color.clear.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded { value in
-                        onPoint(BaseballFieldLayout.contactCoordinate(at: value.location, in: proxy.size))
+                    Color.clear.frame(width: proxy.size.width + 2 * extraSideMargin, height: proxy.size.height).contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded { value in
+                        let local = CGPoint(x: value.location.x - extraSideMargin, y: value.location.y)
+                        let point = fieldPoint(local, in: proxy.size, scale: 1 / fieldZoom)
+                        onPoint(BaseballFieldLayout.contactCoordinate(at: point, in: proxy.size))
                     }).accessibilityLabel("在球场点选击球落点").accessibilityIdentifier("contact-field")
+                        .frame(width: proxy.size.width, height: proxy.size.height)
                 }
                 Path { path in
                     for (a, b) in zip(fielding.route, fielding.route.dropFirst()) {
@@ -133,10 +143,10 @@ struct SituationFieldView: View {
                         .overlay(Circle().stroke(.white, lineWidth: 3))
                         .frame(width: 17, height: 17)
                         .background(Circle().fill(Color.yellow.opacity(0.3)).padding(-6))
-                        .position(BaseballFieldLayout.contactPoint(point, in: proxy.size))
+                        .position(fieldPoint(BaseballFieldLayout.contactPoint(point, in: proxy.size), in: proxy.size, scale: fieldZoom))
                         .allowsHitTesting(false)
                 }
-            }.clipShape(RoundedRectangle(cornerRadius: 15))
+            }.clipShape(RoundedRectangle(cornerRadius: 15).inset(by: -extraSideMargin))
         }
         .frame(height: horizontalSizeClass == .regular
                ? (game.rulesSnapshot?.isSlowPitch == true ? 400 : 360)
@@ -144,8 +154,21 @@ struct SituationFieldView: View {
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity)
     }
+    // Store contact on the original diamond so scoring, replay and exports use the same coordinates.
+    private func fieldPoint(_ point: CGPoint, in size: CGSize, scale: CGFloat) -> CGPoint {
+        CGPoint(x: size.width / 2 + (point.x - size.width / 2) * scale,
+                y: size.height / 2 + (point.y - size.height / 2) * scale)
+    }
+
     private func scaled(_ position: FieldPosition, _ size: CGSize) -> CGPoint {
-        BaseballFieldLayout.fielderPosition(position, in: size)
+        var point = BaseballFieldLayout.fielderPosition(position, in: size)
+        switch position {
+        case .firstBase: point.x -= 16
+        case .thirdBase: point.x += 16
+        case .catcher: point.y = min(point.y, size.height - 26)
+        default: break
+        }
+        return point
     }
 }
 
