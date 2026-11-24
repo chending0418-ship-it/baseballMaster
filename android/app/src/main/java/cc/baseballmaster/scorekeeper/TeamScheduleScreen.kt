@@ -63,7 +63,7 @@ internal fun upcomingSchedules(games: List<Game>, feed: TeamScheduleFeed, now: L
         it.notice?.takeIf { _ -> it.pending != null || it.needsReview }
     }
     val remote = (feed.notices + reviewNotices).filter {
-        it.startsAt >= now && it.teamID.lowercase() in allowed && it.key !in linkedKeys && it.key !in localSourceKeys
+        (it.startsAt >= now || !it.cancelled && it.scoring?.let { role -> !role.closed && (role.active || role.scorer != null || role.hasCheckpoint) } == true) && it.teamID.lowercase() in allowed && it.key !in linkedKeys && it.key !in localSourceKeys
     }.distinctBy { it.key.lowercase() }.map { UpcomingSchedule.Member(it) }
     return (local + remote).sortedWith(compareBy<UpcomingSchedule> { it.startsAt }.thenBy { it.key })
 }
@@ -75,7 +75,7 @@ internal fun latestLocalScheduleNotice(
     notices: Map<String, TeamScheduleNotice> = feed.notices.associateBy(TeamScheduleNotice::key),
 ): TeamScheduleNotice? {
     val own = game.ourTeamID ?: return null
-    val teamID = publication?.teamID ?: feed.bindings.firstOrNull { it.localTeamID.equals(own, true) }?.cloudTeamID ?: own
+    val teamID = game.publishedScheduleTeamID ?: publication?.teamID ?: feed.bindings.firstOrNull { it.localTeamID.equals(own, true) }?.cloudTeamID ?: own
     val current = notices["${teamID.lowercase()}/${game.id.lowercase()}"]
     val previous = publication?.notice
     return if (current != null && current.revision >= (previous?.revision ?: 0)) current else previous
@@ -154,6 +154,8 @@ internal fun TeamScheduleControls(game: Game, model: ScorekeeperViewModel) {
         else target != null && (publication == null || target.id.equals(publication.teamID, true))
     val identity = remote?.key ?: game.id
     val issue = model.scheduleIssue(identity)
+    if (notice != null) ScheduleRoleCard(notice, model, game)
+    else if (game.publishedScheduleTeamID != null) Text("本场已发布，请恢复球队权限后查看岗位。")
     if (!authorized && publication == null && notice == null && issue == null) return
     SchedulePublicationActions(
         identity = identity,
@@ -192,6 +194,7 @@ internal fun RemoteTeamScheduleScreen(notice: TeamScheduleNotice, model: Scoreke
             if (latest.venue.isNotBlank()) Text(latest.venue, style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.testTag("team-schedule-managed-venue"))
         }
+        ScheduleRoleCard(latest, model, null)
         SchedulePublicationActions(
             identity = notice.key,
             startsAt = latest.startsAt,

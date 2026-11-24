@@ -437,13 +437,13 @@ internal fun ScoringPanels(game: Game, model: ScorekeeperViewModel, requestedPan
                 ) {
                     save(Command("droppedThirdStrike", decisions = it))
                 }
-            "substitution" -> ParitySubstitutionEditor(snapshot, model.busy, close) { command ->
+            "substitution" -> ParitySubstitutionEditor(snapshot, model.busy, close, model.rosters) { command ->
                 model.command(command, snapshot.revision) {
                     model.scoringTaskSource = model.openedGame ?: game
                     sourceRevision = (model.openedGame ?: game).revision
                 }
             }
-            "lineup" -> ParityLineupEditor(snapshot, model.busy, close, save = { command ->
+            "lineup" -> ParityLineupEditor(snapshot, model.busy, close, rosters = model.rosters, save = { command ->
                 model.command(command, snapshot.revision) {
                     model.scoringTaskSource = model.openedGame ?: game
                     sourceRevision = (model.openedGame ?: game).revision
@@ -958,7 +958,7 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
             "pinchRunner",
             "fielder",
             "doubleSwitch" -> HistorySubstitutionEditor(before, record, model.busy, { screen = "detail" }, ::amend)
-            "position" -> ParitySubstitutionEditor(before, model.busy, { screen = "detail" }, ::amend)
+            "position" -> ParitySubstitutionEditor(before, model.busy, { screen = "detail" }, save = ::amend)
             else ->
                 FormPage("更正记录", model.busy, false, "unused", "", { screen = "detail" }, {}) {
                     Text("可在草稿中删除此操作，或在前后补记并核对重放结果。")
@@ -987,7 +987,7 @@ private fun HistoryEditor(game: Game, model: ScorekeeperViewModel, dismiss: () -
                 ProductRunnerEditor(before, model.busy, { screen = "insert" }, save = ::insert)
             "insert-situation" ->
                 ManualSituationEditor(before, model.busy, { screen = "insert" }, ::insert)
-            "insert-sub" -> ParitySubstitutionEditor(before, model.busy, { screen = "insert" }, ::insert)
+            "insert-sub" -> ParitySubstitutionEditor(before, model.busy, { screen = "insert" }, save = ::insert)
         }
         return
     }

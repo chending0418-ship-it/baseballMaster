@@ -48,6 +48,32 @@ class LineupProfileStorageTest {
             assertEquals(count,db.dao().allOperations().size)
         } finally {db.close()}
     }
+    @Test fun benchAdditionsAreLocalToTheGameAndSafeToRetry(): Unit = runBlocking {
+        val db = database()
+        try {
+            val repo = GameRepository(db)
+            val own = repo.createTeam("本队", roster)
+            val match = repo.createGame(own, "客队", roster, GameMode.standard, true)
+            val pitched = repo.pitch(match.id, PitchAction.ball, match.revision)
+            val late = Player(UUID.randomUUID().toString(), "临时队员", "00")
+            val command = Command("lineup", homeSide = true, order = pitched.homeOrder,
+                positions = pitched.homePositions, benchAdditions = listOf(late), matchOnlyProfiles = true)
+            val updated = repo.command(match.id, command, pitched.revision, "test-add-once")
+            assertEquals(pitched.balls, updated.balls)
+            assertEquals(pitched.bases, updated.bases)
+            assertEquals(pitched.batter.id, updated.batter.id)
+            assertEquals(pitched.pitching, updated.pitching)
+            assertEquals(1, updated.home.players.count { it.id == late.id && it.number == "00" })
+            assertEquals(updated, repo.command(match.id, command, pitched.revision, "test-add-once"))
+            val rosterAfter = GameJson.decodeFromString<Team>(db.dao().team(own.id)!!.payload)
+            assertFalse(rosterAfter.players.any { it.id == late.id })
+            assertThrows(IllegalArgumentException::class.java) { MatchEngine.apply(updated, command) }
+            val nextPitch = repo.pitch(match.id, PitchAction.calledStrike, updated.revision)
+            val undone = repo.undo(match.id, nextPitch.revision)
+            assertEquals(late, undone.home.players.single { it.id == late.id })
+        } finally { db.close() }
+    }
+
     @Test fun failedCommitRollsBackGameRosterAndOperationTogether():Unit=runBlocking {
         val db=database()
         try {

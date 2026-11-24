@@ -349,6 +349,12 @@ data class Command(
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     val playerUpdates: List<Player>? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val benchAdditions: List<Player> = emptyList(),
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val matchOnlyProfiles: Boolean = false,
     /** Explicit outgoing → incoming identities; preserves base and batting responsibility. */
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
@@ -522,6 +528,9 @@ data class Game(
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
     var scheduleVenue: String? = null,
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    var publishedScheduleTeamID: String? = null,
 ) {
     val battingTeam
         get() = if (isTop) away else home
@@ -682,7 +691,7 @@ data class Game(
             players.forEach(Roster::validate)
             sharedRosterOrigin?.validate(this)
             val planned = Game(id, home, away, rules, revision = revision,
-                scheduledAt = scheduledAt, scheduleVenue = scheduleVenue, playedTimeZoneID = playedTimeZoneID,
+                scheduledAt = scheduledAt, scheduleVenue = scheduleVenue, publishedScheduleTeamID = publishedScheduleTeamID, playedTimeZoneID = playedTimeZoneID,
                 isScheduled = true, scheduledSetupPending = true, ourTeamID = ourTeamID,
                 sharedRosterOrigin = sharedRosterOrigin, postgameSharingChoice = postgameSharingChoice,
                 createdAt = createdAt, updatedAt = updatedAt)

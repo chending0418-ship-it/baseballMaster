@@ -633,12 +633,11 @@ internal fun PendingScheduleScreen(game: Game, model: ScorekeeperViewModel, quic
         title = "比赛安排",
         busy = model.busy || model.scheduleSubmitting,
         onBack = { model.open(null) },
-        actionLabel = if (game.scheduledSetupPending) "赛前设置" else "进入比赛",
+        actionLabel = if (model.isSharedSchedule(game)) "" else if (game.scheduledSetupPending) "赛前设置" else "进入比赛",
         actionTag = if (game.scheduledSetupPending) "configure-pending-schedule" else "activate-scheduled",
         onAction = { if (game.scheduledSetupPending) configuring = true else model.command(Command("activate")) },
         modal = true,
     ) {
-        val publication = model.schedulePublication(game)
         val notice = model.scheduleNotice(game)
         CardBlock {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -661,7 +660,7 @@ internal fun PendingScheduleScreen(game: Game, model: ScorekeeperViewModel, quic
             Text(if(game.isObservation) "观赛记录 · 不计本队战绩" else "本队比赛", fontSize = 13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         TeamScheduleControls(game, model)
-        if (game.scheduledSetupPending) {
+        if (game.scheduledSetupPending && !model.isSharedSchedule(game)) {
             Text("双方队伍和时间已保存，开赛前可继续配置名单、规则和阵容。",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             ProductActionRow("管理球队和名单","核对参赛球队的实际球员",tag="pending-manage-rosters",enabled=!model.busy && !model.scheduleSubmitting) {
                 managingOpponent = game.isObservation
@@ -669,7 +668,7 @@ internal fun PendingScheduleScreen(game: Game, model: ScorekeeperViewModel, quic
                 managing = true
             }
         }
-        if (publication == null && notice == null) ProductActionRow("修改预告时间", tag = "pending-edit-time",
+        if (!model.isSharedSchedule(game)) ProductActionRow("修改预告时间", tag = "pending-edit-time",
             enabled = !model.busy && !model.scheduleSubmitting) { dateRevision = game.revision; editingTime = true }
     }
     if(managing) FormPage("管理球队和名单", model.busy, true, "close-scheduled-rosters", "完成", { managing = false }, { managing = false }) {

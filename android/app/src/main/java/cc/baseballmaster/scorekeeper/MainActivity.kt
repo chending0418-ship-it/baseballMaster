@@ -105,7 +105,11 @@ class MainActivity : ComponentActivity() {
 class ScorekeeperViewModel(application: Application, private val saved: SavedStateHandle) :
     AndroidViewModel(application) {
     private val database = LocalDatabase.open(application)
-    private val repository = GameRepository(database)
+    private val repository: GameRepository = GameRepository(database, publishedSchedule = { game ->
+        !game.practice && (game.scheduledAt != null || game.isScheduled) && sharing.state().schedulePublications.values.any {
+            it.local && it.sourceID.equals(game.id, true)
+        } || scheduleNotice(game) != null
+    })
     internal val live by lazy {AndroidLive(application,repository,viewModelScope) {recoveryRequired || loading}}
     /** Recording task snapshots contain the full journal and must never enter the Activity Bundle. */
     internal var scoringTaskSource by mutableStateOf<Game?>(null)
@@ -166,6 +170,8 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
 
     internal fun schedulePublication(game: Game) = scheduleFeed.publications[game.id.lowercase()]
     internal fun scheduleNotice(game: Game) = latestLocalScheduleNotice(game, scheduleFeed)
+    internal fun isSharedSchedule(game: Game) = game.publishedScheduleTeamID != null ||
+        schedulePublication(game) != null || scheduleNotice(game) != null
     internal fun scheduleIssue(key: String) = scheduleProblem?.takeIf { it.first == key }?.second
     internal fun canManageRemoteSchedule(notice: TeamScheduleNotice) =
         scheduleFeed.memberships.any { it.id.equals(notice.teamID, true) && it.role == TeamRole.admin }
@@ -891,7 +897,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                     Text(model.error ?: "原始数据已保留，请联系支持。")
                 }
             else if (game != null) {
-                if (game.scheduledSetupPending || game.isScheduled && (
+                if (!game.isFinal && model.isSharedSchedule(game) || game.scheduledSetupPending || game.isScheduled && (
                         !game.scheduleVenue.isNullOrBlank() || model.schedulePublication(game) != null || model.scheduleNotice(game) != null ||
                             model.scheduleFeed.teamFor(game.ourTeamID) != null
                     )) PendingScheduleScreen(game, model) { opponent -> createOpponent = opponent; createTeam = true }
@@ -1094,7 +1100,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
     val feed = model.scheduleFeed
     var scheduleExpiry by remember { mutableLongStateOf(0L) }
     val scheduled = remember(games, feed, scheduleExpiry) { upcomingSchedules(games, feed, System.currentTimeMillis()) }
-    val nextExpiry = scheduled.firstOrNull { it is UpcomingSchedule.Member }?.startsAt
+    val nextExpiry = scheduled.firstOrNull { it is UpcomingSchedule.Member && it.startsAt >= System.currentTimeMillis() }?.startsAt
     LaunchedEffect(nextExpiry) {
         if (nextExpiry != null) {
             var wait = nextExpiry - System.currentTimeMillis()
@@ -1108,9 +1114,9 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
     var managedScheduleKey by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedSchedule = scheduled.filterIsInstance<UpcomingSchedule.Member>()
         .firstOrNull { it.notice.key == managedScheduleKey }?.notice
-    val adminSchedule = selectedSchedule?.takeIf(model::canManageRemoteSchedule)
-    LaunchedEffect(managedScheduleKey, adminSchedule, model.scheduleRefreshing) {
-        if (managedScheduleKey != null && adminSchedule == null && !model.scheduleRefreshing) managedScheduleKey = null
+    val viewedSchedule = selectedSchedule
+    LaunchedEffect(managedScheduleKey, viewedSchedule, model.scheduleRefreshing) {
+        if (managedScheduleKey != null && viewedSchedule == null && !model.scheduleRefreshing) managedScheduleKey = null
     }
     val teamRecord = remember(games, team?.id) { HomeSummary.record(games, team?.id).label }
     val update = model.advertisedUpdate
@@ -1165,9 +1171,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
                     is UpcomingSchedule.Local -> HomeGameRow(entry.game, model, entry.publication, entry.notice)
                     is UpcomingSchedule.Member -> TeamScheduleNoticeRow(
                         entry.notice,
-                        onManage = if (model.canManageRemoteSchedule(entry.notice)) {
-                            { managedScheduleKey = entry.notice.key }
-                        } else null,
+                        onManage = { managedScheduleKey = entry.notice.key },
                     )
                 }
             }
@@ -1197,7 +1201,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         }
         else items(completed, key = { "match-${it.id}" }) { HomeGameRow(it, model) }
     }
-    if (adminSchedule != null) RemoteTeamScheduleScreen(adminSchedule, model) { managedScheduleKey = null }
+    if (viewedSchedule != null) RemoteTeamScheduleScreen(viewedSchedule, model) { managedScheduleKey = null }
 }
 
 @Composable

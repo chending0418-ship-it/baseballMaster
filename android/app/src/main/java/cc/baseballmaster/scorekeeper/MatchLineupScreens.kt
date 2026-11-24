@@ -81,7 +81,7 @@ internal fun applyCompactLineupDraft(source: Game, patch: CompactLineupDraft): G
         if(side!=null) {
             val team=edited.teamAt(home)
             val profiles=side.profiles.associateBy {it.id}
-            val updatedTeam=if(profiles.isEmpty())team else team.copy(players=team.players.map {profiles[it.id] ?: it})
+            val updatedTeam=if(profiles.isEmpty())team else team.copy(players=team.players.map {profiles[it.id] ?: it} + side.profiles.filter { p -> team.players.none { it.id == p.id } })
             edited=edited.withLineup(home,side.order,side.positions,side.designatedHitterID,updatedTeam)
         }
     }
@@ -95,8 +95,9 @@ private fun lineupCommand(source: Game, draft: Game, home: Boolean): Command {
     val old=source.orderAt(home); val order=draft.orderAt(home)
     val replacements=old.mapIndexedNotNull { i,id -> order.getOrNull(i)?.takeIf { id !in order && it !in old }?.let { id to it } }.toMap()
     val updates=draft.teamAt(home).players.filter { p -> source.teamAt(home).players.firstOrNull { it.id==p.id } != p }
+    val (existing, additions) = updates.partition { p -> source.teamAt(home).players.any { it.id == p.id } }
     return Command("lineup",homeSide=home,order=order,positions=draft.positionsAt(home),designatedHitterID=draft.dhAt(home),
-        playerUpdates=updates.takeIf { it.isNotEmpty() },lineupReplacements=replacements.takeIf { it.isNotEmpty() })
+        benchAdditions=additions, playerUpdates=existing.takeIf { it.isNotEmpty() },lineupReplacements=replacements.takeIf { it.isNotEmpty() })
 }
 private fun lineupIssue(source: Game,draft: Game,home: Boolean): String? = runCatching { MatchEngine.apply(source,lineupCommand(source,draft,home)) }.exceptionOrNull()?.message
 
@@ -162,7 +163,7 @@ internal fun PregameLineupConfirmation(game: Game,games: List<Game> = emptyList(
 }
 
 @Composable
-internal fun ParityLineupEditor(game: Game,busy: Boolean,dismiss:()->Unit,initialHome:Boolean=true,save:(Command)->Unit) {
+internal fun ParityLineupEditor(game: Game,busy: Boolean,dismiss:()->Unit,initialHome:Boolean=true,rosters:List<Team>?=null,save:(Command)->Unit) {
     // A selected team's editor has one persistent draft; the task menu owns team selection.
     var json by rememberSaveable(game.id,initialHome) { mutableStateOf(emptyLineupDraftJSON()) }
     val patch=remember(json) { GameJson.decodeFromString<CompactLineupDraft>(json) }
@@ -181,18 +182,19 @@ internal fun ParityLineupEditor(game: Game,busy: Boolean,dismiss:()->Unit,initia
     val changed=lineupCommand(game,draft,initialHome)!=lineupCommand(game,game,initialHome)
     val issue=lineupIssue(game,draft,initialHome)
     var confirmPitcher by rememberSaveable { mutableStateOf(false) }
-    val command=lineupCommand(game,draft,initialHome)
+    val command=lineupCommand(game,draft,initialHome).copy(matchOnlyProfiles=true)
     val submit:()->Unit={if(!game.isPregame && game.positionsAt(initialHome)[1]!=draft.positionsAt(initialHome)[1]) confirmPitcher=true else save(command)}
     GuardedExit(changed,busy,dismiss,onSaveExit={returnAfterSave=true;submit()},saveEnabled=issue==null) { leave ->
         ProductPage(title="${draft.teamAt(initialHome).shortName} · 阵容",busy=busy,onBack=leave,backLabel=if(changed)"返回" else "完成",actionLabel="保存",actionAtTop=true,actionTag="save-lineup",actionEnabled=changed&&issue==null,onAction={returnAfterSave=false;submit()},modal=true) {
             LineupNotice(if(game.isPregame) "开赛前阵容" else "本场阵容调整",if(game.isPregame) "可修改先发、棒次和守位，保存后按新阵容开赛。" else "姓名与号码更正保留球员身份和统计。排序保留当前打者与球数，换人接替原棒次、守位及垒位。")
             if(showSaved) Text("✓ 已保存，可继续调整或点完成返回",color=MaterialTheme.colorScheme.primary,modifier=Modifier.testTag("lineup-saved"),fontSize=13.sp)
-            LineupSideCards(draft,initialHome,emptyList(),game.isPregame) { showSaved=false;json=compactLineupDraftJSON(game,it) }
+            LineupSideCards(draft,initialHome,emptyList(),game.isPregame, rosters) { showSaved=false;json=compactLineupDraftJSON(game,it) }
             if(changed) CardBlock {
                 Text("待保存的调整",fontWeight=FontWeight.Bold)
                 val before=game.orderAt(initialHome);val after=draft.orderAt(initialHome)
                 if(before!=after) Text("打序／先发球员已调整",fontSize=13.sp)
                 if(game.positionsAt(initialHome)!=draft.positionsAt(initialHome)) Text("守备位置已调整",fontSize=13.sp)
+                command.benchAdditions.forEach { Text("补入替补 ${it.name} · #${it.number}",fontSize=13.sp) }
                 command.playerUpdates.orEmpty().forEach { Text("更正 ${it.name} · #${it.jerseyNumbers.joinToString(" / ")}",fontSize=13.sp) }
                 if(game.dhAt(initialHome)!=draft.dhAt(initialHome)) Text("DH 身份已调整",fontSize=13.sp)
             }
@@ -203,7 +205,7 @@ internal fun ParityLineupEditor(game: Game,busy: Boolean,dismiss:()->Unit,initia
 }
 
 @Composable
-private fun LineupSideCards(game: Game,home: Boolean,games: List<Game>,pregame:Boolean,change:(Game)->Unit) {
+private fun LineupSideCards(game: Game,home: Boolean,games: List<Game>,pregame:Boolean, rosters:List<Team>?=null,change:(Game)->Unit) {
     val team=game.teamAt(home);val order=game.orderAt(home);val positions=game.positionsAt(home)
     val bench=team.players.filter { !it.archived && it.id !in order && it.id !in positions.values }
     var profileID by rememberSaveable { mutableStateOf<String?>(null) }
@@ -344,6 +346,11 @@ private fun LineupSideCards(game: Game,home: Boolean,games: List<Game>,pregame:B
                 DropdownMenuItem(text={Text("全员加入打序")},onClick={addMenu=false;change(game.withLineup(home,order+bench.map { it.id }))})
             } }
         }
+        if (rosters != null && game.appleSourceID == null) {
+            MatchBenchAddition(team, rosters.firstOrNull { it.id.equals(team.id, true) }, game) { player ->
+                change(game.withLineup(home, team=team.copy(players=team.players + player)))
+            }
+        }
         if(!pregame) CardBlock {
             Text("替补 · 包括已换下球员",fontWeight=FontWeight.Bold)
             if(bench.isEmpty())Text("暂无可替换球员",color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=13.sp)
@@ -404,10 +411,10 @@ private fun PlayerProfileCorrection(player:Player,source:String,dismiss:()->Unit
 }
 
 @Composable
-internal fun ParitySubstitutionEditor(game:Game,busy:Boolean,dismiss:()->Unit,save:(Command)->Unit) {
+internal fun ParitySubstitutionEditor(game:Game,busy:Boolean,dismiss:()->Unit,rosters:List<Team>?=null,save:(Command)->Unit) {
     var task by rememberSaveable { mutableStateOf("menu") }
     var selectedHome by rememberSaveable { mutableStateOf(true) }
-    if(task=="lineup") { ParityLineupEditor(game,busy,{task="menu"},selectedHome,save);return }
+    if(task=="lineup") { ParityLineupEditor(game,busy,{task="menu"},selectedHome,rosters,save);return }
     if(task=="double") { DoubleSwitchEditor(game,busy,{task="menu"},save);return }
     if(task!="menu") { MatchSubstitutionTask(game,task,busy,{task="menu"},save);return }
     ProductPage(title=if(game.isPregame)"双方赛前阵容" else "阵容与换人",busy=busy,onBack=dismiss,backLabel="返回比赛",modal=true) {

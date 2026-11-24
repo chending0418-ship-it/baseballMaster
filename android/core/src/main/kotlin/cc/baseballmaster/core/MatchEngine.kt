@@ -339,7 +339,7 @@ internal class Session(val g: Game, val c: Command, val id: String, private val 
     }
 
     fun run(): Game {
-        require(c.kind == "lineup" || c.playerUpdates.isNullOrEmpty() && c.lineupReplacements.isNullOrEmpty()) { "球员资料和替补映射只能随阵容保存" }
+        require(c.kind == "lineup" || c.benchAdditions.isEmpty() && !c.matchOnlyProfiles && c.playerUpdates.isNullOrEmpty() && c.lineupReplacements.isNullOrEmpty()) { "球员资料和替补映射只能随阵容保存" }
         require(c.runnerErrorResponsibility == null || c.kind == "runner" && c.runnerKind == "defensiveErrorAdvance") {
             "失误责任人只用于守备失误进垒"
         }
@@ -1580,7 +1580,19 @@ internal class Session(val g: Game, val c: Command, val id: String, private val 
 
     private fun lineup() {
         val home = c.homeSide ?: error("请指定球队")
-        val team = if (home) g.home else g.away
+        val previousTeam = if (home) g.home else g.away
+        val additions = c.benchAdditions
+        val team = if (additions.isEmpty()) previousTeam else {
+            val allIDs = (g.home.players + g.away.players).mapTo(mutableSetOf()) { it.id.lowercase() }
+            require(previousTeam.players.size + additions.size <= 200) { "本场每队最多 200 人" }
+            additions.forEach { player ->
+                Roster.validate(player)
+                require(!player.archived && player.id.isNotBlank() && allIDs.add(player.id.lowercase())) { "这名队员已在本场名单中" }
+            }
+            previousTeam.copy(players = previousTeam.players + additions).also {
+                if (home) g.home = it else g.away = it
+            }
+        }
         val order = c.order ?: error("请核对打序")
         val positions = c.positions ?: error("请核对守位")
         require(

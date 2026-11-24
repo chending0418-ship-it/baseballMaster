@@ -19,6 +19,7 @@ data class TeamScheduleNotice(
     val venue: String,
     val cancelled: Boolean,
     val revision: Long,
+    val scoring: ScheduleRole? = null,
 ) {
     init {
         appleUUID(teamID)

@@ -14,7 +14,7 @@ internal object AppleExportPrototype {
     private fun JsonObjectBuilder.dateField(name: String, value: Long?) { if (value != null) put(name, date(value)) }
     private fun JsonObjectBuilder.idField(name: String, value: String?) { if (value != null) put(name, uid(value)) }
     private fun idArray(values: Iterable<String>) = buildJsonArray { values.forEach { add(uid(it)) } }
-    private fun player(p: Player) = buildJsonObject {
+    internal fun player(p: Player) = buildJsonObject {
         Roster.validate(p)
         put("id", uid(p.id)); put("chineseName", p.chineseName ?: p.name); put("englishName", p.englishName)
         put("numbers", buildJsonArray { p.jerseyNumbers.forEach { add(it.toInt()) } })
@@ -26,7 +26,7 @@ internal object AppleExportPrototype {
         put("id", uid(t.id)); put("name", t.name); put("shortName", t.shortName); put("city", t.city)
         put("players", buildJsonArray { t.players.forEach { p -> add(player(p.copy(position = positions?.entries?.firstOrNull { it.value == p.id }?.key ?: p.position))) } })
     }
-    private fun rules(r: Rules) = buildJsonObject {
+    internal fun rules(r: Rules) = buildJsonObject {
         put("scheduledInnings", r.innings); put("fieldersCount", r.fielders); put("mode", r.mode.name)
         put("initialBalls", r.initialBalls); put("initialStrikes", r.initialStrikes); put("coachPitchLimit", r.coachPitchLimit)
         put("twoStrikeFoulPolicy", if (r.oneExtraFoul) "oneExtraFoul" else "outImmediately")

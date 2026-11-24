@@ -202,7 +202,7 @@ abstract class LocalDatabase : RoomDatabase() {
 }
 
 /** No destructive fallback: unreadable/future stores remain untouched. */
-class GameRepository(private val db: LocalDatabase, private val beforeCommit: () -> Unit = {}) {
+class GameRepository(private val db: LocalDatabase, private val publishedSchedule: suspend (Game) -> Boolean = { false }, private val beforeCommit: () -> Unit = {}) {
     val teams
         get() = db.dao().teams()
 
@@ -346,6 +346,18 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         return game
     }
 
+    /** Build 31 kept this association in the encrypted directory only. Preserve it in new device backups, too. */
+    internal suspend fun retainPublishedScheduleKeys(publications: List<TeamSchedulePublication>) = db.withTransaction {
+        for (publication in publications) {
+            val row = db.dao().gamesMatchingScheduleID(publication.sourceID).singleOrNull() ?: continue
+            val game = decode(row)
+            if (game.publishedScheduleTeamID != null || game.practice || game.appleSourceID != null) continue
+            game.publishedScheduleTeamID = publication.teamID
+            game.validate()
+            db.dao().updateGame(row.copy(payload = GameJson.encodeToString(game)))
+        }
+    }
+
     /** A publication acknowledgement updates metadata without adding a scoring operation. */
     suspend fun applyTeamScheduleNotice(notice: TeamScheduleNotice, ownTeamIDs: Set<String>) = db.withTransaction {
         val row = db.dao().gamesMatchingScheduleID(notice.id).singleOrNull() ?: return@withTransaction
@@ -353,7 +365,8 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         if (!game.isScheduled || game.isFinal || game.practice || game.appleSourceID != null ||
             ownTeamIDs.none { it.equals(game.ourTeamID, true) }) return@withTransaction
         val venue = normalizeScheduleVenue(notice.venue).ifEmpty { null }
-        if (game.scheduledAt == notice.startsAt && game.scheduleVenue == venue) return@withTransaction
+        if (game.scheduledAt == notice.startsAt && game.scheduleVenue == venue && game.publishedScheduleTeamID == notice.teamID) return@withTransaction
+        game.publishedScheduleTeamID = notice.teamID
         game.scheduledAt = notice.startsAt
         game.scheduleVenue = venue
         game.validate()
@@ -715,11 +728,15 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         require(db.dao().appleOriginalOperation(operationID.lowercase(java.util.Locale.ROOT)) == null) { "操作编号与已导入的原始历史重复，未写入" }
         check(current.revision == baseRevision) { "比赛已更新，请核对后重试" }
         val imported = db.dao().appleGameSource(gameID)
-        val marker = decode(current).appleSourceID
+        val stored = decode(current)
+        check(stored.publishedScheduleTeamID == null && !publishedSchedule(stored)) {
+            "这场比赛已关联球队赛程，请从赛程岗位进入；局面记录由持有岗位的设备处理。"
+        }
+        val marker = stored.appleSourceID
         require((imported == null && marker == null) || imported != null && marker == imported.backupID) { "比赛来源映射缺失或不一致，已停止写入" }
         val next = if (imported == null) reduce(MatchEngine.upgradeLegacy(decode(current))) else {
             require(appleCommand != null) { "这场 iOS 导入比赛的此项历史操作尚不能无损转换，原记录未修改" }
-            require(appleCommand.playerUpdates.isNullOrEmpty() && appleCommand.lineupReplacements.isNullOrEmpty()) { "这场 iOS 导入比赛的球员资料更正／阵容替补尚未支持无损转换，原记录与名单未修改" }
+            require(appleCommand.benchAdditions.isEmpty() && appleCommand.playerUpdates.isNullOrEmpty() && appleCommand.lineupReplacements.isNullOrEmpty()) { "这场 iOS 导入比赛的球员资料更正／阵容替补尚未支持无损转换，原记录与名单未修改" }
             val source = db.dao().appleBackup(imported.backupID) ?: error("比赛来源缺失，原资料未修改")
             val backup = verifyAppleSource(source)
             val priorGame = backup.games(source.id).single { it.id == gameID }
@@ -749,7 +766,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                     if(next.scheduledSetupPending) 5 else 4,
                 )
             )
-        if (appleCommand != null) syncLineupProfiles(next, appleCommand)
+        if (appleCommand != null && !appleCommand.matchOnlyProfiles) syncLineupProfiles(next, appleCommand)
         if (clearDraft) db.dao().deleteCorrectionDraft(gameID)
         beforeCommit()
         next

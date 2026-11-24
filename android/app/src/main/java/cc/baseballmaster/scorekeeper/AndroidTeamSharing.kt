@@ -21,7 +21,11 @@ internal class AndroidTeamSharing(internal val local: GameRepository, internal v
     val scheduleChanges = scheduleChangesState.asStateFlow()
 
     suspend fun state() = withContext(Dispatchers.IO) { session.snapshot() }
-    suspend fun scheduleState() = withContext(Dispatchers.IO) { session.scheduleState() }
+    suspend fun scheduleState() = withContext(Dispatchers.IO) {
+        val publications = session.snapshot().schedulePublications.values.filter { it.local && it.notice != null }
+        if (publications.isNotEmpty()) local.retainPublishedScheduleKeys(publications)
+        session.scheduleState()
+    }
 
     suspend fun teamSchedules(): TeamScheduleFeed = withContext(Dispatchers.IO) {
         scheduleLock.withLock {
