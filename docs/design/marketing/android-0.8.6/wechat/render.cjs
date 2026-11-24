@@ -16,9 +16,9 @@ async function render() {
         const page = await browser.newPage({ viewport: { width: 1080, height: 1440 } });
         await page.goto(pathToFileURL(path.join(source, 'poster.html')).href);
         await page.evaluate(() => document.fonts.ready);
-        const loaded = await page.locator('img').evaluateAll(images =>
-            images.length === 2 && images.every(img => img.complete && img.naturalWidth > 0));
-        if (!loaded) throw new Error('品牌标志读取失败，请在 BaseballMaster 品牌工作区内导出。');
+        const loaded = await page.locator('img').evaluateAll((images, expected) =>
+            images.length === expected && images.every(img => img.complete && img.naturalWidth > 0), joint ? 3 : 2);
+        if (!loaded) throw new Error('海报图像读取失败，请在 BaseballMaster 品牌工作区内导出。');
         await page.screenshot({ path: path.join(folder, filename) });
     } finally {
         await browser.close();
