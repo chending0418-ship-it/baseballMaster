@@ -339,6 +339,7 @@ internal class Session(val g: Game, val c: Command, val id: String, private val 
     }
 
     fun run(): Game {
+        if (c.kind == "scheduleSnapshot") return requireNotNull(c.scheduleSnapshot).replay(g,c,id)
         require(c.kind == "lineup" || c.benchAdditions.isEmpty() && !c.matchOnlyProfiles && c.playerUpdates.isNullOrEmpty() && c.lineupReplacements.isNullOrEmpty()) { "球员资料和替补映射只能随阵容保存" }
         require(c.runnerErrorResponsibility == null || c.kind == "runner" && c.runnerKind == "defensiveErrorAdvance") {
             "失误责任人只用于守备失误进垒"

@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 
 async function render() {
     const root = path.resolve(__dirname, '../../../../..');
-    const folder = path.join(root, 'output/marketing/0.8.6/wechat/2026-11-24');
+    const folder = path.join(root, 'output/marketing/0.8.6/wechat/2026-11-24/build33');
     fs.mkdirSync(folder, { recursive: true });
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN });
     try {

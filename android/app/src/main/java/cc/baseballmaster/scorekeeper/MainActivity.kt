@@ -109,7 +109,22 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
         !game.practice && (game.scheduledAt != null || game.isScheduled) && sharing.state().schedulePublications.values.any {
             it.local && it.sourceID.equals(game.id, true)
         } || scheduleNotice(game) != null
-    })
+    }, writerIdentity = { sharing.session.snapshot() })
+    internal val scheduleWriter by lazy { ScheduleWriter(database,sharing.session) }
+    internal var recordingSchedule by mutableStateOf<TeamScheduleNotice?>(null)
+    internal var lineupReview by mutableStateOf<ScheduleLineupReview?>(null)
+    internal var scheduleSyncIssue by mutableStateOf<String?>(null)
+    internal suspend fun enterWriter(notice: TeamScheduleNotice) {
+        val game = withContext(Dispatchers.IO) { scheduleWriter.enter(notice) }
+        val ready = withContext(Dispatchers.IO) { sharing.session.scoringDetail(notice,false) }
+        if (!ready.access.openingConfirmed && (ready.access.lineup == null || ready.access.openingReady)) {
+            withContext(Dispatchers.IO) { scheduleWriter.confirm(notice) }
+        } else if (!ready.access.openingConfirmed) return
+        lineupReview = null
+        recordingSchedule = notice
+        scheduleSyncIssue = null
+        open(game.id)
+    }
     internal val live by lazy {AndroidLive(application,repository,viewModelScope) {recoveryRequired || loading}}
     /** Recording task snapshots contain the full journal and must never enter the Activity Bundle. */
     internal var scoringTaskSource by mutableStateOf<Game?>(null)
@@ -495,6 +510,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     }
 
     fun open(id: String?) {
+        if (id == null || recordingSchedule?.id?.equals(id,true) == false) recordingSchedule = null
         openedGameID = id
         saved["openedGameID"] = id
     }
@@ -897,7 +913,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                     Text(model.error ?: "原始数据已保留，请联系支持。")
                 }
             else if (game != null) {
-                if (!game.isFinal && model.isSharedSchedule(game) || game.scheduledSetupPending || game.isScheduled && (
+                if (!game.isFinal && model.isSharedSchedule(game) && model.recordingSchedule?.id?.equals(game.id,true) != true || game.scheduledSetupPending || game.isScheduled && (
                         !game.scheduleVenue.isNullOrBlank() || model.schedulePublication(game) != null || model.scheduleNotice(game) != null ||
                             model.scheduleFeed.teamFor(game.ourTeamID) != null
                     )) PendingScheduleScreen(game, model) { opponent -> createOpponent = opponent; createTeam = true }
@@ -1553,6 +1569,29 @@ private fun TeamDialog(busy: Boolean, opponent: Boolean, dismiss: () -> Unit, sa
 
 @Composable
 private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
+    val writer = model.recordingSchedule
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(writer?.key, lifecycle, game.revision) {
+        if (writer != null) lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) {
+                try {
+                    withContext(Dispatchers.IO) { model.scheduleWriter.sync(writer) }
+                    model.scheduleSyncIssue = null
+                    model.lineupReview = null
+                    if (game.isFinal) break
+                } catch(e: Exception) {
+                    if (e is CancellationException) throw e
+                    model.lineupReview = e as? ScheduleLineupReview
+                    model.scheduleSyncIssue = e.localizedMessage ?: "局面已保存在本机，等待联网同步"
+                    if (withContext(Dispatchers.IO) { model.scheduleWriter.cached(game.id) } == null) {
+                        model.recordingSchedule = null
+                        break
+                    }
+                }
+                delay(1800)
+            }
+        }
+    }
     val wide = LocalWorkbenchWide.current
     var openedOnResults by rememberSaveable(game.id) { mutableStateOf(game.isFinal && !game.practice) }
     LaunchedEffect(game.isFinal) { if (!game.isFinal) openedOnResults = false }
@@ -1573,6 +1612,33 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
         confirmButton = { TextButton({ val action = PitchAction.valueOf(openingPitch!!); openingPitch = null; model.pitch(action) },
             modifier = Modifier.testTag("confirm-opening-pitch")) { Text("确认开赛") } },
         dismissButton = { TextButton({ openingPitch = null; requestedPanel = "lineup" }) { Text("继续设置阵容") } })
+    val review = model.lineupReview
+    val scope = rememberCoroutineScope()
+    if (writer != null && review != null) {
+        fun resolve(accept: Boolean) {
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) { model.scheduleWriter.sync(writer,
+                        accept=review.proposalID.takeIf { accept }, reject=review.proposalID.takeUnless { accept }) }
+                    model.scheduleSyncIssue = null
+                } catch(e: Exception) {
+                    if (e is CancellationException) throw e
+                    model.scheduleSyncIssue = e.localizedMessage
+                }
+                model.lineupReview = null
+            }
+        }
+        AlertDialog(onDismissRequest={},title={ Text("核对换人时点") },text={ Text(review.message.orEmpty()) },
+            confirmButton={ TextButton({ resolve(true) }) { Text("从当前局面生效") } },
+            dismissButton={ TextButton({ resolve(false) }) { Text("退回重选") } })
+    }
+    if (writer != null && review == null && model.scheduleSyncIssue != null) {
+        var dismissed by remember { mutableStateOf<String?>(null) }
+        val message = model.scheduleSyncIssue
+        if (message != dismissed) AlertDialog(onDismissRequest={ dismissed=message },title={ Text("局面同步") },
+            text={ Text(message.orEmpty()) }, confirmButton={ TextButton({ dismissed=message }) { Text("继续记录") } },
+            dismissButton={ TextButton({ model.recordingSchedule=null }) { Text("查看赛程岗位") } })
+    }
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         ScoringPanels(game, model, requestedPanel, { requestedPanel = "" },
             initialPanel = if (openedOnResults) "results" else "",

@@ -24,7 +24,7 @@ internal object AppleExportPrototype {
     private fun team(t: Team, positions: Map<Int, String>? = null) = buildJsonObject {
         require(t.source == "local" && !t.archived && t.players.none { it.archived })
         put("id", uid(t.id)); put("name", t.name); put("shortName", t.shortName); put("city", t.city)
-        put("players", buildJsonArray { t.players.forEach { p -> add(player(p.copy(position = positions?.entries?.firstOrNull { it.value == p.id }?.key ?: p.position))) } })
+        put("players", buildJsonArray { t.players.forEach { p -> add(player(p.copy(position = positions?.entries?.firstOrNull { it.value == p.id }?.key ?: p.position.takeIf { it in 1..10 } ?: 1))) } })
     }
     internal fun rules(r: Rules) = buildJsonObject {
         put("scheduledInnings", r.innings); put("fieldersCount", r.fielders); put("mode", r.mode.name)
@@ -51,13 +51,16 @@ internal object AppleExportPrototype {
         put("runnerPitcherIDs", pairUUIDMap(g.runnerPitcherIDs)); put("unearnedRunnerIDs", idArray(g.unearnedRunnerIDs))
         put("extraFoulUsed", g.extraFoulUsed)
     }
-    private fun state(g: Game, logs: JsonArray = JsonArray(emptyList()), events: JsonArray = JsonArray(emptyList()), appearances: JsonArray? = null, currentID: String? = null, history: JsonObject? = null): JsonObject = buildJsonObject {
+    internal fun state(g: Game, logs: JsonArray = JsonArray(emptyList()), events: JsonArray = JsonArray(emptyList()), appearances: JsonArray? = null, currentID: String? = null, history: JsonObject? = null): JsonObject = buildJsonObject {
         put("homeTeam", team(g.home, g.homePositions)); put("awayTeam", team(g.away, g.awayPositions)); put("scheduledInnings", g.rules.innings); put("rulesSnapshot", rules(g.rules))
         put("inning", g.inning); put("isTop", g.isTop); put("balls", g.balls); put("strikes", g.strikes); put("outs", g.outs)
         put("homeRunsByInning", json.encodeToJsonElement(g.homeRunsByInning)); put("awayRunsByInning", json.encodeToJsonElement(g.awayRunsByInning))
         put("homeHits", g.homeHits); put("awayHits", g.awayHits); put("homeErrors", g.homeErrors); put("awayErrors", g.awayErrors)
         put("homeBatterIndex", g.homeBatterIndex); put("awayBatterIndex", g.awayBatterIndex)
-        val allPlayers = (g.home.players + g.away.players).associateBy { it.id }
+        val positionByID = (positions(g,true).entries + positions(g,false).entries).associate { it.value to it.key }
+        val allPlayers = (g.home.players + g.away.players).associate { p ->
+            p.id to p.copy(position=positionByID[p.id] ?: p.position.takeIf { it in 1..10 } ?: 1)
+        }
         put("baseRunners", buildJsonArray { g.bases.forEachIndexed { i, id -> if (id != null) { add(i + 1); add(player(allPlayers[id] ?: error("跑者缺失"))) } } })
         put("batting", buildJsonArray { g.batting.toSortedMap().forEach { (id, line) -> add(uid(id)); add(json.encodeToJsonElement(line)) } })
         put("pitching", buildJsonArray { g.pitching.toSortedMap().forEach { (id, line) -> add(uid(id)); add(json.encodeToJsonElement(line)) } })
@@ -71,6 +74,13 @@ internal object AppleExportPrototype {
         put("clockElapsedSeconds", g.clockElapsedMs / 1000.0); dateField("clockRunningSince", g.clockRunningSince); put("clockDisplayMode", g.clockDisplayMode)
         dateField("endedAt", g.endedAt); if (g.isFinal) put("canResumePrecisely", true); g.endReason?.let { put("endReason", endReasons[it] ?: error("结束原因不受支持")) }; put("extraFoulUsed", g.extraFoulUsed); put("pitchingOutsAccountingVersion", 2); idField("walkResponsiblePitcherID", g.walkResponsiblePitcherID); idField("strikeoutResponsibleBatterID", g.strikeoutResponsibleBatterID)
         if (g.statisticsIncomplete) put("statisticsIncomplete", true)
+        g.pendingDecision?.let { put("pendingDecision",it) }
+        g.dismissedRunLimitHalf?.let { put("dismissedRunLimitHalf",it) }
+        g.dismissedWalkOffHalf?.let { put("dismissedWalkOffHalf",it) }
+        if (g.halfEndedAwaitingDecision) put("halfEndedAwaitingDecision",true)
+        if (g.extraInningConfirmed) put("extraInningConfirmed",true)
+        g.tiebreakStartInning?.let { put("tiebreakStartInning",it); put("tiebreakRunnerBases",json.encodeToJsonElement(g.tiebreakRunnerBases)) }
+        if (g.tiebreakPlacementKeys.isNotEmpty()) put("tiebreakPlacementKeys",json.encodeToJsonElement(g.tiebreakPlacementKeys))
         appearances?.let { put("plateAppearances", it) }; currentID?.let { put("currentPlateAppearanceID", it) }; history?.let { put("historyJournal", it) }
     }
     private fun movement(d: Decision) = buildJsonObject {
@@ -83,7 +93,7 @@ internal object AppleExportPrototype {
         put("inning", g.inning); put("isTop", g.isTop); put("batterIndex", g.batterIndex)
         put("homeOrder", idArray(g.homeOrder ?: error("缺少主队打序"))); put("awayOrder", idArray(g.awayOrder ?: error("缺少客队打序")))
         put("homeFielders", idArray(positions(g, true).toSortedMap().values)); put("awayFielders", idArray(positions(g, false).toSortedMap().values))
-        put("positions", buildJsonArray { (g.home.players + g.away.players).sortedBy { it.id }.forEach { p -> add(uid(p.id)); add((if (g.home.players.any { it.id == p.id }) g.homePositions else g.awayPositions)?.entries?.firstOrNull { it.value == p.id }?.key ?: p.position) } })
+        put("positions", buildJsonArray { (g.home.players + g.away.players).sortedBy { it.id }.forEach { p -> add(uid(p.id)); add((if (g.home.players.any { it.id == p.id }) g.homePositions else g.awayPositions)?.entries?.firstOrNull { it.value == p.id }?.key ?: p.position.takeIf { it in 1..10 } ?: 1) } })
         put("runners", buildJsonArray { g.bases.forEachIndexed { i, id -> if (id != null) { add(i + 1); add(uid(id)) } } })
     }
     private fun runnerDecision(d: Decision, players: Map<String, Player>) = buildJsonObject {
@@ -145,17 +155,24 @@ internal object AppleExportPrototype {
             else -> error("研究编码暂不支持操作 ${c.kind}")
         }
     }
-    fun encode(g: Game): ByteArray {
+    internal fun stored(g: Game, scheduledWriter: Boolean = false): JsonObject {
         require(g.appleSourceID == null) { "iOS 导入比赛必须导出原始来源链路，不能由原生编码器改写" }
-        require(!g.practice && !g.isScheduled && !g.incompletePrefix && g.dateRevisions.isEmpty()) { "研究编码不支持预告、日期更正、练习或不完整历史前缀" }
-        require(g.pendingDecision == null && !g.halfEndedAwaitingDecision && g.historySourceID == null && (!g.isFinal || g.endReason in endReasons)) { "研究编码不支持待确认或历史关联" }
-        require(g.cursor == g.journal.size && g.entries.size == g.cursor && g.ourTeamID in listOf(g.home.id, g.away.id) && g.createdAt > 0)
+        require(!g.practice && !g.isScheduled && (scheduledWriter || !g.incompletePrefix && g.dateRevisions.isEmpty())) { "研究编码不支持预告、日期更正、练习或不完整历史前缀" }
+        require((scheduledWriter || g.pendingDecision == null && !g.halfEndedAwaitingDecision && g.historySourceID == null) && (!g.isFinal || g.endReason in endReasons)) { "研究编码不支持待确认或历史关联" }
+        require(g.cursor == g.journal.size && (scheduledWriter || g.entries.size == g.cursor) && g.ourTeamID in listOf(g.home.id, g.away.id) && g.createdAt > 0)
         require(g.journal.map { it.id }.distinct().size == g.journal.size && g.journal.all { it.command.at > 0 })
         require(g.historyRevisions.size == g.correctionRevisions.size) { "更正审计不完整" }
         val cp = GameJson.decodeFromString<Game>(g.checkpoint ?: error("缺少原始检查点"))
         require(cp.entries.isEmpty() && cp.journal.isEmpty())
-        val states = (0..g.cursor).map { index -> History.run(g, g.journal, index, strict = false).also { require(it.canSave) }.game!! }
-        val replayed = states.last()
+        val states = mutableListOf(cp)
+        val replay = History.run(g,g.journal,g.cursor,strict=false) { position ->
+            // Keep one immutable field per operation. Replaying every prefix is cubic on long games.
+            val field = position.copy(entries=position.entries.takeLast(1),journal=emptyList(),checkpoint=null)
+            states += GameJson.decodeFromString<Game>(GameJson.encodeToString(field))
+        }
+        require(replay.canSave) { replay.conflict ?: "历史不能重放" }
+        val replayed = requireNotNull(replay.game)
+        val operationIndex = g.journal.mapIndexed { i,op -> op.id to i }.toMap()
         require(replayed.inning == g.inning && replayed.isTop == g.isTop && replayed.balls == g.balls && replayed.strikes == g.strikes && replayed.outs == g.outs && replayed.bases == g.bases && replayed.homeRunsByInning == g.homeRunsByInning && replayed.awayRunsByInning == g.awayRunsByInning && replayed.batting == g.batting && replayed.pitching == g.pitching && replayed.fielding == g.fielding && replayed.runnerPitcherIDs == g.runnerPitcherIDs) { "历史重放与当前比赛不一致" }
         val groups = AppearanceProjection.build(g)
         val groupID = groups.associate { it.id to generated("${g.id}/appearance/${it.id}") }
@@ -166,13 +183,14 @@ internal object AppleExportPrototype {
         val logs = buildJsonArray { g.entries.forEach { e -> add(buildJsonObject {
             put("id", generated("${g.id}/log/${e.id}")); put("inning", e.inning); put("isTop", e.isTop); put("text", e.text); put("timestamp", date(e.at)); put("isIncomplete", e.incomplete)
         }) } }
-        val events = buildJsonArray { g.entries.forEachIndexed { i, e ->
-            require(e.id == g.journal[i].id && e.kind in listOf("pitch", "play", "runner", "hitByPitch", "intentionalWalk", "foulBunt", "endHalf", "skipTB", "finish", "suspend", "reopen", "pitcher", "batter", "pinchRunner", "fielder", "position"))
+        val events = buildJsonArray { g.entries.forEach { e ->
+            val i = operationIndex.getValue(e.id)
+            require(e.id == g.journal[i].id && (scheduledWriter || e.kind in listOf("pitch", "play", "runner", "hitByPitch", "intentionalWalk", "foulBunt", "endHalf", "skipTB", "finish", "suspend", "reopen", "pitcher", "batter", "pinchRunner", "fielder", "position")))
             add(buildJsonObject {
                 put("id", uid(e.id)); put("logEntryID", generated("${g.id}/log/${e.id}")); put("inning", e.inning); put("isTop", e.isTop); put("timestamp", date(e.at))
                 val passedBall = e.decisions.firstNotNullOfOrNull { it.runnerDefense as? RunnerDefenseCredit.PassedBall }
                 val confirmedSteal = e.notation == "caughtStealing" && e.decisions.any { it.runnerDefense != null }
-                put("category", when (e.kind) { "pitch" -> "pitch"; "play" -> "battedBall"; "runner" -> if (confirmedSteal) "out" else "runner"; "hitByPitch", "intentionalWalk", "foulBunt" -> "pitch"; "pitcher", "batter", "pinchRunner", "fielder", "position" -> "substitution"; else -> "game" })
+                put("category", when (e.kind) { "pitch" -> "pitch"; "play" -> "battedBall"; "runner" -> if (confirmedSteal) "out" else "runner"; "hitByPitch", "intentionalWalk", "foulBunt" -> "pitch"; "pitcher", "batter", "pinchRunner", "fielder", "position", "lineup", "doubleSwitch" -> "substitution"; else -> "game" })
                 put("title", e.text)
                 put("notation", when { confirmedSteal -> "CS"; passedBall != null -> "PB"; else -> e.notation })
                 val runnerError = g.journal[i].command.runnerErrorResponsibility
@@ -188,13 +206,39 @@ internal object AppleExportPrototype {
                 e.outcome?.let { put("resolvedOutcome", it.title) }; observation(e)?.let { put("battedBall", it) }; put("beforeSituation", snapshot(states[i])); put("afterSituation", snapshot(states[i + 1]))
             })
         } }
+        val visibleEvents = g.entries.map { it.id }.toSet()
         val operations = buildJsonArray { g.journal.forEachIndexed { i, op -> add(buildJsonObject {
-            put("id", uid(op.id)); put("command", historyCommand(op, g.entries[i], states[i])); put("context", context(states[i])); put("timestamp", date(op.command.at)); put("title", g.entries[i].text)
-            put("eventIDs", idArray(listOf(op.id))); put("logIDs", buildJsonArray { add(generated("${g.id}/log/${op.id}")) })
+            val event = requireNotNull(states[i+1].entries.lastOrNull { it.id == op.id }) { "历史操作缺少对应事件" }
+            val command = when {
+                !scheduledWriter -> historyCommand(op,event,states[i])
+                op.command.kind == "scheduleSnapshot" -> buildJsonObject { put("unavailable",requireNotNull(op.command.scheduleSnapshot).fields) }
+                op.command.kind in setOf("configure","method","activate","tiebreak") -> {
+                    // Swift's snapshot command preserves an action with no native Swift enum case.
+                    // Store its typed Android input inside Data so a second handoff can replay it too.
+                    fun wire(index: Int, includeCommand: Boolean): String {
+                        val visible = g.entries.filter { operationIndex.getValue(it.id) < index }.map { uid(it.id) }.toSet()
+                        val prefixEvents = JsonArray(events.filter { it.jsonObject.getValue("id").jsonPrimitive.content in visible })
+                        val ids = prefixEvents.map { it.jsonObject.getValue("logEntryID") }.toSet()
+                        val prefixLogs = JsonArray(logs.filter { it.jsonObject["id"] in ids })
+                        val value = state(states[index],prefixLogs,prefixEvents)
+                        val snapshot = if (includeCommand) JsonObject(value + ("androidScheduleCommand" to json.encodeToJsonElement(op.command))) else value
+                        return Base64.getEncoder().encodeToString(snapshot.toString().toByteArray())
+                    }
+                    buildJsonObject { put("unavailable",buildJsonObject { put("_0",event.text); put("_1",wire(i,false)); put("_2",wire(i+1,true)) }) }
+                }
+                op.command.kind == "date" -> buildJsonObject { put("note",buildJsonObject { put("_0",event.text) }) }
+                else -> AppleHistoryCommandCodec.encodeAction(op.command, states[i], states[i+1], event.decisions,
+                    events.firstOrNull { it.jsonObject["id"]?.jsonPrimitive?.content.equals(op.command.eventID,true) }?.jsonObject)
+            }
+            put("id", uid(op.id)); put("command",command); put("context",context(states[i])); put("timestamp",date(op.command.at)); put("title",event.text)
+            val visible = op.id in visibleEvents
+            put("eventIDs",idArray(if (visible) listOf(op.id) else emptyList()))
+            put("logIDs",buildJsonArray { if (visible) add(generated("${g.id}/log/${op.id}")) })
             val groupIndex = groups.indexOfFirst { a -> a.events.any { it.id == op.id } }
-            val appearance = groups[groupIndex]
-            val next = if ((appearance.complete || appearance.interrupted) && appearance.events.last().id == op.id) groups.getOrNull(groupIndex + 1) else appearance
-            next?.let { put("nextAppearanceID", groupID.getValue(it.id)) }
+            groups.getOrNull(groupIndex)?.let { appearance ->
+                val next = if ((appearance.complete || appearance.interrupted) && appearance.events.last().id == op.id) groups.getOrNull(groupIndex + 1) else appearance
+                next?.let { put("nextAppearanceID", groupID.getValue(it.id)) }
+            }
             put("inserted", op.inserted); put("edited", op.edited); put("acceptsNewContext", op.acceptContext)
             put("errors", buildJsonArray { op.additionalErrors.forEachIndexed { n, credit -> add(buildJsonObject {
                 put("id", generated("${g.id}/error/${op.id}/$n")); put("playerID", uid(credit.playerID)); put("count", credit.count); put("note", credit.note)
@@ -204,8 +248,8 @@ internal object AppleExportPrototype {
                 put("earnedRuns", buildJsonArray { ruling.earnedRuns.toSortedMap().forEach { (id, runs) -> add(uid(id)); add(runs) } })
                 put("unearnedRunnerIDs", idArray(ruling.unearnedRunnerIDs))
             }) }
-            dateField("correctedAt", g.entries[i].reviewedAt)
-            observation(g.entries[i])?.let { put("battedBall", it) }
+            dateField("correctedAt", event.reviewedAt)
+            observation(event)?.let { put("battedBall", it) }
         }) } }
         val initialAppearance = groups.first()
         val initialID = groupID.getValue(initialAppearance.id)
@@ -218,8 +262,7 @@ internal object AppleExportPrototype {
             val preview = History.run(priorInput, revision.previousRecords, revision.previousRecords.size, strict = true)
             require(preview.canSave) { preview.conflict ?: "更正前历史不能重放" }
             val previous = requireNotNull(preview.game)
-            val previousBackup = AppleBackupEnvelope.inspect(encode(previous))
-            val previousJournal = previousBackup.snapshot.getValue("games").jsonArray.single().jsonObject.getValue("state").jsonObject.getValue("historyJournal")
+            val previousJournal = stored(previous,scheduledWriter).getValue("state").jsonObject.getValue("historyJournal")
             add(buildJsonObject {
                 put("id", uid(revision.id)); put("date", date(revision.at)); put("reason", revision.reason); put("previousJournal", previousJournal)
                 put("appliedOperationIDs", idArray(revision.appliedOperationIDs)); put("summary", json.encodeToJsonElement(revision.summary))
@@ -235,12 +278,28 @@ internal object AppleExportPrototype {
             put("id", uid(g.id)); put("createdAt", date(g.createdAt)); put("updatedAt", date(g.updatedAt.takeIf { it > 0 } ?: g.createdAt))
             dateField("scheduledAt", g.scheduledAt); dateField("startedAt", g.startedAt); dateField("playedAt", g.playedAt); put("playedTimeZoneID", g.playedTimeZoneID)
             put("seasonID", (Performances.year(g) ?: error("缺少年度")).toString()); idField("ourTeamID", g.ourTeamID); put("opponentTeamID", uid(if (home) g.away.id else g.home.id))
+            if (scheduledWriter) {
+                val dates = g.journal.mapIndexedNotNull { index,record -> record.command.takeIf { it.kind == "date" }?.let { command ->
+                    buildJsonObject {
+                        put("changedAt",date(command.at)); put("playedAt",date(requireNotNull(command.dateMillis)))
+                        val before = states[index]
+                        put("previousDate",date(before.playedAt ?: before.startedAt ?: before.createdAt))
+                        put("previousTimeZoneID",before.playedTimeZoneID); put("timeZoneID",command.timeZoneID)
+                    }
+                } }
+                if (dates.isNotEmpty()) put("dateRevisions",JsonArray(dates))
+            }
             put("isHome", home); put("isSpectator", false); put("rules", rules(g.rules)); put("lineup", lineup(if (home) cp.home else cp.away, home)); put("secondaryLineup", lineup(if (home) cp.away else cp.home, !home))
             put("status", if (g.isScheduled) 2 else if (g.isFinal) 1 else 0); put("revision", g.revision); put("openingPitchRecorded", g.openingPitchRecorded)
             g.postgameSharingChoice?.let {choice -> put("postgameTargetConfigured",true);idField("postgameUploadTeamID",choice.teamID)}
             put("state", JsonObject(state(g, logs, events, appearances, groups.lastOrNull()?.let { groupID.getValue(it.id) }, history) +
                 if (revisions.isEmpty()) emptyMap() else mapOf("correctionRevisions" to revisions)))
         }
+        return game
+    }
+
+    fun encode(g: Game): ByteArray {
+        val game = stored(g)
         val roster = AppleBackupEnvelope.inspect(AppleRosterBackup.encode(listOf(g.home, g.away), emptyList(), g.ourTeamID, g.createdAt)).snapshot
         val payload = json.encodeToString(JsonObject.serializer(), JsonObject(roster + ("games" to JsonArray(listOf(game))))).toByteArray()
         val hash = MessageDigest.getInstance("SHA-256").digest(payload).joinToString("") { "%02x".format(it) }

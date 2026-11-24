@@ -54,7 +54,7 @@ internal object AppleHistoryCommandCodec {
             else -> error("跑垒守备归属不受支持")
         }
     }
-    private fun player(p: Player,position: Int=p.position)=buildJsonObject {
+    private fun player(p: Player,position: Int=p.position.takeIf { it in 1..10 } ?: 1)=buildJsonObject {
         put("id",uid(p.id));put("chineseName",p.chineseName ?: p.name);put("englishName",p.englishName)
         put("numbers",buildJsonArray {p.jerseyNumbers.forEach {add(it.toInt())}});put("jerseyNumbers",buildJsonArray {p.jerseyNumbers.forEach {add(it)}})
         require(position in 1..10) {"iOS 球员守位缺失"};put("primaryPosition",position)
@@ -119,7 +119,7 @@ internal object AppleHistoryCommandCodec {
      * deliberately distinct: iOS commits them into its next checkpoint.
      */
     fun encodeAction(c: Command,before: Game,after: Game,effectiveMoves: List<Decision>,reviewEvent: JsonObject?=null): JsonObject {
-        require(c.playerUpdates.isNullOrEmpty() && c.lineupReplacements.isNullOrEmpty()) { "球员资料更正／阵容替补尚未完成 iOS 历史转换，不能忽略后导出" }
+        require(c.kind == "lineup" || c.playerUpdates.isNullOrEmpty() && c.lineupReplacements.isNullOrEmpty()) { "球员资料更正／阵容替补尚未完成 iOS 历史转换，不能忽略后导出" }
         val people=(before.home.players+before.away.players).associateBy {it.id}
         fun args(block: JsonObjectBuilder.()->Unit)=buildJsonObject(block)
         val f=when(c.kind) {
@@ -165,11 +165,11 @@ internal object AppleHistoryCommandCodec {
                 val home=requireNotNull(c.homeSide);val t=if(home) after.home else after.away
                 val order=requireNotNull(if(home) after.homeOrder else after.awayOrder);val positions=requireNotNull(if(home) after.homePositions else after.awayPositions)
                 put("_0",buildJsonObject {
-                    put("isHome",home);put("players",buildJsonArray {t.players.forEach {p -> add(player(p,positions.entries.firstOrNull {it.value==p.id}?.key ?: p.position))}})
+                    put("isHome",home);put("players",buildJsonArray {t.players.forEach {p -> add(player(p,positions.entries.firstOrNull {it.value==p.id}?.key ?: p.position.takeIf { it in 1..10 } ?: 1))}})
                     put("battingIDs",idList(order));put("fieldingIDs",idList(positions.toSortedMap().values));(if(home) after.homeDesignatedHitterID else after.awayDesignatedHitterID)?.let {put("dhID",uid(it))}
                     (if(home) after.homePitcherID else after.awayPitcherID)?.let {put("pitcherID",uid(it))}
                     put("anchorID",uid(order[(if(home) after.homeBatterIndex else after.awayBatterIndex)%order.size]))
-                    put("runners",buildJsonArray {after.bases.forEachIndexed {i,id -> if(id!=null) {add(i+1);add(player(people.getValue(id)))}}})
+                    put("runners",buildJsonArray {after.bases.forEachIndexed {i,id -> if(id!=null) {add(i+1);add(player((after.home.players + after.away.players).single { it.id == id }))}}})
                     put("automaticIDs",idList(after.automaticRunnerIDs.sorted()));put("changes",buildJsonArray {add("阵容调整")})
                 })
             }

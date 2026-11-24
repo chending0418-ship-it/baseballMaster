@@ -33,6 +33,7 @@ data class ScheduleScoringDetail(
     val access: ScheduleRole, val version: Long, val frame: ScheduleField?,
     val pending: String?, val receipt: ScheduleReceipt?, val draft: ScheduledLineupDraft?,
     val memberID: String, val deviceID: String?, val recoveryEpoch: String?, val accessEpoch: Long?,
+    val proposal: JsonObject? = null, val reserved: String? = null, val lastFrameID: String? = null,
 )
 
 private val scoringJson get() = TeamDirectoryJson.format
@@ -72,7 +73,8 @@ private fun TeamDirectorySession.readScoring(notice: TeamScheduleNotice, draft: 
     }
     val detail = ScheduleScoringDetail(scoringJson.decodeFromJsonElement(raw), raw.getValue("version").jsonPrimitive.long,
         frame, field("proposal")?.jsonObject?.getValue("id")?.jsonPrimitive?.content,
-        field("receipt")?.let { scoringJson.decodeFromJsonElement(it) }, draft, member.memberID, state.deviceID, state.directory?.recoveryEpoch, member.accessEpoch)
+        field("receipt")?.let { scoringJson.decodeFromJsonElement(it) }, draft, member.memberID, state.deviceID, state.directory?.recoveryEpoch, member.accessEpoch,
+        field("proposal")?.jsonObject, field("reserved")?.jsonPrimitive?.content, field("lastFrameID")?.jsonPrimitive?.content)
     lastScheduleRead = if (field("compactSupported")?.jsonPrimitive?.boolean == true && frame != null)
         CachedScheduleRead(notice.key, member, state.deviceID, state.directory?.recoveryEpoch, detail) else null
     return detail
@@ -89,8 +91,8 @@ fun TeamDirectorySession.scoringDetail(notice: TeamScheduleNotice, checkCapabili
     readScoring(notice, draft)
 }
 
-private fun TeamDirectorySession.scoringWrite(notice: TeamScheduleNotice, action: String, epoch: Long,
-    id: String = UUID.randomUUID().toString(), fields: JsonObjectBuilder.() -> Unit = {}) {
+internal fun TeamDirectorySession.scoringWrite(notice: TeamScheduleNotice, action: String, epoch: Long,
+    id: String = UUID.randomUUID().toString().uppercase(), fields: JsonObjectBuilder.() -> Unit = {}) {
     snapshot().member(notice)
     val body = buildJsonObject { put("operationID", id); put("epoch", epoch); fields() }
     val path = "teams/${appleUUID(notice.teamID)}/schedules/${appleUUID(notice.id)}/scoring/$action"
@@ -155,4 +157,19 @@ fun TeamDirectorySession.discardLineupDraft(notice: TeamScheduleNotice, id: Stri
     check(draft.id == id && current.pending != id) { "已送达的阵容操作需等候回执" }
     val state = snapshot()
     storage.save(state.copy(lineupDrafts = state.lineupDrafts - notice.key))
+}
+
+fun TeamDirectorySession.writerAction(notice: TeamScheduleNotice, detail: ScheduleScoringDetail, action: String,
+    operationID: String = UUID.randomUUID().toString().uppercase(), fields: JsonObject = JsonObject(emptyMap())) = synchronized(storage.monitor) {
+    val state = snapshot()
+    val member = state.member(notice)
+    check(detail.memberID == member.memberID && member.role != TeamRole.member && detail.deviceID == state.deviceID &&
+        detail.recoveryEpoch == state.directory?.recoveryEpoch && detail.accessEpoch == member.accessEpoch &&
+        detail.access.role == "scorer") { "局面岗位或设备身份已变化" }
+    scoringWrite(notice, action, detail.access.epoch, operationID) { fields.forEach { (key,value) -> put(key,value) } }
+}
+
+fun TeamDirectorySession.scoringCheckpoint(notice: TeamScheduleNotice): JsonObject = synchronized(storage.monitor) {
+    snapshot().member(notice)
+    client.transport.request("GET", "teams/${appleUUID(notice.teamID)}/schedules/${appleUUID(notice.id)}/scoring/checkpoint", null).getValue("game").jsonObject
 }

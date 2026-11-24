@@ -350,6 +350,7 @@ object History {
         records: List<RecordedCommand>,
         cursor: Int,
         strict: Boolean,
+        observe: ((Game) -> Unit)? = null,
     ): CorrectionPreview {
         var state = GameJson.decodeFromString<Game>(input.checkpoint ?: error("缺少可重放的检查点"))
         val aliases = mutableMapOf<String, String>()
@@ -593,6 +594,7 @@ object History {
                         bases = beforeBases,
                         acceptContext = false,
                     )
+                observe?.invoke(state)
                 previousBefore = beforeCancel
             } catch (failure: IllegalArgumentException) {
                 return CorrectionPreview(null, records, emptyList(), record.id, failure.message)

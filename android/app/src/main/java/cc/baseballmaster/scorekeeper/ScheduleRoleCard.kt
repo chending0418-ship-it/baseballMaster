@@ -21,6 +21,7 @@ internal fun ScheduleRoleCard(notice: TeamScheduleNotice, model: ScorekeeperView
     var issue by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var discard by remember { mutableStateOf<String?>(null) }
+    var offline by remember { mutableStateOf<WriterBinding?>(null) }
     var members by remember { mutableStateOf<List<SharedTeamMember>?>(null) }
     var sharedRoster by remember { mutableStateOf<Team?>(null) }
     var edit by remember { mutableStateOf<Pair<Boolean, ScheduleScoringDetail>?>(null) }
@@ -36,8 +37,12 @@ internal fun ScheduleRoleCard(notice: TeamScheduleNotice, model: ScorekeeperView
         issue = e.localizedMessage ?: "请联网刷新本场岗位"
     }
     suspend fun refresh(checkCapability: Boolean) {
-        val next = withContext(Dispatchers.IO) { session.scoringDetail(notice, checkCapability) }
+        val next = withContext(Dispatchers.IO) { model.scheduleWriter.status(notice, checkCapability) }
+        if (next.access.role == "scorer" && next.access.holdsDevice && next.proposal != null && !next.access.closed && next.access.transfer == null) {
+            runCatching { withContext(Dispatchers.IO) { model.scheduleWriter.sync(notice) } }.onFailure { if (it is CancellationException) throw it; issue = it.localizedMessage }
+        }
         if (edit != null && (edit?.second?.access?.epoch != next.access.epoch || !next.access.holdsDevice || next.access.closed)) edit = null
+        offline = null
         detail = next
     }
     fun perform(action: suspend () -> Unit) {
@@ -57,7 +62,12 @@ internal fun ScheduleRoleCard(notice: TeamScheduleNotice, model: ScorekeeperView
             while (isActive) {
                 lock.withLock {
                     try { refresh(!checked); checked = true }
-                    catch (e: Exception) { failed(e) }
+                    catch (e: Exception) {
+                        failed(e)
+                        offline = if (e is java.io.IOException && (e !is TeamServiceFault || e.status >= 500))
+                            withContext(Dispatchers.IO) { model.scheduleWriter.cached(notice.id.lowercase()) }?.takeIf { it.opening }
+                        else null
+                    }
                 }
                 delay(if (detail?.access?.role == "lineup") 5000L else 15000L)
             }
@@ -95,6 +105,7 @@ internal fun ScheduleRoleCard(notice: TeamScheduleNotice, model: ScorekeeperView
         Text(role?.label ?: notice.scoring?.label ?: "正在核对岗位")
         role?.transfer?.let { Text("局面记录待交接给${it.targetName}") }
         if (issue != null) Text(issue!!, color = MaterialTheme.colorScheme.error)
+        if (offline != null) Button({ model.recordingSchedule = notice; model.open(notice.id.lowercase()) }) { Text("继续本机局面记录") }
         if (current == null) TextButton({ perform { refresh(true) } }, enabled = !busy) { Text("刷新岗位") }
         if (current != null && role != null && !role.closed && !notice.cancelled) {
             if (admin) TextButton(enabled = !busy, onClick = { perform {
@@ -109,7 +120,23 @@ internal fun ScheduleRoleCard(notice: TeamScheduleNotice, model: ScorekeeperView
             } }) { Text("提供本机双方先发") }
             when (role.role) {
                 "viewer" -> Text("本场仅供查看", style = MaterialTheme.typography.bodySmall)
-                "scorer" -> Text("本场局面请使用 iOS 3.1.4 或兼容版本记录。", style = MaterialTheme.typography.bodySmall)
+                "scorer" -> {
+                    if (role.transfer != null && role.holdsDevice) Button({ perform {
+                        withContext(Dispatchers.IO) { model.scheduleWriter.release(notice) }
+                    } },enabled=!busy) { Text("交接完整逐球记录") }
+                    else if (current.frame == null) Text("等待发布人提供双方先发")
+                    else if (role.transfer == null) Button({ perform { model.enterWriter(notice) } },enabled=!busy) {
+                        Text(when {
+                            role.hasCheckpoint -> "接收完整逐球记录"
+                            role.openingConfirmed -> "进入局面记录"
+                            role.openingReady || role.lineup == null -> "确认双方先发并记局面"
+                            else -> "领取局面岗位，等待先发"
+                        })
+                    }
+                    if (role.holdsDevice && current.pending != null && issue != null) TextButton({ perform {
+                        withContext(Dispatchers.IO) { model.scheduleWriter.sync(notice,reject=current.pending) }
+                    } }) { Text("退回这笔阵容调整") }
+                }
                 "lineup" -> {
                     if (current.frame == null) Text("等待发布人提供双方先发")
                     else if (!role.holdsDevice) Button({ perform { withContext(Dispatchers.IO) {

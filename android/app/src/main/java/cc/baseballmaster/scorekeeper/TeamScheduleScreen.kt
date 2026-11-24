@@ -155,7 +155,16 @@ internal fun TeamScheduleControls(game: Game, model: ScorekeeperViewModel) {
     val identity = remote?.key ?: game.id
     val issue = model.scheduleIssue(identity)
     if (notice != null) ScheduleRoleCard(notice, model, game)
-    else if (game.publishedScheduleTeamID != null) Text("本场已发布，请恢复球队权限后查看岗位。")
+    else if (game.publishedScheduleTeamID != null) {
+        val cached by produceState<WriterBinding?>(null,game.id,model.scheduleFeed.memberships) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { model.scheduleWriter.cached(game.id) }
+        }
+        if (cached?.opening == true) Button({
+            model.recordingSchedule = cached?.notice
+            model.open(game.id)
+        }) { Text("继续本机局面记录") }
+        else Text("本场已发布，请恢复球队权限后查看岗位。")
+    }
     if (!authorized && publication == null && notice == null && issue == null) return
     SchedulePublicationActions(
         identity = identity,
