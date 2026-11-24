@@ -16,7 +16,7 @@ async function render() {
         const loaded = await page.locator('img').evaluateAll(images =>
             images.length === 2 && images.every(img => img.complete && img.naturalWidth > 0));
         if (!loaded) throw new Error('品牌标志读取失败，请在 BaseballMaster 品牌工作区内导出。');
-        await page.screenshot({ path: path.join(folder, 'Android-0.8.6-微信单页.png') });
+        await page.screenshot({ path: path.join(folder, 'Android-0.8.6-分工协作记录.png') });
     } finally {
         await browser.close();
     }

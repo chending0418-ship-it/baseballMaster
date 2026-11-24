@@ -4,7 +4,7 @@
 
 | 项目 | 当前依据 |
 | --- | --- |
-| 0.8.6 本地候选 | **Build 33**。Android 可管阵容、记局面或接任局面员。已在模拟器实录 iOS 管阵容／Android 记局面、双 Android 换投与交接，以及 iOS → Android → iOS 逐球历史往返。覆盖 Build 32 后保留原有比赛和球队。[版本计划与验收](<plans/0.8.6 发布功能计划.md#android-build33>) · [签名 APK](../../output/releases/android/0.8.6/build33/BaseballMaster-Android-0.8.6-build33.apk) · [微信单图](../../output/marketing/0.8.6/wechat/2026-11-24/build33/Android-0.8.6-微信单页.png) |
+| 0.8.6 本地候选 | **Build 33**。Android 可管阵容、记局面或接任局面员。已在模拟器实录 iOS 管阵容／Android 记局面、双 Android 换投与交接，以及 iOS → Android → iOS 逐球历史往返。覆盖 Build 32 后保留原有比赛和球队。[版本计划与验收](<plans/0.8.6 发布功能计划.md#android-build33>) · [签名 APK](../../output/releases/android/0.8.6/build33/BaseballMaster-Android-0.8.6-build33.apk) · [微信单图《分工协作记录》](../../output/marketing/0.8.6/wechat/2026-11-24/build33/Android-0.8.6-分工协作记录.png) |
 | 官网分发 | **0.8.5（Build 31）**，北京时间 2026-11-18 22:12 发布。首屏与下载区均已切换，公网整包校验通过。官网 Build 29 联网打开首页已实测提示升级并保留球队数据。[官网下载](https://baseballmaster.cc/scorekeeper#download) · [签名 APK](https://baseballmaster.cc/assets/android/0.8.5-build31/BaseballMaster-Android-0.8.5-build31.apk) · [SHA-256](https://baseballmaster.cc/assets/android/0.8.5-build31/SHA256SUMS.txt) |
 | 0.8.5 验收 | 239 项已逐条登记证据、适用构建及分期。Build 30 完成球队赛程双向联调，Build 31 完成在线比赛分析及四路球队固定 OBS 转播源联调。347 项 JVM 测试通过。按用户要求使用模拟器。[版本计划与实拍](<plans/0.8.5 发布功能计划.md>) · [PR #69](https://github.com/chending0418-ship-it/baseballMaster/pull/69) |
 | 0.8.3 维护版 | 共享球队统计、官网更新提醒、可读的 PDF 文件名、共享历史打席标签和紧凑分类切换已交付。覆盖升级和发布证据见 [0.8.3 发布功能计划](<plans/0.8.3 发布功能计划.md>) |
