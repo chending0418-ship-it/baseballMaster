@@ -1,0 +1,14 @@
+Baseball Scorekeeper | iOS 3.1.4 (build 1) | Simplified Chinese UI. No app account or password is required. Use fictional names. Both manual scoring modes (基础版 and Pro 版) are included.
+
+One device: Open 我的 > 练习一局, select Pro 版 and start practice. Tap 击球进入场内 > 滚地出局, choose a ground ball and a location, then tap the third baseman (5) and the first baseman (3) in order. The route shows 5 → 3. Practice is separate from official statistics.
+
+Two devices, online: Use two independent installations of 3.1.4, with different team member identities. On A, open 球队 > 球队共享 and share a local team with a fictional roster. If starting from an empty team, add enough fictional players for a starting lineup. Tap 邀请成员. On B, choose 通过邀请加入 and join via A’s link. A refreshes the team and uses 成员管理 to change B from 成员 (member) to 记录员 (scorer) and confirms. Do not pair B as another device of the same member.
+
+On A as team administrator, open 比赛 > 开始新比赛, select the shared team, enter a fictional opponent and turn on 安排未来比赛. Enable 现在完成赛前设置 and 确认阵容后发布到球队赛程. Continue through setup and confirm the lineups to publish. Open that game from 比赛 > 即将进行. In 本场记录岗位 > 安排记录员, assign A to 整场或局面记录员 and B to 阵容记录员（可选）. If prompted, provide both starting lineups from the creating device. With no assignment, only the administrator who created the game can score. With one assignment, that person handles the entire game.
+
+On B, open the same game, select 在此设备管理阵容, check both lineups and tap 提交双方先发. On A, select 核对阵容并进入记分 and confirm the first batter and starting pitcher. Record a ball. On B, open 管理阵容 for either side. In the bench section tap 添加本场队员. Select an omitted roster player or enter a temporary player with jersey number 00. Add to the bench and save. Keep the scoring screen open and online on A. Once applied, the player is available as a substitute. Adding a player does not itself make a substitution. The attached illustrated guide shows the Chinese controls.
+
+Optional voice scoring (separate from the features above): reviewer activation code [INSERT UNUSED PRIVATE CODE]. Redeem in 我的 > App 设置 > 语音记分. In a regular game tap the microphone, accept the disclosure and microphone permission, say “坏球”, then check the transcript, analyze and confirm. For optional game analysis, open a completed official game and select 比赛分析 > 生成比赛分析 after reading the disclosure.
+
+Support: https://baseballmaster.cc/scorekeeper/support-en.html
+Privacy: https://baseballmaster.cc/scorekeeper/privacy-en.html
