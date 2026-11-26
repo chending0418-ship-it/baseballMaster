@@ -84,6 +84,39 @@ class TeamDirectoryIntegrationTest {
         admin.prepareInvite(team.id,role); val invite = admin.sendPending().request.body.getValue("token").jsonPrimitive.content
         member.refresh(); member.prepareJoin(invite,"同名成员"); member.sendPending(); member.refresh()
     }
+    @Test fun scheduleAssignmentsAreRevisionedAndReadByEachMember() {
+        Service().use { server ->
+            val admin = session(server.transport())
+            val scorer = session(server.transport())
+            val viewer = session(server.transport())
+            val team = create(admin)
+            join(admin, team, scorer)
+            join(admin, team, viewer, TeamRole.member)
+            val target = scorer.refresh().teams.single().memberID
+            val game = UUID.randomUUID().toString()
+            admin.publishSchedule(team.id, game, System.currentTimeMillis()+3600000,"客队","主队","球场")
+            val notice = admin.teamSchedules().notices.single()
+            assertEquals("scorer", admin.scoringDetail(notice).access.role)
+            assertEquals("viewer", scorer.scoringDetail(notice).access.role)
+            admin.assignScorers(notice,0,target,team.memberID)
+            assertEquals("lineup", admin.scoringDetail(notice).access.role)
+            assertEquals("scorer", scorer.teamSchedules().notices.single().scoring!!.role)
+            assertEquals("viewer", viewer.scoringDetail(notice).access.role)
+            assertThrows(IllegalStateException::class.java) { viewer.assignScorers(notice,1,target,null) }
+            assertThrows(IllegalArgumentException::class.java) { admin.assignScorers(notice,1,target,target) }
+            assertThrows(TeamServiceFault::class.java) { admin.assignScorers(notice,0,null,null) }
+            val changed = admin.updateRemoteSchedule(notice, notice.startsAt+60000,"新场地")
+            assertEquals(target, scorer.scoringDetail(changed.notice!!).access.scorer)
+            admin.assignScorers(notice,1,target,null)
+            assertNull(scorer.scoringDetail(notice).access.lineup)
+            admin.assignScorers(notice,2,null,null)
+            assertEquals("scorer",admin.scoringDetail(notice).access.role)
+            assertEquals("viewer",scorer.scoringDetail(notice).access.role)
+            admin.updateRemoteSchedule(changed.notice, changed.notice.startsAt,"新场地",true)
+            assertEquals("viewer",admin.scoringDetail(notice).access.role)
+        }
+    }
+
     private fun publishFixture(server: Service, transport: TeamTransport, team: RemoteTeam,final: Boolean=false): SharedMatchDocument {
         val body=JsonObject(server.matchFixture(final) + ("operationID" to JsonPrimitive(UUID.randomUUID().toString())))
         return SharedMatchDocument(transport.request("POST","teams/${team.id}/games",body))

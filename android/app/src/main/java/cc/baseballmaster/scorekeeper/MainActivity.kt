@@ -105,7 +105,26 @@ class MainActivity : ComponentActivity() {
 class ScorekeeperViewModel(application: Application, private val saved: SavedStateHandle) :
     AndroidViewModel(application) {
     private val database = LocalDatabase.open(application)
-    private val repository = GameRepository(database)
+    private val repository: GameRepository = GameRepository(database, publishedSchedule = { game ->
+        !game.practice && (game.scheduledAt != null || game.isScheduled) && sharing.state().schedulePublications.values.any {
+            it.local && it.sourceID.equals(game.id, true)
+        } || scheduleNotice(game) != null
+    }, writerIdentity = { sharing.session.snapshot() })
+    internal val scheduleWriter by lazy { ScheduleWriter(database,sharing.session) }
+    internal var recordingSchedule by mutableStateOf<TeamScheduleNotice?>(null)
+    internal var lineupReview by mutableStateOf<ScheduleLineupReview?>(null)
+    internal var scheduleSyncIssue by mutableStateOf<String?>(null)
+    internal suspend fun enterWriter(notice: TeamScheduleNotice) {
+        val game = withContext(Dispatchers.IO) { scheduleWriter.enter(notice) }
+        val ready = withContext(Dispatchers.IO) { sharing.session.scoringDetail(notice,false) }
+        if (!ready.access.openingConfirmed && (ready.access.lineup == null || ready.access.openingReady)) {
+            withContext(Dispatchers.IO) { scheduleWriter.confirm(notice) }
+        } else if (!ready.access.openingConfirmed) return
+        lineupReview = null
+        recordingSchedule = notice
+        scheduleSyncIssue = null
+        open(game.id)
+    }
     internal val live by lazy {AndroidLive(application,repository,viewModelScope) {recoveryRequired || loading}}
     /** Recording task snapshots contain the full journal and must never enter the Activity Bundle. */
     internal var scoringTaskSource by mutableStateOf<Game?>(null)
@@ -166,6 +185,8 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
 
     internal fun schedulePublication(game: Game) = scheduleFeed.publications[game.id.lowercase()]
     internal fun scheduleNotice(game: Game) = latestLocalScheduleNotice(game, scheduleFeed)
+    internal fun isSharedSchedule(game: Game) = game.publishedScheduleTeamID != null ||
+        schedulePublication(game) != null || scheduleNotice(game) != null
     internal fun scheduleIssue(key: String) = scheduleProblem?.takeIf { it.first == key }?.second
     internal fun canManageRemoteSchedule(notice: TeamScheduleNotice) =
         scheduleFeed.memberships.any { it.id.equals(notice.teamID, true) && it.role == TeamRole.admin }
@@ -489,6 +510,7 @@ class ScorekeeperViewModel(application: Application, private val saved: SavedSta
     }
 
     fun open(id: String?) {
+        if (id == null || recordingSchedule?.id?.equals(id,true) == false) recordingSchedule = null
         openedGameID = id
         saved["openedGameID"] = id
     }
@@ -891,7 +913,7 @@ fun ScorekeeperApp(model: ScorekeeperViewModel = viewModel()) {
                     Text(model.error ?: "原始数据已保留，请联系支持。")
                 }
             else if (game != null) {
-                if (game.scheduledSetupPending || game.isScheduled && (
+                if (!game.isFinal && model.isSharedSchedule(game) && model.recordingSchedule?.id?.equals(game.id,true) != true || game.scheduledSetupPending || game.isScheduled && (
                         !game.scheduleVenue.isNullOrBlank() || model.schedulePublication(game) != null || model.scheduleNotice(game) != null ||
                             model.scheduleFeed.teamFor(game.ourTeamID) != null
                     )) PendingScheduleScreen(game, model) { opponent -> createOpponent = opponent; createTeam = true }
@@ -1094,7 +1116,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
     val feed = model.scheduleFeed
     var scheduleExpiry by remember { mutableLongStateOf(0L) }
     val scheduled = remember(games, feed, scheduleExpiry) { upcomingSchedules(games, feed, System.currentTimeMillis()) }
-    val nextExpiry = scheduled.firstOrNull { it is UpcomingSchedule.Member }?.startsAt
+    val nextExpiry = scheduled.firstOrNull { it is UpcomingSchedule.Member && it.startsAt >= System.currentTimeMillis() }?.startsAt
     LaunchedEffect(nextExpiry) {
         if (nextExpiry != null) {
             var wait = nextExpiry - System.currentTimeMillis()
@@ -1108,9 +1130,9 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
     var managedScheduleKey by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedSchedule = scheduled.filterIsInstance<UpcomingSchedule.Member>()
         .firstOrNull { it.notice.key == managedScheduleKey }?.notice
-    val adminSchedule = selectedSchedule?.takeIf(model::canManageRemoteSchedule)
-    LaunchedEffect(managedScheduleKey, adminSchedule, model.scheduleRefreshing) {
-        if (managedScheduleKey != null && adminSchedule == null && !model.scheduleRefreshing) managedScheduleKey = null
+    val viewedSchedule = selectedSchedule
+    LaunchedEffect(managedScheduleKey, viewedSchedule, model.scheduleRefreshing) {
+        if (managedScheduleKey != null && viewedSchedule == null && !model.scheduleRefreshing) managedScheduleKey = null
     }
     val teamRecord = remember(games, team?.id) { HomeSummary.record(games, team?.id).label }
     val update = model.advertisedUpdate
@@ -1165,9 +1187,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
                     is UpcomingSchedule.Local -> HomeGameRow(entry.game, model, entry.publication, entry.notice)
                     is UpcomingSchedule.Member -> TeamScheduleNoticeRow(
                         entry.notice,
-                        onManage = if (model.canManageRemoteSchedule(entry.notice)) {
-                            { managedScheduleKey = entry.notice.key }
-                        } else null,
+                        onManage = { managedScheduleKey = entry.notice.key },
                     )
                 }
             }
@@ -1197,7 +1217,7 @@ private fun HomeScreen(model: ScorekeeperViewModel, addTeam: () -> Unit, newGame
         }
         else items(completed, key = { "match-${it.id}" }) { HomeGameRow(it, model) }
     }
-    if (adminSchedule != null) RemoteTeamScheduleScreen(adminSchedule, model) { managedScheduleKey = null }
+    if (viewedSchedule != null) RemoteTeamScheduleScreen(viewedSchedule, model) { managedScheduleKey = null }
 }
 
 @Composable
@@ -1549,6 +1569,29 @@ private fun TeamDialog(busy: Boolean, opponent: Boolean, dismiss: () -> Unit, sa
 
 @Composable
 private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
+    val writer = model.recordingSchedule
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(writer?.key, lifecycle, game.revision) {
+        if (writer != null) lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) {
+                try {
+                    withContext(Dispatchers.IO) { model.scheduleWriter.sync(writer) }
+                    model.scheduleSyncIssue = null
+                    model.lineupReview = null
+                    if (game.isFinal) break
+                } catch(e: Exception) {
+                    if (e is CancellationException) throw e
+                    model.lineupReview = e as? ScheduleLineupReview
+                    model.scheduleSyncIssue = e.localizedMessage ?: "局面已保存在本机，等待联网同步"
+                    if (withContext(Dispatchers.IO) { model.scheduleWriter.cached(game.id) } == null) {
+                        model.recordingSchedule = null
+                        break
+                    }
+                }
+                delay(1800)
+            }
+        }
+    }
     val wide = LocalWorkbenchWide.current
     var openedOnResults by rememberSaveable(game.id) { mutableStateOf(game.isFinal && !game.practice) }
     LaunchedEffect(game.isFinal) { if (!game.isFinal) openedOnResults = false }
@@ -1569,6 +1612,33 @@ private fun GameScreen(game: Game, model: ScorekeeperViewModel) {
         confirmButton = { TextButton({ val action = PitchAction.valueOf(openingPitch!!); openingPitch = null; model.pitch(action) },
             modifier = Modifier.testTag("confirm-opening-pitch")) { Text("确认开赛") } },
         dismissButton = { TextButton({ openingPitch = null; requestedPanel = "lineup" }) { Text("继续设置阵容") } })
+    val review = model.lineupReview
+    val scope = rememberCoroutineScope()
+    if (writer != null && review != null) {
+        fun resolve(accept: Boolean) {
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) { model.scheduleWriter.sync(writer,
+                        accept=review.proposalID.takeIf { accept }, reject=review.proposalID.takeUnless { accept }) }
+                    model.scheduleSyncIssue = null
+                } catch(e: Exception) {
+                    if (e is CancellationException) throw e
+                    model.scheduleSyncIssue = e.localizedMessage
+                }
+                model.lineupReview = null
+            }
+        }
+        AlertDialog(onDismissRequest={},title={ Text("核对换人时点") },text={ Text(review.message.orEmpty()) },
+            confirmButton={ TextButton({ resolve(true) }) { Text("从当前局面生效") } },
+            dismissButton={ TextButton({ resolve(false) }) { Text("退回重选") } })
+    }
+    if (writer != null && review == null && model.scheduleSyncIssue != null) {
+        var dismissed by remember { mutableStateOf<String?>(null) }
+        val message = model.scheduleSyncIssue
+        if (message != dismissed) AlertDialog(onDismissRequest={ dismissed=message },title={ Text("局面同步") },
+            text={ Text(message.orEmpty()) }, confirmButton={ TextButton({ dismissed=message }) { Text("继续记录") } },
+            dismissButton={ TextButton({ model.recordingSchedule=null }) { Text("查看赛程岗位") } })
+    }
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         ScoringPanels(game, model, requestedPanel, { requestedPanel = "" },
             initialPanel = if (openedOnResults) "results" else "",

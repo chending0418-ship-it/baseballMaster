@@ -62,6 +62,7 @@ import kotlinx.serialization.json.*
     val watchLinks: Map<String,MatchWatchLink> = emptyMap(),val watchFailures: Map<String,DirectoryFailure> = emptyMap(),
     val finalArchivePending: Map<String,PendingFinalArchive> = emptyMap(),
     val finalArchiveReceipts: Map<String,FinalArchiveReceipt> = emptyMap(),
+    val lineupDrafts: Map<String, ScheduledLineupDraft> = emptyMap(),
     val schedulePublications: Map<String, TeamSchedulePublication> = emptyMap(),
 ) {
     override fun toString() = "TeamDirectoryState(pending=${pending?.kind}, requiresRecoveryReview=$requiresRecoveryReview)"
@@ -77,6 +78,7 @@ interface TeamDirectoryStorage {
 class TeamDirectorySession(internal val client: TeamDirectoryClient, internal val storage: TeamDirectoryStorage, internal val deviceLabel: String,
     private val reconnectDevice: ((Boolean)->String)? = null, private val hasPendingReconnect: ()->Boolean = {false},
 ) {
+    internal var lastScheduleRead: CachedScheduleRead? = null
     private var expiredInMemory=false
     init {client.authorizationExpired={ synchronized(storage.monitor) {
         expiredInMemory=true

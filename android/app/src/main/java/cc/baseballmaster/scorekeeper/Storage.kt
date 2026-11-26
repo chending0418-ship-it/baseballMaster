@@ -72,6 +72,9 @@ data class TeamArchiveEntity(@PrimaryKey val id: String, val original: ByteArray
 
 @Dao
 interface LocalDao {
+    @Query("SELECT * FROM schedule_writers WHERE gameID = :id") suspend fun writer(id: String): ScheduleWriterEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun saveWriter(row: ScheduleWriterEntity)
+    @Query("DELETE FROM schedule_writers WHERE gameID = :id") suspend fun deleteWriter(id: String)
     @Query("SELECT * FROM team_archives ORDER BY id") suspend fun allTeamArchives(): List<TeamArchiveEntity>
     @Query("SELECT * FROM team_archives WHERE id = :id") suspend fun teamArchive(id: String): TeamArchiveEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertTeamArchive(row: TeamArchiveEntity)
@@ -153,8 +156,9 @@ interface LocalDao {
             AppleGameSourceEntity::class,
             AppleOriginalOperationEntity::class,
             TeamArchiveEntity::class,
+            ScheduleWriterEntity::class,
         ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class LocalDatabase : RoomDatabase() {
@@ -163,8 +167,14 @@ abstract class LocalDatabase : RoomDatabase() {
     companion object {
         fun open(context: Context, name: String = "baseballmaster.db") =
             Room.databaseBuilder(context, LocalDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS schedule_writers (gameID TEXT NOT NULL PRIMARY KEY, binding TEXT NOT NULL, original TEXT, outbox TEXT, FOREIGN KEY(gameID) REFERENCES games(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+            }
+        }
 
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -202,7 +212,7 @@ abstract class LocalDatabase : RoomDatabase() {
 }
 
 /** No destructive fallback: unreadable/future stores remain untouched. */
-class GameRepository(private val db: LocalDatabase, private val beforeCommit: () -> Unit = {}) {
+class GameRepository(internal val db: LocalDatabase, private val publishedSchedule: suspend (Game) -> Boolean = { false }, private val writerIdentity: (() -> TeamDirectoryState)? = null, private val beforeCommit: () -> Unit = {}) {
     val teams
         get() = db.dao().teams()
 
@@ -346,6 +356,18 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         return game
     }
 
+    /** Build 31 kept this association in the encrypted directory only. Preserve it in new device backups, too. */
+    internal suspend fun retainPublishedScheduleKeys(publications: List<TeamSchedulePublication>) = db.withTransaction {
+        for (publication in publications) {
+            val row = db.dao().gamesMatchingScheduleID(publication.sourceID).singleOrNull() ?: continue
+            val game = decode(row)
+            if (game.publishedScheduleTeamID != null || game.practice || game.appleSourceID != null) continue
+            game.publishedScheduleTeamID = publication.teamID
+            game.validate()
+            db.dao().updateGame(row.copy(payload = GameJson.encodeToString(game)))
+        }
+    }
+
     /** A publication acknowledgement updates metadata without adding a scoring operation. */
     suspend fun applyTeamScheduleNotice(notice: TeamScheduleNotice, ownTeamIDs: Set<String>) = db.withTransaction {
         val row = db.dao().gamesMatchingScheduleID(notice.id).singleOrNull() ?: return@withTransaction
@@ -353,7 +375,8 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         if (!game.isScheduled || game.isFinal || game.practice || game.appleSourceID != null ||
             ownTeamIDs.none { it.equals(game.ourTeamID, true) }) return@withTransaction
         val venue = normalizeScheduleVenue(notice.venue).ifEmpty { null }
-        if (game.scheduledAt == notice.startsAt && game.scheduleVenue == venue) return@withTransaction
+        if (game.scheduledAt == notice.startsAt && game.scheduleVenue == venue && game.publishedScheduleTeamID == notice.teamID) return@withTransaction
+        game.publishedScheduleTeamID = notice.teamID
         game.scheduledAt = notice.startsAt
         game.scheduleVenue = venue
         game.validate()
@@ -626,7 +649,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         gameID: String,
         baseRevision: Long,
         operationID: String = UUID.randomUUID().toString(),
-    ): Game = mutate(gameID, baseRevision, operationID, "undo") { MatchEngine.undo(it) }
+    ): Game = mutate(gameID, baseRevision, operationID, "undo") { if (it.publishedScheduleTeamID != null) undoSchedulePlay(it) else MatchEngine.undo(it) }
 
     suspend fun redo(
         gameID: String,
@@ -715,11 +738,19 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
         require(db.dao().appleOriginalOperation(operationID.lowercase(java.util.Locale.ROOT)) == null) { "操作编号与已导入的原始历史重复，未写入" }
         check(current.revision == baseRevision) { "比赛已更新，请核对后重试" }
         val imported = db.dao().appleGameSource(gameID)
-        val marker = decode(current).appleSourceID
+        val stored = decode(current)
+        val writer = if (stored.publishedScheduleTeamID != null || publishedSchedule(stored)) {
+            val binding = db.dao().writer(gameID)?.bindingValue()
+            check(binding != null && writerIdentity?.invoke()?.let(binding::permits) == true && binding.opening) {
+                "这场比赛已关联球队赛程，请从赛程岗位进入并确认先发"
+            }
+            binding
+        } else null
+        val marker = stored.appleSourceID
         require((imported == null && marker == null) || imported != null && marker == imported.backupID) { "比赛来源映射缺失或不一致，已停止写入" }
         val next = if (imported == null) reduce(MatchEngine.upgradeLegacy(decode(current))) else {
             require(appleCommand != null) { "这场 iOS 导入比赛的此项历史操作尚不能无损转换，原记录未修改" }
-            require(appleCommand.playerUpdates.isNullOrEmpty() && appleCommand.lineupReplacements.isNullOrEmpty()) { "这场 iOS 导入比赛的球员资料更正／阵容替补尚未支持无损转换，原记录与名单未修改" }
+            require(appleCommand.benchAdditions.isEmpty() && appleCommand.playerUpdates.isNullOrEmpty() && appleCommand.lineupReplacements.isNullOrEmpty()) { "这场 iOS 导入比赛的球员资料更正／阵容替补尚未支持无损转换，原记录与名单未修改" }
             val source = db.dao().appleBackup(imported.backupID) ?: error("比赛来源缺失，原资料未修改")
             val backup = verifyAppleSource(source)
             val priorGame = backup.games(source.id).single { it.id == gameID }
@@ -727,6 +758,17 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
             val updated = backup.appendCommand(gameID, appleCommand.copy(at = appleCommand.at.takeIf { it > 0 } ?: System.currentTimeMillis()), operationID)
             db.dao().updateAppleBackup(source.copy(current = updated.export()))
             updated.games(source.id).single { it.id == gameID }
+        }
+        if (writer != null) {
+            next.publishedScheduleTeamID = stored.publishedScheduleTeamID
+            next.scheduleVenue = stored.scheduleVenue
+            next.scheduledAt = stored.scheduledAt
+        }
+        if (writer?.split == true) {
+            require(stored.home == next.home && stored.away == next.away && stored.homeOrder == next.homeOrder &&
+                stored.awayOrder == next.awayOrder && stored.homePositions == next.homePositions &&
+                stored.awayPositions == next.awayPositions && stored.homeDesignatedHitterID == next.homeDesignatedHitterID &&
+                stored.awayDesignatedHitterID == next.awayDesignatedHitterID) { "请由阵容记录员提交这次人员调整" }
         }
         check(next.revision == current.revision + 1) { "记录版本无效，原资料未修改" }
         db.dao()
@@ -749,7 +791,7 @@ class GameRepository(private val db: LocalDatabase, private val beforeCommit: ()
                     if(next.scheduledSetupPending) 5 else 4,
                 )
             )
-        if (appleCommand != null) syncLineupProfiles(next, appleCommand)
+        if (appleCommand != null && !appleCommand.matchOnlyProfiles) syncLineupProfiles(next, appleCommand)
         if (clearDraft) db.dao().deleteCorrectionDraft(gameID)
         beforeCommit()
         next

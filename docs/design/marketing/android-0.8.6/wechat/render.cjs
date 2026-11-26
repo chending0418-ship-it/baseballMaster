@@ -1,0 +1,27 @@
+// Run from any directory. Set NODE_PATH for Playwright and CHROME_BIN for Chromium.
+const path = require('node:path');
+const fs = require('node:fs');
+const { pathToFileURL } = require('node:url');
+const { chromium } = require('playwright');
+
+async function render() {
+    const root = path.resolve(__dirname, '../../../../..');
+    const joint = process.argv.includes('--joint');
+    const source = joint ? path.join(root, 'docs/design/marketing/ios-3.1.4-android-0.8.6/wechat') : __dirname;
+    const folder = path.join(root, joint ? 'output/marketing/ios-3.1.4-android-0.8.6/wechat' : 'output/marketing/0.8.6/wechat/2026-11-24/build33');
+    const filename = joint ? 'iOS-Android-分工协作记录.png' : 'Android-0.8.6-分工协作记录.png';
+    fs.mkdirSync(folder, { recursive: true });
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN });
+    try {
+        const page = await browser.newPage({ viewport: { width: 1080, height: 1440 } });
+        await page.goto(pathToFileURL(path.join(source, 'poster.html')).href);
+        await page.evaluate(() => document.fonts.ready);
+        const loaded = await page.locator('img').evaluateAll((images, expected) =>
+            images.length === expected && images.every(img => img.complete && img.naturalWidth > 0), joint ? 3 : 2);
+        if (!loaded) throw new Error('海报图像读取失败，请在 BaseballMaster 品牌工作区内导出。');
+        await page.screenshot({ path: path.join(folder, filename) });
+    } finally {
+        await browser.close();
+    }
+}
+render().catch(error => { console.error(error); process.exitCode = 1; });

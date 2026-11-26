@@ -31,7 +31,7 @@ internal class AppleStateProjection private constructor(
             require(rows.map {it.first}.distinct().size==rows.size) {"iOS 字典编号重复"}
             return rows.toMap()
         }
-        private fun player(p: JsonObject): Player {
+        internal fun player(p: JsonObject): Player {
             val numbers=p.array("numbers").map {it.jsonPrimitive.int}
             val labels=p.optional("jerseyNumbers")?.jsonArray?.map {it.jsonPrimitive.content} ?: numbers.map(Int::toString)
             require(labels.map {it.toIntOrNull()}==numbers) {"背号标签与数字不一致"}

@@ -44,15 +44,21 @@ class ScheduledPlanningStorageTest {
             assertEquals(rescheduled.revision, confirmed.revision)
             assertEquals(1, db.dao().allOperations().size)
             val prepared = MatchFactory.create(planned.id, home, away, Rules(recordingMethod = "situation"), own.id)
-            val configured = repo.configureScheduledGame(prepared, rescheduled.revision)
+            try { repo.configureScheduledGame(prepared, confirmed.revision); fail("published schedule needs a scoring role") }
+            catch (_: IllegalStateException) {}
+            assertEquals(confirmed, repo.scheduledGame(planned.id))
+            // The second plan is private, and still uses the regular single-device flow.
+            val privatePlan = repo.createPreparedGame(MatchFactory.schedule(UUID.randomUUID().toString(), opponent, own,
+                Rules(), confirmed.scheduledAt!!, own.id, confirmed.scheduleVenue))
+            val configured = repo.configureScheduledGame(prepared.copy(id = privatePlan.id), privatePlan.revision)
             val savedName = configured.away.players.first().name
             prepared.away.players.first().name = "外部草稿变化"
             assertEquals(savedName, configured.away.players.first().name)
-            assertEquals(savedName, GameRepository.decode(db.dao().game(planned.id)!!).away.players.first().name)
+            assertEquals(savedName, GameRepository.decode(db.dao().game(privatePlan.id)!!).away.players.first().name)
             assertFalse(configured.isScheduled); assertFalse(configured.scheduledSetupPending); assertFalse(configured.openingPitchRecorded)
-            assertEquals(confirmed.scheduledAt, configured.scheduledAt); assertEquals(planned.createdAt, configured.createdAt)
+            assertEquals(confirmed.scheduledAt, configured.scheduledAt); assertEquals(privatePlan.createdAt, configured.createdAt)
             assertEquals(confirmed.scheduleVenue, configured.scheduleVenue)
-            assertEquals(away.players.map { it.id }, configured.away.players.map { it.id }); assertEquals(4, db.dao().game(planned.id)!!.payloadVersion)
+            assertEquals(away.players.map { it.id }, configured.away.players.map { it.id }); assertEquals(4, db.dao().game(privatePlan.id)!!.payloadVersion)
             assertEquals(2, db.dao().allOperations().size)
             val pitched = repo.pitch(configured.id, PitchAction.ball, configured.revision)
             assertTrue(pitched.openingPitchRecorded); assertEquals(1, pitched.balls)

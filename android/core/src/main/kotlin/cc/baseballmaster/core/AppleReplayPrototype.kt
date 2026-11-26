@@ -63,7 +63,7 @@ internal object AppleReplayPrototype {
         val p = raw.jsonObject; Participant(p.int("position"), id(p.text("playerID")), p.text("name"), p.text("number"))
     }
     private val violationIDs=mapOf("投手犯规" to "balk","快速投球" to "quickPitch","违规投球" to "illegalPitch","球体处理违规" to "foreignSubstance","踏出打击区击球" to "batterOutOfBox","打者干扰" to "batterInterference","违规球棒" to "illegalBat","打击次序错误" to "battingOutOfTurn","捕手干扰打击" to "catcherInterference","本垒阻挡或冲撞" to "plateObstruction","阻挡跑垒" to "obstruction","假触杀" to "fakeTag","脱离装备触球" to "detachedEquipment","跑者干扰" to "runnerInterference","跑垒限制道干扰" to "runningLaneInterference","教练员干扰" to "coachInterference","超越前位跑者" to "passingRunner")
-    private fun command(op: JsonObject,eventOwners: Map<String,String>): Command {
+    private fun command(op: JsonObject,eventOwners: Map<String,String>, stored: JsonObject?): Command {
         val sourceObservation = op.optional("battedBall")?.jsonObject
         val detailRows = sourceObservation?.optional("runnerDetails")?.jsonArray?.map { it.jsonObject } ?: emptyList()
         val details = detailRows.associateBy { id(it.text("playerID")) }
@@ -101,7 +101,7 @@ internal object AppleReplayPrototype {
                         put("_0",outcome);fields.optional("_3")?.let {put("_1",it)}
                         put("_2",fields.optional("_4") ?: JsonArray(emptyList()));fields.optional("_5")?.let {put("_3",it)}
                     }
-                    command(JsonObject(op+("command" to buildJsonObject {put("play",body)})),eventOwners)
+                    command(JsonObject(op+("command" to buildJsonObject {put("play",body)})),eventOwners,stored)
                 }
                 (play ?: Command("illegal")).copy(kind="illegal",pitch=fields.optional("_0")?.jsonPrimitive?.content?.let {title ->PitchAction.entries.single {it.title==title}},
                     wasThrown=fields.bool("_1"),penaltyApplied=fields.bool("_6"),at=at)
@@ -130,6 +130,20 @@ internal object AppleReplayPrototype {
                 val reason = reasons[fields.text("_0")] ?: error("结束原因不受支持")
                 Command(if (reason == "suspended") "suspend" else "finish", text = reason, at = date(fields["_1"]) ?: at)
             }
+            "unavailable" -> {
+                val snapshot = AppleWireJson.parse(Base64.getDecoder().decode(fields.text("_2"))).jsonObject
+                val input = snapshot["androidScheduleCommand"]
+                if (input != null) GameJson.decodeFromJsonElement<Command>(input).also {
+                    require(it.kind in setOf("configure","method","activate","tiebreak") && it.at == at)
+                } else {
+                    val source = requireNotNull(stored) { "此历史快照需要完整交接档案" }
+                    val before = AppleWireJson.parse(Base64.getDecoder().decode(fields.text("_1"))).jsonObject
+                    Command("scheduleSnapshot",at=at,text=fields.text("_0"),scheduleSnapshot=ScheduleSnapshot(
+                        GameJson.encodeToString(AppleStateProjection.read(source,before).view()),
+                        GameJson.encodeToString(AppleStateProjection.read(source,snapshot).view()),fields))
+                }
+            }
+            "additionalErrors" -> Command("note",text=op.text("title"),at=at)
             "swapOpeningSides" -> Command("swap",at=at)
             "decision" -> Command("decision",flag=fields.bool("_0"),at=at)
             "extraInning" -> Command("extraInning",flag=fields.bool("_0"),runnerBases=fields.array("_1").map {it.jsonPrimitive.int},at=at)
@@ -181,7 +195,7 @@ internal object AppleReplayPrototype {
     /** Read supported journals from a validated checkpoint, including saved
      * legacy prefixes. No persisted source mutation or edit permission occurs.
      */
-    fun replay(stored: JsonObject): Game {
+    fun replay(stored: JsonObject, schedule: Boolean = false): Game {
         require(stored.optional("sharedTeamID") == null && stored.optional("sharedGameID") == null && !stored.bool("isSpectator")) { "暂不支持共享或观赛比赛" }
         val state = stored["state"]!!.jsonObject
         val journal = state.optional("historyJournal")?.jsonObject ?: return replayLegacy(stored, state)
@@ -197,6 +211,7 @@ internal object AppleReplayPrototype {
             historySourceID=null,isScheduled=false,openingPitchRecorded=false)
         val checkpointData = MatchEngine.checkpoint(game)
         val records = mutableListOf<RecordedCommand>()
+        val rosters = mutableMapOf(true to game.home,false to game.away)
         val eventOwners=mutableMapOf<String,String>()
         source.array("operations").forEach {raw ->
             val operation=raw.jsonObject;val owner=id(operation.text("id"))
@@ -207,7 +222,8 @@ internal object AppleReplayPrototype {
         }
         source.array("operations").forEach { raw ->
             val op = raw.jsonObject
-            val errors = op.array("errors").map { element -> element.jsonObject.let { ErrorCredit(id(it.text("playerID")), it.int("count", 1), it["note"]?.jsonPrimitive?.content ?: "漏记守备失误") } }
+            val credits = op.getValue("command").jsonObject["additionalErrors"]?.jsonObject?.get("_0")?.jsonArray.orEmpty()
+            val errors = (op.array("errors") + credits).map { element -> element.jsonObject.let { ErrorCredit(id(it.text("playerID")), it.int("count", 1), it["note"]?.jsonPrimitive?.content ?: "漏记守备失误") } }
             val ruling = op.optional("statisticsRuling")?.jsonObject?.let { r ->
                 val values = r.array("earnedRuns"); require(values.size % 2 == 0)
                 StatisticsRuling(r.int("runsBattedIn"), values.chunked(2).associate { id(it[0].jsonPrimitive.content) to it[1].jsonPrimitive.int }, ids(r.array("unearnedRunnerIDs")).toSet())
@@ -226,7 +242,16 @@ internal object AppleReplayPrototype {
             val runnerPairs = sourceContext.array("runners"); require(runnerPairs.size % 2 == 0)
             val runners = MutableList<String?>(3) { null }
             runnerPairs.chunked(2).forEach { pair -> val base = pair[0].jsonPrimitive.int; require(base in 1..3 && runners[base - 1] == null); runners[base - 1] = id(pair[1].jsonPrimitive.content) }
-            records += RecordedCommand(id(op.text("id")), command(op,eventOwners), order[batterIndex % order.size], runners,
+            val decoded = command(op,eventOwners,stored.takeIf { schedule })
+            val action = if (decoded.kind == "lineup") {
+                val wire = op.getValue("command").jsonObject.getValue("lineup").jsonObject.getValue("_0").jsonObject
+                val home = requireNotNull(decoded.homeSide)
+                val team = rosters.getValue(home)
+                val change = lineupCommand(wire,team,if (home) homeOrder else awayOrder,decoded.at)
+                rosters[home] = team.copy(players=wire.array("players").map { AppleStateProjection.player(it.jsonObject) })
+                change
+            } else decoded
+            records += RecordedCommand(id(op.text("id")), action, order[batterIndex % order.size], runners,
                 acceptContext = op.bool("acceptsNewContext"), context = context,
                 inserted = op.bool("inserted"), edited = op.bool("edited"), additionalErrors = errors, statisticsRuling = ruling)
         }
